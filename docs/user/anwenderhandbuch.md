@@ -390,6 +390,13 @@ eine Grenze, die in die nächste Menge reicht, eine Partition, die Sie
 übergangen haben —, wird **abgelehnt** (Exit 2) und benannt. Es gibt keinen
 stillen Rückfall auf „dann eben unpartitioniert".
 
+**Geben Sie dieselbe Datei auch beim Migrieren mit.** `schema migrate` kennt
+`--migration-overlay` ebenfalls. Ohne sie beschreiben Ihr Schema und die
+Datenbank dieselbe Tabelle verschieden — Ihres nach Wertemengen, die Datenbank
+nach Bereichen —, und jeder Lauf hinterlässt dieselbe Warnung mit dem Rat, die
+Tabelle von Hand neu zu bauen. Der Rat wäre falsch: die Tabelle ist genau
+richtig.
+
 ### 3.3 Eine bestehende Datenbank übernehmen (Reverse Engineering)
 
 **Ziel:** Aus einer vorhandenen Datenbank ein neutrales Schema erzeugen, um es

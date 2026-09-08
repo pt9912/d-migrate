@@ -54,6 +54,13 @@ internal object MigrationOverlayPreflight {
         dialect: String,
         loadFailures: List<MigrationOverlayLoadFailure> = emptyList(),
         supportedRenameObjectTypes: Set<String> = DEFAULT_SUPPORTED_RENAME_OBJECT_TYPES,
+        /**
+         * Der Abdruck des SOLL-Schemas, **wie es geschrieben wurde** — woran
+         * ein Darstellungs-Overlay bindet (ADR 0050). `null` heisst: dieser
+         * Aufrufer kann Darstellungen nicht pruefen und lehnt sie ab, statt
+         * zu raten.
+         */
+        representationFingerprint: String? = null,
     ): MigrationOverlayPreflightResult {
         if (documents.isEmpty() && loadFailures.isEmpty()) {
             return MigrationOverlayPreflightResult(emptyList(), emptyList())
@@ -66,6 +73,7 @@ internal object MigrationOverlayPreflight {
                     expectedSourceFingerprint = sourceFingerprint,
                     expectedTargetFingerprint = targetFingerprint,
                     expectedDialect = normalisedDialect,
+                    expectedRepresentationFingerprint = representationFingerprint,
                     supportedRenameObjectTypes = supportedRenameObjectTypes,
                 ),
                 source = document.source,

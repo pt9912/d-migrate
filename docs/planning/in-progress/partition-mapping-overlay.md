@@ -10,11 +10,11 @@
 > `Transition`/`Representation`, `migration-overlay.v2`, v1-Dokumente
 > unveraendert lesbar. Dieser Slice bringt nur noch die Overlay-**Art**
 > `partition-mapping` mit ihrer Darstellungsbindung.
-> **Stand:** P0-P5 und P6a geliefert. Beide Faelle wirken auf ihrem Pfad:
-> `schema reverse --migration-overlay` setzt die Kindnamen, `schema generate
-> --migration-overlay` macht aus LIST gueltiges RANGE. Offen: P6b (dieselbe
-> Uebersetzung vor dem Planen, damit ein so erzeugtes Schema auch wieder
-> migrierbar ist) und P7 (Doku fuer den Migrate-Pfad).
+> **Stand:** P0-P6 geliefert; der Slice ist inhaltlich durch. Beide Faelle
+> wirken auf allen drei Pfaden: `schema reverse` setzt die Kindnamen,
+> `schema generate` macht aus LIST gueltiges RANGE, und `schema migrate`
+> uebersetzt vor dem Vergleich, damit ein so erzeugtes Schema wieder
+> migrierbar ist. P7 (Doku) ist mit den jeweiligen Paketen entstanden.
 
 Absorbiert die Vorabklärung `open/partition-mapping-overlay.md`.
 
@@ -175,29 +175,36 @@ sortiert werden.
   (`RANGE RIGHT`), und `9` in der Auffang-Partition. Sabotage-geprüft über die
   Grenzrichtung und über eine weggelassene Grenze.
 
-### P6b — Naht im Diff/Migrate
-- Der Planer nutzt die Zuordnung für Identität; bei einer Zuordnung, die der
-  Preflight ablehnt, entsteht ein Blocker, kein stiller Fallback.
-- Ohne dieses Paket ist ein mit P6a erzeugtes Schema **nicht wieder
-  migrierbar**: Soll sagt LIST, Ist (der Reverse) sagt RANGE, und der Vergleich
-  meldet bei jedem Lauf dieselbe Strategieänderung.
-- Die Naht ist dieselbe Übersetzung, nur früher: das SOLL-Schema wird vor dem
-  Planen übersetzt. Der Abdruck, an den das Overlay bindet, ist der des
+### P6b — Naht im Diff/Migrate ✅ geliefert (2026-09-08)
+- Dieselbe Übersetzung, nur früher: das SOLL-Schema wird **vor** dem Vergleich
+  übersetzt. Der Abdruck, an den das Overlay bindet, ist der des
   **unübersetzten** Schemas (ADR 0050); der Plan hält fest, was danach auf dem
-  Ziel steht.
-- **Abnahme:** Ein `schema migrate --plan-only` mit gültigem Overlay erzeugt
-  keine Drop/Create-Paare für Partitionen, die einander entsprechen; mit
-  ungültigem Overlay bricht es mit benanntem Blocker ab.
+  Ziel steht — deshalb werden die Abdrücke nach einer Übersetzung neu gerechnet
+  und nicht weitergereicht.
+- Eine Zuordnung, die nicht trägt, geht als Befund durch denselben Kanal wie
+  ein unlesbares Overlay (`MigrationOverlayLoadFailure`), nicht über einen
+  eigenen Ausgang. Zwei Arten, dasselbe zu melden, wären eine zu viel.
+- **Der erwartete Schaden war ein anderer als der gemessene.** Dieses Paket
+  ging von Drop/Create-Paaren aus. Gemessen gegen echtes SQL Server: der Planer
+  emittiert für eine Strategieänderung **gar keine Operation**, sondern die
+  Warnung `PARTITIONING_CHANGE_NOT_APPLIED` — und die bleibt bei jedem Lauf
+  stehen und rät, eine Tabelle von Hand neu zu bauen, die in Wahrheit genau
+  richtig ist. Der Schaden ist damit kein wiederholter Umbau, sondern ein
+  dauerhaft falscher Rat.
+- **Abnahme:** Live gegen SQL Server 2022, Tabelle angelegt wie der
+  Generate-Pfad sie schreibt. Mit Overlay: 0 Operationen, keine Warnung. Ohne:
+  0 Operationen, Warnung. Sabotage-geprüft, indem die Naht stillgelegt wurde —
+  die Warnung kam zurück.
 
-### P7 — CLI und Doku
+### P7 — CLI und Doku ✅ geliefert (2026-09-08)
 - Overlay-Weg an `schema reverse`, `schema generate` und `schema migrate`.
 - Handbuch **erst hier** — dort darf nur stehen, was wirkt. Das hat den Schnitt
   verschoben statt ihn zu verzögern: die Doku entstand mit dem jeweiligen
   Paket, weil sie erst dort wahr wurde (Reverse mit P5, Generate mit P6a).
 - **Abnahme:** Aufgabenorientierte Abschnitte („Ihre Partitionsnamen gehen beim
-  Auslesen verloren", „Ihre LIST-Partitionierung kennt das Ziel nicht");
-  Feldreferenz im Anhang; `make docs-check` grün. Offen bleibt der
-  Migrate-Abschnitt — er gehört zu P6b.
+  Auslesen verloren", „Ihre LIST-Partitionierung kennt das Ziel nicht", samt
+  dem Hinweis, dieselbe Datei beim Migrieren mitzugeben); Feldreferenz im
+  Anhang; `make docs-check` grün.
 
 ## 5. Nicht-Scope
 

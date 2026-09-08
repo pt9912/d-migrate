@@ -227,6 +227,51 @@ class SchemaMigrateRunner(
     }
 
     /**
+     * Was in den Plan geht: das Soll-Schema, seine Abdruecke, und was ein
+     * Overlay dabei angerichtet hat.
+     *
+     * Zwei Abdruecke, weil sie zwei Fragen beantworten. Der
+     * [representationFingerprint] gehoert zum Schema, **wie es geschrieben
+     * wurde** — daran bindet ein Darstellungs-Overlay (ADR 0050), sonst haenge
+     * die Bindung an ihrer eigenen Wirkung. Die [endpoints] gehoeren zu dem,
+     * was danach auf dem Ziel steht.
+     */
+    private data class PlanningInput(
+        val prepared: SchemaMigratePrepared,
+        val endpoints: EndpointFingerprints,
+        val representationFingerprint: String,
+        val overlayFailures: List<MigrationOverlayLoadFailure>,
+    )
+
+    private fun planningInput(
+        authored: SchemaMigratePrepared,
+        documents: List<MigrationOverlayDocument>,
+    ): PlanningInput {
+        val authoredEndpoints = endpointFingerprints(authored)
+        val translation = MigratePartitionTranslation.translate(
+            schema = authored.sourceNormalized.schema,
+            dialect = authored.effectiveDialect,
+            documents = documents,
+            representationFingerprint = authoredEndpoints.desired,
+        )
+        if (!translation.changed) {
+            return PlanningInput(authored, authoredEndpoints, authoredEndpoints.desired, translation.failures)
+        }
+        val translated = authored.copy(
+            sourceNormalized = authored.sourceNormalized.copy(schema = translation.schema),
+        )
+        // Neu gerechnet, nicht weitergereicht: das Soll ist ein anderes
+        // geworden, und ein Abdruck, der das nicht abbildet, liefe im
+        // Post-Compare gegen die Datenbank, die nach ihm gebaut wurde.
+        return PlanningInput(
+            prepared = translated,
+            endpoints = endpointFingerprints(translated),
+            representationFingerprint = authoredEndpoints.desired,
+            overlayFailures = translation.failures,
+        )
+    }
+
+    /**
      * Die Meldung, mit der `--spatial-profile` abzulehnen ist, oder `null`.
      *
      * Dieselbe Pruefung wie auf dem Generate-Pfad: ein Tippfehler fiel hier
@@ -250,15 +295,22 @@ class SchemaMigrateRunner(
         cancellationToken: CancellationToken = CancellationToken.none(),
     ): Int {
         cancellationToken.throwIfCancellationRequested()
-        val prepared = when (val r = preparation.prepare(request)) {
+        val authored = when (val r = preparation.prepare(request)) {
             is SchemaMigratePreparationResult.ExitEarly -> return r.exitCode
             is SchemaMigratePreparationResult.Ready -> r.prepared
         }
         cancellationToken.throwIfCancellationRequested()
 
-        spatialProfileError(request.spatialProfile, prepared.effectiveDialect)?.let {
+        spatialProfileError(request.spatialProfile, authored.effectiveDialect)?.let {
             userFacingPrintError(it, "--spatial-profile"); return 2
         }
+
+        // Eine LIST-Partitionierung, die der Zieldialekt nicht kennt, wird
+        // hier uebersetzt — vor dem Vergleich, sonst meldete er bei jedem Lauf
+        // dieselbe Strategieaenderung. Ab hier ist `planning.prepared` das
+        // Soll-Schema; `authored` bleibt nur fuer die Bindung des Overlays.
+        val planning = planningInput(authored, request.migrationOverlays)
+        val prepared = planning.prepared
 
         // F.4 cli-inline-overlay slice §3.3: build the synthetic
         // `cli-inline` overlay BEFORE plan() so it joins the normal
@@ -276,7 +328,7 @@ class SchemaMigrateRunner(
         // into BOTH (and into the post-compare below) for the same
         // parity reason.
         val canonicalizeType = typeCanonicalizerFor(prepared.effectiveDialect)
-        val endpoints = endpointFingerprints(prepared)
+        val endpoints = planning.endpoints
         val inlineResult = InlineRenameOverlayBuilder.build(
             renameTableFlags = request.renameTableFlags,
             renameColumnFlags = request.renameColumnFlags,
@@ -295,10 +347,8 @@ class SchemaMigrateRunner(
         }
 
         val (plan, overlayPreflight) = computePlanAndOverlay(
-            request, prepared,
+            request, planning,
             mergedOverlays = mergedOverlays,
-            currentFingerprint = endpoints.current,
-            desiredFingerprint = endpoints.desired,
             canonicalizeType = canonicalizeType,
         )
         val render = renderPipeline.run(
@@ -388,12 +438,13 @@ class SchemaMigrateRunner(
      */
     private fun computePlanAndOverlay(
         request: SchemaMigrateRequest,
-        prep: SchemaMigratePrepared,
+        planning: PlanningInput,
         mergedOverlays: List<MigrationOverlayDocument>,
-        currentFingerprint: String,
-        desiredFingerprint: String,
         canonicalizeType: (NeutralType) -> NeutralType,
     ): Pair<DiffResult, MigrationOverlayPreflightResult> {
+        val prep = planning.prepared
+        val currentFingerprint = planning.endpoints.current
+        val desiredFingerprint = planning.endpoints.desired
         // Dieselben Projektionen, die in den Fingerabdruck eingehen
         // (`endpointFingerprints`). Nur den Typ zu projizieren heilte die
         // Drift-MELDUNG und liesse den Planer dieselbe Aenderung dennoch bei
@@ -415,7 +466,8 @@ class SchemaMigrateRunner(
             sourceFingerprint = currentFingerprint,
             targetFingerprint = desiredFingerprint,
             dialect = prep.effectiveDialect.name,
-            loadFailures = request.migrationOverlayLoadFailures,
+            loadFailures = request.migrationOverlayLoadFailures + planning.overlayFailures,
+            representationFingerprint = planning.representationFingerprint,
         )
         val capabilities = RenameProjectionCapabilitiesFactory.capabilitiesFor(request, prep.effectiveDialect)
         val triggerPlanningContext = TriggerPlanningContextFactory.forDialect(prep.effectiveDialect)

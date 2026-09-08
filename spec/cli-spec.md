@@ -668,7 +668,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--lock-timeout-ms` | Nein | Millisekunden | Atomic-Preserve Lock-Acquire-Budget fuer den `--execute`-Pfad. Default: `5000`. Gueltiger Bereich: `10` bis `60000`; Werte ausserhalb des Bereichs beenden den Lauf vor der Pipeline mit Exit `2` |
 | `--allow-destructive` | Nein | Boolean | Destruktive Up-Operationen erlauben |
 | `--allow-extension-install` | Nein | Boolean | PostgreSQL darf benoetigte `CREATE EXTENSION IF NOT EXISTS ...`-Prerequisites fuer extension-abhaengige Migrationen rendern; ohne Flag blockieren nicht verifizierte Extensions |
-| `--migration-overlay` | Nein | Pfad, wiederholbar | Versioniertes Migrations-Overlay-JSON (`migration-overlay.v1` oder `.v2`); vor dem Rendern gegen seine **Bindung**, den Dialekt und `overlayHash` validiert — siehe unten |
+| `--migration-overlay` | Nein | Pfad, wiederholbar | Versioniertes Migrations-Overlay-JSON (`migration-overlay.v1` oder `.v2`); vor dem Rendern gegen seine **Bindung**, den Dialekt und `overlayHash` validiert — siehe unten. Ein `partition-mapping`-Overlay bindet hier an das SOLL-Schema, **wie es geschrieben wurde**, und uebersetzt dessen LIST-Partitionierung vor dem Vergleich (siehe [LIST-Partitionierung beim Migrieren](#list-partitionierung-beim-migrieren)) |
 | `--rename-table` | Nein | `<from>:<to>`, wiederholbar | Inline-Shortcut fuer Tabellen-Rename; CLI baut daraus ein synthetisches `rename-mapping`-Overlay mit `source = "cli-inline"`. Bewusst NICHT artefaktstabil — Inline-Overlays werden nicht in `migration-plan.v1` serialisiert. Fuer langlebige Plaene `--migration-overlay` mit Datei nutzen |
 | `--rename-column` | Nein | `<table>.<from>:<table>.<to>`, wiederholbar | Inline-Shortcut fuer Spalten-Rename; gleiche Bedingungen wie `--rename-table`. Tabellen-Prefix muss beidseitig identisch sein, sonst Exit 2 |
 | `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausführen; gegenseitig exklusiv mit `--execute` |
@@ -1132,6 +1132,29 @@ opt-in und additiv zu `--report` / `--output` / `--rollback-output`;
 der Artefakt wird auch im `--plan-only`- und Exit-8-Pfad emittiert,
 sofern der Plan ueberhaupt berechnet werden konnte. Schreibfehler
 beendet mit Exit `7` (lokaler I/O-Fehler).
+
+### LIST-Partitionierung beim Migrieren
+
+Dieselbe Uebersetzung wie auf dem Generate-Pfad, nur frueher: das SOLL-Schema
+wird **vor** dem Vergleich uebersetzt, wenn der Zieldialekt LIST nicht kennt
+und ein gueltiges `partition-mapping`-Overlay vorliegt.
+
+Ohne sie beschreiben Soll und Ist dieselbe Tabelle verschieden — das Soll in
+LIST, der Reverse des Ziels in RANGE. Der Planer emittiert dafuer **keine**
+Operation, sondern die Warnung `PARTITIONING_CHANGE_NOT_APPLIED`, und die
+bleibt bei jedem Lauf stehen: sie raet, eine Tabelle von Hand neu zu bauen,
+die in Wahrheit genau richtig ist.
+
+Zwei Abdruecke sind dabei im Spiel, und sie beantworten verschiedene Fragen:
+
+| Abdruck | Wofuer |
+|---|---|
+| SOLL-Schema **wie geschrieben** | Woran das Darstellungs-Overlay bindet (ADR 0050). Sonst haenge die Bindung an ihrer eigenen Wirkung. |
+| SOLL-Schema **nach der Uebersetzung** | Was der Plan festhaelt und der Post-Compare erwartet — der Zustand, der danach auf dem Ziel steht. |
+
+Eine Zuordnung, die der Preflight ablehnt, wird als Befund gefuehrt wie ein
+unlesbares Overlay (`OVERLAY_PARTITION_MAPPING_INVALID`); uebersetzt wird dann
+nicht. Es gibt keinen zweiten Ausgang fuer denselben Fehler.
 
 ### Bindung eines Migrations-Overlays
 

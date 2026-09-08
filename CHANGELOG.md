@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **`schema migrate --migration-overlay`** nimmt dasselbe
+  `partition-mapping`-Overlay entgegen und uebersetzt das SOLL-Schema **vor**
+  dem Vergleich. Ohne das war ein mit `schema generate` erzeugtes Schema nicht
+  wieder migrierbar: Soll und Ist beschreiben dieselbe Tabelle verschieden,
+  und der Lauf hinterliess bei jedem Mal dieselbe Warnung
+  (`PARTITIONING_CHANGE_NOT_APPLIED`) mit dem Rat, eine Tabelle von Hand neu
+  zu bauen, die in Wahrheit genau richtig ist. Gemessen, nicht vermutet — es
+  sind keine Drop/Create-Paare, wie man erwarten koennte, sondern eine
+  Empfehlung, die nie verstummt.
 - **`schema generate --migration-overlay`**: eine `list`-Partitionierung geht
   jetzt auch auf ein Ziel, das nur Bereiche kennt. SQL Server partitioniert
   ausschliesslich nach RANGE; bisher entstand die Tabelle dort unpartitioniert
