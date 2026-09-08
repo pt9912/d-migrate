@@ -2,9 +2,13 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
+import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DialectCapabilities
+import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SchemaReadNote
+import dev.dmigrate.driver.TransformationNote
 
 /**
  * Sagt einer Partitions-Meldung, **woran** ein Overlay zu binden waere.
@@ -58,14 +62,10 @@ object PartitionOverlayHint {
     /** Die Eintragsform des Kindnamen-Falls. */
     const val NAME_ENTRY_FORM: String = "`table`, `sourcePartition`, `targetPartition`"
 
-    /**
-     * Die Meldung, die ohne den Abdruck keinen Ausweg nennt.
-     *
-     * `E055` (LIST wird nicht gerendert) gehoert der Sache nach dazu, bekommt
-     * den Hinweis aber erst, wenn der Generate-Pfad das Overlay auch liest —
-     * ein Hinweis auf eine Datei, die kein Befehl entgegennimmt, waere
-     * schlechter als keiner.
-     */
+    /** Die Eintragsform des LIST-Falls. */
+    const val LIST_ENTRY_FORM: String = "`table`, `sourcePartition`, `values`, `rangeUpperBound`"
+
+    /** Die Meldung des Lesepfads, die ohne den Abdruck keinen Ausweg nennt. */
     private val PARTITION_CODES = setOf("R346")
 
     /**
@@ -86,4 +86,51 @@ object PartitionOverlayHint {
             if (note.code in PARTITION_CODES) note.copy(hint = listOfNotNull(note.hint, hint).joinToString(" ")) else note
         }
     }
+
+    /**
+     * Der Hinweis fuer eine LIST-Partitionierung, die der Zieldialekt nicht
+     * ausdruecken kann — eine Meldung fuer den ganzen Lauf, nicht je Tabelle:
+     * der Abdruck ist derselbe, und das Overlay, das zu schreiben waere, ist
+     * eine Datei, nicht mehrere.
+     *
+     * `null`, wenn der Dialekt LIST kennt oder das Schema keine LIST-Tabelle
+     * traegt — dann gaebe es nichts beizusteuern.
+     */
+    fun listMappingHint(schema: SchemaDefinition, dialect: DatabaseDialect): TransformationNote? {
+        if (DialectCapabilities.forDialect(dialect).supportsListPartitioning) return null
+        val tables = schema.tables
+            .filter { (_, table) -> table.partitioning?.type == PartitionType.LIST }
+            .keys
+            .sorted()
+        if (tables.isEmpty()) return null
+        return TransformationNote(
+            type = NoteType.INFO,
+            code = LIST_MAPPING_AVAILABLE,
+            objectName = tables.joinToString(", "),
+            message = "The LIST partitioning of ${tables.joinToString { "'$it'" }} has no form in this " +
+                "dialect; the table is created unpartitioned (E055). A LIST partitioning is expressible " +
+                "as RANGE when the value sets are contiguous and non-overlapping in some order — which " +
+                "set belongs to which boundary is yours to state, not the tool's to guess.",
+            hint = hint(schema, dialect, LIST_ENTRY_FORM),
+        )
+    }
+
+    /** Die Meldung, dass eine Zuordnung vorlag und angewandt wurde. */
+    fun listTranslationNote(table: String, tailPartition: String): TransformationNote = TransformationNote(
+        type = NoteType.WARNING,
+        code = LIST_RENDERED_AS_RANGE,
+        objectName = table,
+        message = "The LIST partitioning of '$table' was rendered as RANGE from a partition-mapping " +
+            "overlay. RANGE accepts what LIST refused: values below the first boundary land in the " +
+            "first partition, and everything above the last one in '$tailPartition', which LIST did " +
+            "not have.",
+        hint = "Functionally equivalent for the declared value sets; add a CHECK constraint if the " +
+            "table must keep rejecting the values LIST rejected.",
+    )
+
+    /** LIST als RANGE gerendert, weil ein Overlay die Zuordnung trug. */
+    const val LIST_RENDERED_AS_RANGE: String = "W156"
+
+    /** LIST nicht ausdrueckbar, aber ueber ein Overlay aufloesbar. */
+    const val LIST_MAPPING_AVAILABLE: String = "W157"
 }

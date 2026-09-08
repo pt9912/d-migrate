@@ -337,6 +337,59 @@ CREATE TABLE "customers" (
   Sie in [3.12](#312-sequenzenautowerte-korrekt-mitnehmen) bzw.
   [Anhang D](#anhang-d--fehler--und-warnungscodes) nach.
 
+#### Ihre LIST-Partitionierung kennt das Ziel nicht
+
+SQL Server partitioniert ausschließlich nach Bereichen. Eine Tabelle, die nach
+Wertemengen partitioniert ist (`list`), entsteht dort deshalb **unpartitioniert**,
+und der Bericht sagt das mit `E055`. Oft lässt sie sich trotzdem übertragen —
+nämlich dann, wenn die Wertemengen sich sortieren lassen, ohne sich zu
+überschneiden: aus `(1,2)` und `(5,6)` werden die Grenzen `3` und `7`.
+
+Welche Menge welcher Grenze entspricht, sagen Sie; geraten wird nichts.
+
+1. Erzeugen Sie einmal **ohne** Overlay. Die `W157`-Meldung nennt den
+   Fingerabdruck, an den zu binden ist, und die Felder, die ein Eintrag braucht.
+
+2. Schreiben Sie die Datei — je Partition ein Eintrag mit ihrer Wertemenge und
+   der Obergrenze, die sie ablösen soll (`overlayHash` zunächst weglassen, der
+   nächste Lauf nennt ihn):
+
+   ```json
+   {
+     "formatVersion": "migration-overlay.v2",
+     "overlayKind": "partition-mapping",
+     "schemaFingerprint": "a1b2…",
+     "dialect": "mssql",
+     "entries": [
+       { "kind": "partition-mapping", "id": "w", "table": "sales",
+         "sourcePartition": "p_west", "values": ["1", "2"], "rangeUpperBound": "3" },
+       { "kind": "partition-mapping", "id": "e", "table": "sales",
+         "sourcePartition": "p_east", "values": ["5", "6"], "rangeUpperBound": "7" }
+     ],
+     "createdAt": "2026-09-08T10:00:00Z",
+     "createdByVersion": "handgeschrieben"
+   }
+   ```
+
+3. Erzeugen Sie erneut, mit der Datei:
+
+   ```bash
+   d-migrate schema generate --source mein-schema.yaml --target mssql \
+       --output schema.sql --migration-overlay partitions.json
+   ```
+
+**Was Sie erwarten können:** gültiges RANGE-DDL statt `E055` — und eine
+Partition mehr, als Ihr Schema Wertemengen hat. Das ist kein Versehen: alles
+oberhalb der letzten Grenze braucht in einer Bereichspartitionierung eine
+Partition, während die Wertemengen solche Zeilen zurückgewiesen hätten. `W156`
+sagt es Ihnen. Wenn die Tabelle diese Zeilen weiterhin ablehnen soll, ergänzen
+Sie eine CHECK-Bedingung.
+
+Eine Zuordnung, die Zeilen falsch einsortieren würde — überlappende Mengen,
+eine Grenze, die in die nächste Menge reicht, eine Partition, die Sie
+übergangen haben —, wird **abgelehnt** (Exit 2) und benannt. Es gibt keinen
+stillen Rückfall auf „dann eben unpartitioniert".
+
 ### 3.3 Eine bestehende Datenbank übernehmen (Reverse Engineering)
 
 **Ziel:** Aus einer vorhandenen Datenbank ein neutrales Schema erzeugen, um es
@@ -2824,6 +2877,7 @@ Fortschritt/Warnungen nach stderr.
 | `--spatial-profile` | `postgis`, `native`, `spatialite`, `none` |
 | `--partition-storage` | Ablageort partitionierter Daten; bei SQL Server der Filegroup-Name (Standard `PRIMARY`) |
 | `--mssql-hash-partitions` | `action_required` (Standard) oder `computed_column` für die HASH-Emulation (nur `--target mssql`) |
+| `--migration-overlay` | Overlay-Datei mit den RANGE-Grenzen zu einer LIST-Wertemenge (wiederholbar); siehe [3.2](#ihre-list-partitionierung-kennt-das-ziel-nicht) |
 
 #### A.5 `schema reverse`
 

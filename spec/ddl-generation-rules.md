@@ -419,7 +419,8 @@ Besonderheiten:
   `VALUE` außerhalb von String-Literalen durch die Spalte ersetzt.
 - `DECIMAL`-Präzision > 38 → auf 38 gekappt + W139
 - Keine Tabellenoptionen (kein Engine/Charset)
-- Partitionierung: `range` über eine Spalte wird gerendert, alles andere bleibt E055 (siehe §9)
+- Partitionierung: `range` über eine Spalte wird gerendert; `list` mit einem
+  `partition-mapping`-Overlay als RANGE (W156), sonst E055 (siehe §9)
 - Skript-Darstellung mit `GO`-Batch-Trennern (siehe §13.1)
 
 ### 3.9 Oracle
@@ -1334,10 +1335,20 @@ Regeln:
 
 - Partitioniert wird über **eine** Spalte. SQL Server kennt als Strategie nur
   `range`; die beiden anderen werden darauf abgebildet:
-  - `list` über eine Zuordnung von Wertemengen auf Grenzen. Sie ist genau dann
-    möglich, wenn die Mengen in Sortierreihenfolge zusammenhängend und
-    überschneidungsfrei sind, und wird daraufhin geprüft — eine Zuordnung, die
-    anderes Routing erzeugte, wird abgelehnt.
+  - `list` über eine Zuordnung von Wertemengen auf Grenzen, die der Anwender
+    als `partition-mapping`-Overlay beisteuert (`--migration-overlay`); ohne
+    eine bleibt es bei `E055`, und der Lauf nennt den Fingerabdruck, an den zu
+    binden wäre (`W157`, INFO). Die Zuordnung ist genau dann möglich, wenn die
+    Mengen in Sortierreihenfolge zusammenhängend und überschneidungsfrei sind,
+    und wird daraufhin geprüft — eine Zuordnung, die anderes Routing erzeugte,
+    wird abgelehnt, nicht stillschweigend fallengelassen.
+
+    Übersetzt wird das **Schema**, nicht das gerenderte Statement: aus n
+    Wertemengen werden n Grenzen und **n+1** Partitionen. Die zusätzliche
+    oberhalb der letzten Grenze steht im übersetzten Modell, weil sie nach dem
+    Anlegen existiert — RANGE nimmt an, was LIST zurückwies (unterhalb der
+    ersten Grenze ebenso). Das ist eine Weitung und wird als solche gemeldet
+    (`W156`).
   - `hash` über eine persistierte berechnete Spalte, über der die RANGE-Funktion
     liegt. Die Emulation ist ein Modus mit konservativer Vorgabe, wie bei den
     nachgebauten Sequenzen. Für sie gilt zusätzlich:
@@ -2390,6 +2401,8 @@ entstehen bei `schema generate` (Generator-/Report-Regeln).
 | W140 | Warnung | `schema generate` | MSSQL: Identity `BY DEFAULT` bzw. Default auf Identity-Spalte nicht abbildbar (`SET IDENTITY_INSERT`) |
 | W141 | Warnung | `schema generate` | MSSQL: Index auf LOB-Schlüsselspalte (`NVARCHAR(MAX)`/`VARBINARY(MAX)`/`XML`) übersprungen |
 | W155 | Warnung | `schema generate` | Oracle: partieller Index als voller Index angelegt — Oracle trägt kein Index-Prädikat; bei `unique` gilt die Eindeutigkeit danach für jede Zeile |
+| W156 | Warnung | `schema generate` | SQL Server: LIST-Partitionierung aus einem `partition-mapping`-Overlay als RANGE gerendert; die übersetzte Form nimmt an, was LIST zurückwies (Auffang-Partition oberhalb der letzten Grenze) |
+| W157 | Info | `schema generate` | LIST-Partitionierung im Zieldialekt nicht ausdrückbar (E055), aber über ein `partition-mapping`-Overlay auflösbar; die Meldung nennt den Fingerabdruck, an den es zu binden ist |
 
 **E120**: Wird erzeugt, wenn `geometry_type` einen Wert enthaelt, der nicht in
 der zulaessigen Wertemenge liegt: `geometry`, `point`, `linestring`, `polygon`,

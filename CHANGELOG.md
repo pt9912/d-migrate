@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **`schema generate --migration-overlay`**: eine `list`-Partitionierung geht
+  jetzt auch auf ein Ziel, das nur Bereiche kennt. SQL Server partitioniert
+  ausschliesslich nach RANGE; bisher entstand die Tabelle dort unpartitioniert
+  (`E055`), ohne Ausweg. Ein `partition-mapping`-Overlay steuert bei, welche
+  Wertemenge welcher Grenze entspricht — **nachgeprueft, nicht geglaubt**:
+  ueberlappende Mengen, eine Grenze, die in die naechste Menge reicht, oder
+  eine uebergangene Partition brechen den Lauf mit Exit 2 ab, statt still auf
+  „dann eben unpartitioniert" auszuweichen.
+
+  Uebersetzt wird das **Schema**, nicht das einzelne Statement: damit sehen
+  Generator und Vergleich dieselbe Form, und der Abdruck haengt nicht an einer
+  Einstellung. Aus n Wertemengen werden n Grenzen und n+1 Partitionen — die
+  zusaetzliche oberhalb der letzten Grenze steht im uebersetzten Modell, weil
+  sie nach dem Anlegen existiert. RANGE nimmt an, was LIST zurueckwies; `W156`
+  sagt das, und ohne Overlay nennt `W157` den Abdruck, an den eines zu binden
+  waere.
 - **`schema reverse --migration-overlay`**: Partitionsnamen, die der Server
   nicht führt, lassen sich beisteuern. SQL Server nummeriert Partitionen; der
   Reverse vergibt `p1`, `p2`, … und meldet das mit `R346`. Die Meldung nennt

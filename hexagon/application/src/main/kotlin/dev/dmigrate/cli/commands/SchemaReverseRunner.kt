@@ -7,8 +7,6 @@ import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
 import java.nio.file.Path
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
-import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayValidationContext
-import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayValidator
 
 /**
  * Immutable DTO with all inputs for `d-migrate schema reverse`.
@@ -192,16 +190,6 @@ class SchemaReverseRunner(
         }
     }
 
-    /**
-     * Prueft die Overlays gegen das **gerade gelesene** Schema — Bindung,
-     * Abdruck und, beim LIST-Fall, die Zuordnung selbst.
-     *
-     * Vor dem Anwenden, nicht danach: ein veraltetes Overlay setzte sonst
-     * still falsche Namen, und der Anwender saehe ein Ergebnis, das aussieht
-     * wie ein gutes.
-     *
-     * `true`, wenn der Lauf abbrechen soll.
-     */
     /** Setzt die Kindnamen aus den Overlays und haengt den Hinweis an, was uebrig bleibt. */
     private fun applyPartitionOverlays(
         request: SchemaReverseRequest,
@@ -218,38 +206,17 @@ class SchemaReverseRunner(
         )
     }
 
+    /** Prueft die Overlays gegen das **gerade gelesene** Schema, bevor sie wirken. */
     private fun overlaysRejected(
         request: SchemaReverseRequest,
         schema: SchemaDefinition,
         ctx: ResolvedContext,
-    ): Boolean {
-        if (request.migrationOverlays.isEmpty()) return false
-        val expected = PartitionOverlayHint.representationFingerprint(schema, ctx.config.dialect)
-        var blocked = false
-        for (document in request.migrationOverlays) {
-            val result = MigrationOverlayValidator.validate(
-                overlay = document.overlay,
-                context = MigrationOverlayValidationContext(
-                    // Ein Reverse kennt kein Schemapaar; nur die Darstellung
-                    // ist hier ueberhaupt beantwortbar, und ein
-                    // Uebergangs-Dokument wird deshalb abgelehnt.
-                    expectedSourceFingerprint = UNAVAILABLE_FINGERPRINT,
-                    expectedTargetFingerprint = UNAVAILABLE_FINGERPRINT,
-                    expectedDialect = ctx.config.dialect.name.lowercase(),
-                    expectedRepresentationFingerprint = expected,
-                ),
-                source = document.source,
-            )
-            for (diagnostic in result.diagnostics) {
-                userFacingPrintError(
-                    "[${diagnostic.code}] ${diagnostic.message}",
-                    document.source,
-                )
-            }
-            if (result.hasBlockers) blocked = true
-        }
-        return blocked
-    }
+    ): Boolean = RepresentationOverlayGate.rejects(
+        documents = request.migrationOverlays,
+        schema = schema,
+        dialect = ctx.config.dialect,
+        printError = userFacingPrintError,
+    )
 
     private fun applySchemaMetadataOverrides(
         result: SchemaReadResult,
@@ -323,13 +290,6 @@ class SchemaReverseRunner(
     companion object {
         /** CLI exit code for cooperative cancellation per `spec/job-contract.md`. */
         const val CANCELLED_EXIT_CODE = 130
-
-        /**
-         * Ein Wert, den kein Abdruck annehmen kann. Ein Reverse kennt kein
-         * Schemapaar; ein Uebergangs-Overlay hier vorzulegen ist ein Irrtum,
-         * und der soll benannt auffallen statt zufaellig durchzugehen.
-         */
-        private const val UNAVAILABLE_FINGERPRINT = "<no transition binding in reverse>"
 
         private fun esc(s: String) = s
             .replace("\\", "\\\\")

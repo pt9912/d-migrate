@@ -10,13 +10,11 @@
 > `Transition`/`Representation`, `migration-overlay.v2`, v1-Dokumente
 > unveraendert lesbar. Dieser Slice bringt nur noch die Overlay-**Art**
 > `partition-mapping` mit ihrer Darstellungsbindung.
-> **Stand:** P0-P5 geliefert. Der **Kindnamen-Fall ist durchgaengig**:
-> `R346` nennt den Abdruck, `schema reverse --migration-overlay` liest das
-> Overlay, prueft es vor dem Anwenden und setzt die Namen. Offen: P6 (Naht in
-> Diff/Migrate/Generate, also der LIST-Fall) und P7 (CLI/Doku fuer jene
-> Befehle). `E055` bekommt seinen Hinweis bewusst **erst** mit P6 — ein
-> Verweis auf eine Datei, die der Generate-Pfad nicht liest, waere schlechter
-> als keiner.
+> **Stand:** P0-P5 und P6a geliefert. Beide Faelle wirken auf ihrem Pfad:
+> `schema reverse --migration-overlay` setzt die Kindnamen, `schema generate
+> --migration-overlay` macht aus LIST gueltiges RANGE. Offen: P6b (dieselbe
+> Uebersetzung vor dem Planen, damit ein so erzeugtes Schema auch wieder
+> migrierbar ist) und P7 (Doku fuer den Migrate-Pfad).
 
 Absorbiert die Vorabklärung `open/partition-mapping-overlay.md`.
 
@@ -156,20 +154,50 @@ sortiert werden.
   Handbuch-Weg (ohne Abdruck schreiben, Wert aus der Ablehnung übernehmen,
   erneut aufrufen) einmal ganz durchlaufen.
 
-### P6 — Naht im Diff/Migrate/Generate
+### P6a — Naht im Generate ✅ geliefert (2026-09-08)
+- `schema generate --target mssql --migration-overlay` erzeugt für ein
+  LIST-Schema gültiges RANGE-DDL statt `E055`; ohne Overlay nennt `W157` den
+  Abdruck, an den eines zu binden wäre.
+- **Übersetzt wird das Schema, nicht das Statement.** Das war die
+  Schnittentscheidung des Pakets: eine Übersetzung im Renderer hätte dieselbe
+  Rechnung an drei Stellen gebraucht (Generate, Diff, Post-Compare) und einen
+  Vergleich hinterlassen, der weiter LIST gegen RANGE hält. So sieht jede
+  Projektion dieselbe Form, und `DialectCapabilities.supportsListPartitioning`
+  entscheidet, wo sie überhaupt greift.
+- **Die Weitung steht im Modell.** Aus n Wertemengen werden n Grenzen und n+1
+  Partitionen; die zusätzliche oberhalb der letzten Grenze existiert nach dem
+  Anlegen, also führt das übersetzte Schema sie mit — sonst beschriebe es eine
+  Partition weniger, als da ist, und der nächste Vergleich fände eine
+  Abweichung, die niemand gemacht hat. `W156` sagt es.
+- **Abnahme:** Live gegen SQL Server 2022 — erzeugtes DDL ausgeführt, dann den
+  Server selbst gefragt (`$PARTITION`), wohin die Werte routen: die Mengen
+  landen in ihren Partitionen, die Grenzwerte `3`/`7` auf der rechten Seite
+  (`RANGE RIGHT`), und `9` in der Auffang-Partition. Sabotage-geprüft über die
+  Grenzrichtung und über eine weggelassene Grenze.
+
+### P6b — Naht im Diff/Migrate
 - Der Planer nutzt die Zuordnung für Identität; bei einer Zuordnung, die der
   Preflight ablehnt, entsteht ein Blocker, kein stiller Fallback.
+- Ohne dieses Paket ist ein mit P6a erzeugtes Schema **nicht wieder
+  migrierbar**: Soll sagt LIST, Ist (der Reverse) sagt RANGE, und der Vergleich
+  meldet bei jedem Lauf dieselbe Strategieänderung.
+- Die Naht ist dieselbe Übersetzung, nur früher: das SOLL-Schema wird vor dem
+  Planen übersetzt. Der Abdruck, an den das Overlay bindet, ist der des
+  **unübersetzten** Schemas (ADR 0050); der Plan hält fest, was danach auf dem
+  Ziel steht.
 - **Abnahme:** Ein `schema migrate --plan-only` mit gültigem Overlay erzeugt
   keine Drop/Create-Paare für Partitionen, die einander entsprechen; mit
-  ungültigem Overlay bricht es mit benanntem Blocker ab. `schema generate
-  --target mssql` erzeugt für ein LIST-Schema mit Overlay gültiges RANGE-DDL
-  statt `E055`.
+  ungültigem Overlay bricht es mit benanntem Blocker ab.
 
 ### P7 — CLI und Doku
 - Overlay-Weg an `schema reverse`, `schema generate` und `schema migrate`.
-- Handbuch **erst hier** — dort darf nur stehen, was wirkt.
-- **Abnahme:** Aufgabenorientierter Abschnitt („Ihre Partitionsnamen gehen
-  beim Reverse verloren → …"); Feldreferenz im Anhang; `make docs-check` grün.
+- Handbuch **erst hier** — dort darf nur stehen, was wirkt. Das hat den Schnitt
+  verschoben statt ihn zu verzögern: die Doku entstand mit dem jeweiligen
+  Paket, weil sie erst dort wahr wurde (Reverse mit P5, Generate mit P6a).
+- **Abnahme:** Aufgabenorientierte Abschnitte („Ihre Partitionsnamen gehen beim
+  Auslesen verloren", „Ihre LIST-Partitionierung kennt das Ziel nicht");
+  Feldreferenz im Anhang; `make docs-check` grün. Offen bleibt der
+  Migrate-Abschnitt — er gehört zu P6b.
 
 ## 5. Nicht-Scope
 

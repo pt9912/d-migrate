@@ -5,6 +5,7 @@ import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
+import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.choice
@@ -53,6 +54,11 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
     val sqliteNamedSequences by option("--sqlite-named-sequences",
         help = "SQLite named-sequence strategy: 'action_required' (default) or 'helper_table' for emulation")
         .choice("action_required", "helper_table")
+    val migrationOverlays by option(
+        "--migration-overlay",
+        help = "Versioned partition-mapping overlay JSON file (repeatable). Supplies the RANGE bounds for a " +
+            "LIST partitioning the target dialect cannot express; bound to the fingerprint the note names.",
+    ).path(mustExist = true, canBeDir = false, mustBeReadable = true).multiple()
     val mssqlHashPartitions by option("--mssql-hash-partitions",
         help = "SQL Server hash-partitioning strategy: 'action_required' (default) or 'computed_column' " +
             "to emulate it with a persisted computed column")
@@ -74,6 +80,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
                 mysqlNamedSequences = mysqlNamedSequences,
                 sqliteNamedSequences = sqliteNamedSequences,
                 mssqlHashPartitions = mssqlHashPartitions,
+                migrationOverlays = migrationOverlays,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
             )

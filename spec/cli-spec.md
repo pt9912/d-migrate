@@ -277,6 +277,8 @@ W200 - W299: Performance-Warnungen
 | W114 | Sequence cache value persisted as metadata only; helper-table mode does not emulate runtime preallocation |
 | W120 | SRID could not be fully transferred to target dialect (spatial best-effort, `schema generate`) |
 | W155 | Partial index created as a full index: the target dialect has no index predicate (Oracle) |
+| W156 | LIST partitioning rendered as RANGE from a `partition-mapping` overlay (SQL Server); the translated form accepts what LIST refused |
+| W157 | LIST partitioning is not expressible in the target dialect (E055) but a `partition-mapping` overlay resolves it; the note names the fingerprint to bind to |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)
 
@@ -398,8 +400,19 @@ Hinweis-/Kommentarblöcke tragen kein `GO`.
 | `--report` | Nein | Pfad | Transformations-Report separat speichern (Default: `<output>.report.yaml`) |
 | `--partition-storage` | Nein | String | Ablageort der Partitionen. Nur fuer `--target mssql`: der Name der Filegroup, auf der Partition Function und Scheme liegen (Default `PRIMARY`). Andere Ziele kennen keine Filegroups und lesen den Wert nicht. |
 | `--mssql-hash-partitions` | Nein | `action_required` / `computed_column` | SQL-Server-Strategie fuer `hash`-Partitionierung (Default: `action_required`, Abbruch mit `E055`). `computed_column` emuliert sie ueber eine persistierte berechnete Spalte und partitioniert nach ihr; die Eimerspalte tritt dabei in jeden eindeutigen Schluessel (`W145`, `E067`, `E068`, `E069`). |
+| `--migration-overlay` | Nein | Pfad, wiederholbar | `partition-mapping`-Overlay mit den RANGE-Grenzen zu einer LIST-Wertemenge. **Darstellungs**-gebunden: der Abdruck steht in der `W157`-Meldung des Laufs ohne Overlay. Geprueft **vor** dem Uebersetzen; ein Verstoss ist Exit 2. Wirkt nur, wo der Zieldialekt LIST nicht kennt (heute `mssql`) — wo er es kennt, bleibt LIST stehen. |
 
 Dialekt-Aliase: `postgres` → `postgresql`, `maria` / `mariadb` → `mysql`
+
+**LIST-Partitionierung ohne LIST-Dialekt.** Wo der Zieldialekt nur RANGE kennt
+(SQL Server), bleibt eine `list`-Partitionierung ohne Zutun `E055`; die Tabelle
+entsteht unpartitioniert. Ein `partition-mapping`-Overlay steuert bei, welche
+Wertemenge welcher Grenze entspricht — nachgeprueft, nicht geglaubt (siehe
+[Overlay-Art `partition-mapping`](#overlay-art-partition-mapping)). Uebersetzt
+wird dabei das Schema: aus n Wertemengen werden n Grenzen und n+1 Partitionen,
+und die zusaetzliche oberhalb der letzten Grenze gehoert zum Ergebnis, weil sie
+nach dem Anlegen existiert (`W156`). Ohne Overlay nennt `W157` den
+Fingerabdruck, an den eines zu binden waere.
 
 **`--spatial-profile`**: Steuert, wie `geometry`-Spalten in DDL ueberfuehrt werden.
 Das Profil ist Generator-Konfiguration und kein Teil des neutralen Schemas.

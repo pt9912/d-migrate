@@ -210,6 +210,21 @@ data class DialectCapabilities(
      */
     val namesPartitions: Boolean = true,
     /**
+     * Ob der Dialekt eine Partitionierung nach **Wertemenge** ausdruecken kann.
+     *
+     * Vier der fuenf koennen es. SQL Server nicht: dort ist Partitionierung
+     * ausschliesslich eine Folge von RANGE-Grenzen ueber einer Spalte. Eine
+     * LIST-Partitionierung ist genau dann als RANGE ausdrueckbar, wenn die
+     * Wertemengen in einer Ordnung zusammenhaengend und ueberschneidungsfrei
+     * liegen — welche Grenze zu welcher Menge gehoert, sagt aber der Anwender
+     * ueber ein `partition-mapping`-Overlay; das Werkzeug raet es nicht.
+     *
+     * Anders als [namesPartitions] ist das keine Projektionsfrage: hier geht
+     * nichts beim Zurueckgeben verloren, sondern der Dialekt kennt die Form
+     * gar nicht.
+     */
+    val supportsListPartitioning: Boolean = true,
+    /**
      * Ob der Dialekt einen reinen Datumswert von einem Zeitstempel um
      * Mitternacht unterscheiden kann.
      *
@@ -346,6 +361,7 @@ data class DialectCapabilities(
                 namesFullTextIndexes = false,
                 carriesFullTextConfiguration = false,
                 namesPartitions = false,
+                supportsListPartitioning = false,
             )
             // Objekttyp-Flags nach dem Oracle-Inventar (ADR 0052).
             // supportsCustomTypes bleibt bewusst false: Oracle-Objekttypen

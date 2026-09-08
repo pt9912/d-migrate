@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.core.validation.ValidationResult
@@ -16,6 +17,7 @@ import dev.dmigrate.driver.PreGenerationValidator
 import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SpatialProfilePolicy
+import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.mysqlContext
 import dev.dmigrate.driver.sqliteContext
 import java.nio.file.Files
@@ -37,6 +39,12 @@ enum class SplitMode {
  */
 data class SchemaGenerateRequest(
     val source: Path,
+    /**
+     * `partition-mapping`-Overlays: Partitions-Identitaet, die das Werkzeug
+     * nicht ableiten kann — hier die RANGE-Grenzen zu einer LIST-Wertemenge,
+     * wo der Zieldialekt LIST nicht kennt.
+     */
+    val migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
     val target: String,
     val spatialProfile: String? = null,
     /**
@@ -142,15 +150,21 @@ class SchemaGenerateRunner(
             return 3
         }
 
+        val prepared = when (val outcome = resolvePartitionOverlays(request, schema, dialect)) {
+            null -> return 2
+            else -> outcome
+        }
+        val effectiveSchema = prepared.schema
+
         // Driver-supplied pre-generation gate: lets a dialect emit
         // mode-specific blockers (e.g. SQLite helper_table E059 for
         // PK + SequenceNextVal) without polluting the dialect-agnostic
         // SchemaValidator. NoOp for drivers that have no such rules.
-        val preGenErrors = preGenerationValidatorLookup(dialect).validate(schema, options)
+        val preGenErrors = preGenerationValidatorLookup(dialect).validate(effectiveSchema, options)
         if (preGenErrors.isNotEmpty()) {
             printValidationResult(
                 ValidationResult(errors = preGenErrors),
-                schema,
+                effectiveSchema,
                 request.source.toString(),
             )
             return 3
@@ -161,14 +175,56 @@ class SchemaGenerateRunner(
         val effectiveOptions = options.copy(
             deferForeignKeys = request.splitMode == SplitMode.PRE_POST && generator.supportsDeferredForeignKeys,
         )
-        val result = generator.generate(schema, effectiveOptions)
+        val generated = generator.generate(effectiveSchema, effectiveOptions)
+        // Die Uebersetzung geschieht vor dem Generator; ohne diese Meldungen
+        // saehe der Anwender nur RANGE-DDL fuer ein Schema, das LIST sagt.
+        val result = generated.copy(globalNotes = generated.globalNotes + prepared.notes)
 
         val splitExit = checkSplitDiagnostics(request, result)
         if (splitExit != null) return splitExit
 
         printNotes(result, request.verbose)
 
-        return routeOutput(request, result, schema, generator, dialect, effectiveOptions)
+        return routeOutput(request, result, effectiveSchema, generator, dialect, effectiveOptions)
+    }
+
+    /** Was aus den Overlays folgt: das zu erzeugende Schema und, was dazu zu sagen ist. */
+    private data class PartitionOverlayOutcome(
+        val schema: SchemaDefinition,
+        val notes: List<TransformationNote>,
+    )
+
+    /**
+     * Prueft die Overlays, uebersetzt damit LIST nach RANGE, wo der Dialekt
+     * LIST nicht kennt, und sagt beides an.
+     *
+     * `null` heisst abbrechen: ein vorgelegtes Overlay, das nicht taugt, ist
+     * ein Nutzungsfehler. Still auf „dann eben unpartitioniert" auszuweichen
+     * ergaebe eine Tabelle, die aussieht wie die gewuenschte.
+     */
+    private fun resolvePartitionOverlays(
+        request: SchemaGenerateRequest,
+        schema: SchemaDefinition,
+        dialect: DatabaseDialect,
+    ): PartitionOverlayOutcome? {
+        if (RepresentationOverlayGate.rejects(request.migrationOverlays, schema, dialect, printError)) return null
+        return when (val applied = PartitionListRangeApplier.apply(schema, dialect, request.migrationOverlays)) {
+            is PartitionListRangeApplier.Result.Refused -> {
+                printError(
+                    "The partition mapping for '${applied.table}' cannot be expressed as RANGE: ${applied.reason}",
+                    request.source.toString(),
+                )
+                null
+            }
+
+            is PartitionListRangeApplier.Result.Applied -> PartitionOverlayOutcome(
+                schema = applied.schema,
+                notes = applied.tables.mapNotNull { table ->
+                    applied.schema.tables[table]?.partitioning?.partitions?.last()?.name
+                        ?.let { PartitionOverlayHint.listTranslationNote(table, it) }
+                } + listOfNotNull(PartitionOverlayHint.listMappingHint(applied.schema, dialect)),
+            )
+        }
     }
 
     private fun validateAndResolveOptions(request: SchemaGenerateRequest): Preflight {

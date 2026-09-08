@@ -65,6 +65,18 @@ object PartitionMappingVerifier {
         return boundsRoute(ordered, comparator)?.let { Result.Invalid(it) } ?: Result.Valid
     }
 
+    /**
+     * Die Zuordnungen in der Reihenfolge, in der ihre Mengen liegen.
+     *
+     * Nur sinnvoll fuer eine Zuordnung, die [verify] angenommen hat — bei einer
+     * verschraenkten gibt es keine Reihenfolge, die etwas bedeutet.
+     */
+    fun inOrder(mappings: List<Mapping>): List<Mapping> {
+        if (mappings.isEmpty()) return emptyList()
+        val comparator = comparatorFor(mappings.flatMap { it.values } + mappings.map { it.upperBound })
+        return mappings.sortedWith(compareBy(comparator) { it.values.min(comparator) })
+    }
+
     private fun duplicateValue(mappings: List<Mapping>): String? {
         val seen = mutableSetOf<String>()
         for (mapping in mappings) {
