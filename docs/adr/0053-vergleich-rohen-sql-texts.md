@@ -1,6 +1,6 @@
 ---
-status: proposed
-date: 2026-09-07
+status: accepted
+date: 2026-09-08
 decision-makers: pt9912
 consulted: docs/planning/open/raw-sql-text-drift.md, docs/adr/0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md
 informed: spec/ddl-generation-rules.md, docs/user/anwenderhandbuch.md
@@ -8,7 +8,7 @@ informed: spec/ddl-generation-rules.md, docs/user/anwenderhandbuch.md
 
 # Vergleich rohen SQL-Texts — Server-Form gegen Server-Form statt Normalisierung
 
-> **Status: proposed.** Vorschlag: rohen SQL-Text (Sichten-Rumpf,
+> **Status: accepted (2026-09-08).** Rohen SQL-Text (Sichten-Rumpf,
 > CHECK-Ausdruck, Index-Prädikat, Index-Ausdruck) **nicht** lokal
 > normalisieren, sondern den Vergleich so führen, dass Autorentext und
 > Katalogform nie gegeneinander stehen. Der Post-Compare vergleicht die
@@ -34,9 +34,23 @@ Oracle 23:
 | Feld | geschrieben | zurückgelesen |
 | --- | --- | --- |
 | CHECK | `age >= 18` | `((age >= 18))` |
+| CHECK mit `--`-Kommentar | `status = 'A'   -- nur aktive`⏎`AND deleted = false` | `(((status = 'A'::text) AND (deleted = false)))` |
 | Sicht | `SELECT id, email FROM customers WHERE age > 21` | mehrzeilig umbrochen, mit `;` |
-| Index-Ausdruck (PG) | `upper(nm)` | `upper(nm::text)` |
+| Index-Ausdruck (PG) | `(amt + 2)` | `(amt + 2::numeric)` |
+| Index-Ausdruck (PG) | `upper(nm)` | `upper(nm)` — **unverändert** |
 | Index-Ausdruck (Oracle) | `("amt" + 2)` | `"amt"+2` |
+
+Zwei Zeilen dieser Tabelle sind schärfer als die erste Messung und tragen die
+Entscheidung:
+
+- **Der `--`-Kommentar ist beim Zurücklesen spurlos weg.** PostgreSQL gibt den
+  Ausdruck aus seinem Parsebaum aus, nicht aus dem Eingabetext. Der Autorentext
+  ist aus der Katalogform damit **grundsätzlich nicht rekonstruierbar** — kein
+  Normalisierer, wie klug auch immer, kann diese Richtung je schließen.
+- **`upper(nm)` driftet nicht, `upper(nm::text)` schon.** Der Cast entsteht nur,
+  wenn die Spalte `varchar(n)` ist und nicht `text`. Ob ein Ausdruck driftet,
+  hängt also am **Spaltentyp** — ein Ausdruck lässt sich nicht freistehend
+  normalisieren.
 
 Die Folge ist zweifach. Der Post-Compare meldet nach jedem
 `migrate --execute` Drift. Und weil der Comparator dieselben Felder führt,
@@ -188,22 +202,30 @@ Tabellen, auf die er verweist) anwenden".
 - Ein Lauf **ohne** Herkunft (erstes Anwenden, verlorenes Artefakt) hat keine
   Grundlinie.
 
-## Vor der Umsetzung zu entscheiden
+## Die fünf offenen Punkte, entschieden
 
-1. **Wo die Herkunft liegt.** Migrations-Artefakt, oder eine eigene Ablage?
-   Das Artefakt kann verloren gehen; eine Ablage im Zielsystem wäre
-   dauerhafter, aber ein neues Objekt.
-2. **Verhalten ohne Herkunft.** Konservativ planen (also die Änderung
-   ausführen, was harmlos, aber unnötig ist), oder melden und nicht planen?
-3. **Ob der Fingerabdruck-Algorithmus angehoben werden muss.** Er steht auf
-   `v10`; ändert sich die Projektion der Textfelder, ändern sich alle
-   Abdrücke von Schemata mit Sicht oder CHECK.
-4. **Ob Option D dazukommt.** Sie schließt die Lücke, die der Vorschlag
-   offenlässt (Vergleich ohne vorherige Anwendung), kostet aber Rechte und
-   Laufzeit. Denkbar als *Zusatz*, der greift, wenn Herkunft fehlt — dann
-   trüge er genau den Fall, der sonst unentschieden bliebe.
-5. **Ob `CanonicalPayload` mitgeht.** Die Index-Identität hängt an drei
+1. **Die Herkunft liegt im Migrations-Artefakt**, nicht in einer Ablage im
+   Zielsystem. Eine Ablage wäre dauerhafter, wäre aber ein von d-migrate
+   angelegtes Objekt auf fremdem Server — eine Zusage, die dieser ADR nicht
+   geben will. Der Preis steht in Punkt 2.
+2. **Ohne Herkunft wird konservativ geplant.** Der erste Lauf gegen eine
+   bestehende Datenbank und ein Lauf mit verlorenem Artefakt führen die
+   Änderung aus, auch wenn sie vielleicht unnötig ist. Bei Sichten ist das
+   ein `CREATE OR REPLACE`, bei CHECK-Constraints ein Drop+Add — kurzzeitig
+   ohne Prüfung, aber ohne Datenverlust. Ab dem zweiten Lauf konvergiert er.
+   Die Alternative (melden statt planen) ließe eine echte Autoränderung beim
+   ersten Lauf liegen, und das fiele nur auf, wer die Warnung liest.
+3. **Der Fingerabdruck wird angehoben.** Ändert sich die Projektion der
+   Textfelder, ändern sich alle Abdrücke von Schemata mit Sicht oder CHECK.
+4. **Option D kommt als Zusatz, per Konfigurationsdatei einzuschalten.** Nicht
+   voreingestellt: der Sandkasten braucht das Recht, ein Schema anzulegen, und
+   in Oracle committet DDL implizit — ein abgebrochener Lauf hinterlässt es.
+   Wer diese Kosten tragen will und die Lücke schließen möchte (Vergleich ohne
+   vorheriges Anwenden), schaltet ihn ein; er greift dann dort, wo Herkunft
+   fehlt, statt Punkt 2.
+5. **`CanonicalPayload` geht mit.** Die Index-Identität hängt an drei
    Projektionen (Comparator, Fingerabdruck, `CanonicalPayload`); zwei zu
-   ändern und die dritte nicht bricht den dort dokumentierten Vertrag — und
-   die dritte trägt die Operations-IDs, deren Änderung bestehende Overlays
-   entwertet.
+   ändern und die dritte nicht bricht den dort dokumentierten Vertrag.
+   **Folge: bestehende Overlays werden entwertet** — ihre Operations-IDs
+   ändern sich und müssen neu erzeugt werden. Das ist der Preis dafür, den
+   Vertrag ganz statt halb zu bewegen.

@@ -121,19 +121,75 @@ anwendet). Dafuer gibt es den Praeferenz-Mechanismus
 rohen SQL-Feld als Warnung statt als Aenderung behandeln — deklariert, nicht
 geraten.
 
+## Nachgemessen (2026-09-08, PostgreSQL 16)
+
+Die erste Messung war zu freundlich. Zwei Zeilen entscheiden die Sache:
+
+| Feld | geschrieben | zurueckgelesen |
+| --- | --- | --- |
+| CHECK mit `--`-Kommentar | `status = 'A'   -- nur aktive`⏎`AND deleted = false` | `(((status = 'A'::text) AND (deleted = false)))` |
+| Index-Ausdruck | `upper(nm)` | `upper(nm)` — **unveraendert** |
+| Index-Ausdruck | `(amt + 2)` | `(amt + 2::numeric)` |
+
+- **Der Kommentar ist spurlos weg.** PostgreSQL gibt den Ausdruck aus seinem
+  Parsebaum aus, nicht aus dem Eingabetext. Der Autorentext ist aus der
+  Katalogform damit **grundsaetzlich nicht rekonstruierbar** — Richtung 1 ist
+  nicht nur unsicher, sie ist unmoeglich, und zwar in jeder denkbaren
+  Ausbaustufe.
+- **`upper(nm)` driftet gar nicht**, `upper(nm::text)` schon: der Cast entsteht
+  nur bei `varchar(n)`. Ob ein Ausdruck driftet, haengt am **Spaltentyp** — er
+  laesst sich nicht freistehend normalisieren, was Option D ihre Tabellen-
+  Skelette abverlangt.
+
 ## Stand
 
-Der Entwurf liegt als [ADR 0053](../../adr/0053-vergleich-rohen-sql-texts.md)
-(`proposed`) vor: Server-Form gegen Server-Form, Herkunft fuer die Planung,
-kein Parser. Gebaut wird davor nichts.
+[ADR 0053](../../adr/0053-vergleich-rohen-sql-texts.md) ist **accepted**; die
+fuenf offenen Punkte sind dort entschieden:
 
-## Zu entscheiden
+1. Herkunft im **Migrations-Artefakt**, nicht in einer Ablage im Zielsystem.
+2. **Ohne Herkunft wird konservativ geplant** (ausfuehren statt melden).
+3. Der **Fingerabdruck wird angehoben**.
+4. **Option D kommt als Zusatz, per Konfigurationsdatei einzuschalten** — nicht
+   voreingestellt, weil er das Recht braucht, ein Schema anzulegen.
+5. **`CanonicalPayload` geht mit** — Folge: bestehende Overlays werden
+   entwertet.
 
-1. Ob Richtung 1 sofort gebaut wird (sie steht Richtung 2 nicht im Weg).
-2. Ob Richtung 2 der Schnitt ist — das ist eine Aenderung an der **Bedeutung**
-   des Post-Compare und braucht eine ADR.
-3. Ob die Anhebung von `MigrationFingerprint.ALGORITHM` (steht auf `v10`)
-   dazugehoert.
+## Vorbedingung, die beim Aufsetzen des Baus herauskam
+
+Die Herkunft beschreibt **ein** Schema: „so stand der Text, als zuletzt
+angewandt wurde". Der Overlay-Vertrag kann das heute nicht ausdruecken.
+`MigrationOverlay` traegt `sourceFingerprint` **und** `targetFingerprint`
+flach (`migration-overlay.v1`) und gilt damit fuer ein Schema*paar*; der
+Validator lehnt ab, sobald eine der beiden Seiten nicht passt.
+
+Genau diese Frage ist mit
+[ADR 0050](../../adr/0050-overlay-bindung-uebergang-vs-darstellung.md)
+entschieden — `Representation` fuer Overlays, die ein Schema beschreiben,
+`migration-overlay.v2` — aber **noch nicht gebaut**: im Code gibt es weder
+`Representation` noch `Transition`, und `MigrationOverlayKinds` fuehrt nur
+`using-expression` und `rename-mapping`. Der Plan dafuer liegt in
+[`next/partition-mapping-overlay.md`](../next/partition-mapping-overlay.md).
+
+Ein Herkunfts-Overlay mit der v1-Form zu bauen hiesse, beide
+Fingerabdruck-Felder auf dasselbe Schema zu setzen — eine Bindung
+vorzutaeuschen, die es nicht gibt, und ADR 0050 im selben Zug zu
+unterlaufen.
+
+## Schnitt
+
+1. **Overlay v2** (ADR 0050) — sealed Bindung `Transition`/`Representation`,
+   v1-Dokumente lesen sich weiter als `Transition`. Vorbedingung fuer alles
+   Weitere; teilt sich der Slice mit `partition-mapping`.
+2. **Herkunfts-Overlay** `raw-text-provenance`, `Representation`-gebunden: je
+   Objekt und Feld der zuletzt **angewandte Autorentext** und die daraufhin
+   beobachtete **Katalogform**. Erzeugt von `migrate --execute`, gelesen ueber
+   `--migration-overlay`.
+3. **Vergleich aus der Herkunft** in allen **drei** Projektionen zugleich
+   (Comparator, `MigrationFingerprint`, `CanonicalPayload`) — Punkt 5 oben.
+   Fingerabdruck-Anhebung geht mit.
+4. **Post-Compare Server-Form gegen Server-Form** fuer die vier Felder.
+5. **Sandkasten** (Option D), per Konfigurationsdatei einzuschalten, greift
+   dort, wo Herkunft fehlt.
 
 ## Nicht betroffen
 
