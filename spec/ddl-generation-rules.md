@@ -1504,6 +1504,20 @@ Trigger-Bodies können dialektspezifische prozedurale Logik enthalten. Es gelten
 | `source_dialect` ≠ Ziel-Dialekt, Body leer/null | `action_required` (E053): Trigger muss manuell implementiert werden |
 | Kein `source_dialect` angegeben | Body wird 1:1 übernommen (Annahme: dialektneutral) |
 
+**Der Vergleich ist eine Auflösung, kein Zeichenvergleich.** `source_dialect`
+ist im Schema-Format eine freie Zeichenkette; `postgres`, `pg`, `maria`,
+`mariadb`, `sqlite3`, `sqlserver` und jede Groß-/Kleinschreibung meinen den
+Dialekt, den sie nennen — dieselbe Auflösung wie überall sonst. Ein Wert, der
+sich **nicht** auflösen lässt, gilt als fremd; geraten wird nicht.
+
+Beurteilt wird damit ausschließlich die **Herkunft**, nicht der Inhalt — anders
+als beim Sichten-Rumpf, den `assessPortability` inhaltlich prüft und teilweise
+umschreibt. Prozedurale Sprachen teilen keine Grundstruktur, und ein
+fälschlich als portabel durchgelassener Rumpf scheitert erst beim `CREATE` am
+Ziel, mitten in einem laufenden `migrate --execute`. Routinen-Rümpfe werden
+deshalb **nicht übersetzt**; wer einen fremden Rumpf übernehmen will, entfernt
+`source_dialect` und übernimmt damit ausdrücklich die Verantwortung dafür.
+
 **PostgreSQL-Sonderfall**: Trigger-Logik liegt in einer separaten Function. Wenn ein Trigger nach PostgreSQL generiert wird, erzeugt der Generator automatisch eine Trigger-Function aus dem Body:
 
 ```

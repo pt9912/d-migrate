@@ -898,7 +898,7 @@ inhaltlich; Routinen-Rümpfe prüfen alle vier Dialekte nur nach Herkunft — ei
 fremder `sourceDialect` fällt als `E053` weg, ein fehlender geht ungeprüft
 durch. Slice 9 macht die Rümpfe lesbar und schreibbar; ob und wie sie
 *übersetzt* werden, ist eine cross-dialektale Frage:
-[`routine-body-cross-dialect-portability.md`](../open/routine-body-cross-dialect-portability.md).
+[`routine-body-cross-dialect-portability.md`](routine-body-cross-dialect-portability.md).
 
 ### Slice 10 — Profiling ✅
 
@@ -1034,7 +1034,7 @@ ausgeschnitten und einzeln nachhaltbar:
 | [`mssql-srid-fidelity-data-path.md`](mssql-srid-fidelity-data-path.md) | Der Datenpfad schreibt Geometrien mit der Typ-Default-SRID; Wert-SRIDs gehen verloren. |
 | [`mssql-bulk-import-fast-path.md`](../open/mssql-bulk-import-fast-path.md) | Der Import schreibt gebatchte `INSERT`s, ohne `BULK INSERT`-Weg. Durchsatz, kein Defekt. |
 | [`mssql-import-skip-without-pk-preflight.md`](mssql-import-skip-without-pk-preflight.md) | `--on-conflict skip` ohne Primärschlüssel meldet sich im Import-Pfad später als im Transfer-Pfad. |
-| [`routine-body-cross-dialect-portability.md`](../open/routine-body-cross-dialect-portability.md) | Routinen-Rümpfe werden nach Herkunft übersprungen statt inhaltlich beurteilt. Cross-dialektal. |
+| [`routine-body-cross-dialect-portability.md`](routine-body-cross-dialect-portability.md) | Routinen-Rümpfe werden nach Herkunft übersprungen statt inhaltlich beurteilt. Cross-dialektal. |
 | [`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md) | Enum-CHECK-Kante aus Slice 5; wartet auf eine Eigner-Entscheidung zwischen drei Varianten. |
 | [`no-transaction-execution-strategy.md`](../done/no-transaction-execution-strategy.md) | `CREATE FULLTEXT INDEX` verträgt keine offene Transaktion (Slice 8d, `E072`); dieselbe Naht wartet PGs `CREATE INDEX CONCURRENTLY` ab. |
 | [`partition-boundary-change-operation.md`](../done/partition-boundary-change-operation.md) | Erledigt (v1.1.0): Grenzänderungen an Partitionen werden erkannt und als Migrations-Operation ausgeführt statt nur gemeldet. |

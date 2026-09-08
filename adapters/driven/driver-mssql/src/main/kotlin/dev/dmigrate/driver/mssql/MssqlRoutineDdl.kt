@@ -9,6 +9,8 @@ import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.model.canonicalOrder
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.RoutineBodyOrigin
 
 /**
  * T-SQL-Huelle um einen Routinen-Rumpf: `CREATE OR ALTER FUNCTION`,
@@ -144,7 +146,7 @@ internal object MssqlRoutineDdl {
                 "$kindLabel '$name' has no body and must be manually implemented.",
                 "Provide a $kind body in the schema definition.",
             )
-            sourceDialect != null && sourceDialect != "mssql" -> Unrenderable(
+            RoutineBodyOrigin.isForeign(sourceDialect, DatabaseDialect.MSSQL) -> Unrenderable(
                 "$kindLabel '$name' was written for '$sourceDialect' and must be manually rewritten " +
                     "for SQL Server.",
                 "Rewrite the $kind body using T-SQL syntax.",

@@ -84,7 +84,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
             return actionRequired(action)
         }
 
-        if (fn.sourceDialect != null && fn.sourceDialect != "mysql") {
+        if (RoutineBodyOrigin.isForeign(fn.sourceDialect, DatabaseDialect.MYSQL)) {
             val action = ManualActionRequired(
                 code = "E053", objectType = "function", objectName = name,
                 reason = "Function '$name' was written for '${fn.sourceDialect}' and must be manually rewritten for MySQL.",
@@ -146,7 +146,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
             return actionRequired(action)
         }
 
-        if (proc.sourceDialect != null && proc.sourceDialect != "mysql") {
+        if (RoutineBodyOrigin.isForeign(proc.sourceDialect, DatabaseDialect.MYSQL)) {
             val action = ManualActionRequired(
                 code = "E053", objectType = "procedure", objectName = name,
                 reason = "Procedure '$name' was written for '${proc.sourceDialect}' and must be manually rewritten for MySQL.",
@@ -198,7 +198,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
             return actionRequired(action)
         }
 
-        if (trigger.sourceDialect != null && trigger.sourceDialect != "mysql") {
+        if (RoutineBodyOrigin.isForeign(trigger.sourceDialect, DatabaseDialect.MYSQL)) {
             val action = ManualActionRequired(
                 code = "E053", objectType = "trigger", objectName = name,
                 reason = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for MySQL.",

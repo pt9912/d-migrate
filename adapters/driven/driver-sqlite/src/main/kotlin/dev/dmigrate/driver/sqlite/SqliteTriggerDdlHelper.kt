@@ -33,7 +33,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  *
  * - `forEach = STATEMENT` → `DIALECT_UNSUPPORTED_OPERATION`. SQLite
  *   only supports `FOR EACH ROW`.
- * - `sourceDialect != "sqlite"` → `SQLITE_TRIGGER_BODY_NOT_RENDERABLE`.
+ * - Fremde Herkunft ([RoutineBodyOrigin]) → `SQLITE_TRIGGER_BODY_NOT_RENDERABLE`.
  *   The bundled body grammar is dialect-specific and the renderer
  *   refuses to translate across dialects.
  * - Empty body → `ROUTINE_BODY_UNKNOWN` + `MANUAL_ACTION_REQUIRED`.

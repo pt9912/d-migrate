@@ -14,6 +14,7 @@ import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.core.model.toSqlEventClause
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.RoutineBodyOrigin
 
 /**
  * Stateless SQL fragment builders for the SQLite diff renderer.
@@ -154,7 +155,7 @@ internal class SqliteDiffSqlBuilders {
      */
     fun createTriggerSql(name: String, trigger: TriggerDefinition): String? {
         val body = trigger.body ?: return null
-        if (trigger.sourceDialect != null && trigger.sourceDialect != "sqlite") return null
+        if (RoutineBodyOrigin.isForeign(trigger.sourceDialect, DatabaseDialect.SQLITE)) return null
         val timing = trigger.timing.name
         // F4: single-event sets render as a bare keyword (SQLite has no
         // multi-event trigger grammar); foreign triggers are rejected upstream.

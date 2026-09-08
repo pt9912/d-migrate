@@ -107,3 +107,4 @@ argumentiert werden.
 | 0051 | [Server-State-Schema wird neutral gepflegt, Flyway-Migrationen werden generiert statt handgeschrieben](0051-server-state-schema-generiert-statt-handgeschrieben.md) | accepted |
 | 0052 | [Oracle als fünfter Dialekt — 23ai Free als Testziel, voller Umfang als Slices, PL/SQL-Packages ohne Liefertermin](0052-oracle-fuenfter-dialekt-scoping.md) | accepted |
 | 0053 | [Vergleich rohen SQL-Texts — Server-Form gegen Server-Form statt Normalisierung](0053-vergleich-rohen-sql-texts.md) | proposed |
+| 0054 | [Routinen-Rümpfe werden nicht übersetzt — die Herkunft entscheidet, nicht der Inhalt](0054-routinen-ruempfe-werden-nicht-uebersetzt.md) | accepted |

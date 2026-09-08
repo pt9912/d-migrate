@@ -7,6 +7,8 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.RoutineBodyOrigin
 
 /**
  * Das Urteil, ob eine Routine oder ein Trigger sich in Oracle darstellen
@@ -153,7 +155,7 @@ internal object OracleRoutineShape {
                 "$kindLabel '$name' has no body and must be manually implemented.",
                 "Provide a $kind body in the schema definition.",
             )
-            sourceDialect != null && sourceDialect != "oracle" -> Unrenderable(
+            RoutineBodyOrigin.isForeign(sourceDialect, DatabaseDialect.ORACLE) -> Unrenderable(
                 "$kindLabel '$name' was written for '$sourceDialect' and must be manually rewritten " +
                     "for Oracle.",
                 "Rewrite the $kind body using PL/SQL syntax.",

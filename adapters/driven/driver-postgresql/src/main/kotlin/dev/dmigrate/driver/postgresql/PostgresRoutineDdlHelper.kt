@@ -76,7 +76,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             return actionRequired(action)
         }
 
-        if (fn.sourceDialect != null && fn.sourceDialect != "postgresql") {
+        if (RoutineBodyOrigin.isForeign(fn.sourceDialect, DatabaseDialect.POSTGRESQL)) {
             val action = ManualActionRequired(
                 code = "E053", objectType = "function", objectName = name,
                 reason = "Function '$name' was written for '${fn.sourceDialect}' and must be manually rewritten for PostgreSQL.",
@@ -211,7 +211,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             return actionRequired(action)
         }
 
-        if (proc.sourceDialect != null && proc.sourceDialect != "postgresql") {
+        if (RoutineBodyOrigin.isForeign(proc.sourceDialect, DatabaseDialect.POSTGRESQL)) {
             val action = ManualActionRequired(
                 code = "E053", objectType = "procedure", objectName = name,
                 reason = "Procedure '$name' was written for '${proc.sourceDialect}' and must be manually rewritten for PostgreSQL.",
@@ -273,7 +273,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             return listOf(actionRequired(action))
         }
 
-        if (trigger.sourceDialect != null && trigger.sourceDialect != "postgresql") {
+        if (RoutineBodyOrigin.isForeign(trigger.sourceDialect, DatabaseDialect.POSTGRESQL)) {
             val action = ManualActionRequired(
                 code = "E053", objectType = "trigger", objectName = name,
                 reason = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for PostgreSQL.",

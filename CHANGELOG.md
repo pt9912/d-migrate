@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Routinen-Rümpfe fielen weg, wenn `source_dialect` eine Alias-Schreibweise
+  trug.** Der Wert ist im Schema-Format eine freie Zeichenkette, und die
+  Herkunftsprüfung von Funktionen, Prozeduren und Triggern verglich sie Zeichen
+  für Zeichen gegen den kanonischen Namen. `source_dialect: postgres` gegen ein
+  PostgreSQL-Ziel fiel damit mit `E053` weg, `postgresql` nicht — dasselbe für
+  `pg`, `maria`, `mariadb`, `sqlite3`, `sqlserver` und jede Großschreibung. Der
+  Sichten-Rumpf löste die Schreibweise schon immer auf; die Routinen tun es
+  jetzt auch, an einer gemeinsamen Stelle
+  ([ADR 0054](docs/adr/0054-routinen-ruempfe-werden-nicht-uebersetzt.md)).
 - **Post-Compare meldete Drift auf einer korrekt angewendeten
   Auto-Schlüsselspalte.** `identifier` + `auto_increment` und der numerische
   Typ mit `generation: identity` sind zwei Schreibweisen derselben Spalte;

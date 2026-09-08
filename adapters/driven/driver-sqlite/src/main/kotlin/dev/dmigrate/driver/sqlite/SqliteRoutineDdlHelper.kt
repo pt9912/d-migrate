@@ -135,7 +135,7 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
             return actionRequired(action)
         }
 
-        if (trigger.sourceDialect != null && trigger.sourceDialect != "sqlite") {
+        if (RoutineBodyOrigin.isForeign(trigger.sourceDialect, DatabaseDialect.SQLITE)) {
             val action = ManualActionRequired(
                 code = "E053", objectType = "trigger", objectName = name,
                 reason = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for SQLite.",

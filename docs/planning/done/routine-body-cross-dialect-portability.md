@@ -1,7 +1,7 @@
 ---
 id: routine-body-cross-dialect-portability
 title: "Routinen-Rümpfe werden bei Dialektwechsel übersprungen, nicht beurteilt"
-status: open
+status: resolved
 ---
 
 # Routinen-Rümpfe werden bei Dialektwechsel übersprungen, nicht beurteilt
@@ -32,7 +32,35 @@ Fehlerbehandlung noch Variablendeklaration. Ein Übersetzer ist ungleich mehr
 Arbeit als der Sicht-Transformer, und die konservative Ablehnung erzeugt
 wenigstens kein ungültiges DDL am Ziel.
 
-## Was der Schnitt klären muss
+## Geloest
+
+Die drei Fragen unten sind beantwortet, die Entscheidung steht in
+[`ADR 0054`](../../adr/0054-routinen-ruempfe-werden-nicht-uebersetzt.md):
+
+- **Hat eine inhaltliche Beurteilung ohne Uebersetzung Wert? Nein.** Bei
+  `SELECT` markiert `::` eine Eigenheit; in einem Rumpf ist die Abwesenheit
+  jeder Eigenheit kein Beleg fuer Gueltigkeit. `RETURN 1;` ist in PL/pgSQL
+  vollstaendig, in T-SQL nur im richtigen Rahmen, in MySQL nur innerhalb
+  `BEGIN … END`. Eine tragfaehige Beurteilung muesste die Grammatik kennen —
+  dann waere sie fast der Uebersetzer. Dazu die Asymmetrie: ein falsches
+  „portabel" scheitert erst beim `CREATE` am Ziel, mitten in einem
+  `migrate --execute` nach implizit committeten Vorgaengern; ein falsches
+  „nicht portabel" erzeugt eine benannte Nacharbeit.
+- **Was geschieht ohne `source_dialect`?** Er bleibt die Freikarte — aber als
+  benannte Entscheidung, nicht als Nebenwirkung: das ist die dokumentierte Art,
+  eine Routine von Hand zu fuehren, und ihn zu pruefen setzte die Grammatik
+  voraus, die es nach Punkt 1 nicht gibt. Der Preis steht im ADR.
+- **Ist das ein ADR? Ja** — die Grenze ist dauerhaft, nicht ein Zwischenstand.
+
+Beim Bauen fiel ein Fehler auf, den die Frage selbst nicht enthielt: die
+Herkunftspruefung verglich **Zeichen** statt aufzuloesen. `source_dialect:
+postgres` gegen ein PostgreSQL-Ziel fiel mit `E053` weg, `postgresql` nicht —
+gemessen ueber `PostgresDdlGenerator`, an allen fuenf Aliassen. Der Wert ist im
+Schema-Format eine freie Zeichenkette, und der Sichten-Pfad loeste sie schon
+immer auf. Die zehn Stellen liegen jetzt auf einer gemeinsamen
+`RoutineBodyOrigin`.
+
+## Was der Schnitt klaeren musste
 
 - **Ob eine inhaltliche Beurteilung ohne Übersetzung Wert hat.** „Dieser Rumpf
   wäre auch auf dem Ziel gültig" ist eine kleinere Frage als „übersetze ihn",
