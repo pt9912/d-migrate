@@ -223,3 +223,32 @@ Nicht MSSQL-spezifisch, auch wenn der Auslöser dort lag. Der Namensfall trifft
 jedes Ziel, das Partitionen anders identifiziert als die Quelle; der LIST-Fall
 jedes, das LIST nicht kennt. Der Plan schneidet die Arten deshalb neutral und
 belegt sie zuerst an SQL Server, weil dort beide Fälle zugleich auftreten.
+
+## Closure
+
+Alle Pakete geliefert (P0-P7). Die Overlay-Art `partition-mapping` traegt
+beide Faelle, und beide wirken auf ihrem Pfad: `schema reverse` setzt
+Kindnamen, die der Server nicht fuehrt, `schema generate` macht aus einer
+LIST-Partitionierung gueltiges RANGE, und `schema migrate` uebersetzt vor dem
+Vergleich, damit ein so erzeugtes Schema wieder migrierbar ist.
+
+Drei Dinge, die beim Bauen anders aussahen als beim Planen:
+
+- **Der Hinweis war eine Zusage.** `E055` den Fingerabdruck nennen zu lassen,
+  bevor ein Befehl das Overlay liest, haette auf eine Datei gezeigt, die
+  niemand entgegennimmt. Der Hinweis kam deshalb erst mit dem Pfad, der ihn
+  einloest — und dabei fiel auf, dass er auch danach ins Leere lief, weil der
+  Validator einen `overlayHash` verlangte, den ein Mensch nicht ausrechnen
+  kann. Die Ablehnung nennt ihn seither.
+- **Der Schaden im Migrate-Pfad war ein anderer als angenommen.** Nicht
+  Drop/Create-Paare bei jedem Lauf, sondern eine Warnung, die nie verstummt
+  und raet, eine Tabelle von Hand neu zu bauen, die genau richtig ist.
+  Gemessen, nicht vermutet.
+- **Uebersetzt wird das Schema, nicht das Statement.** Im Renderer haette
+  dieselbe Rechnung an drei Stellen gestanden und der Vergleich weiter LIST
+  gegen RANGE gehalten.
+
+Offen bleibt nichts aus diesem Schnitt. HASH war und ist Nicht-Scope
+([`mssql-dialect-scoping.md`](mssql-dialect-scoping.md), Sub-Slice 7d), und
+ein Vorschlagsmodus („so koennte die Zuordnung aussehen") ist denkbar, aber
+kein Teil dieses Plans.

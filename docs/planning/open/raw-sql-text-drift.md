@@ -168,7 +168,7 @@ entschieden — `Representation` fuer Overlays, die ein Schema beschreiben,
 `migration-overlay.v2` — aber **noch nicht gebaut**: im Code gibt es weder
 `Representation` noch `Transition`, und `MigrationOverlayKinds` fuehrt nur
 `using-expression` und `rename-mapping`. Der Plan dafuer liegt in
-[`in-progress/partition-mapping-overlay.md`](../in-progress/partition-mapping-overlay.md).
+[`done/partition-mapping-overlay.md`](../done/partition-mapping-overlay.md).
 
 Ein Herkunfts-Overlay mit der v1-Form zu bauen hiesse, beide
 Fingerabdruck-Felder auf dasselbe Schema zu setzen — eine Bindung
