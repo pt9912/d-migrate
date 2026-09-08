@@ -5,6 +5,7 @@ import org.gradle.api.tasks.bundling.Tar
 import org.gradle.api.tasks.bundling.Zip
 import java.io.File
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 plugins {
     application
@@ -231,6 +232,26 @@ dependencies {
     // ausgelagert (Phase C des Specs-Move).
 }
 
+/**
+ * Der Drittanbieter-Hinweis reist mit jedem Artefakt, das den Treiber
+ * enthaelt, dem er gilt.
+ *
+ * `ojdbc11` steht unter den Oracle Free Use Terms and Conditions; die Pflicht
+ * trifft die **Weiterverbreitung**, nicht das Repository. Die Datei nur im
+ * Repo zu fuehren erfuellt sie fuer niemanden, der ein ZIP herunterlaedt oder
+ * das Image zieht — sie gehoert deshalb in die Distribution, in den Fat-JAR,
+ * neben die Release-Assets und ins Runtime-Image (Dockerfile).
+ */
+val thirdPartyNotices = rootProject.file("THIRD-PARTY-NOTICES.md")
+
+distributions {
+    named("main") {
+        contents {
+            from(thirdPartyNotices)
+        }
+    }
+}
+
 tasks.named<Zip>("distZip") {
     archiveFileName.set(releaseZipName)
 }
@@ -241,6 +262,7 @@ tasks.named<Tar>("distTar") {
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveFileName.set(releaseJarName)
+    from(thirdPartyNotices)
     // Parquet/Hadoop-Transitive bringen den Fat-Jar ueber das 65535-
     // Entries-Limit des klassischen ZIP-Headers. Zip64 ist von JDK 7+
     // out-of-the-box lesbar; kein Kompat-Risiko fuer unsere
@@ -259,6 +281,7 @@ val stageReleaseAssets = tasks.register<Sync>("stageReleaseAssets") {
     from(tasks.named<Zip>("distZip").flatMap { it.archiveFile })
     from(tasks.named<Tar>("distTar").flatMap { it.archiveFile })
     from(tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile })
+    from(thirdPartyNotices)
 }
 
 val writeReleaseChecksums = tasks.register("writeReleaseChecksums") {
@@ -283,10 +306,44 @@ val writeReleaseChecksums = tasks.register("writeReleaseChecksums") {
     }
 }
 
+/**
+ * Faellt aus, wenn ein Release-Artefakt ohne die Drittanbieter-Hinweise
+ * hinausginge.
+ *
+ * Die Pflicht trifft die Weiterverbreitung, und verbreitet wird hier: ZIP,
+ * TAR, Fat-JAR und das Runtime-Image (dort prueft es `make docker-smoke`).
+ * Ohne diese Pruefung faellt ein entfernter `from(...)`-Aufruf erst jemandem
+ * auf, der das Artefakt schon geladen hat.
+ */
+val verifyThirdPartyNotices = tasks.register("verifyThirdPartyNotices") {
+    group = "verification"
+    description = "Fail if a staged release artefact ships without THIRD-PARTY-NOTICES.md."
+    dependsOn(stageReleaseAssets)
+    doLast {
+        val notice = "THIRD-PARTY-NOTICES.md"
+        val directory = releaseDir.get().asFile
+        if (!directory.resolve(notice).isFile) {
+            throw GradleException("$notice is missing next to the release assets in ${directory.absolutePath}")
+        }
+        val archives = directory.listFiles()
+            ?.filter { it.isFile && (it.name.endsWith(".jar") || it.name.endsWith(".zip")) }
+            ?: emptyList()
+        if (archives.isEmpty()) {
+            throw GradleException("No release archives found in ${directory.absolutePath}")
+        }
+        for (archive in archives) {
+            ZipFile(archive).use { zip ->
+                val carries = zip.entries().asSequence().any { it.name.substringAfterLast('/') == notice }
+                if (!carries) throw GradleException("${archive.name} ships without $notice")
+            }
+        }
+    }
+}
+
 tasks.register("assembleReleaseAssets") {
     group = "distribution"
     description = "Build ZIP, TAR, fat JAR, and SHA256 into build/release."
-    dependsOn(writeReleaseChecksums)
+    dependsOn(writeReleaseChecksums, verifyThirdPartyNotices)
 }
 
 

@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **Die Drittanbieter-Hinweise reisen mit den Artefakten**, nicht nur im
+  Repository. Der ausgelieferte Bundle enthält `ojdbc11` unter den Oracle Free
+  Use Terms and Conditions; die Pflicht trifft die Weiterverbreitung, und eine
+  Datei im Repository erfüllt sie für niemanden, der ein ZIP herunterlädt oder
+  das Image zieht. `THIRD-PARTY-NOTICES.md` liegt jetzt in ZIP und TAR, im
+  Fat-JAR, neben den Release-Assets und unter `/opt/d-migrate/` im
+  Runtime-Image. Zwei Gates halten das fest (`verifyThirdPartyNotices` beim
+  Bauen der Assets, `make docker-smoke` fürs Image).
 - **Der Name eines einspaltigen UNIQUE-Constraints bleibt erhalten.** Der
   Reverse faltete ihn bisher auf `column.unique` und verwarf den Katalognamen;
   ein `DROP CONSTRAINT` bekam dann einen **erfundenen** (`_unique_email`) und

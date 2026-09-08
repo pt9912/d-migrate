@@ -350,6 +350,10 @@ docker-smoke: docker-build
 	# wrong entrypoint (e.g. the ast-grep stage): `--version`/`--help` alone pass
 	# on ANY entrypoint, but `schema --help` only resolves against the real CLI.
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) schema --help
+	# Die Drittanbieter-Hinweise reisen mit dem Image, weil der Treiber es tut
+	# (ojdbc11 unter den Oracle FUTC). Eine Datei im Repository erfuellt die
+	# Pflicht fuer niemanden, der nur das Image zieht.
+	$(DOCKER) run --rm --entrypoint sh $(IMAGE):$(IMAGE_TAG) -c 'test -s /opt/d-migrate/THIRD-PARTY-NOTICES.md'
 
 clean:
 	$(GRADLE) clean

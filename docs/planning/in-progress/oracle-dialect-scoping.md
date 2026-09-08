@@ -1634,7 +1634,7 @@ Diff-Blocker und die Rollback-Umkehrung — alle fünf haben jetzt Tests.
 - ~~FUTC-Lizenztext dokumentieren~~ — **erledigt (Slice 0):**
   [`THIRD-PARTY-NOTICES.md`](../../../THIRD-PARTY-NOTICES.md) im Repo-Root.
   Die Bündelung dieser Datei in Release-Artefakten ist ein separates Thema,
-  siehe [`third-party-notices-release-bundling.md`](../open/third-party-notices-release-bundling.md).
+  siehe [`third-party-notices-release-bundling.md`](../done/third-party-notices-release-bundling.md).
 - ~~Testcontainers-Ressourcenbedarf (RAM) real messen~~ — **erledigt (Slice
   1, live entdeckt):** kein RAM-Problem, sondern ein zu knapper Default:
   `org.testcontainers.oracle.OracleContainer` setzt `withStartupTimeout` auf

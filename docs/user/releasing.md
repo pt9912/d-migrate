@@ -161,10 +161,17 @@ java -jar adapters/driving/cli/build/release/*-all.jar --help
 
 `make release-assets` baut das `release-assets`-Stage-Image
 (Default-Tag `d-migrate:release-assets`), erzeugt im Container die
-ZIP-/TAR-/Fat-JAR-/SHA256-Assets über
+ZIP-/TAR-/Fat-JAR-/SHA256-Assets sowie `THIRD-PARTY-NOTICES.md` über
 `:adapters:driving:cli:assembleReleaseAssets` und extrahiert sie via
 `docker run … | tar xf -` nach `adapters/driving/cli/build/release/` <!-- d-check:ignore (Build-Ausgabe, entsteht zur Build-Zeit; ADR 0011) -->
 (der `release-assets`-Stage tart genau dieses Verzeichnis).
+
+`assembleReleaseAssets` prüft dabei mit, dass **jedes** Archiv die
+Drittanbieter-Hinweise trägt (`verifyThirdPartyNotices`): der ausgelieferte
+Bundle enthält `ojdbc11` unter den Oracle Free Use Terms and Conditions, und
+die Pflicht trifft die Weiterverbreitung — eine Datei im Repository erfüllt
+sie für niemanden, der ein ZIP herunterlädt. Für das Runtime-Image prüft es
+`make docker-smoke`.
 
 Wichtig:
 

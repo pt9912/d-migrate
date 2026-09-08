@@ -460,6 +460,12 @@ RUN apt-get update \
 # Install the distribution produced by the `application` plugin.
 COPY --from=build /src/adapters/driving/cli/build/install/d-migrate/ /opt/d-migrate/
 
+# Drittanbieter-Hinweise reisen mit dem Image, weil der Treiber es tut: das
+# Bundle enthaelt `ojdbc11` unter den Oracle Free Use Terms and Conditions,
+# und die Pflicht trifft die Weiterverbreitung. Eine Datei im Repository
+# erfuellt sie fuer niemanden, der nur das Image zieht.
+COPY THIRD-PARTY-NOTICES.md /opt/d-migrate/THIRD-PARTY-NOTICES.md
+
 ENV PATH="/opt/d-migrate/bin:${PATH}" \
     JAVA_OPTS="-XX:+UseZGC -XX:+ZGenerational"
 
