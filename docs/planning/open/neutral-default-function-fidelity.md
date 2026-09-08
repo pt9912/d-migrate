@@ -1,10 +1,36 @@
 ---
 id: neutral-default-function-fidelity
 title: "Fremde Funktions-Defaults verlieren beim Round-Trip ihre Funktions-Natur"
-status: open
+status: resolved
 ---
 
 # Fremde Funktions-Defaults verlieren ihre Funktions-Natur
+
+> **Erledigt.**
+>
+> **Frage 1 — woran erkennt man einen Funktionsaufruf? Gar nicht, und der
+> skalare Weg soll auch nicht raten.** Der Ticket-Einwand stimmt: ein
+> Text-Default `'foo(bar)'` saehe genauso aus. Geloest ist es deshalb nicht
+> ueber ein Muster, sondern ueber die **Objektform**: der Schreiber gibt
+> einen Funktions-Default, dessen Name nicht zu den vier neutralen zaehlt,
+> als `default: { function: "newid()" }` aus, und der Leser nimmt sie
+> entgegen. Der Skalar bleibt fuer die vier eindeutigen Namen — jede
+> handgeschriebene Datei benutzt ihn weiter.
+>
+> Damit ueberlebt ein reverse-gelesenes `newid()` oder
+> `now() - interval '1 day'` den Weg durch die Schemadatei, ohne dass
+> irgendwo geraten wird.
+>
+> **Nebenbefund, mitbehoben:** PostgreSQL, MySQL und SQLite haengten an
+> **jeden** unbekannten Funktions-Default `()` an — auch an einen, der seine
+> Klammern schon trug. Aus `newid()` wurde `newid()()`. MSSQL und Oracle
+> pruefen das bereits; die drei anderen tun es jetzt auch.
+>
+> **Frage 2 — was, wenn das Ziel die Funktion nicht kennt?** Bleibt offen,
+> und zwar bewusst: die Typmapper geben eine Zeichenkette zurueck und haben
+> keinen Meldekanal. Einen durchzuziehen ist ein eigener Schnitt, und der
+> Fall ist heute nicht mehr still falsch — der Text steht im Ziel, wie jeder
+> andere rohe SQL-Text auch, und die Spec sagt es.
 
 ## Befund
 

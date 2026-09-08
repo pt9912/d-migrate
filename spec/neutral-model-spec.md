@@ -518,6 +518,31 @@ Historische `nextval(...)`-Notationen als freier Text oder FunctionCall werden
 mit E122 abgelehnt. Migration: `default: "nextval('seq')"` →
 `default: { sequence_nextval: seq }`.
 
+**Funktions-Defaults ausserhalb der vier neutralen Namen** tragen ebenfalls
+eine Objektform:
+
+```yaml
+  # Ein Funktionsaufruf, den das neutrale Modell nicht benennt
+  external_id:
+    type: text
+    default:
+      function: "newid()"
+```
+
+Als Skalar liest d-migrate nur `current_timestamp`, `current_date`,
+`current_time` und `gen_uuid` als Funktion; alles andere ist ein
+**Text-Default**. Das ist Absicht und keine Luecke: `default: "newid()"` ist
+von einem Text-Default `'newid()'` nicht zu unterscheiden, und zu raten hiesse,
+einen davon still falsch zu lesen. Der Reverse und der Schreiber benutzen
+deshalb die Objektform, sobald der Name nicht zu den vier gehoert — sonst
+verlore ein `newid()` beim Weg durch die Schemadatei seine Funktions-Natur und
+kaeme als gequoteter Text im Ziel an.
+
+Der Text der Objektform wird **wortgleich** gerendert. Traegt er bereits seine
+Klammern (`newid()`), bekommt er keine zweiten; ein nackter Name bekommt sie.
+Ob das Ziel die Funktion kennt, prueft d-migrate nicht — sie steht dort wie
+jeder andere rohe SQL-Text.
+
 ---
 
 ## 5. Custom Types

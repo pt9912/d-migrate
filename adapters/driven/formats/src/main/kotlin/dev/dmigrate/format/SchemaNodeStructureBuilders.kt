@@ -113,13 +113,30 @@ private fun buildDefault(node: ObjectNode, default: DefaultValue) {
             }
         }
         is DefaultValue.BooleanLiteral -> node.put("default", default.value)
-        is DefaultValue.FunctionCall -> node.put("default", default.name)
+        // Ein Funktionsaufruf, dessen Name nicht zu den neutralen vier zaehlt,
+        // geht als OBJEKT hinaus. Als Skalar waere er von einem Text-Default
+        // nicht zu unterscheiden -- `default: "newid()"` koennte beides sein —,
+        // und der Leser machte beim Zurueckliesen eine Zeichenkette daraus.
+        is DefaultValue.FunctionCall ->
+            if (default.name.lowercase() in SCALAR_FUNCTION_DEFAULTS) {
+                node.put("default", default.name)
+            } else {
+                node.putObject("default").put("function", default.name)
+            }
         is DefaultValue.SequenceNextVal -> {
             val defaultNode = node.putObject("default")
             defaultNode.put("sequence_nextval", default.sequenceName)
         }
     }
 }
+
+/**
+ * Die Funktions-Defaults, die als Skalar eindeutig sind: sie tragen keine
+ * Klammern und stehen im Leser auf einer Liste. Alles andere braucht die
+ * Objektform.
+ */
+private val SCALAR_FUNCTION_DEFAULTS =
+    setOf("current_timestamp", "current_date", "current_time", "gen_uuid")
 
 private fun buildReference(mapper: ObjectMapper, reference: ReferenceDefinition): ObjectNode {
     val node = mapper.createObjectNode()

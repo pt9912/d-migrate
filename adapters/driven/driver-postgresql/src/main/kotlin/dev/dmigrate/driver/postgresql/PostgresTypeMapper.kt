@@ -60,7 +60,11 @@ class PostgresTypeMapper : TypeMapper {
             "current_date" -> "CURRENT_DATE"
             "current_time" -> "CURRENT_TIME"
             "gen_uuid" -> "gen_random_uuid()"
-            else -> "${default.name}()"
+            // Der Reverse liefert einen unbekannten Funktions-Default mit
+            // Klammern (`newid()`, `now() - interval '1 day'`); nur ein
+            // nackter Name bekommt sie noch. Blind angehaengt entstuende
+            // `newid()()`.
+            else -> if (default.name.trimEnd().endsWith(")")) default.name else "${default.name}()"
         }
         is DefaultValue.SequenceNextVal -> "nextval('${default.sequenceName}')"
     }

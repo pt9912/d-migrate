@@ -100,7 +100,8 @@ private fun parseDefault(node: JsonNode?): DefaultValue? {
         node.isObject -> parseObjectDefault(node)
         else -> throw IllegalArgumentException(
             "Unsupported default node type: ${node.nodeType}. " +
-                "Supported: scalar (string, number, boolean), or object with 'sequence_nextval'."
+                "Supported: scalar (string, number, boolean), or object with " +
+                "'sequence_nextval' / 'function'."
         )
     }
 }
@@ -120,11 +121,15 @@ private fun parseObjectDefault(node: JsonNode): DefaultValue {
     if (fields.size != 1) {
         throw IllegalArgumentException(
             "Default object must have exactly one key, got ${fields.size}: ${fields.joinToString(", ")}. " +
-                "Supported: { sequence_nextval: <name> }"
+                "Supported: { sequence_nextval: <name> } or { function: <call> }"
         )
     }
     return when (val fieldName = fields.first()) {
         "sequence_nextval" -> DefaultValue.SequenceNextVal(node.get("sequence_nextval").asText())
+        // Die eindeutige Form eines Funktions-Defaults. Der skalare Weg raet
+        // bewusst nicht: `default: "newid()"` waere von einem Text-Default
+        // nicht zu unterscheiden.
+        "function" -> DefaultValue.FunctionCall(node.get("function").asText())
         "nextval" -> {
             val seqName = node.get("nextval")?.asText() ?: "<name>"
             throw IllegalArgumentException(
@@ -135,7 +140,7 @@ private fun parseObjectDefault(node: JsonNode): DefaultValue {
         }
         else -> throw IllegalArgumentException(
             "Unsupported default object form with key '$fieldName'. " +
-                "Supported: sequence_nextval, or scalar values (string, number, boolean)."
+                "Supported: sequence_nextval, function, or scalar values (string, number, boolean)."
         )
     }
 }

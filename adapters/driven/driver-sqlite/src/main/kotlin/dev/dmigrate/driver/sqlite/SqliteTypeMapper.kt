@@ -52,7 +52,11 @@ class SqliteTypeMapper : TypeMapper {
                 "substr(lower(hex(randomblob(2))),2)||'-'||" +
                 "lower(hex(randomblob(6)))" +
                 ")"
-            else -> "${default.name}()"
+            // Der Reverse liefert einen unbekannten Funktions-Default mit
+            // Klammern (`newid()`, `now() - interval '1 day'`); nur ein
+            // nackter Name bekommt sie noch. Blind angehaengt entstuende
+            // `newid()()`.
+            else -> if (default.name.trimEnd().endsWith(")")) default.name else "${default.name}()"
         }
         is DefaultValue.SequenceNextVal ->
             error("SequenceNextVal is not supported for SQLite")
