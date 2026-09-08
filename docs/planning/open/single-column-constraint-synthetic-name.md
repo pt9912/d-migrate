@@ -1,13 +1,44 @@
 ---
 id: single-column-constraint-synthetic-name
 title: "Einspaltige UNIQUE-/FK-Constraints werden mit erfundenen Namen gedroppt (dialektuebergreifend)"
-status: partially-resolved
+status: decided
 ---
 
 # Einspaltige UNIQUE-/FK-Constraints werden mit erfundenen Namen gedroppt
 
-> **Teilweise erledigt — Richtung 1 gebaut, der Rest braucht eine
-> Entscheidung.**
+> **Richtung 1 gebaut; der Rest ist entschieden (2026-09-08) und wartet nur
+> noch auf den Bau.**
+>
+> **Entschieden: der Name wird im Modell gefuehrt, und ob er zur Identitaet
+> gehoert, sagt eine Dialekt-Faehigkeit.** Nicht der Katalog-Lookup zur
+> Renderzeit — der machte den Renderer verbindungsabhaengig und braeuchte eine
+> eigene Probe-Stage.
+>
+> Der Grund, warum die Modellaenderung allein nicht reicht, steht unten: die
+> Faltung sitzt an **drei** Projektionen, und sie ist dort Absicht. Der
+> Fingerabdruck sagt es im Klartext — „the constraint name is not observable
+> state on every dialect (SQLite synthesises `fk_N`)". Ein im Modell
+> gefuehrter Name wuerde also sofort wieder weggefaltet.
+>
+> Die eigentliche Frage ist deshalb nicht „welches Feld", sondern **ob der
+> Constraint-Name beobachtbarer Zustand ist** — und die Antwort ist
+> dialektabhaengig: PostgreSQL, MySQL und SQL Server geben den vergebenen
+> Namen zurueck; SQLite synthetisiert ihn; Oracle liefert bei inline
+> deklarierten Constraints ein `SYS_C…`, das ein Soll-Schema nie tragen kann.
+>
+> Genau diese Sorte Frage beantwortet `DialectCapabilities` bereits dreimal in
+> derselben Familie — `namesFullTextIndexes`, `namesPartitions`,
+> `namesIdentitySequences`. Ein viertes Flag derselben Art nimmt den Namen
+> dort aus der Projektion, wo der Server ihn nicht fuehrt, und behaelt ihn,
+> wo er ihn fuehrt. Kein ADR noetig: die drei Vorgaenger tragen ihre
+> Begruendung ebenfalls in der Faehigkeit selbst.
+>
+> **Was dabei mit herauskommt:** `schema compare` meldet auf PostgreSQL,
+> MySQL und SQL Server einen abweichenden UNIQUE-Namen, statt zu schweigen.
+>
+> ---
+>
+> **Teilweise erledigt — Richtung 1 gebaut:**
 >
 > `NormalizedConstraints` fuehrt den Ursprungsnamen jetzt mit, und
 > `syntheticUniqueConstraint`/`syntheticFkConstraint` verwenden ihn, wenn es
