@@ -15,11 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
-- **Overlay-Art `partition-mapping`** (Format, Prüfung; die Verdrahtung an die
-  Befehle folgt). Trägt Partitions-Identität, die das Werkzeug nicht ableiten
-  kann: welchen Bezeichner das Ziel für eine Kind-Partition führt (SQL Server
-  nummeriert, ein Reverse kann `p_2024` nicht zurückgeben), und welche
-  LIST-Wertemenge welcher RANGE-Grenze entspricht.
+- **`schema reverse --migration-overlay`**: Partitionsnamen, die der Server
+  nicht führt, lassen sich beisteuern. SQL Server nummeriert Partitionen; der
+  Reverse vergibt `p1`, `p2`, … und meldet das mit `R346`. Die Meldung nennt
+  jetzt den **Fingerabdruck**, an den ein `partition-mapping`-Overlay zu binden
+  ist — bisher gab kein Befehl ihn aus, und ohne ihn nimmt der Validator kein
+  Overlay an.
+
+  Ein von Hand geschriebenes Overlay ist damit auch **abzugeben**:
+  `OVERLAY_HASH_MISSING`/`OVERLAY_HASH_MISMATCH` nennen jetzt den kanonischen
+  Abdruck des Dokuments. Bisher verlangten sie einen Wert, den der Autor
+  nirgends erfahren konnte — er ist eine Inhaltssumme, kein Geheimnis.
+
+  Geprüft wird **vor** dem Anwenden: ein veraltetes Overlay bricht mit Exit 2
+  ab, statt still falsche Namen zu setzen. `R346` verstummt nur für Tabellen,
+  die das Overlay vollständig benennt — eine halb benannte trägt weiterhin
+  geratene Namen.
+- **Overlay-Art `partition-mapping`** (Format, Prüfung; die Verdrahtung an
+  `schema generate` und `schema migrate` folgt). Trägt Partitions-Identität,
+  die das Werkzeug nicht ableiten kann: welchen Bezeichner das Ziel für eine
+  Kind-Partition führt (SQL Server nummeriert, ein Reverse kann `p_2024` nicht
+  zurückgeben), und welche LIST-Wertemenge welcher RANGE-Grenze entspricht.
 
   **Der LIST-Fall wird nachgeprüft, nicht geglaubt** — und das ist sein Wert
   gegenüber dem Namensfall: die Mengen werden sortiert, auf Überschneidung und

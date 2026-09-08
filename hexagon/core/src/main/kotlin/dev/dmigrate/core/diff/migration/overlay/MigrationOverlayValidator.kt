@@ -230,10 +230,20 @@ object MigrationOverlayValidator {
             block(MigrationOverlayDiagnostics.DIALECT_MISMATCH, "Overlay dialect '${overlay.dialect}' is not applicable")
         }
 
+        // Der Abdruck ist eine Inhaltssumme, kein Geheimnis: wer die Datei hat,
+        // kann ihn ausrechnen. Ihn zu nennen ist deshalb kein Verlust — und
+        // ohne ihn ist ein von Hand geschriebenes Overlay nicht abzugeben,
+        // weil der Autor keine Moeglichkeit hat, an den Wert zu kommen.
         if (overlay.overlayHash.isNullOrBlank()) {
-            block(MigrationOverlayDiagnostics.HASH_MISSING, "overlayHash is required")
+            block(
+                MigrationOverlayDiagnostics.HASH_MISSING,
+                "overlayHash is required; the canonical hash of this document is '$actualHash'",
+            )
         } else if (overlay.overlayHash != actualHash) {
-            block(MigrationOverlayDiagnostics.HASH_MISMATCH, "overlayHash does not match canonical overlay content")
+            block(
+                MigrationOverlayDiagnostics.HASH_MISMATCH,
+                "overlayHash does not match canonical overlay content; expected '$actualHash'",
+            )
         }
 
         for (entry in overlay.entries) {

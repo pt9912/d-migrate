@@ -10,11 +10,13 @@
 > `Transition`/`Representation`, `migration-overlay.v2`, v1-Dokumente
 > unveraendert lesbar. Dieser Slice bringt nur noch die Overlay-**Art**
 > `partition-mapping` mit ihrer Darstellungsbindung.
-> **Stand:** P0-P3 geliefert (Bindungsfrage, sealed Bindung, Overlay-Art samt
-> Eintragsform, Nachpruefung des LIST-Falls). Offen: P4-P7 — die Diagnose muss
-> den Fingerabdruck nennen, und die Naehte in Reverse, Diff/Generate und CLI
-> fehlen noch. Das Overlay ist damit vollstaendig **beschreibbar und
-> pruefbar**, aber noch von keinem Befehl konsumiert.
+> **Stand:** P0-P5 geliefert. Der **Kindnamen-Fall ist durchgaengig**:
+> `R346` nennt den Abdruck, `schema reverse --migration-overlay` liest das
+> Overlay, prueft es vor dem Anwenden und setzt die Namen. Offen: P6 (Naht in
+> Diff/Migrate/Generate, also der LIST-Fall) und P7 (CLI/Doku fuer jene
+> Befehle). `E055` bekommt seinen Hinweis bewusst **erst** mit P6 — ein
+> Verweis auf eine Datei, die der Generate-Pfad nicht liest, waere schlechter
+> als keiner.
 
 Absorbiert die Vorabklärung `open/partition-mapping-overlay.md`.
 
@@ -126,21 +128,33 @@ sortiert werden.
   Partition routen würde, abgelehnt. Property-Test über zufällige
   Mengenpartitionen: akzeptiert genau dann, wenn zusammenhängend.
 
-### P4 — Die Diagnose nennt den Fingerabdruck
-- `R346` und `E055` tragen den Fingerabdruck des Schemas, an das ein Overlay
-  zu binden wäre, samt der erwarteten Eintragsart.
+### P4 — Die Diagnose nennt den Fingerabdruck ✅ geliefert (2026-09-08)
+- `R346` trägt den Fingerabdruck des Schemas, an das ein Overlay zu binden
+  wäre, samt der erwarteten Eintragsart.
+- **`E055` bewusst noch nicht.** Der Sache nach gehört es dazu, aber der
+  Generate-Pfad liest das Overlay erst mit P6 — ein Hinweis auf eine Datei,
+  die kein Befehl entgegennimmt, wäre schlechter als keiner. Mit P6 fällt die
+  Zurückhaltung.
 - **Abnahme:** Der in der Meldung genannte Wert ist derselbe, den der
   Validator anschließend erwartet — belegt durch einen Test, der die Meldung
   parst und das daraus gebaute Overlay ohne weitere Angabe akzeptiert bekommt.
 
-### P5 — Naht im Reverse
+### P5 — Naht im Reverse ✅ geliefert (2026-09-08)
 - `schema reverse` nimmt ein Overlay entgegen und setzt die Kindnamen daraus,
   statt `p1`, `p2`, … zu vergeben. Gebunden wird an den Zustand **vor** der
   Anwendung (ADR 0050).
 - `R346` verstummt für die Kinder, die das Overlay benennt, und bleibt für
   die übrigen.
+- Beim Bauen kam heraus, dass der Hinweis allein nicht reicht: der Validator
+  verlangt `overlayHash`, und wer das Overlay von Hand schreibt, kann ihn nicht
+  ausrechnen — die Ablehnung nannte den Wert nicht. Damit war die Datei nicht
+  abzugeben, und der Hinweis aus P4 zeigte auf einen Weg, der am Schluss
+  verschlossen war. `OVERLAY_HASH_MISSING`/`OVERLAY_HASH_MISMATCH` nennen den
+  kanonischen Abdruck jetzt; er ist eine Inhaltssumme, kein Geheimnis.
 - **Abnahme:** Live gegen echtes SQL Server — partitionierte Tabelle lesen,
-  einmal ohne und einmal mit Overlay, Namen in der Ausgabe belegt.
+  einmal ohne und einmal mit Overlay, Namen in der Ausgabe belegt. Der
+  Handbuch-Weg (ohne Abdruck schreiben, Wert aus der Ablehnung übernehmen,
+  erneut aufrufen) einmal ganz durchlaufen.
 
 ### P6 — Naht im Diff/Migrate/Generate
 - Der Planer nutzt die Zuordnung für Identität; bei einer Zuordnung, die der

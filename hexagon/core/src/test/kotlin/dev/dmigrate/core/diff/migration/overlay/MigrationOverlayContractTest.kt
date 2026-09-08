@@ -103,6 +103,37 @@ class MigrationOverlayContractTest : FunSpec({
         )
     }
 
+    test("a hand-written overlay can learn its hash from the rejection") {
+        // Wer ein Overlay von Hand schreibt, kann den Abdruck nicht ausrechnen.
+        // Nennt die Ablehnung ihn nicht, ist die Datei nicht abzugeben — die
+        // Meldung muss den Wert tragen, nicht bloss seinen Namen.
+        val unsigned = unsignedUsingOverlay()
+
+        fun hashFrom(overlay: MigrationOverlay): String? =
+            MigrationOverlayValidator.validate(overlay, validationContext(), "overlays/hand.json")
+                .diagnostics
+                .firstOrNull {
+                    it.code == MigrationOverlayDiagnostics.HASH_MISSING ||
+                        it.code == MigrationOverlayDiagnostics.HASH_MISMATCH
+                }
+                ?.let { Regex("'([0-9a-f]{64})'").find(it.message)?.groupValues?.get(1) }
+
+        val fromMissing = hashFrom(unsigned)
+        fromMissing shouldBe MigrationOverlayCanonicalJson.computeHash(unsigned)
+
+        // Und der genannte Wert traegt: eingesetzt kommt dasselbe Dokument durch.
+        MigrationOverlayValidator.validate(
+            unsigned.copy(overlayHash = fromMissing),
+            validationContext(),
+            "overlays/hand.json",
+        ).hasBlockers shouldBe false
+
+        // Derselbe Dienst nach einer Aenderung an einem bereits abgedruckten
+        // Dokument — sonst muesste der Autor es neu schreiben, um den Wert zu
+        // erfahren.
+        hashFrom(unsigned.copy(overlayHash = "stale")) shouldBe MigrationOverlayCanonicalJson.computeHash(unsigned)
+    }
+
     test("F.4 canonical rename overlay binds structure fingerprints") {
         val overlay = unsignedRenameOverlay(
             entry = renameEntry(

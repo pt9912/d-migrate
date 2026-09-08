@@ -35,6 +35,7 @@ internal data class SchemaReverseOptions(
     val schemaName: String?,
     val schemaVersion: String?,
     val sqliteAutoincrementWidth: Int? = null,
+    val migrationOverlays: List<Path> = emptyList(),
     val cliContext: CliContext,
     val configPath: Path?,
 )
@@ -109,6 +110,7 @@ internal object SchemaReverseWiring {
             schemaVersion = options.schemaVersion,
             sqliteAutoincrement = ReverseAutoincrementResolver(configPathFromCli = options.configPath)
                 .resolve(options.sqliteAutoincrementWidth),
+            migrationOverlays = MigrationOverlayFileLoader.load(options.migrationOverlays),
         )
         val runner = SchemaReverseRunner(
             sourceResolver = bundle.sourceResolver,

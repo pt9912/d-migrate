@@ -29,7 +29,7 @@ Kompilierung. Wer eine geteilte Signatur im Hexagon ändert (Modell, Port,
 Fingerprint), prüft deshalb einmal ohne `MODULES` — sonst bricht der Bau erst
 in CI, an einer Aufrufstelle, die lokal nie gebaut wurde.
 
-## Zwei Gates, die der Build nicht abdeckt
+## Drei Gates, die der Build nicht abdeckt
 
 - **`make docs-check`** prüft Doku, Specs, ADRs und Planning (verlinkte
   Codepfade existieren, ADR-IDs stimmen). Läuft in CI, aber **nicht** im
@@ -39,6 +39,18 @@ in CI, an einer Aufrufstelle, die lokal nie gebaut wurde.
   `test/integration-*`-Module frei. Ohne die Property überspringt Gradle die
   Test-Tasks und meldet **trotzdem** `BUILD SUCCESSFUL` — ein grüner Lauf, der
   nichts geprüft hat. `make integration` ergänzt sie automatisch.
+- **`make doc-immutable RANGE=<base>..HEAD`** friert den Kern akzeptierter ADRs
+  ein (`status: accepted`; nur die Statuszeile darf noch auf `superseded by`
+  wechseln). Es braucht eine Commit-Range und läuft deshalb **nicht** in
+  `make docs-check` mit — ein grünes `docs-check` sagt darüber nichts. Vor dem
+  Push mit `RANGE=origin/main..HEAD` fahren.
+
+  Die Falle ist nicht der Body, sondern das Frontmatter: verschiebt sich ein
+  Plan von `next/` nach `in-progress/`, will man den `consulted:`-Pfad
+  nachziehen — und ändert damit den Kern. Der Verweis ist historisch gemeint
+  und bleibt stehen. Ist es doch passiert und gepusht, ist die Rücknahme die
+  **zweite** Kernänderung: der Lauf ist rot, der nächste Push ohne weitere
+  Berührung wieder grün.
 
 ## Grün heißt nicht geprüft
 

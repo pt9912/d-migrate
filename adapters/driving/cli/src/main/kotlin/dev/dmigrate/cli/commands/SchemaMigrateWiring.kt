@@ -225,35 +225,6 @@ internal object SchemaMigrateWiring {
         }
     }
 
-    private fun loadMigrationOverlays(paths: List<Path>): LoadedMigrationOverlays {
-        val codec = MigrationOverlayJsonCodec()
-        val documents = mutableListOf<MigrationOverlayDocument>()
-        val failures = mutableListOf<MigrationOverlayLoadFailure>()
-        paths.forEach { path ->
-            try {
-                path.inputStream().use { input ->
-                    documents += MigrationOverlayDocument(
-                        source = path.toString(),
-                        overlay = codec.read(input),
-                    )
-                }
-            } catch (e: MigrationOverlayJsonDecodeException) {
-                failures += MigrationOverlayLoadFailure(
-                    source = path.toString(),
-                    diagnosticCode = e.code,
-                )
-            } catch (_: Exception) {
-                failures += MigrationOverlayLoadFailure(
-                    source = path.toString(),
-                    diagnosticCode = MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH,
-                )
-            }
-        }
-        return LoadedMigrationOverlays(documents, failures)
-    }
-
-    private data class LoadedMigrationOverlays(
-        val documents: List<MigrationOverlayDocument>,
-        val failures: List<MigrationOverlayLoadFailure>,
-    )
+    private fun loadMigrationOverlays(paths: List<Path>): MigrationOverlayFileLoader.Loaded =
+        MigrationOverlayFileLoader.loadAll(paths)
 }

@@ -6,6 +6,9 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
 import java.nio.file.Path
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayValidationContext
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayValidator
 
 /**
  * Immutable DTO with all inputs for `d-migrate schema reverse`.
@@ -29,6 +32,12 @@ data class SchemaReverseRequest(
     // reverse-preferences slice: resolved SQLite AUTOINCREMENT-width preference
     // (CLI flag > config > default). Only the SQLite reader honours it.
     val sqliteAutoincrement: SqliteAutoincrementReverse = SqliteAutoincrementReverse.IDENTIFIER,
+    /**
+     * `partition-mapping`-Overlays, die Kindnamen beisteuern, die der Server
+     * nicht fuehrt. Darstellungs-gebunden (ADR 0050): sie beschreiben das
+     * gelesene Schema, nicht einen Uebergang.
+     */
+    val migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
 )
 
 /**
@@ -103,7 +112,14 @@ class SchemaReverseRunner(
 
         return try {
             cancellationToken.throwIfCancellationRequested()
-            val result = readSchema(request, ctx) ?: return 4
+            val read = readSchema(request, ctx) ?: return 4
+            // Die Overlays gehoeren zwischen Lesen und Schreiben: erst nach dem
+            // Lesen steht der Abdruck fest, gegen den sie gelten muessen, und
+            // vor dem Schreiben, damit ein veraltetes nicht still falsche Namen
+            // setzt. Ein abgelehntes Overlay ist ein Nutzungsfehler (Exit 2),
+            // kein Verbindungsfehler.
+            if (overlaysRejected(request, read.schema, ctx)) return 2
+            val result = applyPartitionOverlays(request, read, ctx)
             cancellationToken.throwIfCancellationRequested()
             writeSchemaFile(request, result, ctx.userFacingSource)?.let { return it }
             cancellationToken.throwIfCancellationRequested()
@@ -166,12 +182,73 @@ class SchemaReverseRunner(
                 )
                 val reader = driverLookup(ctx.config.dialect).schemaReader()
                 val result = reader.read(p, options)
+                // Erst hier steht das Schema vollstaendig — und ohne das gibt
+                // es keinen Abdruck, an den ein Overlay binden koennte.
                 applySchemaMetadataOverrides(result, request)
             }
         } catch (e: Exception) {
             userFacingPrintError("Connection or metadata error: ${e.message}", ctx.userFacingSource)
             null
         }
+    }
+
+    /**
+     * Prueft die Overlays gegen das **gerade gelesene** Schema — Bindung,
+     * Abdruck und, beim LIST-Fall, die Zuordnung selbst.
+     *
+     * Vor dem Anwenden, nicht danach: ein veraltetes Overlay setzte sonst
+     * still falsche Namen, und der Anwender saehe ein Ergebnis, das aussieht
+     * wie ein gutes.
+     *
+     * `true`, wenn der Lauf abbrechen soll.
+     */
+    /** Setzt die Kindnamen aus den Overlays und haengt den Hinweis an, was uebrig bleibt. */
+    private fun applyPartitionOverlays(
+        request: SchemaReverseRequest,
+        read: SchemaReadResult,
+        ctx: ResolvedContext,
+    ): SchemaReadResult {
+        val named = PartitionNameOverlayApplier.apply(read.schema, read.notes, request.migrationOverlays)
+        return read.copy(
+            schema = named.schema,
+            // Der Hinweis geht an die Meldungen, die NACH dem Overlay uebrig
+            // sind — wo es die Namen gesetzt hat, gibt es nichts mehr
+            // beizusteuern.
+            notes = PartitionOverlayHint.enrichReadNotes(named.notes, named.schema, ctx.config.dialect),
+        )
+    }
+
+    private fun overlaysRejected(
+        request: SchemaReverseRequest,
+        schema: SchemaDefinition,
+        ctx: ResolvedContext,
+    ): Boolean {
+        if (request.migrationOverlays.isEmpty()) return false
+        val expected = PartitionOverlayHint.representationFingerprint(schema, ctx.config.dialect)
+        var blocked = false
+        for (document in request.migrationOverlays) {
+            val result = MigrationOverlayValidator.validate(
+                overlay = document.overlay,
+                context = MigrationOverlayValidationContext(
+                    // Ein Reverse kennt kein Schemapaar; nur die Darstellung
+                    // ist hier ueberhaupt beantwortbar, und ein
+                    // Uebergangs-Dokument wird deshalb abgelehnt.
+                    expectedSourceFingerprint = UNAVAILABLE_FINGERPRINT,
+                    expectedTargetFingerprint = UNAVAILABLE_FINGERPRINT,
+                    expectedDialect = ctx.config.dialect.name.lowercase(),
+                    expectedRepresentationFingerprint = expected,
+                ),
+                source = document.source,
+            )
+            for (diagnostic in result.diagnostics) {
+                userFacingPrintError(
+                    "[${diagnostic.code}] ${diagnostic.message}",
+                    document.source,
+                )
+            }
+            if (result.hasBlockers) blocked = true
+        }
+        return blocked
     }
 
     private fun applySchemaMetadataOverrides(
@@ -246,6 +323,13 @@ class SchemaReverseRunner(
     companion object {
         /** CLI exit code for cooperative cancellation per `spec/job-contract.md`. */
         const val CANCELLED_EXIT_CODE = 130
+
+        /**
+         * Ein Wert, den kein Abdruck annehmen kann. Ein Reverse kennt kein
+         * Schemapaar; ein Uebergangs-Overlay hier vorzulegen ist ein Irrtum,
+         * und der soll benannt auffallen statt zufaellig durchzugehen.
+         */
+        private const val UNAVAILABLE_FINGERPRINT = "<no transition binding in reverse>"
 
         private fun esc(s: String) = s
             .replace("\\", "\\\\")

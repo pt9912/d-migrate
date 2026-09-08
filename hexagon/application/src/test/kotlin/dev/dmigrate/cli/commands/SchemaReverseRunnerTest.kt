@@ -5,11 +5,19 @@ import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.DatabaseConnection
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import java.nio.file.Path
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
+import dev.dmigrate.core.diff.migration.overlay.PartitionMappingOverlayEntry
 
 class SchemaReverseRunnerTest : FunSpec({
 
@@ -94,13 +102,93 @@ class SchemaReverseRunnerTest : FunSpec({
         includeAll: Boolean = false,
         schemaName: String? = null,
         schemaVersion: String? = null,
+        migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
     ) = SchemaReverseRequest(
+        migrationOverlays = migrationOverlays,
         source = source, output = output, format = format, report = report,
         outputFormat = outputFormat, quiet = quiet, verbose = verbose, includeAll = includeAll,
         schemaName = schemaName, schemaVersion = schemaVersion,
     )
 
     // ── Success ─────────────────────────────────
+
+    // ── Overlays werden geprueft, bevor sie wirken ───────────────
+
+    fun partitionOverlay(fingerprint: String) = MigrationOverlayDocument(
+        source = "overlays/names.json",
+        overlay = MigrationOverlay(
+            overlayKind = MigrationOverlayKinds.PARTITION_MAPPING,
+            binding = MigrationOverlayBinding.Representation(fingerprint),
+            dialect = "sqlite",
+            entries = listOf(
+                PartitionMappingOverlayEntry(
+                    id = "a", table = "t", sourcePartition = "p_2024", targetPartition = "p1",
+                ),
+            ),
+            createdAt = "2026-09-08T10:00:00Z",
+            createdByVersion = "d-migrate-test",
+        ).withComputedHash(),
+    )
+
+    test("a stale overlay stops the run instead of silently setting wrong names") {
+        // Der Abdruck gehoert zu einem anderen Schema. Es anzuwenden ergaebe
+        // ein Ergebnis, das aussieht wie ein gutes.
+        val errors = Capture()
+        val (runner, _, _) = buildRunner(errors = errors)
+        runner.execute(request(migrationOverlays = listOf(partitionOverlay("0000")))) shouldBe 2
+        errors.joined() shouldContain MigrationOverlayDiagnostics.STALE_SCHEMA_FINGERPRINT
+    }
+
+    test("a transition-bound overlay is refused — a reverse knows no schema pair") {
+        val errors = Capture()
+        val (runner, _, _) = buildRunner(errors = errors)
+        val transition = MigrationOverlayDocument(
+            source = "overlays/rename.json",
+            overlay = MigrationOverlay(
+                overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
+                binding = MigrationOverlayBinding.Transition("a", "b"),
+                dialect = "sqlite",
+                entries = emptyList(),
+                createdAt = "2026-09-08T10:00:00Z",
+                createdByVersion = "d-migrate-test",
+            ).withComputedHash(),
+        )
+        runner.execute(request(migrationOverlays = listOf(transition))) shouldBe 2
+        errors.joined() shouldContain "OVERLAY_STALE"
+    }
+
+    test("a matching overlay lets the run through") {
+        val matching = partitionOverlay(
+            PartitionOverlayHint.representationFingerprint(fakeResult.schema, DatabaseDialect.SQLITE),
+        )
+        val (runner, _, _) = buildRunner()
+        runner.execute(request(migrationOverlays = listOf(matching))) shouldBe 0
+    }
+
+    test("a hand-written overlay gets its hash from the refusal it triggers") {
+        // Den Weg, den das Handbuch beschreibt, einmal ganz gehen: wer die
+        // Datei selbst schreibt, kann die Pruefsumme nicht ausrechnen. Sie
+        // muss also aus der Ablehnung hervorgehen, sonst ist das Overlay
+        // nicht abzugeben.
+        val fingerprint = PartitionOverlayHint.representationFingerprint(fakeResult.schema, DatabaseDialect.SQLITE)
+        val unsigned = MigrationOverlayDocument(
+            source = "overlays/handgeschrieben.json",
+            overlay = partitionOverlay(fingerprint).overlay.copy(overlayHash = null),
+        )
+
+        val errors = Capture()
+        val (runner, _, _) = buildRunner(errors = errors)
+        runner.execute(request(migrationOverlays = listOf(unsigned))) shouldBe 2
+
+        val message = errors.joined()
+        val hash = Regex("'([0-9a-f]{64})'").find(message)?.groupValues?.get(1)
+        withClue(message) { hash.shouldNotBeNull() }
+
+        val (second, _, _) = buildRunner()
+        second.execute(
+            request(migrationOverlays = listOf(unsigned.copy(overlay = unsigned.overlay.copy(overlayHash = hash)))),
+        ) shouldBe 0
+    }
 
     test("successful reverse returns exit 0") {
         val (runner, _, _) = buildRunner()

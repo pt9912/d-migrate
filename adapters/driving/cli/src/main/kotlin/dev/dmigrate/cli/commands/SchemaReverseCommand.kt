@@ -10,6 +10,7 @@ import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
+import com.github.ajalt.clikt.parameters.options.multiple
 
 class SchemaReverseCommand : CliktCommand(name = "reverse") {
     override fun help(context: Context) = "Reverse-engineer a live database into a schema file"
@@ -35,6 +36,12 @@ class SchemaReverseCommand : CliktCommand(name = "reverse") {
             "or 64-bit biginteger+identity (faithful to SQLite's 64-bit rowid)",
     ).choice("32", "64")
 
+    val migrationOverlays by option(
+        "--migration-overlay",
+        help = "Versioned partition-mapping overlay JSON file (repeatable). Supplies partition child " +
+            "names the server does not store; bound to the fingerprint the R346 note names.",
+    ).path(mustExist = true, canBeDir = false, mustBeReadable = true).multiple()
+
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val exitCode = SchemaReverseWiring.execute(
@@ -51,6 +58,7 @@ class SchemaReverseCommand : CliktCommand(name = "reverse") {
                 schemaName = schemaName,
                 schemaVersion = schemaVersion,
                 sqliteAutoincrementWidth = sqliteAutoincrementWidth?.toInt(),
+                migrationOverlays = migrationOverlays,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
             )

@@ -514,8 +514,17 @@ denselben Regeln wie bei `data export` (§1.4), aber ohne impliziten
 | `--name` | Nein | String | Schemaname im Output statt des reverse-generierten Defaults |
 | `--version` | Nein | String | Schemaversion im Output statt `0.0.0-reverse` |
 | `--sqlite-autoincrement-width` | Nein | `32`\|`64` | SQLite-Reverse: AUTOINCREMENT-Primärschlüssel als 32-bit `identifier` (Default) oder 64-bit `biginteger`+`identity` schreiben (inhärente Mehrdeutigkeit, `dialect-preference-mechanism.md`); übersteuert `reverse.sqlite.autoincrement_width` |
+| `--migration-overlay` | Nein | Pfad, wiederholbar | `partition-mapping`-Overlay mit Kindnamen, die der Server nicht führt. **Darstellungs**-gebunden: der Abdruck steht in der `R346`-Meldung des Laufs ohne Overlay. Ein Übergangs-Overlay wird hier abgelehnt — ein Reverse kennt kein Schemapaar. Geprüft **vor** dem Anwenden; ein Verstoß ist Exit 2 |
 
 **Reverse-Ausgabe und Reverse-Report**:
+
+**Partitionsnamen aus einem Overlay.** Wo der Server Partitionen nummeriert
+(SQL Server), synthetisiert der Reverse `p1`, `p2`, … in Grenzreihenfolge und
+meldet das mit `R346`. Die Meldung nennt den Fingerabdruck, an den ein
+`partition-mapping`-Overlay zu binden ist; mit `--migration-overlay` gesetzt,
+tragen die Partitionen die Namen des Overlays. `R346` verstummt dabei nur für
+Tabellen, die das Overlay **vollständig** benennt — eine halb benannte trägt
+weiterhin geratene Namen, und die Meldung bleibt richtig.
 
 `schema reverse` erzeugt zwei getrennte Artefakte:
 
@@ -1133,6 +1142,10 @@ Regeln:
   Widerspruch und wird beim Lesen abgelehnt.
 - Ein Befehl, der Darstellungs-Overlays nicht pruefen kann, lehnt sie ab
   (`OVERLAY_REPRESENTATION_NOT_APPLICABLE`), statt zu raten.
+- `OVERLAY_HASH_MISSING` und `OVERLAY_HASH_MISMATCH` nennen den kanonischen
+  Abdruck des vorgelegten Dokuments im Meldungstext. Er ist eine Inhaltssumme,
+  kein Geheimnis — wer die Datei hat, kann ihn ausrechnen; ohne ihn waere ein
+  von Hand geschriebenes Overlay nicht abzugeben.
 
 ### Overlay-Art `partition-mapping`
 

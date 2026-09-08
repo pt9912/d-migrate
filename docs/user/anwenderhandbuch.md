@@ -434,6 +434,74 @@ triggers:
   entsteht `biginteger` mit Identity (Ziel `BIGSERIAL`/`BIGINT`). Alternativ dauerhaft
   über die Konfiguration (`reverse.sqlite.autoincrement_width: 64` in `.d-migrate.yaml`).
 
+#### Ihre Partitionsnamen gehen beim Auslesen verloren
+
+SQL Server nummeriert Partitionen — die Namen, die Sie vergeben haben, stehen
+nicht in der Datenbank. Der Reverse vergibt deshalb `p1`, `p2`, … in
+Grenzreihenfolge und sagt das mit `R346`. Wenn Sie die ursprünglichen Namen
+brauchen (etwa weil das Soll-Schema sie führt), steuern Sie sie bei — geraten
+wird nichts.
+
+1. Lesen Sie einmal **ohne** Overlay. Die `R346`-Meldung nennt den
+   Fingerabdruck, an den zu binden ist:
+
+   ```
+   INFO [R346] events: SQL Server numbers partitions; … To supply the missing
+   partition identity, write a `partition-mapping` overlay bound to
+   schemaFingerprint `a1b2…` with one entry per partition (…).
+   ```
+
+2. Schreiben Sie die Datei. `targetPartition` ist der Bezeichner, den der
+   Reverse vergeben hat, `sourcePartition` der Name, den die Partition tragen
+   soll. `overlayHash` lassen Sie zunächst weg — Schritt 3 nennt ihn Ihnen:
+
+   ```json
+   {
+     "formatVersion": "migration-overlay.v2",
+     "overlayKind": "partition-mapping",
+     "schemaFingerprint": "a1b2…",
+     "dialect": "mssql",
+     "entries": [
+       { "kind": "partition-mapping", "id": "e1", "table": "events",
+         "sourcePartition": "p_before_100", "targetPartition": "p1" },
+       { "kind": "partition-mapping", "id": "e2", "table": "events",
+         "sourcePartition": "p_100_200", "targetPartition": "p2" }
+     ],
+     "createdAt": "2026-09-08T10:00:00Z",
+     "createdByVersion": "handgeschrieben"
+   }
+   ```
+
+3. Lesen Sie erneut, diesmal mit der Datei:
+
+   ```bash
+   d-migrate schema reverse --source mssql://user@host/db \
+       --output reversed-schema.yaml --migration-overlay partitions.json
+   ```
+
+   Beim ersten Mal lehnt d-migrate ab und nennt dabei die Prüfsumme des
+   Dokuments:
+
+   ```
+   [OVERLAY_HASH_MISSING] overlayHash is required; the canonical hash of this
+   document is '9f86d0…'
+   ```
+
+   Tragen Sie den Wert als `"overlayHash": "9f86d0…"` nach und rufen Sie den
+   Befehl erneut auf. Die Prüfsumme ist kein Geheimnis, sondern eine
+   Inhaltssumme: sie hält fest, welche Fassung des Dokuments gemeint war.
+   Ändern Sie später einen Eintrag, meldet der nächste Lauf dieselbe
+   Abweichung — wieder mit dem dann gültigen Wert.
+
+**Was Sie erwarten können:** die Partitionen tragen Ihre Namen, und `R346`
+verstummt für jede Tabelle, die das Overlay **vollständig** benennt. Eine halb
+benannte behält die Meldung — dort stehen weiterhin geratene Namen.
+
+Passt der Fingerabdruck nicht mehr (das Schema hat sich geändert), bricht der
+Lauf mit Exit 2 ab und nennt den Grund, statt stillschweigend falsche Namen zu
+setzen. Lesen Sie dann erneut ohne Overlay und übernehmen Sie den neuen
+Fingerabdruck aus der Meldung.
+
 ### 3.4 Zwei Schemastände vergleichen
 
 **Ziel:** Herausfinden, worin sich zwei Schemata unterscheiden — zwei Dateien,
@@ -2768,6 +2836,8 @@ Fortschritt/Warnungen nach stderr.
 | `--include-views` / `--include-procedures` / `--include-functions` / `--include-triggers` | jeweiligen Objekttyp einschließen |
 | `--include-all` | alle optionalen Objekttypen |
 | `--name` / `--version` | Name bzw. Version im erzeugten Schema überschreiben |
+| `--sqlite-autoincrement-width` | `32` (Standard) oder `64` — Breite für SQLites `AUTOINCREMENT`-Primärschlüssel |
+| `--migration-overlay` | Overlay-Datei mit Partitionsnamen, die der Server nicht führt (wiederholbar); siehe [3.3](#ihre-partitionsnamen-gehen-beim-auslesen-verloren) |
 
 > Beispiel einer erzeugten Schema-Datei (Tabelle + Function + View + Trigger):
 > siehe [3.3](#33-eine-bestehende-datenbank-übernehmen-reverse-engineering).
