@@ -32,7 +32,7 @@ status: refuted
 > eine emulierte HASH-Partitionierung kommt als RANGE zurueck, mit anderem
 > Schluessel und einer zusaetzlichen Spalte. Das kann keine Feld-Projektion
 > heilen — eigenes Ticket:
-> [`mssql-hash-emulation-not-round-trippable.md`](../done/mssql-hash-emulation-not-round-trippable.md).
+> [`mssql-hash-emulation-not-round-trippable.md`](mssql-hash-emulation-not-round-trippable.md).
 >
 > Die dritte Frage unten (Artefakt-Kompatibilitaet) ist ebenfalls beantwortet:
 > der Rollback prueft `fingerprintAlgorithm` und meldet
@@ -69,7 +69,7 @@ Projektion, passt der gespeicherte Abdruck nicht mehr.
 
 Das ist dieselbe Erwaegung, aus der `namesIdentitySequences` fuer
 PostgreSQL auf `true` blieb (siehe
-[`pg-identity-sequence-name-fingerprint.md`](../done/pg-identity-sequence-name-fingerprint.md)) —
+[`pg-identity-sequence-name-fingerprint.md`](pg-identity-sequence-name-fingerprint.md)) —
 eine eigene Entscheidung mit eigener Migrationsfrage, kein Beifang eines
 Dialekt-Rollouts.
 

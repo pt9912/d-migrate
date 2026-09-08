@@ -5,7 +5,7 @@
 > **Herkunft:** drei Tickets, die als „derselbe Fehlertyp" zusammengelegt
 > werden sollten —
 > [`fulltext-config-fingerprint-lossy-dialects`](fulltext-config-fingerprint-lossy-dialects.md),
-> [`partition-fingerprint-lossy-dialects`](../open/partition-fingerprint-lossy-dialects.md),
+> [`partition-fingerprint-lossy-dialects`](partition-fingerprint-lossy-dialects.md),
 > [`pg-identity-sequence-name-fingerprint`](pg-identity-sequence-name-fingerprint.md).
 > Die Aufnahme hat eines davon widerlegt und dafür eine gemeinsame Ursache
 > gefunden, die größer ist als alle drei.

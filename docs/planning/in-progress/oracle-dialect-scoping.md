@@ -1107,7 +1107,7 @@ Nicht-UTC-Offset.
   hier zunächst vermutet, und zu Recht: ihre Reverse-Leser rekonstruieren
   untere Grenze und Modulus aus der Kontiguität bzw. aus `PARTITIONS n`.
   Nachgemessen und geschlossen in
-  [`partition-fingerprint-lossy-dialects.md`](../open/partition-fingerprint-lossy-dialects.md).
+  [`partition-fingerprint-lossy-dialects.md`](../done/partition-fingerprint-lossy-dialects.md).
 
 ## Slice 8 im Detail — Oracle Text
 

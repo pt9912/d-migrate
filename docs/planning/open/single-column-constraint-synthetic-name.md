@@ -57,6 +57,17 @@ status: partially-resolved
 > `OracleSingleColumnConstraintIntegrationTest` haelt die drei gemessenen
 > Aussagen fest, damit die Entscheidung nicht erneut auf Vermutungen
 > aufsetzt.
+>
+> **Unabhaengig wiedergefunden (2026-09-08)**, an PostgreSQL 16: ein
+> `CONSTRAINT uq_product_sku UNIQUE (sku)` kommt als `sku unique=true`
+> zurueck, und `constraints` fuehrt ihn gar nicht mehr — der Katalogname ist
+> vor dem Comparator weg, nicht erst in ihm. Dabei kam eine Folge heraus, die
+> oben noch nicht stand: `schema compare` gegen eine Datenbank, deren
+> UNIQUE-Constraints **anders heissen**, meldet den Unterschied nicht. Je nach
+> Anwendungsfall ist das gewollt (der Constraint ist derselbe) oder ein
+> blinder Fleck (der Name ist Teil des Vertrags, etwa fuer Anwendungen, die
+> ihn in der Fehlerbehandlung lesen). Auch diese Frage haengt an der
+> Entscheidung oben.
 
 ## Befund
 
