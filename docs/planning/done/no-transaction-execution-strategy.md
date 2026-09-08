@@ -71,7 +71,7 @@ diese Mischung bleibt abgewiesen.
 - **PostgreSQL `CREATE INDEX CONCURRENTLY`.** Der Renderer kennt die Klausel
   heute gar nicht, und sie bringt eigene Fragen mit (ein fehlgeschlagener Lauf
   hinterlässt einen `INVALID`-Index, der aufgeräumt werden will). Ausgeschnitten
-  nach [`pg-create-index-concurrently.md`](../open/pg-create-index-concurrently.md).
+  nach [`pg-create-index-concurrently.md`](pg-create-index-concurrently.md).
 - **Rückrollen über Abschnittsgrenzen hinweg.** Ein Abschnitt, der außerhalb
   einer Transaktion lief, ist nicht zurückrollbar; ein Rollback-Artefakt
   beschreibt weiterhin nur, was die Migration rückgängig machen *würde*.
@@ -104,7 +104,7 @@ Volltext-Index jetzt an, statt mit `E072` darauf zu verweisen, dass man das DDL
 selbst anwenden möge. `E072` ist damit ohne Verwendung.
 
 Offen bleibt als eigener Schnitt
-[`pg-create-index-concurrently.md`](../open/pg-create-index-concurrently.md):
+[`pg-create-index-concurrently.md`](pg-create-index-concurrently.md):
 PostgreSQL rendert die Klausel nicht, und sie bringt mit dem `INVALID`-Index
 nach einem Abbruch eine eigene Frage mit.
 

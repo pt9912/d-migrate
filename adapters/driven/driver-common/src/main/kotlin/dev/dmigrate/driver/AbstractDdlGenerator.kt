@@ -105,8 +105,7 @@ abstract class AbstractDdlGenerator(
         statements += generateProcedures(schema.procedures, skipped).withPhase(DdlPhase.POST_DATA)
         tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
 
-        // F2 (docs/planning/open/sample-db-roundtrip-findings.md): post-data views
-        // are emitted AFTER functions/aggregates/procedures. A view body is
+        // Post-data views are emitted AFTER functions/aggregates/procedures. A view body is
         // validated at CREATE time and commonly references them (e.g. an aggregate
         // like group_concat); emitting the views first made PostgreSQL reject them
         // with "function ... does not exist".

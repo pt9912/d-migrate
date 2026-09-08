@@ -82,7 +82,7 @@
 > CHECK-Ausdrücken/View-Bodies bricht nur bei Oracle, da es der einzige
 > Dialekt mit Uppercase-Faltung ist — betrifft alle fünf Dialekte
 > gleichermaßen, kein Oracle-Slice-2-Bug) als
-> [`open/oracle-uppercase-folding-unquoted-identifier-references.md`](../open/oracle-uppercase-folding-unquoted-identifier-references.md)
+> [`open/oracle-uppercase-folding-unquoted-identifier-references.md`](../done/oracle-uppercase-folding-unquoted-identifier-references.md)
 > dokumentiert statt in diesem Slice gefixt. Drei P2-Funde behoben
 > (`isLargeObject`-Enum-Fehlklassifikation, `||` aus MySQL-Quelle non-portable
 > zu Oracle, fehlende Oracle/MSSQL-Testabdeckung für den
@@ -153,7 +153,7 @@
 >   liefert nie mehr `null`, sondern bildet alle drei Zweige von
 >   `enumColumn` nach. Dieselbe Struktur existiert unverändert (und
 >   unbehoben) in `MssqlNeutralTypeCanonicalizer` —
->   [`mssql-enum-reftype-unresolved-fallback-gap.md`](../open/mssql-enum-reftype-unresolved-fallback-gap.md)
+>   [`mssql-enum-reftype-unresolved-fallback-gap.md`](../done/mssql-enum-reftype-unresolved-fallback-gap.md)
 >   dokumentiert das für den eigenen, separat zu verifizierenden Fix.
 >
 > `enumWidth` aus `OracleColumnConstraintHelper.boundedEnumColumn`
@@ -312,7 +312,7 @@
 > mit `ORA-00900` ab (in Slice 4a am Header-Kommentar gemessen). Der
 > Oracle-Treiber enthält deshalb keine Kommentar-Anweisung mehr, auch die
 > unerreichbare `DropTable`-Down-Attrappe aus 5a nicht;
-> [`diff-comment-as-statement.md`](../open/diff-comment-as-statement.md)
+> [`diff-comment-as-statement.md`](../done/diff-comment-as-statement.md)
 > hält das dialektübergreifende Muster fest.
 >
 > Ein unabhängiges Review fand einen echten Absturz: `AlterCustomType` ist
@@ -390,7 +390,7 @@
 > Oracle dort nie liefert. Zusammen mit der Beobachtung, dass
 > `NOMINVALUE`/`NOMAXVALUE` ohnehin als Zahlen materialisieren und als
 > deklarierte Schranken zurückgelesen werden, steht das in
-> [`oracle-sequence-bounds-not-round-trippable.md`](../open/oracle-sequence-bounds-not-round-trippable.md).
+> [`oracle-sequence-bounds-not-round-trippable.md`](../done/oracle-sequence-bounds-not-round-trippable.md).
 
 > **Status-Update 2026-09-06 (Slice 5e-1):** die Rename-Vorbedingung —
 > **beide** Teile des dafür geführten Tickets (Policy *und* Daten), nicht
@@ -440,7 +440,7 @@
 > Dialekt-Wächter auf. Ein Rename-Overlay, das für MSSQL eine Sicht, Sequenz,
 > Routine oder einen Trigger mappt, bricht den Lauf ab. Nicht hier behoben
 > (MSSQLs Policy-Inhalt bräuchte eigene Messungen gegen SQL Server):
-> [`mssql-object-rename-policy-missing.md`](../open/mssql-object-rename-policy-missing.md).
+> [`mssql-object-rename-policy-missing.md`](../done/mssql-object-rename-policy-missing.md).
 > Der **Absturz** selbst ist es doch: `forDialect` liefert für einen
 > Dialekt ohne Policy jetzt einen `OBJECT_RENAME_UNSUPPORTED`-Blocker
 > statt `NoSuchElementException`. Das braucht keine Messung, und einen
@@ -548,16 +548,16 @@
 > PG-Fingerabdrücke und damit die Gültigkeit erzeugter Rollback-Artefakte
 > — das ist eine Entscheidung über Artefakt-Kompatibilität, kein Beifang
 > des Oracle-Rollouts:
-> [`pg-identity-sequence-name-fingerprint.md`](../open/pg-identity-sequence-name-fingerprint.md).
+> [`pg-identity-sequence-name-fingerprint.md`](../done/pg-identity-sequence-name-fingerprint.md).
 > Der Vermerk stand im 4a-Ticket und wäre mit dessen Löschung
 > verschwunden.
 >
 > Zwei weitere Befunde als Ticket, beide dialektübergreifend und nicht von
 > diesem Slice verursacht:
-> [`migrate-spatial-profile-not-validated.md`](../open/migrate-spatial-profile-not-validated.md)
+> [`migrate-spatial-profile-not-validated.md`](../done/migrate-spatial-profile-not-validated.md)
 > (ein Tippfehler in `--spatial-profile` fällt auf dem Migrate-Pfad still
 > auf den Default zurück) und
-> [`check-preflight-probe-duplication.md`](../open/check-preflight-probe-duplication.md)
+> [`check-preflight-probe-duplication.md`](../done/check-preflight-probe-duplication.md)
 > (die fünfte zeichengleiche Kopie derselben Sonde).
 
 > **Status-Update 2026-09-06 (Slice 5e-3):** Oracle ist im
@@ -640,7 +640,7 @@
 >   `AlterColumnType`, das mit `ORACLE_ADD_IDENTITY_UNSUPPORTED` blockt
 >   (gemessen: Exit 8 gegen Exit 0). Im Fingerabdruck sind beide Formen
 >   äquivalent, im Vergleich nicht:
->   [`identity-column-shape-mismatch.md`](../open/identity-column-shape-mismatch.md).
+>   [`identity-column-shape-mismatch.md`](../done/identity-column-shape-mismatch.md).
 >
 > Der Round-Trip hängt nachweislich am `canonicalizeGeneration`-Hook aus
 > 5e-2: setzt man `namesIdentitySequences` für Oracle auf `true`, fällt er.
@@ -1016,7 +1016,7 @@ gilt eine Regel für alle vier statt einer MySQL-Sonderbehandlung.
   [`raw-sql-text-drift.md`](../open/raw-sql-text-drift.md).
 - **SQLite liest sie unvollständig zurück.** Der Katalog führt den
   Ausdruckstext nicht; er steht nur im ursprünglichen `CREATE`-Text:
-  [`sqlite-expression-index-reverse.md`](../open/sqlite-expression-index-reverse.md).
+  [`sqlite-expression-index-reverse.md`](../done/sqlite-expression-index-reverse.md).
 
 ## Slice 7 im Detail — Partitionierung
 
@@ -1190,7 +1190,7 @@ werden jetzt vorher gerendert und geprüft.
 - Die Text-Search-Konfiguration wird verworfen (`W154`), nicht auf einen
   Lexer abgebildet — aus demselben Grund; im Fingerabdruck ist sie für
   Oracle ausgeblendet, für MySQL/SQLite/SQL Server noch nicht
-  ([Ticket](../open/fulltext-config-fingerprint-lossy-dialects.md)).
+  ([Ticket](../done/fulltext-config-fingerprint-lossy-dialects.md)).
 - Das `fulltext`-Golden deckt nur den mehrspaltigen **Ablehnungs**-Fall ab,
   weil die geteilte Fixture zwei Quellspalten führt. Die erzeugte Anweisung
   selbst prüft ein Unit-Test auf denselben exakten Text; ein zusätzlicher
@@ -1616,8 +1616,8 @@ nicht konvergierenden Zustand hinterlassen:
 | `setNull` band den Spaltentyp statt des WKB | An der Bindeposition steht das BLOB-Argument des Konstruktors, nicht die Geometrie. Oracle-JDBC lehnt das mit ORA-17068 ab — **vom Integrationstest gefunden, nicht vom Review** | `Types.BLOB` für Geometriespalten, WKB ausdrücklich über `setBytes` (dasselbe Muster wie SQL Server) |
 | Der Rollback ließ den Spatial-Index stehen | `invertStatement` prüft `CREATE`-Präfixe; der Block beginnt mit `BEGIN` und fiel durch — während die Spec ein `DROP INDEX` zusagte | `OracleSpatialIndexDdl.invertedDrop` hebt das `DROP` aus dem Aufräumzweig des Blocks |
 | Der JDBC-Typname ist eignerqualifiziert | `getColumnTypeName` meldet `MDSYS.SDO_GEOMETRY`, der Katalog dagegen `SDO_GEOMETRY`. Ein exakter Vergleich hätte den **gesamten** Datenpfad still übergangen — **vom Integrationstest gefunden** | Vergleich über das letzte Namenssegment, und der gemeldete Name ist im Test festgenagelt |
-| `--spatial-profile none` wirkte auf `schema migrate` nicht mehr | Diese Zusicherung trug allein der entfernte `blockSpatial`; der Migrate-Renderer liest das Profil nicht (wie bei SQL Server) | Nicht im Slice behoben — das bestehende Ticket [`migrate-spatial-profile-not-validated.md`](../open/migrate-spatial-profile-not-validated.md) trägt jetzt die richtige Aktivierungsbedingung |
-| Der Datenpfad verliert die SRID stumm | Sie käme aus `ALL_SDO_GEOM_METADATA` des Ziels, die es für eine von d-migrate angelegte Tabelle nie gibt. `W120` entsteht nur im Generate-Pfad | Nicht im Slice behoben: der Import-Port führt keinen Meldekanal. Eigenes Ticket [`data-path-loses-geometry-srid.md`](../open/data-path-loses-geometry-srid.md), im Handbuch benannt |
+| `--spatial-profile none` wirkte auf `schema migrate` nicht mehr | Diese Zusicherung trug allein der entfernte `blockSpatial`; der Migrate-Renderer liest das Profil nicht (wie bei SQL Server) | Nicht im Slice behoben — das bestehende Ticket [`migrate-spatial-profile-not-validated.md`](../done/migrate-spatial-profile-not-validated.md) trägt jetzt die richtige Aktivierungsbedingung |
+| Der Datenpfad verliert die SRID stumm | Sie käme aus `ALL_SDO_GEOM_METADATA` des Ziels, die es für eine von d-migrate angelegte Tabelle nie gibt. `W120` entsteht nur im Generate-Pfad | Nicht im Slice behoben: der Import-Port führt keinen Meldekanal. Eigenes Ticket [`data-path-loses-geometry-srid.md`](../done/data-path-loses-geometry-srid.md), im Handbuch benannt |
 | Drei Handbuch-Stellen beschrieben den abgelösten Stand | `schema migrate` blocke „Geometrie-Spalten"; ein räumlicher Domain-Index werde ausgelassen; `R365` fehlte in der Meldungstabelle | Alle drei nachgezogen |
 | Tote Abfrage im Reverse | `GeometryMetadataRow.dimensions` las niemand, die korrelierte `TABLE(m.diminfo)`-Unterabfrage lief bei jedem Reverse umsonst | Feld und Unterabfrage entfernt |
 | Verwaister KDoc | Der Einschub von `geometryMetadata` trennte den Partitions-KDoc von seiner Funktion | Wieder zusammengeführt |

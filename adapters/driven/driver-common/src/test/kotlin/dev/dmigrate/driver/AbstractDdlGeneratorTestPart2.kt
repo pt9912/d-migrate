@@ -282,9 +282,8 @@ class AbstractDdlGeneratorTestPart2 : FunSpec({
         postStmts.any { it.sql.contains("trg_audit") } shouldBe true
     }
 
-    test("F2: post-data view is emitted AFTER the function it references") {
-        // docs/planning/open/sample-db-roundtrip-findings.md F2: a view body is
-        // validated at CREATE time, so a view referencing calc_total must be
+    test("post-data view is emitted AFTER the function it references") {
+        // A view body is validated at CREATE time, so a view referencing calc_total must be
         // emitted after the function — not before it.
         val gen = TestDdlGenerator()
         val result = gen.generate(schema(

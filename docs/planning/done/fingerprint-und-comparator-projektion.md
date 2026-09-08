@@ -4,9 +4,9 @@
 >
 > **Herkunft:** drei Tickets, die als „derselbe Fehlertyp" zusammengelegt
 > werden sollten —
-> [`fulltext-config-fingerprint-lossy-dialects`](../open/fulltext-config-fingerprint-lossy-dialects.md),
+> [`fulltext-config-fingerprint-lossy-dialects`](fulltext-config-fingerprint-lossy-dialects.md),
 > [`partition-fingerprint-lossy-dialects`](../open/partition-fingerprint-lossy-dialects.md),
-> [`pg-identity-sequence-name-fingerprint`](../open/pg-identity-sequence-name-fingerprint.md).
+> [`pg-identity-sequence-name-fingerprint`](pg-identity-sequence-name-fingerprint.md).
 > Die Aufnahme hat eines davon widerlegt und dafür eine gemeinsame Ursache
 > gefunden, die größer ist als alle drei.
 
@@ -166,7 +166,7 @@ zurückgeben kann, statt es bei jedem Lauf erneut zu planen.
   Oracle-Plan sagt jetzt das Gegenteil des alten Satzes.
 
   Der echte SQL-Server-Befund ist eigenständig abgelegt:
-  [`mssql-hash-emulation-not-round-trippable.md`](../open/mssql-hash-emulation-not-round-trippable.md)
+  [`mssql-hash-emulation-not-round-trippable.md`](mssql-hash-emulation-not-round-trippable.md)
   — eine emulierte HASH-Partitionierung kommt als RANGE zurück, mit anderem
   Schlüssel und einer zusätzlichen Spalte im Modell. Drei Abweichungen
   zugleich; keine Feld-Projektion hat dafür einen Griff.

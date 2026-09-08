@@ -4,7 +4,7 @@
 > Migrate-Test verlangt jetzt `migrateExit == 0` statt „0 oder 5" und geht
 > durch.
 >
-> **Herkunft:** [`mssql-hash-emulation-not-round-trippable`](../open/mssql-hash-emulation-not-round-trippable.md).
+> **Herkunft:** [`mssql-hash-emulation-not-round-trippable`](mssql-hash-emulation-not-round-trippable.md).
 > Beim Messen kam ein zweiter, unabhängiger Grund dazu, aus dem
 > **auch RANGE** nicht konvergiert.
 

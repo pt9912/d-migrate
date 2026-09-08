@@ -49,8 +49,7 @@ internal object ObjectRenamePolicyRegistry {
      * Programmierfehler — die Registry waechst pro Dialekt. `getValue`
      * haette daraus eine `NoSuchElementException` mitten im Planer
      * gemacht: ein Abbruch ohne Diagnose-Code, wo der Vertrag einen
-     * Blocker vorsieht. Betrifft heute MSSQL
-     * (`docs/planning/open/mssql-object-rename-policy-missing.md`).
+     * Blocker vorsieht.
      */
     fun forDialect(dialect: RenameProjectionDialect): ObjectRenamePolicy =
         policies[dialect] ?: UnsupportedObjectRenamePolicy(dialect)

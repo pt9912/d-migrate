@@ -256,8 +256,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         trigger: TriggerDefinition,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        // F1 (docs/planning/open/sample-db-roundtrip-findings.md): PostgreSQL has a
-        // per-table trigger namespace, so emit the BARE trigger name — not the
+        // PostgreSQL has a per-table trigger namespace, so emit the BARE trigger name — not the
         // canonical `table::name` key, which would round-trip `last_updated` into a
         // literal trigger named `users::last_updated`. The key disambiguates
         // identically-named triggers across tables in the model; it must not leak

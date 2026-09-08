@@ -19,9 +19,7 @@ import dev.dmigrate.driver.metadata.SchemaReaderUtils
  * type string cannot transport: [NeutralType.Geometry] (subtype + SRID
  * travel through the column SRID attribute) and [NeutralType.Enum] with
  * `refType` (custom-type path). Inline enums and `fulltext` go through the
- * composition — the migrate path renders both as TEXT (AP0-belegt; die
- * generate/migrate-Enum-Divergenz trackt
- * `docs/planning/open/enum-generate-silent-degradation.md`).
+ * composition — the migrate path renders both as TEXT.
  */
 internal object MysqlNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
 

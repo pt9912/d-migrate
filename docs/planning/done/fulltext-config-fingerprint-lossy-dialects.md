@@ -37,7 +37,7 @@ fuehrt das" —, obwohl sie es nicht tun.
 ## Warum es nicht im Oracle-Slice mitgemacht wurde
 
 Dieselbe Erwaegung wie bei
-[`partition-fingerprint-lossy-dialects.md`](partition-fingerprint-lossy-dialects.md)
+[`partition-fingerprint-lossy-dialects.md`](../open/partition-fingerprint-lossy-dialects.md)
 und `namesIdentitySequences`: die Fingerabdruecke dieser Dialekte zu aendern
 **entwertet bereits erzeugte Rollback-Artefakte**, die ihren
 `postUpFingerprint` tragen. Fuer Oracle war der Pfad bis zu diesem Slice
