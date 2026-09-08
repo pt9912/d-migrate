@@ -57,7 +57,13 @@ class OracleSchemaGenerateE2ETest : FunSpec({
         ddl shouldContain "\"email\" VARCHAR2(254) NOT NULL CONSTRAINT \"uq_customers_email\" UNIQUE"
         ddl shouldContain "CONSTRAINT \"fk_orders_customer_id\" FOREIGN KEY (\"customer_id\") REFERENCES \"customers\" (\"id\")"
         ddl shouldContain "CREATE INDEX \"idx_orders_customer\" ON \"orders\" (\"customer_id\");"
-        ddl shouldContain "CREATE OR REPLACE FORCE VIEW \"active_customers\" AS\nSELECT id, email FROM customers;"
+        // Der Rumpf steht unquotiert im Schema (`SELECT id, email FROM
+        // customers`); Oracle faltet unquotierte Bezeichner auf Grossschrift
+        // und faende die klein angelegten Spalten nicht (ORA-00904). Der
+        // Requoter setzt deshalb die Anfuehrungszeichen, die das Schema kennt.
+        ddl shouldContain
+            "CREATE OR REPLACE FORCE VIEW \"active_customers\" AS\n" +
+            "SELECT \"id\", \"email\" FROM \"customers\";"
         // Der `/`-Trenner steht genau hinter dem PL/SQL-Block und nirgends
         // sonst. Hinter einer `;`-terminierten Anweisung fuehrte er den Puffer
         // ein ZWEITES Mal aus -- anders als T-SQLs `GO`, das nur einen Batch
@@ -90,7 +96,9 @@ class OracleSchemaGenerateE2ETest : FunSpec({
         migrations shouldHaveSize 1
         val migration = migrations.single().readText()
         migration shouldContain "CREATE TABLE \"customers\" ("
-        migration shouldContain "CREATE OR REPLACE FORCE VIEW \"active_customers\" AS\nSELECT id, email FROM customers"
+        migration shouldContain
+            "CREATE OR REPLACE FORCE VIEW \"active_customers\" AS\n" +
+            "SELECT \"id\", \"email\" FROM \"customers\""
     }
 
     listOf(

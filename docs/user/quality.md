@@ -219,8 +219,9 @@ make sample-db-spatial-smoke        # Geometrie + SRID, PostGIS und MySQL
 make sample-db-spatial-ora-smoke    # SRID PostGIS -> Oracle (eigener Dienst)
 ```
 
-Die Zugangsdaten stehen in `examples/sample-db/.env`; fehlt die Datei,
-legt der jeweilige Smoke sie aus `.env.example` an. Es sind
+Die Zugangsdaten stehen in einer `.env` neben
+`examples/sample-db/.env.example`; fehlt sie, legt der jeweilige Smoke sie
+aus dieser Vorlage an. Es sind
 **Testzugangsdaten** — nicht für den Produktivbetrieb.
 
 Aufräumen — `-v` verwirft auch die Datenvolumes, der nächste Lauf beginnt
