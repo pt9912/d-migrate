@@ -250,7 +250,13 @@ T-SQL-Quoting.
 
 - `hierarchyid`, `sql_variant`, `rowversion`/`timestamp` und CLR-UDTs fallen
   auf `Text()` + R301.
-- Computed Columns werden als normale Spalten gelesen (R343).
+- Computed Columns werden als normale Spalten gelesen (R343). Dieselbe Meldung
+  gilt fuer PostgreSQL (`GENERATED ALWAYS AS (…) STORED`), MySQL (`STORED`/
+  `VIRTUAL GENERATED`) und Oracles virtuelle Spalten — das neutrale Modell
+  fuehrt fuer alle vier keine Form, `ColumnGeneration` kennt nur `Identity`.
+  **SQLite ist der Sonderfall (R367):** dort blendet `PRAGMA table_info` die
+  Spalte ganz aus, sie fehlt also nicht nur in ihrem Ausdruck, sondern im
+  Modell — ein Vergleich plant sie bei jedem Lauf erneut als fehlend.
 - Collations werden nicht modelliert (Scoping-Entscheidung).
 
 ### 6.4 Spatial: `geometry` vs. `geography`

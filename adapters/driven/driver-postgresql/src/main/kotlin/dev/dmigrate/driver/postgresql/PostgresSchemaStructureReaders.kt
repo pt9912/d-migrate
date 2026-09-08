@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
+import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 
 internal fun readPostgresTables(
     session: JdbcOperations,
@@ -48,6 +49,11 @@ private fun readPostgresTable(
         val columnName = row["column_name"] as String
         val isPrimaryKeyColumn = columnName in primaryKeyColumns
         val isIdentity = (row["is_identity"] as? String) == "YES"
+        if ((row["is_generated"] as? String) == "ALWAYS") {
+            notes += GeneratedColumnNotes.expressionDropped(
+                tableName, columnName, row["generation_expression"] as? String,
+            )
+        }
         val mapping = PostgresTypeMapping.mapColumn(
             PostgresTypeMapping.ColumnInput(
                 dataType = row["data_type"] as String,

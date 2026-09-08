@@ -47,6 +47,30 @@ object SqliteMetadataQueries {
         return rows.map { (it["name"] as String) to (it["sql"] as? String ?: "") }
     }
 
+    /**
+     * Die **generierten** Spalten der Tabelle, mit ihrer Art (`STORED` /
+     * `VIRTUAL`).
+     *
+     * `PRAGMA table_info` blendet sie aus — sie zaehlen dort als versteckt und
+     * fehlen deshalb im Reverse ganz, nicht nur in ihrem Ausdruck.
+     * `table_xinfo` liefert dieselben Zeilen plus `hidden`: `2` fuer eine
+     * virtuelle, `3` fuer eine gespeicherte generierte Spalte (`1` sind die
+     * versteckten Spalten virtueller Tabellen und gehoeren nicht dazu).
+     */
+    fun listGeneratedColumns(session: JdbcMetadataSession, table: String): Map<String, String> {
+        val rows = session.queryList(
+            "PRAGMA table_xinfo(${SqlIdentifiers.quoteStringLiteral(table, DatabaseDialect.SQLITE)})",
+        )
+        return rows.mapNotNull { row ->
+            val kind = when ((row["hidden"] as? Number)?.toInt()) {
+                GENERATED_VIRTUAL -> "VIRTUAL"
+                GENERATED_STORED -> "STORED"
+                else -> null
+            }
+            kind?.let { (row["name"] as String) to it }
+        }.toMap()
+    }
+
     fun listColumns(session: JdbcMetadataSession, table: String): List<ColumnProjection> {
         val rows = session.queryList("PRAGMA table_info(${SqlIdentifiers.quoteStringLiteral(table, DatabaseDialect.SQLITE)})")
         return rows.map { row ->
@@ -282,4 +306,10 @@ object SqliteMetadataQueries {
         "cycle_enabled",
         "cache_size",
     )
+
+    /** `PRAGMA table_xinfo.hidden` fuer eine virtuelle generierte Spalte. */
+    private const val GENERATED_VIRTUAL = 2
+
+    /** `PRAGMA table_xinfo.hidden` fuer eine gespeicherte generierte Spalte. */
+    private const val GENERATED_STORED = 3
 }

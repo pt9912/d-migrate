@@ -22,6 +22,7 @@ import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 import java.sql.Connection
+import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 
 /**
  * Oracle [SchemaReader]: Tabellen (Spalten, PK, FKs, Unique-/Nicht-Unique-
@@ -93,6 +94,9 @@ class OracleSchemaReader(
 
         val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indexScan.indices)
         val pkColumns = primaryKey.toSet()
+        // Dieselbe Abfrage, die der Schreibpfad benutzt, um nicht in virtuelle
+        // Spalten zu schreiben. Der Lesepfad wusste bisher nichts von ihnen.
+        val virtualColumns = OracleMetadataQueries.virtualColumns(session, schema, table)
 
         val columns = columnRows.associate { row ->
             val mapping = OracleTypeMapping.mapColumn(
@@ -109,6 +113,10 @@ class OracleSchemaReader(
                 ),
             )
             mapping.note?.let { notes += it }
+            if (row.name in virtualColumns) {
+                // Der Ausdruck einer virtuellen Spalte steht in `data_default`.
+                notes += GeneratedColumnNotes.expressionDropped(table, row.name, row.defaultDefinition)
+            }
             row.name to ColumnDefinition(
                 type = mapping.type,
                 // PK-Spalten folgen der Reverse-Konvention required=false/

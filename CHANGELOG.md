@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **Berechnete Spalten fallen nicht mehr stumm weg.** Eine Spalte mit
+  `GENERATED ALWAYS AS (…)` kommt als gewöhnliche Spalte zurück — das neutrale
+  Modell führt dafür keine Form. Gemeldet hat das bisher nur SQL Server
+  (`R343`); PostgreSQL, MySQL und Oracle schwiegen. Jetzt meldet es jeder
+  Reverse, mit demselben Code und aus einer gemeinsamen Stelle.
+
+  **SQLite bekommt einen eigenen Code (`R367`)**, weil die Folge dort eine
+  andere ist: `PRAGMA table_info` blendet generierte Spalten aus, sie fehlen
+  also im Modell **ganz**. Ein `schema generate` erzeugte daraus eine Tabelle
+  mit fehlenden Spalten, und ein Vergleich plant sie bei jedem Lauf erneut.
+  Die Modellierung selbst bleibt offen; die Meldung macht aus dem stillen
+  Fehlschlag einen benannten.
 - **Migrations-Overlays tragen eine benannte Bindung** (`migration-overlay.v2`).
   Bisher trug jedes Dokument `sourceFingerprint` **und** `targetFingerprint`
   und galt damit für ein Schema*paar*. Das passt für Aussagen über einen

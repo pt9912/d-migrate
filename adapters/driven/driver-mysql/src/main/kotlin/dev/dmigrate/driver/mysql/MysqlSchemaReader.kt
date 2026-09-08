@@ -9,6 +9,7 @@ import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 import java.sql.Connection
+import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 
 class MysqlSchemaReader(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
@@ -159,6 +160,12 @@ class MysqlSchemaReader(
             val isPkCol = colName in pkColumns
             val extra = (row["extra"] as? String) ?: ""
             val isAutoIncrement = extra.contains("auto_increment", ignoreCase = true)
+            // `extra` traegt "STORED GENERATED" bzw. "VIRTUAL GENERATED".
+            if (extra.contains("GENERATED", ignoreCase = true)) {
+                notes += GeneratedColumnNotes.expressionDropped(
+                    displayName, colName, row["generation_expression"] as? String,
+                )
+            }
             val mapping = MysqlTypeMapping.mapColumn(MysqlTypeMapping.ColumnInput(
                 dataType = row["data_type"] as String,
                 columnType = (row["column_type"] as? String) ?: (row["data_type"] as String),

@@ -37,6 +37,7 @@ import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 import java.sql.Connection
+import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 
 /**
  * MSSQL [SchemaReader]: tables (columns, PK, FKs, unique, indexes
@@ -152,14 +153,7 @@ class MssqlSchemaReader(
                 )
             }
             if (row.isComputed) {
-                notes += SchemaReadNote(
-                    severity = SchemaReadSeverity.ACTION_REQUIRED,
-                    code = "R343",
-                    objectName = "$table.${row.name}",
-                    message = "Computed column definition ${row.computedDefinition ?: "?"} " +
-                        "is not carried in the neutral model; the column was read as a plain column.",
-                    hint = "Recreate the computed expression manually on the target.",
-                )
+                notes += GeneratedColumnNotes.expressionDropped(table, row.name, row.computedDefinition)
             }
             row.name to ColumnDefinition(
                 type = mapping.type,

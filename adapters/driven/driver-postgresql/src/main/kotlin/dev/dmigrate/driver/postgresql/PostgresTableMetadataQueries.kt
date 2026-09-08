@@ -53,6 +53,7 @@ internal object PostgresTableMetadataQueries {
                    column_default, ordinal_position,
                    character_maximum_length, numeric_precision, numeric_scale,
                    is_identity, identity_generation,
+                   is_generated, generation_expression,
                    pg_get_serial_sequence(format('%I.%I', table_schema, table_name), column_name)
                        AS generated_sequence_name
             FROM information_schema.columns

@@ -60,6 +60,11 @@ class OracleSchemaReaderTest : FunSpec({
 
     fun stubTableQueries(jdbc: JdbcOperations) {
         every { jdbc.queryList(match { it.contains("FROM all_tab_columns c") }, any(), any()) } returns emptyList()
+        // Virtuelle Spalten: der Lesepfad fragt sie jetzt, um den Verlust der
+        // Berechnung zu melden. Ohne Eintrag hier gibt es keine.
+        every {
+            jdbc.queryList(match { it.contains("FROM all_tab_cols") && it.contains("virtual_column") }, any(), any())
+        } returns emptyList()
         every {
             jdbc.queryList(match { it.contains("JOIN all_cons_columns cc") && it.contains("constraint_type = 'P'") }, any(), any())
         } returns emptyList()

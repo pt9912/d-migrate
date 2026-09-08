@@ -10,6 +10,7 @@ import dev.dmigrate.driver.metadata.IndexProjection
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 import dev.dmigrate.driver.sqlite.parser.SqliteTriggerSqlParser
+import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 
 /**
  * SQLite [SchemaReader] implementation.
@@ -165,6 +166,12 @@ class SqliteSchemaReader : SchemaReader {
         autoincrementReverse: SqliteAutoincrementReverse,
     ): TableDefinition {
         val columns = SqliteMetadataQueries.listColumns(session, tableName)
+        // `table_info` laesst generierte Spalten aus — sie fehlen also nicht
+        // nur in ihrem Ausdruck, sondern ganz. Ohne diese Meldung faellt das
+        // niemandem auf.
+        for ((generatedColumn, kind) in SqliteMetadataQueries.listGeneratedColumns(session, tableName)) {
+            notes += GeneratedColumnNotes.columnAbsent(tableName, generatedColumn, kind)
+        }
         val pkColumns = SqliteMetadataQueries.listPrimaryKeyColumns(session, tableName)
         val fks = SqliteMetadataQueries.listForeignKeys(session, tableName)
         val indices = SqliteMetadataQueries.listIndices(session, tableName)
