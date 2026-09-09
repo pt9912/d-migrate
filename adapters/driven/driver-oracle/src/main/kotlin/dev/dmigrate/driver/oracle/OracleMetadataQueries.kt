@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.oracle
 
+import dev.dmigrate.driver.OracleServerVersion
 import dev.dmigrate.driver.metadata.ConstraintProjection
 import dev.dmigrate.driver.metadata.ForeignKeyProjection
 import dev.dmigrate.driver.metadata.IndexProjection
@@ -673,5 +674,26 @@ internal object OracleMetadataQueries {
             else -> return null
         }
         return runCatching { exact.longValueExact() }.getOrNull()
+    }
+
+    /**
+     * Release-Nummer des Servers aus `product_component_version`.
+     *
+     * Gelesen wird `version` (`23.0.0.0.0`) und nicht das genauere
+     * `version_full` (`23.26.3.0.0`): entschieden wird an der ersten Stelle,
+     * die in beiden dieselbe ist — und `version_full` gibt es erst ab 18c,
+     * also gerade auf den alten Bestaenden nicht, wegen derer ueberhaupt
+     * unterschieden wird.
+     */
+    fun readServerVersion(session: JdbcOperations): OracleServerVersion? {
+        val row = session.querySingle(
+            """
+            SELECT version
+            FROM product_component_version
+            WHERE ROWNUM = 1
+            """.trimIndent(),
+        ) ?: return null
+        val raw = row["version"] as? String ?: return null
+        return OracleServerVersion.parse(raw)
     }
 }

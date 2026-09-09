@@ -41,6 +41,23 @@ class OracleDdlGeneratorObjectsTest : FunSpec({
         functions = functions, procedures = procedures, triggers = triggers, aggregates = aggregates,
     )
 
+    fun optionsForVersion(raw: String) = dev.dmigrate.driver.DdlGenerationOptions(
+        dialectContext = dev.dmigrate.driver.DdlDialectContext.Oracle(
+            serverVersion = dev.dmigrate.driver.OracleServerVersion.parse(raw),
+        ),
+    )
+
+    fun rollbackSchema() = schema(
+        tables = mapOf(
+            "t" to TableDefinition(
+                columns = mapOf("id" to ColumnDefinition(type = NeutralType.Integer, ordinal = 1)),
+                indices = listOf(IndexDefinition(name = "ix_id", columns = listOf(IndexColumn("id")))),
+            ),
+        ),
+        sequences = mapOf("seq" to SequenceDefinition()),
+        views = mapOf("v" to ViewDefinition(query = "SELECT 1")),
+    )
+
     // ── Sequences ────────────────────────────────
 
     test("sequence with all bounds renders a full CREATE SEQUENCE") {
@@ -298,23 +315,58 @@ class OracleDdlGeneratorObjectsTest : FunSpec({
 
     // ── Rollback (invertStatement) ────────────────
 
-    test("rollback drops CREATE TABLE/INDEX/SEQUENCE/VIEW without IF EXISTS (Oracle has no such clause)") {
-        val table = TableDefinition(
-            columns = mapOf("id" to ColumnDefinition(type = NeutralType.Integer, ordinal = 1)),
-            indices = listOf(IndexDefinition(name = "ix_id", columns = listOf(IndexColumn("id")))),
-        )
-        val rollback = generator.generateRollback(
-            schema(
-                tables = mapOf("t" to table),
-                sequences = mapOf("seq" to SequenceDefinition()),
-                views = mapOf("v" to ViewDefinition(query = "SELECT 1")),
-            ),
-        ).render()
+    test("without a known server version the rollback drops bare — every Oracle runs that") {
+        val rollback = generator.generateRollback(rollbackSchema()).render()
         rollback shouldContain "DROP VIEW \"v\";"
         rollback shouldContain "DROP SEQUENCE \"seq\";"
         rollback shouldContain "DROP INDEX \"ix_id\";"
         rollback shouldContain "DROP TABLE \"t\";"
         rollback shouldNotContain "IF EXISTS"
+    }
+
+    test("against a 23er target the rollback carries IF EXISTS — that is what makes it re-runnable") {
+        val rollback = generator.generateRollback(rollbackSchema(), optionsForVersion("23.0.0.0.0")).render()
+        rollback shouldContain "DROP VIEW IF EXISTS \"v\";"
+        rollback shouldContain "DROP SEQUENCE IF EXISTS \"seq\";"
+        rollback shouldContain "DROP INDEX IF EXISTS \"ix_id\";"
+        rollback shouldContain "DROP TABLE IF EXISTS \"t\";"
+    }
+
+    test("a pre-23 target keeps the bare form, though the version is known") {
+        val rollback = generator.generateRollback(rollbackSchema(), optionsForVersion("19.0.0.0.0")).render()
+        rollback shouldContain "DROP TABLE \"t\";"
+        rollback shouldNotContain "IF EXISTS"
+    }
+
+    test("the constraint form stays bare even on 23 — Oracle rejects IF EXISTS there") {
+        val parent = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(type = NeutralType.Integer, ordinal = 1)),
+            primaryKey = listOf("id"),
+        )
+        val child = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Integer, ordinal = 1),
+                "pid" to ColumnDefinition(
+                    type = NeutralType.Integer,
+                    ordinal = 2,
+                    references = dev.dmigrate.core.model.ReferenceDefinition(table = "p", column = "id"),
+                ),
+            ),
+        )
+        val rollback = generator.generateRollback(
+            schema(tables = mapOf("p" to parent, "c" to child)),
+            optionsForVersion("23.0.0.0.0").copy(deferForeignKeys = true),
+        ).render()
+        rollback shouldContain "DROP CONSTRAINT"
+        rollback shouldNotContain "DROP CONSTRAINT IF EXISTS"
+    }
+
+    test("a materialized view is taken back too — its CREATE is not a plain CREATE VIEW") {
+        val rollback = generator.generateRollback(
+            schema(views = mapOf("mv" to ViewDefinition(query = "SELECT 1", materialized = true))),
+            optionsForVersion("23.0.0.0.0"),
+        ).render()
+        rollback shouldContain "DROP MATERIALIZED VIEW IF EXISTS \"mv\";"
     }
 
     test("rollback drops the spatial index, whose CREATE is wrapped in a PL/SQL block") {

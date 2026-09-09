@@ -18,7 +18,7 @@ data class MysqlServerVersion(
     val minor: Int,
     val patch: Int,
     val vendor: String? = null,
-) : Comparable<MysqlServerVersion> {
+) : ServerVersion, Comparable<MysqlServerVersion> {
 
     val isMariaDb: Boolean
         get() = vendor?.contains("MariaDB", ignoreCase = true) == true

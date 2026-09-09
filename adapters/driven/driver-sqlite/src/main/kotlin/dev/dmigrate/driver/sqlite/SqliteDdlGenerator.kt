@@ -134,6 +134,6 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         return statements
     }
 
-    override fun invertStatement(stmt: DdlStatement): DdlStatement? =
-        capabilitySupport.invertStatement(stmt) ?: super.invertStatement(stmt)
+    override fun invertStatement(stmt: DdlStatement, options: DdlGenerationOptions): DdlStatement? =
+        capabilitySupport.invertStatement(stmt) ?: super.invertStatement(stmt, options)
 }

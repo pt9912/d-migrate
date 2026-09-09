@@ -401,7 +401,7 @@ class MssqlDdlGenerator private constructor(
      * Tabelle (`DROP INDEX … ON [table]`), und `CREATE OR ALTER VIEW` ist kein
      * Präfix, den der generische Inverter kennt.
      */
-    override fun invertStatement(stmt: DdlStatement): DdlStatement? {
+    override fun invertStatement(stmt: DdlStatement, options: DdlGenerationOptions): DdlStatement? {
         val sql = stmt.sql.trim()
         return when {
             sql.startsWith("CREATE TABLE", ignoreCase = true) ->
@@ -410,7 +410,7 @@ class MssqlDdlGenerator private constructor(
                 DdlStatement("DROP SEQUENCE IF EXISTS ${bracketedNameAfter(sql, "CREATE SEQUENCE")};")
             sql.startsWith("CREATE OR ALTER", ignoreCase = true) ->
                 MssqlRoutineDdl.invert(sql, ::bracketedNameAfter)?.let { DdlStatement(it) }
-                    ?: super.invertStatement(stmt)
+                    ?: super.invertStatement(stmt, options)
             // Volltext steht als Katalog+Index in EINEM Statement und traegt
             // deshalb den Tabellennamen erst hinter `CREATE FULLTEXT INDEX ON`.
             // Ohne diesen Zweig fiele der Rueckbau still weg und liesse den
@@ -433,7 +433,7 @@ class MssqlDdlGenerator private constructor(
                 val constraintName = bracketedNameAfter(sql.substring(constraintIdx), "ADD CONSTRAINT")
                 DdlStatement("ALTER TABLE $tableName DROP CONSTRAINT IF EXISTS $constraintName;")
             }
-            else -> super.invertStatement(stmt)
+            else -> super.invertStatement(stmt, options)
         }
     }
 

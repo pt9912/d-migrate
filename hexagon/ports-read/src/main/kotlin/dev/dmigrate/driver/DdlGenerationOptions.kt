@@ -264,6 +264,19 @@ sealed interface DdlDialectContext {
     data class Postgres(
         val concurrentIndexes: Boolean = false,
     ) : DdlDialectContext
+
+    /**
+     * Oracle-spezifischer Render-Kontext.
+     *
+     * - [serverVersion]: die Version des Ziels, sofern gegen eine Verbindung
+     *   gerendert wird. Sie entscheidet ueber die `IF EXISTS`-Klausel der
+     *   Ruecknahme-Anweisungen — die Klausel gibt es erst ab der 23er-Linie.
+     *   `null` (file-zu-Datei) bleibt bei der Form ohne Klausel, die jede
+     *   Oracle-Version ausfuehrt.
+     */
+    data class Oracle(
+        val serverVersion: OracleServerVersion? = null,
+    ) : DdlDialectContext
 }
 
 /** Smart-Cast-freundlicher Accessor: gibt den PostgreSQL-Kontext zurueck oder `null`. */
@@ -288,6 +301,10 @@ val DdlGenerationOptions.sqliteContext: DdlDialectContext.Sqlite?
 /** Smart-Cast-freundlicher Accessor: gibt den SQL-Server-Kontext zurueck oder `null`. */
 val DdlGenerationOptions.mssqlContext: DdlDialectContext.MsSql?
     get() = dialectContext as? DdlDialectContext.MsSql
+
+/** Smart-Cast-freundlicher Accessor: gibt den Oracle-Kontext zurueck oder `null`. */
+val DdlGenerationOptions.oracleContext: DdlDialectContext.Oracle?
+    get() = dialectContext as? DdlDialectContext.Oracle
 
 /**
  * Phase H.3b: rendering target awareness — STANDALONE for SQL

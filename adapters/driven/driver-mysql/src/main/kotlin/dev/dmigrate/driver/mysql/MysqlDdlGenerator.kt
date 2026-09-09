@@ -348,7 +348,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
     // ── Rollback overrides ──────────────────────
 
-    override fun invertStatement(stmt: DdlStatement): DdlStatement? {
+    override fun invertStatement(stmt: DdlStatement, options: DdlGenerationOptions): DdlStatement? {
         val sql = stmt.sql.trim()
 
         // Handle DELIMITER-wrapped statements
@@ -373,7 +373,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             }
         }
 
-        return super.invertStatement(stmt)
+        return super.invertStatement(stmt, options)
     }
 
     private fun extractNameAfterKeyword(sql: String, keyword: String): String {

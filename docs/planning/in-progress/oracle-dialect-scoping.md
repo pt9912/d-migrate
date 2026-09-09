@@ -1323,7 +1323,7 @@ Zwei Entscheidungen darin gehen über Oracle hinaus:
   gewesen, ohne dass ein Test es gezeigt hätte.
 
 Nebenbefund, eigenes Ticket:
-[`oracle-drop-if-exists-verfuegbar.md`](../open/oracle-drop-if-exists-verfuegbar.md).
+[`oracle-drop-if-exists-verfuegbar.md`](../done/oracle-drop-if-exists-verfuegbar.md).
 
 ### Was der Review gefunden hat
 

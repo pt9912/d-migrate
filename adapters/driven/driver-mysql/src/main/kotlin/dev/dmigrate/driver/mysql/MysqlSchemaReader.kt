@@ -83,7 +83,7 @@ class MysqlSchemaReader(
                 schema = schemaDef,
                 notes = notes,
                 skippedObjects = skipped,
-                mysqlServerVersion = serverVersion,
+                serverVersion = serverVersion,
             )
         }
     }

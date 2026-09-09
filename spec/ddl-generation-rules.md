@@ -1782,6 +1782,18 @@ Für jedes Up-Statement wird ein inverses Down-Statement erzeugt:
 | `ALTER TABLE ADD CONSTRAINT "k"` | `ALTER TABLE DROP CONSTRAINT "k"` |
 | `ALTER TABLE ALTER COLUMN "c" TYPE t` | `ALTER TABLE ALTER COLUMN "c" TYPE <alter_typ>` |
 
+**Oracle** setzt `IF EXISTS` nur, wenn die Version des Ziels bekannt ist und
+die Klausel traegt. Sie kam mit der 23er-Linie; davor bricht jedes `DROP` ab,
+sobald das Objekt fehlt. Der Lesepfad reicht die Version aus
+`product_component_version` als `ServerVersion` herauf, die Render-Optionen
+tragen sie im Oracle-Render-Kontext. Ist sie unbekannt — Rendern ohne
+Verbindung, etwa `schema generate --rollback` — bleibt es bei der Form ohne
+Klausel, die jede Oracle-Version ausfuehrt.
+
+Die Klausel gilt bei Oracle fuer Objekt-`DROP`s (Tabelle, View, Materialized
+View, Index, Sequenz, Funktion, Prozedur, Trigger), **nicht** fuer
+`ALTER TABLE … DROP CONSTRAINT`: diese Form lehnt auch die 23er-Linie ab.
+
 Execution-Reports gruppieren gerenderte Statements unabhängig vom SQL-Text:
 Jede Gruppe trägt eine stabile `statementGroupId`, Operation-IDs,
 Statement-Indexrange, `transactionScope` und `transactionBoundary`. Gemischte

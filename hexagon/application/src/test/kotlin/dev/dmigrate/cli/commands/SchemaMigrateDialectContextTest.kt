@@ -42,7 +42,7 @@ class SchemaMigrateDialectContextTest : FunSpec({
             request = request,
             dialect = dialect,
             routineCapability = RoutineCapabilityDefaults.forDialect(dialect),
-            mysqlServerVersion = null,
+            serverVersion = null,
             mysqlSequenceDeclarations = emptyList(),
             probeOutcome = null,
             castPreflights = emptyList(),

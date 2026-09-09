@@ -359,7 +359,7 @@ class SchemaMigrateRunner(
             plan = plan,
             overlayPreflight = overlayPreflight,
             cancellationToken = cancellationToken,
-            mysqlServerVersion = prepared.targetNormalized.mysqlServerVersion,
+            serverVersion = prepared.targetNormalized.serverVersion,
             routineCapabilityResolver = request.routineCapabilityResolver,
         )
         // 0.9.7 preserve-current-value Sub-Slice D (§6.4.7):

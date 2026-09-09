@@ -97,7 +97,7 @@ class MssqlSchemaReaderTest : FunSpec({
         result.schema.views.shouldBeEmptyMap()
         result.schema.sequences.shouldBeEmptyMap()
         result.notes.shouldBeEmpty()
-        result.mysqlServerVersion.shouldBeNull()
+        result.serverVersion.shouldBeNull()
     }
 
     test("single table with identity pk, default, fk, unique and filtered index") {

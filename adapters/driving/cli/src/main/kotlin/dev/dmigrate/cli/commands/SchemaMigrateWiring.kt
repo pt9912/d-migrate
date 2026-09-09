@@ -220,7 +220,7 @@ internal object SchemaMigrateWiring {
                 notes = result.notes,
                 skippedObjects = result.skippedObjects,
                 dialect = config.dialect,
-                mysqlServerVersion = result.mysqlServerVersion,
+                serverVersion = result.serverVersion,
             )
         }
     }

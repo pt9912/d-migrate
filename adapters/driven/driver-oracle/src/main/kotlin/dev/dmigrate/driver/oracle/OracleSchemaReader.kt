@@ -53,6 +53,14 @@ class OracleSchemaReader(
             val routines = OracleRoutineReader.read(session, schema, options, notes, skipped)
             noteUnreadObjects(session, schema, options, notes, skipped)
 
+            // Die Version entscheidet ueber die `IF EXISTS`-Klausel der
+            // Ruecknahme-Anweisungen. Ein Katalog-Grant, der die Sicht nicht
+            // umfasst, darf den Lauf nicht kosten: dann bleibt sie unbekannt,
+            // und gerendert wird die Form, die jede Oracle-Version ausfuehrt.
+            val serverVersion = runCatching {
+                OracleMetadataQueries.readServerVersion(session)
+            }.getOrNull()
+
             return SchemaReadResult(
                 schema = SchemaDefinition(
                     name = ReverseScopeCodec.oracleName(schema),
@@ -66,6 +74,7 @@ class OracleSchemaReader(
                 ),
                 notes = notes,
                 skippedObjects = skipped,
+                serverVersion = serverVersion,
             )
         }
     }

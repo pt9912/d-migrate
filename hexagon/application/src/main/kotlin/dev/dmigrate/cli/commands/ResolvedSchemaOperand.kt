@@ -3,8 +3,8 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.MysqlServerVersion
 import dev.dmigrate.driver.SchemaReadNote
+import dev.dmigrate.driver.ServerVersion
 import dev.dmigrate.driver.SkippedObject
 
 /**
@@ -33,12 +33,11 @@ data class ResolvedSchemaOperand(
      */
     val dialect: DatabaseDialect? = null,
     /**
-     * E.1 Routine-Migration Slice C.2: live MySQL/MariaDB server
-     * version (from `SchemaReadResult.mysqlServerVersion`). Set when
-     * the operand is a MySQL database; `null` for file operands and
-     * non-MySQL dialects. Threaded into
-     * `DdlGenerationOptions.mysqlServerVersion` by the render
-     * pipeline.
+     * Version des Servers, gegen den gelesen wurde (aus
+     * [SchemaReadResult.serverVersion][dev.dmigrate.driver.SchemaReadResult]).
+     * Gesetzt, wenn der Operand aus einer Live-Verbindung stammt; die
+     * Render-Pipeline reicht sie in den dialektspezifischen Render-Kontext
+     * weiter.
      */
-    val mysqlServerVersion: MysqlServerVersion? = null,
+    val serverVersion: ServerVersion? = null,
 )

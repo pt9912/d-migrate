@@ -217,6 +217,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Oracle-Rücknahmeskripte brachen ab, sobald ein Objekt schon fehlte.** Der
+  Generator ließ `IF EXISTS` bei jeder Rücknahme-Anweisung weg und begründete
+  das damit, Oracle kenne die Klausel nicht — gegen ein echtes Oracle 23
+  gemessen nehmen neun Objektformen sie an. Sie wird jetzt gesetzt, wo die
+  Version des Ziels bekannt ist und sie trägt; ohne bekannte Version (Rendern
+  ohne Verbindung) bleibt es bei der Form, die jede Oracle-Version ausführt.
+  Eine Mindestversion sagt d-migrate weiterhin nicht zu — gefragt wird der
+  Server. `ALTER TABLE … DROP CONSTRAINT` bleibt ohne die Klausel: die lehnt
+  auch Oracle 23 dort ab (`ORA-01735`).
+- **Die Rücknahme ließ Oracle-Materialized-Views stehen.** Der Generierungspfad
+  erzeugt `CREATE MATERIALIZED VIEW`, der Inverter hatte dafür keinen Zweig und
+  gab still nichts zurück.
 - **Routinen-Rümpfe fielen weg, wenn `source_dialect` eine Alias-Schreibweise
   trug.** Der Wert ist im Schema-Format eine freie Zeichenkette, und die
   Herkunftsprüfung von Funktionen, Prozeduren und Triggern verglich sie Zeichen

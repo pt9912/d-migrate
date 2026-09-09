@@ -123,7 +123,7 @@ abstract class AbstractDdlGenerator(
 
     override fun generateRollback(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
         val up = generate(schema, options)
-        val downStatements = up.statements.reversed().mapNotNull { invertStatement(it) }
+        val downStatements = up.statements.reversed().mapNotNull { invertStatement(it, options) }
         return DdlResult(downStatements, emptyList())
     }
 
@@ -259,8 +259,10 @@ abstract class AbstractDdlGenerator(
 
     private val inverter = StatementInverter()
 
-    protected open fun invertStatement(stmt: DdlStatement): DdlStatement? =
-        inverter.invert(stmt)
+    protected open fun invertStatement(
+        stmt: DdlStatement,
+        options: DdlGenerationOptions,
+    ): DdlStatement? = inverter.invert(stmt)
 
     // ── Topological sort ────────────────────────
 

@@ -18,6 +18,8 @@ import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionInstallPolicy
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlServerVersion
+import dev.dmigrate.driver.OracleServerVersion
+import dev.dmigrate.driver.ServerVersion
 import dev.dmigrate.driver.RoutineCapabilityDefaults
 import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.SpatialProfilePolicy
@@ -107,7 +109,7 @@ internal class SchemaMigrateRenderPipeline(
         plan: DiffResult,
         overlayPreflight: MigrationOverlayPreflightResult,
         cancellationToken: CancellationToken,
-        mysqlServerVersion: MysqlServerVersion? = null,
+        serverVersion: ServerVersion? = null,
         routineCapabilityResolver: ((EffectiveRoutineCapability.Valid) -> EffectiveRoutineCapability)? = null,
     ): SchemaMigrateRenderResult {
         val probeOutcome = runProbe(request, targetOp, dialect, overlayPreflight)
@@ -131,7 +133,7 @@ internal class SchemaMigrateRenderPipeline(
             preserve = preserveOutcome,
         )
         val renderOptions = buildRenderOptions(
-            request, dialect, outcomes, preflightPlan, mysqlServerVersion, routineCapabilityResolver,
+            request, dialect, outcomes, preflightPlan, serverVersion, routineCapabilityResolver,
         )
         val renderedUp = renderUp(effectivePlan, overlayPreflight, renderer, renderOptions, outcomes)
         val effectiveUp = MigrateDestructiveGuard.apply(renderedUp, request.allowDestructive)
@@ -289,14 +291,14 @@ internal class SchemaMigrateRenderPipeline(
         dialect: DatabaseDialect,
         outcomes: PreflightOutcomes,
         preflightPlan: MigrationPreflightPlan,
-        mysqlServerVersion: MysqlServerVersion?,
+        serverVersion: ServerVersion?,
         routineCapabilityResolver: ((EffectiveRoutineCapability.Valid) -> EffectiveRoutineCapability)?,
     ): DdlGenerationOptions {
         val probeOutcome = outcomes.probe
         val castPreflightOutcome = outcomes.cast
         val checkPreflightOutcome = outcomes.check
         val defaultsForKindAndVersion = if (dialect == DatabaseDialect.MYSQL) {
-            RoutineCapabilityDefaults.forMysqlServerVersion(mysqlServerVersion)
+            RoutineCapabilityDefaults.forMysqlServerVersion(serverVersion as? MysqlServerVersion)
         } else {
             RoutineCapabilityDefaults.forDialect(dialect)
         }
@@ -314,7 +316,7 @@ internal class SchemaMigrateRenderPipeline(
             request = request,
             dialect = dialect,
             routineCapability = routineCapability,
-            mysqlServerVersion = mysqlServerVersion,
+            serverVersion = serverVersion,
             mysqlSequenceDeclarations = mysqlSequenceDeclarations,
             probeOutcome = probeOutcome,
             castPreflights = when (castPreflightOutcome) {
@@ -544,7 +546,7 @@ internal class SchemaMigrateRenderPipeline(
             request: SchemaMigrateRequest,
             dialect: DatabaseDialect,
             routineCapability: EffectiveRoutineCapability,
-            mysqlServerVersion: MysqlServerVersion?,
+            serverVersion: ServerVersion?,
             mysqlSequenceDeclarations: List<MysqlSequenceCanonicityDeclaration>,
             probeOutcome: SqliteProbeStage.Outcome?,
             castPreflights: List<SqliteCastPreflightDeclaration>,
@@ -552,7 +554,7 @@ internal class SchemaMigrateRenderPipeline(
             return when (dialect) {
                 DatabaseDialect.MYSQL -> DdlDialectContext.MySql(
                     routineCapability = routineCapability,
-                    serverVersion = mysqlServerVersion,
+                    serverVersion = serverVersion as? MysqlServerVersion,
                     sequenceCanonicity = mysqlSequenceDeclarations,
                     // C.5 follow-up: thread `--mysql-named-sequences`
                     // opt-in into the renderer so MysqlDiffSequenceOps.
@@ -595,9 +597,11 @@ internal class SchemaMigrateRenderPipeline(
                 DatabaseDialect.POSTGRESQL -> DdlDialectContext.Postgres(
                     concurrentIndexes = request.pgConcurrentIndexes,
                 )
-                // Auch der Oracle-Renderer braucht bislang keinen
-                // dialekteigenen Kontext -- dieselbe Lage wie bei PostgreSQL.
-                DatabaseDialect.ORACLE -> DdlDialectContext.None
+                // Oracle traegt die Serverversion: sie entscheidet, ob die
+                // Ruecknahme-Anweisungen `IF EXISTS` fuehren duerfen.
+                DatabaseDialect.ORACLE -> DdlDialectContext.Oracle(
+                    serverVersion = serverVersion as? OracleServerVersion,
+                )
             }
         }
 

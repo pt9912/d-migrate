@@ -489,7 +489,7 @@ internal class TestDdlGenerator(
     }
 
     // Public bridges to the protected helpers — only used in this test class.
-    fun invertForTest(stmt: DdlStatement): DdlStatement? = invertStatement(stmt)
+    fun invertForTest(stmt: DdlStatement): DdlStatement? = invertStatement(stmt, DdlGenerationOptions())
     fun columnSqlForTest(name: String, col: ColumnDefinition, schema: SchemaDefinition): String =
         columnSql("_test_", name, col, schema)
     fun referentialForTest(action: ReferentialAction): String = referentialActionSql(action)

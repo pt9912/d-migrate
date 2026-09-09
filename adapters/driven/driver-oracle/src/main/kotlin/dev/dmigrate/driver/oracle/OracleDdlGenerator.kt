@@ -28,6 +28,7 @@ import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.ViewQueryTransformer
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
+import dev.dmigrate.driver.oracleContext
 
 /**
  * Oracle-[dev.dmigrate.driver.DdlGenerator] (ADR 0052).
@@ -395,43 +396,59 @@ class OracleDdlGenerator private constructor(
     // ── Rollback ─────────────────────────────────
 
     /**
-     * Oracle kennt kein `DROP ... IF EXISTS` (auch nicht 23ai) -- der
-     * generische Inverter wuerde ungueltiges DDL erzeugen. Deckt dieselben
-     * Faelle wie [dev.dmigrate.driver.AbstractDdlGenerator]s Default ab,
-     * nur ohne die IF-EXISTS-Klausel.
+     * Ruecknahme-Anweisungen fuer die Formen, die der Oracle-Generator
+     * erzeugt.
+     *
+     * `DROP <objekt> IF EXISTS` gibt es bei Oracle erst ab der 23er-Linie.
+     * Steht die Version des Ziels fest und traegt sie die Klausel, wird sie
+     * gesetzt — ohne sie bricht ein Ruecknahme-Skript ab, sobald ein Objekt
+     * schon fehlt, also genau in dem Fall, fuer den man es faehrt. Ist die
+     * Version unbekannt (Rendern ohne Verbindung), bleibt es bei der Form
+     * ohne Klausel: die fuehrt jede Oracle-Version aus.
+     *
+     * `ALTER TABLE … DROP CONSTRAINT` bleibt in jedem Fall ohne die Klausel.
+     * Auch die 23er-Linie lehnt sie dort mit `ORA-01735` ab — die Klausel
+     * gilt fuer Objekte, nicht fuer Constraints.
      */
-    override fun invertStatement(stmt: DdlStatement): DdlStatement? {
+    override fun invertStatement(stmt: DdlStatement, options: DdlGenerationOptions): DdlStatement? {
         val sql = stmt.sql.trim()
         OracleSpatialIndexDdl.invertedDrop(sql)?.let { return DdlStatement(it) }
+        val ifExists =
+            if (options.oracleContext?.serverVersion?.supportsDropIfExists == true) "IF EXISTS " else ""
+        fun drop(keyword: String, objectKind: String): DdlStatement =
+            DdlStatement("DROP $objectKind $ifExists${nameAfter(sql, keyword)};")
         return when {
             sql.startsWith("CREATE TABLE", ignoreCase = true) ->
-                DdlStatement("DROP TABLE ${nameAfter(sql, "CREATE TABLE")};")
+                drop("CREATE TABLE", "TABLE")
             sql.startsWith("CREATE UNIQUE INDEX", ignoreCase = true) ->
-                DdlStatement("DROP INDEX ${nameAfter(sql, "CREATE UNIQUE INDEX")};")
+                drop("CREATE UNIQUE INDEX", "INDEX")
             sql.startsWith("CREATE INDEX", ignoreCase = true) ->
-                DdlStatement("DROP INDEX ${nameAfter(sql, "CREATE INDEX")};")
+                drop("CREATE INDEX", "INDEX")
             sql.startsWith("CREATE OR REPLACE FORCE VIEW", ignoreCase = true) ->
-                DdlStatement("DROP VIEW ${nameAfter(sql, "CREATE OR REPLACE FORCE VIEW")};")
+                drop("CREATE OR REPLACE FORCE VIEW", "VIEW")
+            sql.startsWith("CREATE MATERIALIZED VIEW", ignoreCase = true) ->
+                drop("CREATE MATERIALIZED VIEW", "MATERIALIZED VIEW")
             // Die drei Routinen-Formen: `DROP` ist gewoehnliches DDL und
             // braucht deshalb weder das `/` noch den PL/SQL-Trenner, den das
             // `CREATE` traegt.
             sql.startsWith("CREATE OR REPLACE FUNCTION", ignoreCase = true) ->
-                DdlStatement("DROP FUNCTION ${nameAfter(sql, "CREATE OR REPLACE FUNCTION")};")
+                drop("CREATE OR REPLACE FUNCTION", "FUNCTION")
             sql.startsWith("CREATE OR REPLACE PROCEDURE", ignoreCase = true) ->
-                DdlStatement("DROP PROCEDURE ${nameAfter(sql, "CREATE OR REPLACE PROCEDURE")};")
+                drop("CREATE OR REPLACE PROCEDURE", "PROCEDURE")
             sql.startsWith("CREATE OR REPLACE TRIGGER", ignoreCase = true) ->
-                DdlStatement("DROP TRIGGER ${nameAfter(sql, "CREATE OR REPLACE TRIGGER")};")
+                drop("CREATE OR REPLACE TRIGGER", "TRIGGER")
             sql.startsWith("CREATE SEQUENCE", ignoreCase = true) ->
-                DdlStatement("DROP SEQUENCE ${nameAfter(sql, "CREATE SEQUENCE")};")
-            sql.startsWith("ALTER TABLE", ignoreCase = true) && sql.contains("ADD CONSTRAINT", ignoreCase = true) -> {
-                val tableName = nameAfter(sql, "ALTER TABLE")
-                val addConstraintIdx = sql.uppercase().indexOf("ADD CONSTRAINT")
-                val constraintPart = sql.substring(addConstraintIdx + "ADD CONSTRAINT".length).trimStart()
-                val constraintName = constraintPart.split(Regex("[\\s(]"), limit = 2).first()
-                DdlStatement("ALTER TABLE $tableName DROP CONSTRAINT $constraintName;")
-            }
+                drop("CREATE SEQUENCE", "SEQUENCE")
+            sql.startsWith("ALTER TABLE", ignoreCase = true) && sql.contains("ADD CONSTRAINT", ignoreCase = true) ->
+                DdlStatement("ALTER TABLE ${nameAfter(sql, "ALTER TABLE")} DROP CONSTRAINT ${addedConstraintName(sql)};")
             else -> null
         }
+    }
+
+    private fun addedConstraintName(sql: String): String {
+        val addConstraintIdx = sql.uppercase().indexOf("ADD CONSTRAINT")
+        val constraintPart = sql.substring(addConstraintIdx + "ADD CONSTRAINT".length).trimStart()
+        return constraintPart.split(Regex("[\\s(]"), limit = 2).first()
     }
 
     private fun nameAfter(sql: String, keyword: String): String =
