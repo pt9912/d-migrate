@@ -194,7 +194,7 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         probe: SequenceCurrentValueProbeResult.Read,
     ): AtomicSequencePreserveResult? {
         val statements = try {
-            request.renderRestore(probe)
+            restoreStatements(request, probe)
         } catch (e: Throwable) {
             return AtomicSequencePreserveResult.Failed(request.sequenceRef, e)
         }
@@ -229,6 +229,16 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
             stmt.execute("PRAGMA busy_timeout = $millis")
         }
     }
+
+    /**
+     * Die Hilfstabelle bekommt den geprobten Wert unveraendert — dieselbe
+     * Form, die [SqliteDiffSequenceOps] rendert.
+     */
+    internal fun restoreStatements(
+        request: AtomicSequencePreserveRequest,
+        probe: SequenceCurrentValueProbeResult.Read,
+    ): List<String> =
+        listOf(SqliteDiffSequenceOps.updateNextValueSql(request.sequenceRef.name, probe.value))
 
     companion object {
         /** SQLite extended error code `SQLITE_BUSY` (driver returns base code 5). */

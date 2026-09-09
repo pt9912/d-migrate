@@ -3,7 +3,6 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
-import dev.dmigrate.driver.MssqlSequenceResume
 
 /**
  * Sequenz-DDL fuer T-SQL — geteilt zwischen `schema generate` und dem

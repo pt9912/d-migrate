@@ -210,7 +210,7 @@ class MssqlAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         probe: SequenceCurrentValueProbeResult.Read,
     ): AtomicSequencePreserveResult? {
         val statements = try {
-            request.renderRestore(probe)
+            restoreStatements(request, probe)
         } catch (e: Throwable) {
             connection.rollback()
             return AtomicSequencePreserveResult.Failed(request.sequenceRef, e)
@@ -232,6 +232,34 @@ class MssqlAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
      */
     private fun lockKey(ref: SequenceObjectRef): String =
         "d-migrate:seq:${ref.schema.orEmpty()}.${ref.name}"
+
+    /**
+     * `sys.sequences.current_value` ist der zuletzt **ausgegebene** Wert,
+     * `RESTART WITH` setzt den **naechsten** — dazwischen liegt die
+     * Schrittweite. Den geprobten Wert unveraendert zurueckzuschreiben gaebe
+     * ihn ein zweites Mal aus.
+     *
+     * Fehlt die Definition oder ist die Sequenz an ihrem Rand erschoepft,
+     * wird **geworfen** statt geraten: daraus wird ein benanntes `Failed` mit
+     * Ruecknahme, und der Anwender sieht, warum. Ein geratener
+     * Fortsetzungspunkt faende dagegen niemand, bis Schluessel kollidieren.
+     */
+    internal fun restoreStatements(
+        request: AtomicSequencePreserveRequest,
+        probe: SequenceCurrentValueProbeResult.Read,
+    ): List<String> {
+        val name = request.sequenceRef.name
+        val definition = requireNotNull(request.sequence) {
+            "MSSQL atomic-preserve restore needs the sequence definition to compute the resume point " +
+                "(sequence=$name): RESTART WITH sets the NEXT value, so increment and bounds decide " +
+                "where it continues."
+        }
+        val next = requireNotNull(MssqlSequenceResume.resumePoint(probe.value, definition)) {
+            "Sequence '$name' is exhausted at ${probe.value} and does not cycle, so there is no value to " +
+                "resume at; SQL Server rejects a RESTART WITH outside the sequence's bounds."
+        }
+        return listOf(MssqlSequenceDdl.restartSql(name, next))
+    }
 
     companion object {
         /** `sp_getapplock`: Zeitbudget abgelaufen. */

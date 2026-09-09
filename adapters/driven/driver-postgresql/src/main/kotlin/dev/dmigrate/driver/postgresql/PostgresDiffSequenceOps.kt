@@ -156,11 +156,20 @@ internal object PostgresDiffSequenceOps {
         requireNotNull(isCalled) {
             "AlterSequenceCurrentValue on PG must carry isCalled (op-id=${op.id})"
         }
-        val literal = SqlIdentifiers.quoteStringLiteral(sequenceName, DatabaseDialect.POSTGRESQL)
         ctx.emit(
             op,
-            "SELECT setval($literal, $value, $isCalled);",
+            setvalSql(sequenceName, value, isCalled),
             PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
         )
+    }
+
+    /**
+     * `setval` braucht `is_called`, um zu unterscheiden, ob der uebergebene
+     * Wert schon ausgegeben wurde. Der Wert ist deshalb Pflicht, nicht
+     * ableitbar: ein angenommenes `true` verschoebe die Sequenz still um eins.
+     */
+    internal fun setvalSql(sequenceName: String, value: Long, isCalled: Boolean): String {
+        val literal = SqlIdentifiers.quoteStringLiteral(sequenceName, DatabaseDialect.POSTGRESQL)
+        return "SELECT setval($literal, $value, $isCalled);"
     }
 }

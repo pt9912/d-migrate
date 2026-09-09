@@ -15,14 +15,14 @@ package dev.dmigrate.driver
  * directly inside the lock window, so the inversion-of-control
  * dispatch via a port had no remaining consumer and was deleted in
  * the §4.2 Dead-Code-Cleanup follow-up. The result type stays
- * because the `Read` variant continues to live on
- * [dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest.renderRestore]
- * and on each adapter's `probe(...)` signature.
+ * because the `Read` variant lives on each adapter's `probe(...)`
+ * signature und ist die Eingabe, aus der der Executor sein
+ * Zurueckschreiben rendert.
  *
  * The four subtypes route to distinct diagnostic codes downstream:
  *
- * - [Read] — probe succeeded; the executor restores via
- *   `renderRestore(read)`.
+ * - [Read] — probe succeeded; der Executor rendert daraus das
+ *   Zurueckschreiben seines Dialekts.
  * - [NotFound] — sequence does not exist in the target; the executor
  *   rolls back with `AtomicSequencePreserveResult.NotFound`.
  * - [Failed] — technical failure (privileges, connection,

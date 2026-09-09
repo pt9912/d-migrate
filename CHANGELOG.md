@@ -215,6 +215,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt ein Fenster ohne die Tabelle; mit `--strict-gap-operations`
   blockt er.
 
+### Changed
+
+- **Das Zurückschreiben nach einem Preserve rendert der Treiber.** Das
+  Restore-SQL aller fünf Dialekte lag in der Anwendungsschicht und wurde als
+  Closure an den treibereigenen Executor gereicht — an den Teil also, der den
+  Dialekt ohnehin kennt. Jeder Executor rendert jetzt selbst, über denselben
+  Bauer wie sein Diff-Renderer; damit ist die Doppelung, die der Code als
+  Drift-Risiko im Kommentar führte, verschwunden. Die Sequenz-
+  Fortsetzungsregeln von SQL Server und Oracle liegen in ihren Treibermodulen,
+  nicht mehr im Lesepfad-Port. Verhalten unverändert.
+
 ### Fixed
 
 - **Oracle-Rücknahmeskripte brachen ab, sobald ein Objekt schon fehlte.** Der

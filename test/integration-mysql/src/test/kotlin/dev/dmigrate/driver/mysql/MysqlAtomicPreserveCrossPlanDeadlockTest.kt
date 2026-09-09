@@ -80,13 +80,7 @@ class MysqlAtomicPreserveCrossPlanDeadlockTest : FunSpec({
         fun buildBatch(names: List<String>): AtomicSequencePreserveBatch =
             AtomicSequencePreserveBatch(
                 requests = names.map { name ->
-                    AtomicSequencePreserveRequest(mysqlRef(name)) { probe ->
-                        listOf(
-                            "UPDATE `dmg_sequences` SET `next_value` = ${probe.value} " +
-                                "WHERE `name` = '$name' AND `managed_by` = 'd-migrate' " +
-                                "AND `format_version` = 'mysql-sequence-v1'",
-                        )
-                    }
+                    AtomicSequencePreserveRequest(mysqlRef(name))
                 },
                 protectedOperationIds = listOf(protectedOpId),
                 internalFollowUpIds = listOf("op-xplan-${names.joinToString("-")}"),

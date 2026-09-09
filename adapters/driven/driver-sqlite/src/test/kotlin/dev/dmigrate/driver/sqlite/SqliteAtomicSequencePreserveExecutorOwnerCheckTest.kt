@@ -27,7 +27,7 @@ class SqliteAtomicSequencePreserveExecutorOwnerCheckTest : FunSpec({
         val executor = SqliteAtomicSequencePreserveExecutor()
         val ref = SequenceObjectRef(name = "seq_owner_check", dialect = RenameProjectionDialect.SQLITE)
         val batch = AtomicSequencePreserveBatch(
-            requests = listOf(AtomicSequencePreserveRequest(ref) { _ -> emptyList() }),
+            requests = listOf(AtomicSequencePreserveRequest(ref)),
             protectedOperationIds = emptyList(),
             internalFollowUpIds = emptyList(),
         )

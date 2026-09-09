@@ -2,6 +2,7 @@ package dev.dmigrate.driver.migration.preserve
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
+import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import dev.dmigrate.driver.connection.DatabaseConnection
@@ -30,10 +31,10 @@ import dev.dmigrate.driver.connection.DatabaseConnection
  *    on the SAME connection. The runner-supplied lambda issues the
  *    actual sequence-bearing operations between Probe and Restore;
  *    the executor itself never inspects nor renders them.
- * 4. **Restore** — for every successful probe, call
- *    [AtomicSequencePreserveRequest.renderRestore] with the
- *    `Read` result and execute the returned statements against the
- *    locked connection.
+ * 4. **Restore** — fuer jede geglueckte Probe rendert die Implementierung
+ *    das Zurueckschreiben ihres eigenen Dialekts aus dem `Read`-Ergebnis
+ *    und der [AtomicSequencePreserveRequest.sequence] und fuehrt es auf
+ *    derselben gesperrten Verbindung aus.
  * 5. **COMMIT** on success, **ROLLBACK** on any error (lock timeout,
  *    probe failure, protected-operation exception, restore failure).
  *    Either every sequence in the batch lands a restored
@@ -132,17 +133,22 @@ data class AtomicSequencePreserveBatch(
 )
 
 /**
- * One sequence's preserve request: the target sequence + a render
- * callback that turns the probe result into the dialect-specific
- * restore SQL.
+ * Was eine Sequenz zum Wiederherstellen braucht: welche Sequenz, und
+ * wie sie im Soll-Schema aussieht.
  *
- * The render callback is owned by the dialect's renderer (PG emits
- * `setval`, MySQL/SQLite emit `UPDATE dmg_sequences …`); the
- * executor only calls it once the probe has succeeded and never
- * inspects the returned statements beyond passing them to the
- * locked connection.
+ * Das SQL steht **nicht** hier. Jeder Dialekt schreibt seinen Wert anders
+ * zurueck (PostgreSQL `setval`, SQL Server und Oracle `RESTART`, MySQL und
+ * SQLite ein `UPDATE` auf die Hilfstabelle), und die ausfuehrende Seite ist
+ * ohnehin je Dialekt eine eigene: der Executor rendert selbst, statt sich das
+ * SQL seines eigenen Dialekts von aussen reichen zu lassen.
+ *
+ * [sequence] stammt aus dem Soll-Schema — der Restore laeuft NACH den
+ * geschuetzten Operationen, es gilt also die Sequenz, wie sie danach dasteht.
+ * SQL Server und Oracle rechnen den Fortsetzungspunkt daraus und lehnen ohne
+ * sie benannt ab; PostgreSQL, MySQL und SQLite schreiben den geprobten Wert
+ * unveraendert zurueck und lassen sie liegen.
  */
 data class AtomicSequencePreserveRequest(
     val sequenceRef: SequenceObjectRef,
-    val renderRestore: (SequenceCurrentValueProbeResult.Read) -> List<String>,
+    val sequence: SequenceDefinition? = null,
 )

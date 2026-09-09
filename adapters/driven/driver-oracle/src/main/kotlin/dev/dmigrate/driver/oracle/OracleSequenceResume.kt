@@ -1,4 +1,4 @@
-package dev.dmigrate.driver
+package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.model.SequenceDefinition
 

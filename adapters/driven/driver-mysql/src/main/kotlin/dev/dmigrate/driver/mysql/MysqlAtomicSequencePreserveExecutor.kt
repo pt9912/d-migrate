@@ -220,7 +220,7 @@ class MysqlAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         probe: SequenceCurrentValueProbeResult.Read,
     ): AtomicSequencePreserveResult? {
         val statements = try {
-            request.renderRestore(probe)
+            restoreStatements(request, probe)
         } catch (e: Throwable) {
             connection.rollback()
             return AtomicSequencePreserveResult.Failed(request.sequenceRef, e)
@@ -260,6 +260,18 @@ class MysqlAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         val seconds = (millis + 999) / 1000
         return seconds.coerceAtLeast(1)
     }
+
+    /**
+     * Die Hilfstabelle bekommt den geprobten Wert unveraendert. Dieselbe
+     * Form, die [MysqlDiffSequenceOps] rendert — inklusive der Bedingungen
+     * auf `managed_by` und `format_version`, die eine fremde oder
+     * abgewanderte Zeile ungeschrieben lassen.
+     */
+    internal fun restoreStatements(
+        request: AtomicSequencePreserveRequest,
+        probe: SequenceCurrentValueProbeResult.Read,
+    ): List<String> =
+        listOf(MysqlDiffSequenceOps.updateNextValueSql(request.sequenceRef.name, probe.value))
 
     companion object {
         /** MySQL error code 1205: ER_LOCK_WAIT_TIMEOUT (MySQL Errors 5.7+ Appendix B). */

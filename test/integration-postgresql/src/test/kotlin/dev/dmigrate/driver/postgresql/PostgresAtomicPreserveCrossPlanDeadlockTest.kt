@@ -87,9 +87,7 @@ class PostgresAtomicPreserveCrossPlanDeadlockTest : FunSpec({
         fun buildBatch(names: List<String>): AtomicSequencePreserveBatch =
             AtomicSequencePreserveBatch(
                 requests = names.map { name ->
-                    AtomicSequencePreserveRequest(pgRef(name)) { probe ->
-                        listOf("SELECT setval('$name', ${probe.value}, ${probe.isCalled})")
-                    }
+                    AtomicSequencePreserveRequest(pgRef(name))
                 },
                 protectedOperationIds = listOf(protectedOpId),
                 internalFollowUpIds = listOf("op-xplan-${names.joinToString("-")}"),

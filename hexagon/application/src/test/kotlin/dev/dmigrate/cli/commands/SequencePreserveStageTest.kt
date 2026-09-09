@@ -17,6 +17,7 @@ import dev.dmigrate.driver.SequenceCapability
 import dev.dmigrate.driver.SequenceCapabilityDefaults
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -373,11 +374,28 @@ class SequencePreserveStageTest : FunSpec({
         followUp.isCalled shouldBe null
     }
 
-    test("renderRestore closure builds dialect-correct SQL when invoked with a probe result") {
-        // Stage doesn't probe at Stage time, but it stores
-        // renderRestore closures the atomic executor calls inside the
-        // lock. Exercising the closure here pins the SQL shape per
-        // dialect without standing up a real DB.
+    test("die Anfrage traegt die Sequenz aus dem SOLL-Schema, nicht fertiges SQL") {
+        // Der Restore laeuft NACH den geschuetzten Operationen — es gilt die
+        // Sequenz, wie sie danach dasteht. Was daraus wird, rendert der
+        // Treiber des Dialekts; die Stage kennt kein SQL.
+        val outcome = SequencePreserveStage.run(
+            request = executeRequest(),
+            target = dbTarget(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            plan = synthesisePlan(
+                listOf(alterSeqOp(name = "users_id_seq")),
+                desiredSchema = schemaWithSequence(name = "users_id_seq"),
+            ),
+        )
+        val request = (outcome as SequencePreserveStage.Outcome.Succeeded).atomicBatch.requests.single()
+
+        request.sequenceRef.name shouldBe "users_id_seq"
+        request.sequence?.increment shouldBe 1L
+    }
+
+    test("ohne die Sequenz im SOLL-Schema bleibt die Angabe leer, statt geraten zu werden") {
+        // SQL Server und Oracle lehnen dann benannt ab; ein erfundener
+        // Fortsetzungspunkt faende niemand, bis Schluessel kollidieren.
         val outcome = SequencePreserveStage.run(
             request = executeRequest(),
             target = dbTarget(),
@@ -385,11 +403,8 @@ class SequencePreserveStageTest : FunSpec({
             plan = synthesisePlan(listOf(alterSeqOp(name = "users_id_seq"))),
         )
         val request = (outcome as SequencePreserveStage.Outcome.Succeeded).atomicBatch.requests.single()
-        val sql = request.renderRestore(
-            dev.dmigrate.driver.SequenceCurrentValueProbeResult.Read(value = 99L, isCalled = true),
-        )
-        sql.size shouldBe 1
-        sql.single() shouldContain "setval('users_id_seq', 99, true)"
+
+        request.sequence.shouldBeNull()
     }
 
     // ── Capability gate ────────────────────────────────────────────────

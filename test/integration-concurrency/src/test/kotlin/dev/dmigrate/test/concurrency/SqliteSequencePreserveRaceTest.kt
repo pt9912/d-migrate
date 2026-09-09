@@ -98,12 +98,7 @@ class SqliteSequencePreserveRaceTest : FunSpec({
         val ref = SequenceObjectRef(sequenceName, null, RenameProjectionDialect.SQLITE)
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { probe ->
-                    listOf(
-                        "UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} " +
-                            "WHERE \"name\" = '$sequenceName'",
-                    )
-                },
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = listOf(ProtectedOperationId("atomic-preserve-protected-op")),
             internalFollowUpIds = listOf("atomic-preserve-followup-op"),

@@ -71,8 +71,8 @@ class AtomicSequencePreserveContractTest : FunSpec({
         // that the batch accepts the requests in caller order so
         // the executor's reordering is observable.
         val unsorted = listOf(
-            AtomicSequencePreserveRequest(mysqlSeq, { listOf("/* mysql restore */") }),
-            AtomicSequencePreserveRequest(pgSeq, { listOf("/* pg restore */") }),
+            AtomicSequencePreserveRequest(mysqlSeq),
+            AtomicSequencePreserveRequest(pgSeq),
         )
         val batch = AtomicSequencePreserveBatch(
             requests = unsorted,
@@ -120,7 +120,7 @@ class AtomicSequencePreserveContractTest : FunSpec({
             }
         }
         val batch = AtomicSequencePreserveBatch(
-            requests = listOf(AtomicSequencePreserveRequest(pgSeq, { listOf("/* pg restore */") })),
+            requests = listOf(AtomicSequencePreserveRequest(pgSeq)),
             protectedOperationIds = listOf(ProtectedOperationId("AlterSequenceCurrentValue")),
             internalFollowUpIds = emptyList(),
         )

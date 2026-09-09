@@ -4,6 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.cancel.CancellationTokenSource
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
+import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
@@ -98,9 +99,9 @@ class MssqlAtomicSequencePreserveExecutorTest : FunSpec({
         }
     }
 
-    fun batch(vararg refs: SequenceObjectRef, restore: (SequenceObjectRef) -> List<String> = { listOf("-- ${it.name}") }) =
+    fun batch(vararg refs: SequenceObjectRef, sequence: SequenceDefinition? = SequenceDefinition()) =
         AtomicSequencePreserveBatch(
-            requests = refs.map { r -> AtomicSequencePreserveRequest(r) { restore(r) } },
+            requests = refs.map { r -> AtomicSequencePreserveRequest(r, sequence) },
             protectedOperationIds = emptyList(),
             internalFollowUpIds = emptyList(),
         )
@@ -156,7 +157,9 @@ class MssqlAtomicSequencePreserveExecutorTest : FunSpec({
         result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
         fake.committed shouldBe true
         fake.rolledBack shouldBe false
-        fake.restores shouldContainExactly listOf("-- seq_a")
+        // `current_value` ist der zuletzt ausgegebene Wert, `RESTART WITH`
+        // setzt den naechsten: der geprobte 42 plus Schrittweite 1.
+        fake.restores shouldContainExactly listOf("ALTER SEQUENCE [seq_a] RESTART WITH 43;")
     }
 
     test("the lock order is by name then schema, so parallel runs serialise instead of crossing") {

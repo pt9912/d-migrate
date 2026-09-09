@@ -229,7 +229,7 @@ class OracleSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         probe: SequenceCurrentValueProbeResult.Read,
     ): AtomicSequencePreserveResult? {
         val statements = try {
-            request.renderRestore(probe)
+            restoreStatements(request, probe)
         } catch (e: Throwable) {
             return AtomicSequencePreserveResult.Failed(request.sequenceRef, e)
         }
@@ -269,6 +269,28 @@ class OracleSequencePreserveExecutor : AtomicSequencePreserveExecutor {
 
     private fun ceilToSeconds(millis: Long): Int =
         ((millis + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND).coerceAtLeast(1L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+
+    /**
+     * `ALL_SEQUENCES.LAST_NUMBER` ist der **naechste** auszugebende Wert, nicht
+     * der zuletzt ausgegebene (live gemessen, siehe [OracleSequenceResume]) —
+     * anders als SQL Servers `current_value`. Er wird deshalb unveraendert
+     * gesetzt; ihn zu versetzen verschenkte bei jedem Preserve einen Wert.
+     */
+    internal fun restoreStatements(
+        request: AtomicSequencePreserveRequest,
+        probe: SequenceCurrentValueProbeResult.Read,
+    ): List<String> {
+        val name = request.sequenceRef.name
+        val definition = requireNotNull(request.sequence) {
+            "Oracle preserve restore needs the sequence definition to compute the resume point " +
+                "(sequence=$name): LAST_NUMBER means different things with and without CACHE."
+        }
+        val next = requireNotNull(OracleSequenceResume.resumePoint(probe.value, definition)) {
+            "Sequence '$name' cannot resume after ${probe.value}: the next value lies outside " +
+                "its MINVALUE/MAXVALUE range and it does not cycle."
+        }
+        return listOf(OracleSequenceDdl.restartSql(name, next))
+    }
 
     companion object {
         /** `DBMS_LOCK.REQUEST`: Sperre erteilt. */

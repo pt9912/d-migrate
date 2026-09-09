@@ -41,13 +41,12 @@ class ExecutableSegmentsTest : FunSpec({
 
     val pgSeq = SequenceObjectRef(name = "users_id_seq", dialect = RenameProjectionDialect.POSTGRESQL)
     val pgSeq2 = SequenceObjectRef(name = "orders_id_seq", dialect = RenameProjectionDialect.POSTGRESQL)
-    val noopRestore: (SequenceCurrentValueProbeResult.Read) -> List<String> = { emptyList() }
 
     fun batch(
         protectedIds: List<String> = emptyList(),
         followUpIds: List<String> = emptyList(),
         requests: List<AtomicSequencePreserveRequest> = listOf(
-            AtomicSequencePreserveRequest(pgSeq, noopRestore),
+            AtomicSequencePreserveRequest(pgSeq),
         ),
     ) = AtomicSequencePreserveBatch(
         requests = requests,
@@ -207,8 +206,8 @@ class ExecutableSegmentsTest : FunSpec({
         val multiBatch = batch(
             protectedIds = listOf("protected-op-seq1", "protected-op-seq2"),
             requests = listOf(
-                AtomicSequencePreserveRequest(pgSeq, noopRestore),
-                AtomicSequencePreserveRequest(pgSeq2, noopRestore),
+                AtomicSequencePreserveRequest(pgSeq),
+                AtomicSequencePreserveRequest(pgSeq2),
             ),
         )
         val segments = segmentForExecute(listOf(s1, s2, s3, s4), atomicBatch = multiBatch)

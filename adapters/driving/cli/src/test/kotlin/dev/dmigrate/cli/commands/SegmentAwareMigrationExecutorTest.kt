@@ -53,13 +53,12 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
     )
 
     val pgSeq = SequenceObjectRef(name = "users_id_seq", dialect = RenameProjectionDialect.POSTGRESQL)
-    val noopRestore: (dev.dmigrate.driver.SequenceCurrentValueProbeResult.Read) -> List<String> = { emptyList() }
 
     fun batch(
         protectedIds: List<String> = listOf("AlterSequence"),
         followUpIds: List<String> = emptyList(),
     ) = AtomicSequencePreserveBatch(
-        requests = listOf(AtomicSequencePreserveRequest(pgSeq, noopRestore)),
+        requests = listOf(AtomicSequencePreserveRequest(pgSeq)),
         protectedOperationIds = protectedIds.map { ProtectedOperationId(it) },
         internalFollowUpIds = followUpIds,
     )
@@ -207,7 +206,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
         // Compose a segment with one protected statement + one follow-
         // up statement; the runner-built executeProtectedOps callback
         // must only run the protected one (the atomic-executor handles
-        // restore via renderRestore).
+        // restore rendered by the dialect's executor).
         val protectedStmt = stmt("AlterSequence")
         val followUpStmt = stmt("alter-seq-followup")
         val segment = AtomicPreserveSegment(

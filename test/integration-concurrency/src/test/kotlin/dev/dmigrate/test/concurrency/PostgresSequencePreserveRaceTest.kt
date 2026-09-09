@@ -142,15 +142,11 @@ class PostgresSequencePreserveRaceTest : FunSpec({
         val ref = SequenceObjectRef(seqName, null, RenameProjectionDialect.POSTGRESQL)
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { probe ->
-                    // Render the restore using the probed value — the
-                    // executor calls this after the protected
-                    // callback returns. `probe.value` is 1 (the
-                    // pre-race `last_value`), so the restore snaps
-                    // the sequence back to 1 even though the writer
-                    // advanced it past 51.
-                    listOf("SELECT setval('$seqName', ${probe.value}, ${probe.isCalled})")
-                },
+                // Der Executor rendert das Zurueckschreiben aus dem geprobten
+                // Wert selbst. Der ist 1 (der `last_value` vor dem Rennen),
+                // die Sequenz schnappt also auf 1 zurueck, obwohl der
+                // Schreiber sie ueber 51 hinaus getrieben hat.
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = listOf(ProtectedOperationId("AlterSequenceCurrentValue")),
             internalFollowUpIds = emptyList(),

@@ -3,7 +3,6 @@ package dev.dmigrate.driver.oracle
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.core.model.SequenceDefinition
-import dev.dmigrate.driver.OracleSequenceResume
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
@@ -77,13 +76,7 @@ class OracleSequencePreserveWindowIntegrationTest : FunSpec({
 
     fun batchFor(names: List<String>) = AtomicSequencePreserveBatch(
         requests = names.map { name ->
-            AtomicSequencePreserveRequest(ref(name)) { probe ->
-                // **Die Produktionsregel**, nicht eine im Test nachgebaute:
-                // `OracleSequenceResume` entscheidet, wo fortgesetzt wird.
-                // Ein `probe.value + 1` von Hand pruefte nur diese Zeile.
-                val resume = requireNotNull(OracleSequenceResume.resumePoint(probe.value, createdSequence))
-                listOf("ALTER SEQUENCE ${name.uppercase()} RESTART START WITH $resume")
-            }
+            AtomicSequencePreserveRequest(ref(name), createdSequence)
         },
         protectedOperationIds = listOf(ProtectedOperationId("AlterSequenceCurrentValue")),
         internalFollowUpIds = listOf("op-${names.joinToString("-")}"),
@@ -114,8 +107,8 @@ class OracleSequencePreserveWindowIntegrationTest : FunSpec({
         exec("CREATE SEQUENCE preserve_seq START WITH 1 INCREMENT BY 1 NOCACHE")
         val issued = nextVal("preserve_seq")
 
-        // Der Restore setzt den Fortsetzungspunkt so, wie der Produktivpfad
-        // ihn rechnet: LAST_NUMBER + Schrittweite.
+        // Der Restore rendert der Treiber selbst — derselbe Weg, den der
+        // Produktivpfad geht.
         val result = openConn().use { c ->
             executor.execute(JdbcDatabaseConnection(c), batchFor(listOf("preserve_seq")), lockTimeoutMillis = 5_000) { _, _ ->
                 AtomicProtectedExecutionResult.Succeeded(0)

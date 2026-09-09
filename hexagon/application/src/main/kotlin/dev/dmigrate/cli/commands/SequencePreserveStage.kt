@@ -37,10 +37,10 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
  *    blocks per candidate with `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`
  *    — no silent fall-through to the heutige Pfad.
  * 4. **Batch build** — Stage emits an [AtomicSequencePreserveBatch]
- *    with one [AtomicSequencePreserveRequest] per candidate; the
- *    `renderRestore` closure delegates to [AtomicPreserveRestoreSql]
- *    for dialect-specific SQL. The closure runs **inside** the lock
- *    at execute time; Stage itself opens no JDBC connection.
+ *    with one [AtomicSequencePreserveRequest] per candidate: die
+ *    Sequenz und ihre Soll-Definition. Das Zurueckschreiben rendert der
+ *    Treiber des Dialekts, innerhalb der Sperre zur Ausfuehrungszeit;
+ *    Stage selbst oeffnet keine JDBC-Verbindung und kennt kein SQL.
  * 5. **Plan augmentation (§6.4.6)** — the [DiffOperation.AlterSequenceCurrentValue]
  *    follow-ups stay in the augmented plan as audit markers so
  *    plan-only / report / rollback artefacts continue to surface the
@@ -148,7 +148,7 @@ object SequencePreserveStage {
         // `true` after Phase D landed (2026-06-01).
         allInPlanBlocker(candidates, capability, plan)?.let { return it }
 
-        return buildBatch(candidates, dialect, plan)
+        return buildBatch(candidates, plan)
     }
 
     /**
@@ -406,25 +406,17 @@ object SequencePreserveStage {
 
     private fun buildBatch(
         candidates: List<Candidate>,
-        dialect: DatabaseDialect,
         plan: DiffResult,
     ): Outcome.Succeeded {
         val requests = candidates.map { ctx ->
             AtomicSequencePreserveRequest(
                 sequenceRef = ctx.applyRef,
-                renderRestore = { probe ->
-                    // Die Definition kommt aus dem SOLL-Schema: der Restore
-                    // laeuft NACH den geschuetzten Operationen, also gilt die
-                    // Sequenz, wie sie danach dasteht. SQL Server rechnet den
-                    // Fortsetzungspunkt daraus; die uebrigen Dialekte lassen
-                    // sie liegen.
-                    AtomicPreserveRestoreSql.forDialect(
-                        dialect,
-                        ctx.applyRef,
-                        probe,
-                        plan.desiredSchema?.sequences?.get(ctx.applyRef.name),
-                    )
-                },
+                // Die Definition kommt aus dem SOLL-Schema: der Restore laeuft
+                // NACH den geschuetzten Operationen, also gilt die Sequenz, wie
+                // sie danach dasteht. Was daraus wird, entscheidet der Treiber
+                // des Dialekts -- SQL Server und Oracle rechnen den
+                // Fortsetzungspunkt aus, die uebrigen lassen sie liegen.
+                sequence = plan.desiredSchema?.sequences?.get(ctx.applyRef.name),
             )
         }
         // The batch's protectedOperationIds carry the **instance** IDs
@@ -460,7 +452,7 @@ object SequencePreserveStage {
      * [DiffOperation.AlterSequenceCurrentValue.Companion.ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE]
      * instead of a real probed value — the atomic executor probes
      * inside the lock at execute time and runs the restore SQL
-     * produced by [AtomicSequencePreserveRequest.renderRestore].
+     * gerendert vom Executor des Dialekts.
      *
      * The follow-up exists for two reasons:
      *

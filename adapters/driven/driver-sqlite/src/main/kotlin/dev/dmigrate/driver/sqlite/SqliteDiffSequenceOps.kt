@@ -192,7 +192,7 @@ internal object SqliteDiffSequenceOps {
         }
     }
 
-    private fun updateNextValueSql(sequenceName: String, value: Long): String =
+    internal fun updateNextValueSql(sequenceName: String, value: Long): String =
         """UPDATE "${SqliteSequenceNaming.SUPPORT_TABLE}" SET "next_value" = $value """ +
             """WHERE "name" = '${escapeLiteral(sequenceName)}';"""
 

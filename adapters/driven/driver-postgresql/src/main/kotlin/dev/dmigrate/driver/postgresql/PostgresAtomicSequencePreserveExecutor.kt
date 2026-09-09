@@ -233,7 +233,7 @@ class PostgresAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         probe: SequenceCurrentValueProbeResult.Read,
     ): AtomicSequencePreserveResult? {
         val statements = try {
-            request.renderRestore(probe)
+            restoreStatements(request, probe)
         } catch (e: Throwable) {
             connection.rollback()
             return AtomicSequencePreserveResult.Failed(request.sequenceRef, e)
@@ -261,6 +261,22 @@ class PostgresAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
     private fun lockKey(ref: SequenceObjectRef): String {
         val schema = ref.schema.orEmpty()
         return "d-migrate:seq:$schema.${ref.name}"
+    }
+
+    /**
+     * `setval` schreibt den geprobten Wert unveraendert zurueck — samt
+     * `is_called`, denn ohne die Angabe stuende die Sequenz danach um eins
+     * versetzt. Dieselbe Form, die [PostgresDiffSequenceOps] rendert.
+     */
+    internal fun restoreStatements(
+        request: AtomicSequencePreserveRequest,
+        probe: SequenceCurrentValueProbeResult.Read,
+    ): List<String> {
+        val isCalled = requireNotNull(probe.isCalled) {
+            "PG atomic-preserve restore requires isCalled on probe " +
+                "(sequence=${request.sequenceRef.name})"
+        }
+        return listOf(PostgresDiffSequenceOps.setvalSql(request.sequenceRef.name, probe.value, isCalled))
     }
 
     companion object {

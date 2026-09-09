@@ -149,7 +149,7 @@ internal object SegmentAwareMigrationExecutor {
         // Internal follow-ups (the AlterSequenceCurrentValue audit
         // markers) are NOT executed standalone in the live-execute
         // path — the atomic executor handles the restore via each
-        // request's renderRestore callback. The segment still carries
+        // Zurueckschreiben des Treibers. The segment still carries
         // them so plan-only / report / rollback artefacts can show
         // the audit trail; here we filter them out before handing the
         // remaining protected statements to the executor's callback.

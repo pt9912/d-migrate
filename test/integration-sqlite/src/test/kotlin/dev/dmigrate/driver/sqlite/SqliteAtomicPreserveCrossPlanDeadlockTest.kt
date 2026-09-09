@@ -94,12 +94,7 @@ class SqliteAtomicPreserveCrossPlanDeadlockTest : FunSpec({
             fun buildBatch(names: List<String>): AtomicSequencePreserveBatch =
                 AtomicSequencePreserveBatch(
                     requests = names.map { name ->
-                        AtomicSequencePreserveRequest(sqliteRef(name)) { probe ->
-                            listOf(
-                                "UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} " +
-                                    "WHERE \"name\" = '$name'",
-                            )
-                        }
+                        AtomicSequencePreserveRequest(sqliteRef(name))
                     },
                     protectedOperationIds = listOf(protectedOpId),
                     internalFollowUpIds = listOf("op-xplan-sqlite-${names.joinToString("-")}"),

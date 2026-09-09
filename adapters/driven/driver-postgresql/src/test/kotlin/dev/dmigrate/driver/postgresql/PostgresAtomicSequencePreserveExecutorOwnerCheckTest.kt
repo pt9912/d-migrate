@@ -34,7 +34,7 @@ class PostgresAtomicSequencePreserveExecutorOwnerCheckTest : FunSpec({
         val executor = PostgresAtomicSequencePreserveExecutor()
         val ref = SequenceObjectRef(name = "seq_owner_check", dialect = RenameProjectionDialect.POSTGRESQL)
         val batch = AtomicSequencePreserveBatch(
-            requests = listOf(AtomicSequencePreserveRequest(ref) { _ -> emptyList() }),
+            requests = listOf(AtomicSequencePreserveRequest(ref)),
             protectedOperationIds = emptyList(),
             internalFollowUpIds = emptyList(),
         )

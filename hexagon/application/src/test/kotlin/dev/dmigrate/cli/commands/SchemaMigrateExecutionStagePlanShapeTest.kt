@@ -70,11 +70,9 @@ class SchemaMigrateExecutionStagePlanShapeTest : FunSpec({
             requests = listOf(
                 AtomicSequencePreserveRequest(
                     sequenceRef = SequenceObjectRef("a", null, RenameProjectionDialect.POSTGRESQL),
-                    renderRestore = { _ -> emptyList() },
                 ),
                 AtomicSequencePreserveRequest(
                     sequenceRef = SequenceObjectRef("b", null, RenameProjectionDialect.POSTGRESQL),
-                    renderRestore = { _ -> emptyList() },
                 ),
             ),
             protectedOperationIds = listOf(

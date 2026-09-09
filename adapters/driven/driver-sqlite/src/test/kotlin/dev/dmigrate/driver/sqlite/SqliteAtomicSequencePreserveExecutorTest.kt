@@ -11,6 +11,7 @@ import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.nio.file.Files
 import java.nio.file.Path
@@ -68,7 +69,7 @@ class SqliteAtomicSequencePreserveExecutorTest : FunSpec({
         SequenceObjectRef(name = name, schema = null, dialect = RenameProjectionDialect.SQLITE)
 
     fun batchFor(name: String = "order_seq") = AtomicSequencePreserveBatch(
-        requests = listOf(AtomicSequencePreserveRequest(ref(name)) { _ -> emptyList() }),
+        requests = listOf(AtomicSequencePreserveRequest(ref(name))),
         protectedOperationIds = emptyList(),
         internalFollowUpIds = emptyList(),
     )
@@ -85,6 +86,18 @@ class SqliteAtomicSequencePreserveExecutorTest : FunSpec({
             executeProtectedOperations = { c, ids -> succeedProtected(c, ids) },
         )
         result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
+
+        // Der Executor rendert sein SQL selbst — gegen eine echte Datei
+        // gemessen, nicht gegen eine Zeichenkette: der geprobte Wert steht
+        // nach dem Commit wieder in der Hilfstabelle.
+        openConnection().use { verify ->
+            verify.createStatement().use { stmt ->
+                stmt.executeQuery("SELECT next_value FROM dmg_sequences WHERE name = 'order_seq'").use { rows ->
+                    rows.next() shouldBe true
+                    rows.getLong(1) shouldBe 100L
+                }
+            }
+        }
     }
 
     test("probe NotFound when the helper-table row is absent → NotFound + rollback") {

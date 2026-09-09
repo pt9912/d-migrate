@@ -92,12 +92,7 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             val ref = sqliteRef("atom_seq_a")
             val batch = AtomicSequencePreserveBatch(
                 requests = listOf(
-                    AtomicSequencePreserveRequest(ref) { probe ->
-                        listOf(
-                            "UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} " +
-                                "WHERE \"name\" = 'atom_seq_a' AND \"managed_by\" = '${probe.managedBy}'",
-                        )
-                    },
+                    AtomicSequencePreserveRequest(ref),
                 ),
                 protectedOperationIds = listOf(protectedOpId),
                 internalFollowUpIds = listOf("op-atom_seq_a"),
@@ -129,12 +124,8 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
                 // Caller supplies refs in reverse alphabetical order;
                 // the executor's sort still commits in (a, z) order.
                 requests = listOf(
-                    AtomicSequencePreserveRequest(refZ) { probe ->
-                        listOf("UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} WHERE \"name\" = 'atom_seq_z'")
-                    },
-                    AtomicSequencePreserveRequest(refA) { probe ->
-                        listOf("UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} WHERE \"name\" = 'atom_seq_a_multi'")
-                    },
+                    AtomicSequencePreserveRequest(refZ),
+                    AtomicSequencePreserveRequest(refA),
                 ),
                 protectedOperationIds = listOf(protectedOpId),
                 internalFollowUpIds = listOf("op-multi"),
@@ -158,9 +149,7 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             val ref = sqliteRef("atom_seq_missing")
             val batch = AtomicSequencePreserveBatch(
                 requests = listOf(
-                    AtomicSequencePreserveRequest(ref) { probe ->
-                        listOf("UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} WHERE \"name\" = 'atom_seq_missing'")
-                    },
+                    AtomicSequencePreserveRequest(ref),
                 ),
                 protectedOperationIds = emptyList(),
                 internalFollowUpIds = emptyList(),
@@ -190,9 +179,7 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
                     val ref = sqliteRef("atom_seq_locked")
                     val batch = AtomicSequencePreserveBatch(
                         requests = listOf(
-                            AtomicSequencePreserveRequest(ref) { probe ->
-                                listOf("UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} WHERE \"name\" = 'atom_seq_locked'")
-                            },
+                            AtomicSequencePreserveRequest(ref),
                         ),
                         protectedOperationIds = emptyList(),
                         internalFollowUpIds = emptyList(),
@@ -220,9 +207,7 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             val ref = sqliteRef("atom_seq_timeout_leak")
             val batch = AtomicSequencePreserveBatch(
                 requests = listOf(
-                    AtomicSequencePreserveRequest(ref) { probe ->
-                        listOf("UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} WHERE \"name\" = 'atom_seq_timeout_leak'")
-                    },
+                    AtomicSequencePreserveRequest(ref),
                 ),
                 protectedOperationIds = emptyList(),
                 internalFollowUpIds = emptyList(),
@@ -264,12 +249,7 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             val ref = sqliteRef("atom_seq_cancel_pre")
             val batch = AtomicSequencePreserveBatch(
                 requests = listOf(
-                    AtomicSequencePreserveRequest(ref) { probe ->
-                        listOf(
-                            "UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} " +
-                                "WHERE \"name\" = 'atom_seq_cancel_pre'",
-                        )
-                    },
+                    AtomicSequencePreserveRequest(ref),
                 ),
                 protectedOperationIds = listOf(protectedOpId),
                 internalFollowUpIds = emptyList(),
@@ -306,9 +286,7 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             val tokenSource = dev.dmigrate.core.cancel.CancellationTokenSource.create()
             val batch = AtomicSequencePreserveBatch(
                 requests = listOf(
-                    AtomicSequencePreserveRequest(ref) { _ ->
-                        error("renderRestore must not run after a post-protected cancel")
-                    },
+                    AtomicSequencePreserveRequest(ref),
                 ),
                 protectedOperationIds = listOf(protectedOpId),
                 internalFollowUpIds = emptyList(),

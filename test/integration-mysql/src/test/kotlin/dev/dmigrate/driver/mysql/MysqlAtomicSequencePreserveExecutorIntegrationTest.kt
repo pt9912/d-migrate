@@ -100,13 +100,7 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         val ref = mysqlRef("atom_seq_a")
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { probe ->
-                    listOf(
-                        "UPDATE `dmg_sequences` SET `next_value` = ${probe.value} " +
-                            "WHERE `name` = 'atom_seq_a' " +
-                            "AND `managed_by` = '${probe.managedBy}'",
-                    )
-                },
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = listOf(protectedOpId),
             internalFollowUpIds = listOf("op-atom_seq_a"),
@@ -137,12 +131,7 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         val ref = mysqlRef("atom_seq_missing")
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { probe ->
-                    listOf(
-                        "UPDATE `dmg_sequences` SET `next_value` = ${probe.value} " +
-                            "WHERE `name` = 'atom_seq_missing'",
-                    )
-                },
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = emptyList(),
             internalFollowUpIds = emptyList(),
@@ -183,12 +172,7 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             val ref = mysqlRef("atom_seq_locked")
             val batch = AtomicSequencePreserveBatch(
                 requests = listOf(
-                    AtomicSequencePreserveRequest(ref) { probe ->
-                        listOf(
-                            "UPDATE `dmg_sequences` SET `next_value` = ${probe.value} " +
-                                "WHERE `name` = 'atom_seq_locked'",
-                        )
-                    },
+                    AtomicSequencePreserveRequest(ref),
                 ),
                 protectedOperationIds = emptyList(),
                 internalFollowUpIds = emptyList(),
@@ -217,12 +201,7 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         val ref = mysqlRef("atom_seq_timeout_leak")
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { probe ->
-                    listOf(
-                        "UPDATE `dmg_sequences` SET `next_value` = ${probe.value} " +
-                            "WHERE `name` = 'atom_seq_timeout_leak'",
-                    )
-                },
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = emptyList(),
             internalFollowUpIds = emptyList(),
@@ -257,12 +236,7 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         val ref = mysqlRef("atom_seq_cancel_pre")
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { probe ->
-                    listOf(
-                        "UPDATE `dmg_sequences` SET `next_value` = ${probe.value} " +
-                            "WHERE `name` = 'atom_seq_cancel_pre'",
-                    )
-                },
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = listOf(protectedOpId),
             internalFollowUpIds = emptyList(),
@@ -297,9 +271,7 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         val tokenSource = dev.dmigrate.core.cancel.CancellationTokenSource.create()
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { _ ->
-                    error("renderRestore must not run after a post-protected cancel")
-                },
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = listOf(protectedOpId),
             internalFollowUpIds = emptyList(),

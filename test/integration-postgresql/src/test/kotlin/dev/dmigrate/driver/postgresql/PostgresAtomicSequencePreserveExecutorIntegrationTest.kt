@@ -74,12 +74,7 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         val ref = pgRef("atom_seq_a")
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(
-                    sequenceRef = ref,
-                    renderRestore = { probe ->
-                        listOf("SELECT setval('atom_seq_a', ${probe.value}, ${probe.isCalled})")
-                    },
-                ),
+                AtomicSequencePreserveRequest(sequenceRef = ref),
             ),
             protectedOperationIds = listOf(protectedOpId),
             internalFollowUpIds = listOf("op-atom_seq_a"),
@@ -122,12 +117,8 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         val refZ = pgRef("atom_seq_z")
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(refZ) { probe ->
-                    listOf("SELECT setval('atom_seq_z', ${probe.value}, ${probe.isCalled})")
-                },
-                AtomicSequencePreserveRequest(refA) { probe ->
-                    listOf("SELECT setval('atom_seq_a_multi', ${probe.value}, ${probe.isCalled})")
-                },
+                AtomicSequencePreserveRequest(refZ),
+                AtomicSequencePreserveRequest(refA),
             ),
             protectedOperationIds = listOf(protectedOpId),
             internalFollowUpIds = listOf("op-multi"),
@@ -149,9 +140,7 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         val ref = pgRef("atom_seq_missing")
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { probe ->
-                    listOf("SELECT setval('atom_seq_missing', ${probe.value})")
-                },
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = emptyList(),
             internalFollowUpIds = emptyList(),
@@ -201,9 +190,7 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             val ref = pgRef("atom_seq_locked")
             val batch = AtomicSequencePreserveBatch(
                 requests = listOf(
-                    AtomicSequencePreserveRequest(ref) { probe ->
-                        listOf("SELECT setval('atom_seq_locked', ${probe.value})")
-                    },
+                    AtomicSequencePreserveRequest(ref),
                 ),
                 protectedOperationIds = emptyList(),
                 internalFollowUpIds = emptyList(),
@@ -233,9 +220,7 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         val ref = pgRef("atom_seq_autocommit")
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { probe ->
-                    listOf("SELECT setval('atom_seq_autocommit', ${probe.value}, ${probe.isCalled})")
-                },
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = emptyList(),
             internalFollowUpIds = emptyList(),
@@ -266,9 +251,7 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         val ref = pgRef("atom_seq_cancel_pre")
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { probe ->
-                    listOf("SELECT setval('atom_seq_cancel_pre', ${probe.value}, ${probe.isCalled})")
-                },
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = listOf(protectedOpId),
             internalFollowUpIds = emptyList(),
@@ -308,11 +291,7 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         val tokenSource = dev.dmigrate.core.cancel.CancellationTokenSource.create()
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { probe ->
-                    // This restore SHOULD never execute because we
-                    // cancel in the protected callback (checkpoint 3).
-                    error("renderRestore must not run after a post-protected cancel; probe=${probe.value}")
-                },
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = listOf(protectedOpId),
             internalFollowUpIds = emptyList(),
@@ -335,5 +314,10 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             result.refs shouldBe listOf(ref)
             c.autoCommit shouldBe true
         }
+        // Der Beleg, dass das Zurueckschreiben nach dem Abbruch NICHT lief:
+        // `setval` ist bei PostgreSQL nicht transaktional, ein gelaufener
+        // Restore haette die Sequenz auf den geprobten Wert 2 zurueckgeholt.
+        // Der Vorlauf der geschuetzten Operation steht also noch da.
+        query("SELECT last_value FROM atom_seq_cancel_mid") shouldBe 3L
     }
 })

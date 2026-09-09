@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
+import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
@@ -72,9 +73,7 @@ class MssqlAtomicPreserveCrossPlanDeadlockTest : FunSpec({
 
         fun batchFor(names: List<String>) = AtomicSequencePreserveBatch(
             requests = names.map { name ->
-                AtomicSequencePreserveRequest(ref(name)) { probe ->
-                    listOf("ALTER SEQUENCE $name RESTART WITH ${probe.value + 1}")
-                }
+                AtomicSequencePreserveRequest(ref(name), SequenceDefinition())
             },
             protectedOperationIds = listOf(protectedOpId),
             internalFollowUpIds = listOf("op-xplan-${names.joinToString("-")}"),

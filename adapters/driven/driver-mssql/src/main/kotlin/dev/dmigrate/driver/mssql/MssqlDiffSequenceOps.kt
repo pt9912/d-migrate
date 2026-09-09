@@ -2,7 +2,6 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.SequenceDefinition
-import dev.dmigrate.driver.MssqlSequenceResume
 
 /**
  * Sequenzen im Diff-Pfad.

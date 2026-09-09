@@ -154,13 +154,7 @@ class MysqlSequencePreserveRaceTest : FunSpec({
         val ref = SequenceObjectRef(seqName, null, RenameProjectionDialect.MYSQL)
         val batch = AtomicSequencePreserveBatch(
             requests = listOf(
-                AtomicSequencePreserveRequest(ref) { probe ->
-                    listOf(
-                        "UPDATE `dmg_sequences` SET `next_value` = ${probe.value} " +
-                            "WHERE `name` = '$seqName' AND `managed_by` = 'd-migrate' " +
-                            "AND `format_version` = 'mysql-sequence-v1'",
-                    )
-                },
+                AtomicSequencePreserveRequest(ref),
             ),
             protectedOperationIds = listOf(ProtectedOperationId("atomic-preserve-protected-op")),
             internalFollowUpIds = listOf("atomic-preserve-followup-op"),

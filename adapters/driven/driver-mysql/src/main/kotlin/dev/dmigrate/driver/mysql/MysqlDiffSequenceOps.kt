@@ -291,7 +291,7 @@ internal object MysqlDiffSequenceOps {
                 )
                 return
             }
-            ctx.emit(op, updateNextValueSql(op.applySequenceRef.name, op.currentValue, ctx))
+            ctx.emit(op, updateNextValueSql(op.applySequenceRef.name, op.currentValue))
             return
         }
         val restoreValue = op.restoreValue
@@ -309,7 +309,7 @@ internal object MysqlDiffSequenceOps {
             )
             return
         }
-        ctx.emit(op, updateNextValueSql(op.probeSequenceRef.name, restoreValue, ctx))
+        ctx.emit(op, updateNextValueSql(op.probeSequenceRef.name, restoreValue))
     }
 
     /**
@@ -322,21 +322,21 @@ internal object MysqlDiffSequenceOps {
      * [MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS] in
      * declaration order so the rendered SQL is deterministic.
      */
-    private fun updateNextValueSql(
+    internal fun updateNextValueSql(
         sequenceName: String,
         value: Long,
-        ctx: MysqlDiffRenderContext,
     ): String {
+        val quote = MysqlSequenceSqlCodec::quoteIdentifier
         val nameLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(sequenceName)
         val managedByList = MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY
             .joinToString(", ") { MysqlSequenceSqlCodec.quoteStringLiteral(it) }
         val formatVersionList = MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS
             .joinToString(", ") { MysqlSequenceSqlCodec.quoteStringLiteral(it) }
-        return "UPDATE ${ctx.sql.quote(MysqlSequenceNaming.SUPPORT_TABLE)} SET " +
-            "${ctx.sql.quote("next_value")} = $value " +
-            "WHERE ${ctx.sql.quote("name")} = $nameLiteral " +
-            "AND ${ctx.sql.quote("managed_by")} IN ($managedByList) " +
-            "AND ${ctx.sql.quote("format_version")} IN ($formatVersionList);"
+        return "UPDATE ${quote(MysqlSequenceNaming.SUPPORT_TABLE)} SET " +
+            "${quote("next_value")} = $value " +
+            "WHERE ${quote("name")} = $nameLiteral " +
+            "AND ${quote("managed_by")} IN ($managedByList) " +
+            "AND ${quote("format_version")} IN ($formatVersionList);"
     }
 
     /**

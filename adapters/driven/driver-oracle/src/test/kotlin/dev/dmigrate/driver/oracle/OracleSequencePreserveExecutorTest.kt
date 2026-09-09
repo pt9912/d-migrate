@@ -4,6 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.cancel.CancellationTokenSource
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
+import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
@@ -94,7 +95,7 @@ class OracleSequencePreserveExecutorTest : FunSpec({
     }
 
     fun batch(vararg refs: SequenceObjectRef) = AtomicSequencePreserveBatch(
-        requests = refs.map { r -> AtomicSequencePreserveRequest(r) { listOf("ALTER SEQUENCE ${r.name} RESTART START WITH 42") } },
+        requests = refs.map { r -> AtomicSequencePreserveRequest(r, SequenceDefinition()) },
         protectedOperationIds = emptyList(),
         internalFollowUpIds = emptyList(),
     )
@@ -119,7 +120,8 @@ class OracleSequencePreserveExecutorTest : FunSpec({
         val result = run(fake, batch(ref("seq_a")))
 
         result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
-        fake.executed shouldContainExactly listOf("ALTER SEQUENCE seq_a RESTART START WITH 42")
+        // `LAST_NUMBER` ist bereits der naechste Wert: 41 bleibt 41.
+        fake.executed shouldContainExactly listOf("ALTER SEQUENCE \"seq_a\" RESTART START WITH 41;")
         fake.releasedIds shouldContainExactly fake.lockIds
     }
 
