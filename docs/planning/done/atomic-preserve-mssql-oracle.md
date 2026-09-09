@@ -1,7 +1,6 @@
 # Atomic-Preserve für MSSQL und Oracle nachrüsten
 
-> **Status:** Phase A (MSSQL) **geliefert** (2026-09-09). Phase B (Oracle)
-> entschieden (`DBMS_LOCK.REQUEST`, siehe unten), noch nicht gebaut.
+> **Status:** erledigt (2026-09-09). Beide Phasen gebaut.
 >
 > **Was Phase A gebracht hat, und was sie gekostet hat:** `sp_getapplock` ist
 > das direkte Gegenstueck zu PGs Advisory-Lock, aber es hat eine Bedingung,
@@ -206,3 +205,33 @@ damit aufgelöst.
   Ausführungs-Infrastruktur, keine Schema-Eigenschaft.
 - Phase B beginnt nicht vor Oracle Slice 5 — keine Umgehung dieser
   Abhängigkeit durch einen Interims-Workaround.
+
+## Closure (2026-09-09)
+
+Beide Phasen geliefert. Das Ergebnis weicht in einem Punkt vom Plan ab, und
+zwar begründet: SQL Server bekam das atomare Fenster wie vorgesehen, Oracle
+ein **serialisiertes** — dort ist Atomarität nicht erreichbar, weil jedes DDL
+implizit committet und der Restore DDL ist. Statt das unter dem bestehenden
+Flag zu behaupten, unterscheidet `PreserveWindowIsolation` jetzt
+`NONE`/`SERIALIZED`/`ATOMIC`.
+
+Was der Bau gekostet hat, stand nicht im Plan:
+
+- **Zwei Sperr-Eigenarten, je Server eine.** `sp_getapplock` wirft nicht,
+  sondern liefert eine negative Zahl — und der JDBC-Treiber eröffnet mit
+  `autoCommit = false` keine Transaktion, ohne die es `-999` gibt.
+  `DBMS_LOCK.REQUEST` braucht `release_on_commit => FALSE`, sonst fällt die
+  Sperre beim ersten DDL weg.
+- **Zwei Restore-Regeln, die beide falsch angenommen waren.** SQL Servers
+  `current_value` ist der zuletzt *ausgegebene* Wert (Restore = +Schrittweite),
+  Oracles `LAST_NUMBER` der *nächste* (Restore = unverändert). Die erste
+  Annahme wäre ein Duplikat gewesen, die zweite eine Lücke bei jedem Lauf.
+- **Oracle hatte keine Sequenz-Probe.** Sie musste erst entstehen.
+
+Der Oracle-Fehler fiel nur durch die Sabotage-Prüfung auf: der Live-Test blieb
+grün, obwohl die Regel entfernt war. Er prüfte „größer als vorher" statt
+lückenlos — eine Zusicherung, die richtig und falsch nicht unterscheiden
+konnte. Das ist der Grund, warum jede neue Zusicherung sabotage-geprüft wird,
+und hier hat es sich unmittelbar ausgezahlt.
+
+Offen bleibt nichts aus diesem Schnitt.

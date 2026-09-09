@@ -34,9 +34,8 @@ internal object AtomicSequencePreserveDispatcher {
     private val oracle: AtomicSequencePreserveExecutor = OracleSequencePreserveExecutor()
 
     // Capability-gefuehrt statt hartcodierter Dialekt-Aufzaehlung: ein
-    // Dialekt, der spaeter Atomic-Preserve bekommt (siehe
-    // docs/planning/next/atomic-preserve-mssql-oracle.md), braucht hier
-    // keine Anpassung -- nur einen echten `when`-Zweig weiter unten.
+    // Dialekt, der spaeter ein Preserve-Fenster bekommt, braucht hier keine
+    // Anpassung -- nur einen echten `when`-Zweig weiter unten.
     fun executorFor(dialect: DatabaseDialect): AtomicSequencePreserveExecutor {
         check(SequenceCapabilityDefaults.forDialect(dialect).preserveWindowIsolation.guardsWindow) {
             "unreachable: SequenceCapabilityDefaults declares no preserve window for " +

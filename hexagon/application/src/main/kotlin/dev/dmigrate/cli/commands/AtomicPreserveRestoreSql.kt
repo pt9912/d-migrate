@@ -51,9 +51,8 @@ internal object AtomicPreserveRestoreSql {
         sequence: SequenceDefinition? = null,
     ): List<String> {
         // Capability-gefuehrt statt hartcodierter Dialekt-Aufzaehlung: ein
-        // Dialekt, der spaeter Atomic-Preserve bekommt (siehe
-        // docs/planning/next/atomic-preserve-mssql-oracle.md), braucht hier
-        // keine Anpassung -- nur einen echten `when`-Zweig weiter unten.
+        // Dialekt, der spaeter ein Preserve-Fenster bekommt, braucht hier keine
+        // Anpassung -- nur einen echten `when`-Zweig weiter unten.
         check(SequenceCapabilityDefaults.forDialect(dialect).preserveWindowIsolation.guardsWindow) {
             "unreachable: SequenceCapabilityDefaults declares no preserve window for " +
                 "${dialect.name.lowercase()}, der Atomic-Pfad waehlt den Dialekt also nie aus."
