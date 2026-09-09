@@ -30,7 +30,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  */
 internal object OracleDiffViewOps {
 
-    private val transformer = ViewQueryTransformer(DatabaseDialect.ORACLE)
+    private val transformer = ViewQueryTransformer(OracleViewPortabilityRules)
 
     fun renderCreateView(op: DiffOperation.CreateView, ctx: OracleDiffRenderContext) {
         val name = op.objectRef.rootName

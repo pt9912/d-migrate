@@ -28,7 +28,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             return null
         }
 
-        val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        val transformer = ViewQueryTransformer(PostgresViewPortabilityRules)
         val portability = transformer.assessPortability(query, view.sourceDialect)
         if (!portability.portable) {
             val action = ManualActionRequired(

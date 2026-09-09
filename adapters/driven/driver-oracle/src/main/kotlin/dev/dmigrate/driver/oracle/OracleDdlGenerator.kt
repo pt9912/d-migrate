@@ -236,7 +236,7 @@ class OracleDdlGenerator private constructor(
             skipped += SkippedObject("view", name, "No query defined")
             return null
         }
-        val transformer = ViewQueryTransformer(DatabaseDialect.ORACLE)
+        val transformer = ViewQueryTransformer(OracleViewPortabilityRules)
         val portability = transformer.assessPortability(query, view.sourceDialect)
         if (!portability.portable) {
             val action = ManualActionRequired(

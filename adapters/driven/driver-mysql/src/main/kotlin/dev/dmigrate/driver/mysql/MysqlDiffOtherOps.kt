@@ -356,7 +356,7 @@ internal object MysqlDiffOtherOps {
         ctx: MysqlDiffRenderContext,
     ): Boolean {
         val query = view.query ?: return false
-        val verdict = ViewQueryTransformer(DatabaseDialect.MYSQL).assessPortability(query, view.sourceDialect)
+        val verdict = ViewQueryTransformer(MysqlViewPortabilityRules).assessPortability(query, view.sourceDialect)
         if (verdict.portable) return false
         ctx.skip(
             op,

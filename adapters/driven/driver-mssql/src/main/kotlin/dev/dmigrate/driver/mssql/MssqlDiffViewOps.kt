@@ -92,7 +92,7 @@ internal object MssqlDiffViewOps {
             ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
             return
         }
-        val transformer = ViewQueryTransformer(DatabaseDialect.MSSQL)
+        val transformer = ViewQueryTransformer(MssqlViewPortabilityRules)
         val portability = transformer.assessPortability(query, view.sourceDialect)
         if (!portability.portable) {
             ctx.skip(

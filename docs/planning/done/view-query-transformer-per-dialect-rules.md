@@ -1,6 +1,6 @@
 # `ViewQueryTransformer`: Dialekt-Regeln aus `driver-common` in die Adapter verschieben
 
-> **Status:** Draft mit Scope (2026-09-05).
+> **Status:** erledigt (2026-09-09).
 > **Trigger:** Beim Oracle-Slice-2-Bau (`schema generate`, ADR 0052) fiel
 > auf: `ViewQueryTransformer` (Portabilitäts-Check + Funktions-Umschreibung
 > für View-Bodies) lebt als eine Klasse in `driver-common` und enthält für
@@ -99,3 +99,51 @@ Regel-Objekt delegieren).
 - Kein Auslöser-Zwang: aktiv erst, wenn ein sechster Dialekt oder ein
   weiterer Änderungsbedarf an den bestehenden Regeln den Aufwand
   rechtfertigt.
+
+## Closure (2026-09-09)
+
+Gebaut wie geschnitten, mit drei Abweichungen — jede billiger als der Plan:
+
+- **Keine `DatabaseDriver`-Erweiterung, keine Registry.** P2 fürchtete einen
+  Rippel durch alle fünf Treiber und jeden Test-Fake. Der war unnötig: jede
+  der elf Aufrufstellen liegt **im eigenen Treibermodul** und kennt ihren
+  Dialekt zur Übersetzungszeit. Sie konstruiert das Regelobjekt direkt
+  (`ViewQueryTransformer(MysqlViewPortabilityRules)`), und das Interface
+  bleibt eine reine Übergabe.
+- **Zwei Marker bleiben in der Hülle**, und das ist kein Rest, sondern eine
+  Unterscheidung, die der Plan nicht traf: MySQLs Backticks und T-SQLs
+  Klammern sind Aussagen über die **Quelle**, nicht über das Ziel — sie
+  gelten für jeden Dialekt außer ihrem Eigentümer. In fünf Regelobjekten
+  stünde dieselbe Zeile viermal.
+- **Die Sichtbarkeit musste sich öffnen.** `ViewQueryToken`, `ViewQueryRule`
+  und die Regelklassen waren `internal` in `driver-common` — für die
+  Regelobjekte in den anderen Modulen unsichtbar. Sie sind jetzt öffentlich:
+  aus einem Modul-Internum wird ein geteiltes Vokabular, und genau das ist
+  die Rolle, die dem Modul bleibt.
+
+**Was die Aufteilung nebenbei aufgedeckt hat:** die generische Umschreib-
+Infrastruktur (`ViewQueryRuleSupport`, Tokenizer, Klausel-Erkennung) war
+**nirgends direkt geprüft** — sie lief nur nebenbei durch die Dialekt-Tests
+mit. Nach dem Umzug fiel die Modulabdeckung von 90 % auf 79 %, und das war
+kein Messfehler, sondern der sichtbar gewordene Zustand. Sie hat jetzt eigene
+Zusicherungen (Argument-Zerlegung mit Schachtelung, `EXTRACT`/`SUBSTRING`-
+Formen, Bau-Helfer, Klausel-Erkennung) — prüfbar ohne jeden Dialekt, was
+zugleich der Beleg dafür ist, dass sie zu Recht geteilt liegt.
+
+## Was offen bleibt
+
+`RawSqlExpressionPortability` (im selben Modul, 2026-09-08 entstanden) trägt
+dieselbe Gestalt: `::`/`~~` für Nicht-PostgreSQL, Backticks für Nicht-MySQL,
+`||` nur für SQL Server — Dialektwissen in einem Modul, das keinen Dialekt
+besitzt. Es wurde **gebaut, während dieses Ticket schon offen war**. Derselbe
+Handgriff behebt es; eigener Schnitt, damit dieser hier eine reine
+Verschiebung bleibt.
+
+Dahinter steht die größere Frage, die der Eigner beim Durchsehen gestellt hat:
+**ein Modul, das nach seiner Beziehung benannt ist („common", „shared"), hat
+kein Aufnahmekriterium** — also landet dort alles, was zwei Module zufällig
+teilen. `driver-common` ist heute gemessen mindestens fünf Dinge
+(`connection/` 7 Dateien, `data/` 9, `metadata/` 6, `migration/` 3,
+`profiling/` 1, dazu 20 im Wurzelverzeichnis), und 28 Module hängen daran.
+Sie zu benennen statt ihre Beziehung wäre ein eigener Schnitt mit
+entsprechender Reichweite.

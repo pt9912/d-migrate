@@ -86,7 +86,7 @@ bleibt draussen und ist im Code begruendet.
 **Architektonische Anmerkung:** die Pruefung liegt als `when (target)` in
 `driver-common`, wie `ViewQueryTransformer.assessPortability`. Das ist genau
 das Muster, das
-[`view-query-transformer-per-dialect-rules`](../next/view-query-transformer-per-dialect-rules.md)
+[`view-query-transformer-per-dialect-rules`](view-query-transformer-per-dialect-rules.md)
 aufloesen will. Bewusst so gebaut: eine zweite Architektur neben der
 bestehenden waere schlechter als eine, die mit ihr zusammen wandert.
 

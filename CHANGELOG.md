@@ -15,6 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **Dialektwissen der View-Portabilität wandert zu den Dialekten.** Marker,
+  Umschreibregeln und bekannte Funktionsnamen lagen als `when`-Verzweigung in
+  `driver-common` — einem Modul, das keinen der fünf Dialekte besitzt. Jedes
+  Treibermodul trägt sie jetzt selbst (`<Dialekt>ViewPortabilityRules`), und
+  die Hülle kennt keinen Dialekt mehr. Reine Verschiebung: alle DDL-Goldens
+  bleiben unverändert.
+
+  In der Hülle bleiben zwei Marker, weil sie von der **Quelle** handeln statt
+  vom Ziel: MySQLs Backticks und T-SQLs Klammern sind für jeden Dialekt außer
+  ihrem Eigentümer unlesbar.
+
+  Dabei kam heraus, dass die geteilte Umschreib-Infrastruktur (Tokenizer,
+  Regelbausteine, Klausel-Erkennung) **nirgends direkt geprüft** war — sie lief
+  nur nebenbei durch die Dialekt-Tests mit. Sie hat jetzt eigene Zusicherungen,
+  die ohne jeden Dialekt auskommen.
 - **Preserve-Fenster für Oracle — serialisiert, nicht atomar.** Probe,
   geschützte Anweisungen und Restore laufen dort jetzt unter einer Sperre je
   Sequenz (`DBMS_LOCK`), sodass niemand im Fenster Sequenzwerte verbraucht.

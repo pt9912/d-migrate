@@ -1,15 +1,15 @@
 package dev.dmigrate.driver
 
-internal enum class ViewQueryTokenType {
+enum class ViewQueryTokenType {
     WORD, STRING, NUMBER, LPAREN, RPAREN, COMMA, OP, WS, OTHER,
 }
 
-internal data class ViewQueryToken(
+data class ViewQueryToken(
     val type: ViewQueryTokenType,
     val text: String,
 )
 
-internal object ViewQueryTokenSupport {
+object ViewQueryTokenSupport {
     fun word(text: String) = ViewQueryToken(ViewQueryTokenType.WORD, text)
     fun ws() = ViewQueryToken(ViewQueryTokenType.WS, " ")
     fun lparen() = ViewQueryToken(ViewQueryTokenType.LPAREN, "(")
@@ -19,7 +19,7 @@ internal object ViewQueryTokenSupport {
     fun other(text: String) = ViewQueryToken(ViewQueryTokenType.OTHER, text)
 }
 
-internal object ViewQueryTokenizer {
+object ViewQueryTokenizer {
 
     fun tokenize(sql: String): List<ViewQueryToken> {
         val tokens = mutableListOf<ViewQueryToken>()

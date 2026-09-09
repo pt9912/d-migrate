@@ -28,7 +28,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
             return null
         }
 
-        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
+        val transformer = ViewQueryTransformer(MysqlViewPortabilityRules)
         val portability = transformer.assessPortability(query, view.sourceDialect)
         if (!portability.portable) {
             val action = ManualActionRequired(

@@ -27,7 +27,7 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
             return null
         }
 
-        val transformer = ViewQueryTransformer(DatabaseDialect.SQLITE)
+        val transformer = ViewQueryTransformer(SqliteViewPortabilityRules)
         val portability = transformer.assessPortability(query, view.sourceDialect)
         if (!portability.portable) {
             val action = ManualActionRequired(

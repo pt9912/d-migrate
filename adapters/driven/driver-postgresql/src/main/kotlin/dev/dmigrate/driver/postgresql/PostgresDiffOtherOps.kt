@@ -385,7 +385,7 @@ internal object PostgresDiffOtherOps {
         ctx: PostgresDiffRenderContext,
     ): Boolean {
         val query = view.query ?: return false
-        val verdict = ViewQueryTransformer(DatabaseDialect.POSTGRESQL).assessPortability(query, view.sourceDialect)
+        val verdict = ViewQueryTransformer(PostgresViewPortabilityRules).assessPortability(query, view.sourceDialect)
         if (verdict.portable) return false
         ctx.skip(
             op,

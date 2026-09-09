@@ -1,10 +1,10 @@
 package dev.dmigrate.driver
 
-internal interface ViewQueryRule {
+interface ViewQueryRule {
     fun apply(tokens: List<ViewQueryToken>): List<ViewQueryToken>
 }
 
-internal class WordReplaceRule(
+class WordReplaceRule(
     private val from: String,
     private val to: String,
 ) : ViewQueryRule {
@@ -24,7 +24,7 @@ internal class WordReplaceRule(
     }
 }
 
-internal class FuncReplaceRule(
+class FuncReplaceRule(
     private val fromName: String,
     private val transform: (name: String, args: List<List<ViewQueryToken>>) -> List<ViewQueryToken>,
 ) : ViewQueryRule {
@@ -51,7 +51,7 @@ internal class FuncReplaceRule(
     }
 }
 
-internal class ExtractReplaceRule(
+class ExtractReplaceRule(
     private val unit: String,
     private val transform: (expr: List<ViewQueryToken>) -> List<ViewQueryToken>,
 ) : ViewQueryRule {
@@ -96,7 +96,7 @@ internal class ExtractReplaceRule(
             words[1].text.equals("FROM", ignoreCase = true)
 }
 
-internal class SubstringReplaceRule(
+class SubstringReplaceRule(
     private val transform: (expr: List<ViewQueryToken>, from: String, length: String) -> List<ViewQueryToken>,
 ) : ViewQueryRule {
     override fun apply(tokens: List<ViewQueryToken>): List<ViewQueryToken> {
@@ -141,7 +141,7 @@ internal class SubstringReplaceRule(
     }
 }
 
-internal object ViewQueryRuleSupport {
+object ViewQueryRuleSupport {
     fun extractArgs(
         tokens: List<ViewQueryToken>,
         lparenIndex: Int,

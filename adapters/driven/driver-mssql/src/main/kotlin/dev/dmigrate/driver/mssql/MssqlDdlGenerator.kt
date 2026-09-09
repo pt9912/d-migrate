@@ -272,7 +272,7 @@ class MssqlDdlGenerator private constructor(
             skipped += SkippedObject("view", name, "No query defined")
             return null
         }
-        val transformer = ViewQueryTransformer(DatabaseDialect.MSSQL)
+        val transformer = ViewQueryTransformer(MssqlViewPortabilityRules)
         val portability = transformer.assessPortability(query, view.sourceDialect)
         if (!portability.portable) {
             val action = ManualActionRequired(
