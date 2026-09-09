@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **Preserve-Fenster für Oracle — serialisiert, nicht atomar.** Probe,
+  geschützte Anweisungen und Restore laufen dort jetzt unter einer Sperre je
+  Sequenz (`DBMS_LOCK`), sodass niemand im Fenster Sequenzwerte verbraucht.
+  **Atomar ist es nicht**, und das steht jetzt auch so im Modell: Oracle
+  committet jedes DDL implizit, und der Restore *ist* DDL — ein Fehlschlag in
+  der Mitte lässt stehen, was bis dahin lief. `PreserveWindowIsolation`
+  unterscheidet deshalb `SERIALIZED` von `ATOMIC`, statt beides unter einem
+  Flag zu behaupten.
+
+  Die Sperre ist session- und nicht transaktionsgebunden: gemessen fällt eine
+  transaktionsgebundene beim ersten DDL weg, mitten im Fenster. Sie wird
+  ausdrücklich wieder freigegeben.
+
+  **`DBMS_LOCK` ist eine Eigenschaft der Verbindung, nicht des Dialekts.** Das
+  Paket gehört SYS; wer das `EXECUTE`-Recht hat, nutzt den Pfad, wer nicht,
+  bekommt die fehlende Berechtigung samt nötigem `GRANT` **benannt** gemeldet
+  — kein stiller Rückfall auf ein ungeschütztes Fenster, das wie ein
+  geschütztes aussähe.
 - **Atomic-Preserve für SQL Server.** Probe, geschützte Anweisungen und
   Restore laufen jetzt auch dort in **einer** Transaktion unter einer Sperre
   je Sequenz (`sys.sp_getapplock`, transaktionsgebunden) — bisher hatten das

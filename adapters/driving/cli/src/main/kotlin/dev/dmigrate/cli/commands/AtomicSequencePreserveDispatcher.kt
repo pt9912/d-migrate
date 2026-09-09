@@ -5,6 +5,7 @@ import dev.dmigrate.driver.SequenceCapabilityDefaults
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
 import dev.dmigrate.driver.mssql.MssqlAtomicSequencePreserveExecutor
 import dev.dmigrate.driver.mysql.MysqlAtomicSequencePreserveExecutor
+import dev.dmigrate.driver.oracle.OracleSequencePreserveExecutor
 import dev.dmigrate.driver.postgresql.PostgresAtomicSequencePreserveExecutor
 import dev.dmigrate.driver.sqlite.SqliteAtomicSequencePreserveExecutor
 
@@ -30,6 +31,7 @@ internal object AtomicSequencePreserveDispatcher {
     private val mysql: AtomicSequencePreserveExecutor = MysqlAtomicSequencePreserveExecutor()
     private val sqlite: AtomicSequencePreserveExecutor = SqliteAtomicSequencePreserveExecutor()
     private val mssql: AtomicSequencePreserveExecutor = MssqlAtomicSequencePreserveExecutor()
+    private val oracle: AtomicSequencePreserveExecutor = OracleSequencePreserveExecutor()
 
     // Capability-gefuehrt statt hartcodierter Dialekt-Aufzaehlung: ein
     // Dialekt, der spaeter Atomic-Preserve bekommt (siehe
@@ -45,8 +47,7 @@ internal object AtomicSequencePreserveDispatcher {
             DatabaseDialect.MYSQL -> mysql
             DatabaseDialect.SQLITE -> sqlite
             DatabaseDialect.MSSQL -> mssql
-            DatabaseDialect.ORACLE ->
-                error("unreachable: guarded by the preserveWindowIsolation check above")
+            DatabaseDialect.ORACLE -> oracle
         }
     }
 }

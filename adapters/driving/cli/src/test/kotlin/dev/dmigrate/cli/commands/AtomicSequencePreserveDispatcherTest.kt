@@ -8,6 +8,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import dev.dmigrate.driver.mssql.MssqlAtomicSequencePreserveExecutor
+import dev.dmigrate.driver.oracle.OracleSequencePreserveExecutor
 
 /**
  * Atomic-Preserve Phase C.4: pin per-dialect resolution of the
@@ -55,10 +56,10 @@ class AtomicSequencePreserveDispatcherTest : FunSpec({
         (first === second) shouldBe true
     }
 
-    test("oracle has no atomic executor — the capability, not the gate, keeps it unreachable") {
-        val ex = io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
-            AtomicSequencePreserveDispatcher.executorFor(DatabaseDialect.ORACLE)
-        }
-        ex.message!!.contains("no preserve window") shouldBe true
+    test("oracle resolves to its own executor — serialised, not atomic") {
+        val first = AtomicSequencePreserveDispatcher.executorFor(DatabaseDialect.ORACLE)
+        val second = AtomicSequencePreserveDispatcher.executorFor(DatabaseDialect.ORACLE)
+        (first is OracleSequencePreserveExecutor) shouldBe true
+        (first === second) shouldBe true
     }
 })

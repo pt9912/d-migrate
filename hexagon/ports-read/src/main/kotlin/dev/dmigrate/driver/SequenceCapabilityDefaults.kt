@@ -222,9 +222,17 @@ object SequenceCapabilityDefaults {
         emitsCachePreallocationWarning = false,
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
-        preserveWindowIsolation = PreserveWindowIsolation.NONE,
-        preserveAllCandidatesInOneWindow = false,
-        protectedSequenceOperations = emptySet(),
+        // Serialisiert, nicht atomar: Oracle committet jedes DDL implizit,
+        // und sowohl die geschuetzten Operationen als auch der Restore sind
+        // DDL. Die Sperre (`DBMS_LOCK`, session-gebunden) haelt trotzdem
+        // durch — ein Fehlschlag laesst aber stehen, was bis dahin lief.
+        preserveWindowIsolation = PreserveWindowIsolation.SERIALIZED,
+        preserveAllCandidatesInOneWindow = true,
+        protectedSequenceOperations = setOf(
+            ProtectedOperationId("CreateSequence"),
+            ProtectedOperationId("AlterSequence"),
+            ProtectedOperationId("RenameSequence"),
+        ),
     )
 
     fun forDialect(dialect: DatabaseDialect): SequenceCapability = when (dialect) {

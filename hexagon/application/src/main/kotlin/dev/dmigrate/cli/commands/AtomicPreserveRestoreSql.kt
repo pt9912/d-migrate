@@ -8,6 +8,7 @@ import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.MssqlSequenceResume
+import dev.dmigrate.driver.OracleSequenceResume
 
 /**
  * Atomic-Preserve Phase C.1 (2026-06-01): per-dialect restore SQL
@@ -62,8 +63,7 @@ internal object AtomicPreserveRestoreSql {
             DatabaseDialect.MYSQL -> mysql(sequenceRef, probe)
             DatabaseDialect.SQLITE -> sqlite(sequenceRef, probe)
             DatabaseDialect.MSSQL -> mssql(sequenceRef, probe, sequence)
-            DatabaseDialect.ORACLE ->
-                error("unreachable: guarded by the preserveWindowIsolation check above")
+            DatabaseDialect.ORACLE -> oracle(sequenceRef, probe, sequence)
         }
     }
 
@@ -106,6 +106,29 @@ internal object AtomicPreserveRestoreSql {
         }
         val quoted = SqlIdentifiers.quoteIdentifier(sequenceRef.name, DatabaseDialect.MSSQL)
         return listOf("ALTER SEQUENCE $quoted RESTART WITH $next;")
+    }
+
+    /**
+     * `ALL_SEQUENCES.LAST_NUMBER` ist der **naechste** auszugebende Wert, nicht
+     * der zuletzt ausgegebene (live gemessen, siehe [OracleSequenceResume]) —
+     * anders als SQL Servers `current_value`. Er wird deshalb unveraendert
+     * gesetzt; ihn zu versetzen verschenkte bei jedem Preserve einen Wert.
+     */
+    private fun oracle(
+        sequenceRef: SequenceObjectRef,
+        probe: SequenceCurrentValueProbeResult.Read,
+        sequence: SequenceDefinition?,
+    ): List<String> {
+        val definition = requireNotNull(sequence) {
+            "Oracle preserve restore needs the sequence definition to compute the resume point " +
+                "(sequence=${sequenceRef.name}): LAST_NUMBER means different things with and without CACHE."
+        }
+        val next = requireNotNull(OracleSequenceResume.resumePoint(probe.value, definition)) {
+            "Sequence '${sequenceRef.name}' cannot resume after ${probe.value}: the next value lies outside " +
+                "its MINVALUE/MAXVALUE range and it does not cycle."
+        }
+        val quoted = SqlIdentifiers.quoteIdentifier(sequenceRef.name, DatabaseDialect.ORACLE)
+        return listOf("ALTER SEQUENCE $quoted RESTART START WITH $next")
     }
 
     private fun mysql(

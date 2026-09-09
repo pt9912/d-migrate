@@ -77,10 +77,43 @@ Die zweite Zeile ist auf Oracle für **jedes** DDL unerreichbar, nicht nur
 hier. `supportsAtomicPreserve = true` für Oracle zu setzen behauptete also
 eine Rücknahmesicherheit, die es nicht gibt.
 
-**Das ist eine Eignerfrage**, keine Implementierungsfrage: entweder bekommt
-Oracle eine eigene, ehrlich benannte Zusicherung (Serialisierung ohne
-Atomarität), oder es bleibt bewusst außen vor. Ein `true` unter dem
-bestehenden Namen wäre ein Carve-Out mit falscher Aufschrift.
+**Entschieden (2026-09-09, Eigner): eigene, ehrlich benannte Zusicherung.**
+`PreserveWindowIsolation` unterscheidet jetzt `NONE` / `SERIALIZED` / `ATOMIC`;
+Oracle steht auf `SERIALIZED`, die anderen vier auf `ATOMIC`. Wer `ATOMIC`
+liest, darf nach einem Fehlschlag annehmen, dass nichts angewandt wurde — bei
+`SERIALIZED` darf er das nicht.
+
+**Und die Verfügbarkeit von `DBMS_LOCK` ist eine Eigenschaft der Verbindung,
+nicht des Dialekts** (Eigner-Einwand, und er trifft): die Messung oben zeigt
+nur, dass der *Standard-Testbenutzer* das Recht nicht hat. Wer als SYSDBA
+fährt oder es von seinem DBA bekommen hat, kann den Pfad nutzen. Geprüft wird
+deshalb zur Laufzeit an der konkreten Verbindung, und ein Fehlen wird
+**benannt** gemeldet (samt dem nötigen `GRANT`), nicht durch einen stillen
+Rückfall auf ein ungeschütztes Fenster verdeckt — das sähe aus wie ein
+geschütztes.
+
+**Zwei weitere Dinge, die der Bau zutage gefördert hat:**
+
+- **Oracle hatte gar keine `SequenceCurrentValueProbe`.** Die drei älteren
+  Dialekte und SQL Server haben je eine; für Oracle musste sie entstehen
+  (`ALL_SEQUENCES.LAST_NUMBER`).
+- **`LAST_NUMBER` ist der *nächste* Wert, nicht der zuletzt ausgegebene** —
+  anders als SQL Servers `current_value`. Das war zuerst falsch angenommen und
+  dann gemessen:
+
+  | Zustand | `LAST_NUMBER` |
+  | --- | --- |
+  | `NOCACHE`, frisch (`START WITH 1`) | `1` |
+  | nach `NEXTVAL` → 1 | `2` |
+  | nach `NEXTVAL` → 2 | `3` |
+  | `CACHE 20`, nach `NEXTVAL` → 1 | `21` |
+  | `INCREMENT BY 5`, nach `NEXTVAL` → 100 | `105` |
+
+  Der Restore setzt ihn deshalb **unverändert**; die Schrittweite zu addieren
+  verschenkte bei jedem Preserve einen Wert. Aufgefallen ist das erst durch
+  die Sabotage-Prüfung: die erste Fassung des Live-Tests prüfte nur
+  „größer als vorher" und hätte jeden verschobenen Fortsetzungspunkt
+  durchgelassen. Sie prüft jetzt **lückenlos**.
 
 ## Kontext
 

@@ -154,14 +154,28 @@ class AtomicPreserveRestoreSqlTest : FunSpec({
         ex.message!! shouldContain "needs the sequence definition"
     }
 
-    test("Oracle: no atomic-preserve support -- forDialect throws IllegalStateException") {
-        val ex = shouldThrow<IllegalStateException> {
+    test("Oracle: RESTART START WITH takes LAST_NUMBER as it stands") {
+        // Live gemessen: `LAST_NUMBER` ist bereits der naechste auszugebende
+        // Wert (nach `NEXTVAL` = 41 steht es auf 42). Ihn zu versetzen
+        // verschenkte bei jedem Preserve einen Wert.
+        val sql = AtomicPreserveRestoreSql.forDialect(
+            dialect = DatabaseDialect.ORACLE,
+            sequenceRef = oracleRef(),
+            probe = SequenceCurrentValueProbeResult.Read(value = 42L, isCalled = null),
+            sequence = sequence(),
+        )
+        sql shouldBe listOf("ALTER SEQUENCE \"invoice_seq\" RESTART START WITH 42")
+    }
+
+    test("Oracle: a sequence that cannot resume is a named refusal") {
+        val ex = shouldThrow<IllegalArgumentException> {
             AtomicPreserveRestoreSql.forDialect(
                 dialect = DatabaseDialect.ORACLE,
                 sequenceRef = oracleRef(),
-                probe = SequenceCurrentValueProbeResult.Read(value = 1L, isCalled = null),
+                probe = SequenceCurrentValueProbeResult.Read(value = 11L, isCalled = null),
+                sequence = sequence(min = 1L, max = 10L),
             )
         }
-        ex.message!! shouldContain "oracle"
+        ex.message!! shouldContain "cannot resume"
     }
 })

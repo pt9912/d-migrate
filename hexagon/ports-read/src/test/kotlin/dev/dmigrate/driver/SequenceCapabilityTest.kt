@@ -1,5 +1,6 @@
 package dev.dmigrate.driver
 
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 
@@ -78,31 +79,20 @@ class SequenceCapabilityTest : FunSpec({
         )
     }
 
-    test("Atomic-Preserve Phase D: every dialect supports atomic preserve incl. AllInPlan with the kind allowlist") {
-        // sequence-preserve-atomic-lock-plan.md Phase D (2026-06-01):
-        // both atomic-preserve capability flags are `true` for every
-        // supported dialect after the per-dialect Cross-Plan-Deadlock
-        // proofs landed (Postgres / MySQL / SQLite Cross-Plan-IT).
-        // This test pins the matrix-shaped invariant so a future
-        // dialect addition cannot silently land with the AllInPlan
-        // flag still `false` (which would let multi-sequence plans
-        // surface as `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` instead
-        // of getting the atomic path).
+    test("every dialect guards its preserve window — and says which guarantee it gives") {
+        // Vier Dialekte koennen das Fenster zuruecknehmen, Oracle nicht: dort
+        // committet jedes DDL implizit, und der Restore IST DDL. Die
+        // Unterscheidung steht im Modell, damit niemand aus `guardsWindow`
+        // auf Ruecknahmesicherheit schliesst.
         DatabaseDialect.values().forEach { dialect ->
             val capability = SequenceCapabilityDefaults.forDialect(dialect)
-            if (dialect == DatabaseDialect.ORACLE) {
-                // Explizite Ausnahme statt stillem Durchrutschen: Oracle hat
-                // noch keinen Atomic-Sequence-Preserve-Executor. Die
-                // Sperrstrategie ist entschieden (`DBMS_LOCK.REQUEST`), der
-                // Bau steht aus — Phase B in
-                // docs/planning/next/atomic-preserve-mssql-oracle.md.
-                // SQL Server ist mit Phase A herausgefallen.
-                capability.preserveWindowIsolation shouldBe PreserveWindowIsolation.NONE
-                capability.preserveAllCandidatesInOneWindow shouldBe false
-                capability.protectedSequenceOperations shouldBe
-                    emptySet<ProtectedOperationId>()
+            val expected = if (dialect == DatabaseDialect.ORACLE) {
+                PreserveWindowIsolation.SERIALIZED
             } else {
-                capability.preserveWindowIsolation shouldBe PreserveWindowIsolation.ATOMIC
+                PreserveWindowIsolation.ATOMIC
+            }
+            withClue(dialect.name) {
+                capability.preserveWindowIsolation shouldBe expected
                 capability.preserveAllCandidatesInOneWindow shouldBe true
                 capability.protectedSequenceOperations shouldBe atomicPreserveAllowlist
             }
