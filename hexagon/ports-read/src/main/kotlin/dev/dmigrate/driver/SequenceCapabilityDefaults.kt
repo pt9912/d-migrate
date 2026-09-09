@@ -173,9 +173,11 @@ object SequenceCapabilityDefaults {
     // `SequencePreserveStage` folgt mit Sub-Slice 5e, zusammen mit dem
     // Gate-Fall und dem `RenameProjectionDialect`-Eintrag.
     //
-    // Die Atomic-Faehigkeiten bleiben `false`: SQL Server haette dafuer eine
-    // eigene Sperrstrategie zu waehlen (Phase C.4 der anderen drei), und die
-    // ist weder entworfen noch belegt.
+    // Atomic-Preserve (2026-09-09): `sys.sp_getapplock` mit
+    // `@LockOwner = 'Transaction'` ist das T-SQL-Gegenstueck zu PGs
+    // `pg_advisory_xact_lock` — transaktionsgebunden, faellt mit Commit oder
+    // Rollback von selbst weg. SQL Server fuehrt DDL transaktional, deshalb
+    // liegen alle drei geschuetzten Operationen im atomaren Fenster.
     private val Mssql = SequenceCapability(
         supportsNamedSequences = true,
         supportsStart = true,
@@ -185,9 +187,13 @@ object SequenceCapabilityDefaults {
         emitsCachePreallocationWarning = false,
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
-        supportsAtomicPreserve = false,
-        supportsAtomicPreserveAllInPlan = false,
-        transactionalProtectedSequenceOperations = emptySet(),
+        supportsAtomicPreserve = true,
+        supportsAtomicPreserveAllInPlan = true,
+        transactionalProtectedSequenceOperations = setOf(
+            ProtectedOperationId("CreateSequence"),
+            ProtectedOperationId("AlterSequence"),
+            ProtectedOperationId("RenameSequence"),
+        ),
     )
 
     // Oracle-Sequenzen sind wie PG nativ (echte Laufzeit-Preallokation bei

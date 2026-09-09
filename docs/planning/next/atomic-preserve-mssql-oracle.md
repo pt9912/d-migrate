@@ -1,13 +1,47 @@
 # Atomic-Preserve für MSSQL und Oracle nachrüsten
 
-> **Status:** Draft mit Scope (2026-09-05). Scope skizziert, **noch keine
-> aktive Slice-Arbeit** im Code.
-> **Trigger:** Beim Oracle-Slice-1-Bau musste `SequenceCapabilityDefaults`
-> um Oracle ergänzt werden (`supportsAtomicPreserve = false`). Dabei fiel
-> auf: **MSSQL** trägt dieselben `false`-Werte, obwohl MSSQL als vierter
-> Dialekt längst abgeschlossen ist (alle eigenen Slices ✅). Der einzige
-> „Beleg" dafür war ein Code-Kommentar — nicht normativ. Eigner-Entscheidung
-> 2026-09-05: für beide Dialekte einen Nachrüst-Slice anlegen.
+> **Status:** Phase A (MSSQL) **geliefert** (2026-09-09). Phase B (Oracle)
+> entschieden (`DBMS_LOCK.REQUEST`, siehe unten), noch nicht gebaut.
+>
+> **Was Phase A gebracht hat, und was sie gekostet hat:** `sp_getapplock` ist
+> das direkte Gegenstueck zu PGs Advisory-Lock, aber es hat eine Bedingung,
+> die keine Doku vorher genannt hat und die den ersten Lauf sofort rot machte
+> — **gemessen gegen SQL Server 2022:**
+>
+> | Zustand | `@@TRANCOUNT` | `sp_getapplock(@LockOwner='Transaction')` |
+> | --- | --- | --- |
+> | `autoCommit = false` gesetzt | 0 | `-999` (Parameterfehler) |
+> | `autoCommit = false`, danach ein `SELECT` | 0 | `-999` |
+> | explizites `BEGIN TRANSACTION` | 1 | `0` (Sperre erteilt) |
+> | `@LockOwner = 'Session'` ohne Transaktion | 0 | `0` |
+>
+> Der JDBC-Treiber eroeffnet mit `autoCommit = false` **keine** Transaktion —
+> auch nicht nach einem Statement. Der Executor setzt deshalb ein explizites
+> `BEGIN TRANSACTION`. Die letzte Zeile ist die Ausweiche, die man nimmt, wenn
+> man das nicht misst: `Session`-Sperren funktionieren ohne Transaktion, fallen
+> aber beim Commit **nicht** von selbst weg — ein abgebrochener Lauf liesse
+> sie stehen.
+>
+> Und die zweite Eigenart, die den Unterschied zu den drei aelteren Dialekten
+> ausmacht: **`sp_getapplock` wirft nicht.** Es liefert eine negative Zahl
+> (`-1` Zeitueberschreitung, `-3` Deadlock-Opfer, `-999` Parameterfehler). Ein
+> Executor, der nur auf `SQLException` hoert, haelt ein nicht erworbenes Lock
+> fuer ein erworbenes und schreibt ungeschuetzt weiter.
+>
+> **Dabei ist ein Fehler in der gemeinsamen Restore-Naht aufgefallen:**
+> `sys.sequences.current_value` ist der zuletzt **ausgegebene** Wert,
+> `RESTART WITH` setzt den **naechsten**. Den probierten Wert unveraendert
+> zurueckzuschreiben gaebe ihn ein zweites Mal aus. Der Fortsetzungspunkt
+> braucht Schrittweite und Schranken — die Formel lag im Adapter, wo die
+> Anwendungsschicht nicht hinkommt, und steht jetzt als
+> `MssqlSequenceResume` in `ports-read`, von beiden Pfaden benutzt statt
+> zweimal geschrieben.
+>
+> **Abnahme:** Cross-Plan-Deadlock-Test live gegen SQL Server 2022 — zwei
+> parallele Laeufe mit ueberlappenden Sequenzmengen erreichen beide `Applied`,
+> der Restore-Wert kommt an, und die von Hand gekreuzte Sperrreihenfolge
+> liefert die negative Statuszahl, die die Sortierung verhindert.
+> Sabotage-geprueft ueber das entfernte `BEGIN TRANSACTION`.
 
 ## Kontext
 
@@ -73,8 +107,17 @@ kein manuelles Release nötig, passt zur bestehenden Pattern-Familie.
   Tabellen-Muster für MySQL/SQLite-Sequenz-Emulation) — portabler, keine
   Sonderrechte, aber ein zusätzliches Schema-Objekt im Zielschema.
 
-Diese Entscheidung braucht den Eigner, bevor Phase B beginnt (die ohnehin
-erst nach Oracle Slice 5 startet).
+**Entschieden (2026-09-08, Eigner): `DBMS_LOCK.REQUEST`.** Es ist das
+semantische Gegenstück zu PostgreSQLs Advisory-Lock — transaktionsgebunden,
+ohne zusätzliches Objekt im Zielschema, und damit dieselbe Denkweise wie in
+den drei bestehenden Dialekten. Das fehlende `EXECUTE`-Recht wird **benannt
+gemeldet**, nicht durch einen stillen Rückfall verdeckt: wer den Pfad nutzen
+will, braucht das Privileg, und wer es nicht hat, erfährt es als Blocker mit
+Grund. Die Sentinel-Zeilen-Variante entfällt damit; sie hätte ein Schemaobjekt
+eingeführt, das kein anderer Dialekt braucht.
+
+Oracle Slice 5 (Diff/Migrate) ist geliefert — die Abhängigkeit der Phase B ist
+damit aufgelöst.
 
 ## Akzeptanzkriterien (je Phase)
 

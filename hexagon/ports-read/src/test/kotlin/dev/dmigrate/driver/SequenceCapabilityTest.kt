@@ -90,12 +90,13 @@ class SequenceCapabilityTest : FunSpec({
         // of getting the atomic path).
         DatabaseDialect.values().forEach { dialect ->
             val capability = SequenceCapabilityDefaults.forDialect(dialect)
-            if (dialect == DatabaseDialect.MSSQL || dialect == DatabaseDialect.ORACLE) {
-                // Explizite Ausnahme statt stillem Durchrutschen: weder MSSQL
-                // noch Oracle haben einen Atomic-Sequence-Preserve-Executor
-                // (docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md
-                // deckte nur PG/MySQL/SQLite). Nachruest-Slice fuer beide:
+            if (dialect == DatabaseDialect.ORACLE) {
+                // Explizite Ausnahme statt stillem Durchrutschen: Oracle hat
+                // noch keinen Atomic-Sequence-Preserve-Executor. Die
+                // Sperrstrategie ist entschieden (`DBMS_LOCK.REQUEST`), der
+                // Bau steht aus — Phase B in
                 // docs/planning/next/atomic-preserve-mssql-oracle.md.
+                // SQL Server ist mit Phase A herausgefallen.
                 capability.supportsAtomicPreserve shouldBe false
                 capability.supportsAtomicPreserveAllInPlan shouldBe false
                 capability.transactionalProtectedSequenceOperations shouldBe

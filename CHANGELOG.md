@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **Atomic-Preserve für SQL Server.** Probe, geschützte Anweisungen und
+  Restore laufen jetzt auch dort in **einer** Transaktion unter einer Sperre
+  je Sequenz (`sys.sp_getapplock`, transaktionsgebunden) — bisher hatten das
+  nur PostgreSQL, MySQL und SQLite, und für SQL Server war der Pfad über die
+  Fähigkeit stillgelegt.
+
+  Zwei Eigenarten, die dabei gemessen statt angenommen wurden: `sp_getapplock`
+  **wirft nicht**, wenn es die Sperre nicht bekommt, sondern liefert eine
+  negative Zahl (`-1` Zeitüberschreitung, `-3` Deadlock-Opfer) — wer nur auf
+  Exceptions hört, schreibt ungeschützt weiter. Und der JDBC-Treiber eröffnet
+  mit `autoCommit = false` **keine** Transaktion; ohne ein explizites
+  `BEGIN TRANSACTION` bleibt `@@TRANCOUNT` bei 0 und die Sperre wird mit
+  `-999` abgelehnt.
+
+  Dabei fiel ein Fehler in der Restore-Naht auf: `sys.sequences.current_value`
+  ist der zuletzt **ausgegebene** Wert, `ALTER SEQUENCE … RESTART WITH` setzt
+  den **nächsten**. Den probierten Wert unverändert zurückzuschreiben gäbe ihn
+  ein zweites Mal aus — bei einer Schlüsselspalte ein Duplikat. Der
+  Fortsetzungspunkt rechnet jetzt mit Schrittweite und Schranken, aus einer
+  gemeinsamen Stelle für Renderer und Atomic-Pfad.
 - **Die Oracle-Legs des Sample-DB-Harness laufen in CI.** Beide Richtungen
   (Pagila PG→Oracle und zurück) hatten Skripte, Baselines und Make-Targets,
   aber keinen Lauf — sie fahren jetzt wie die SQL-Server-Legs auf `main`,

@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.driver.MssqlSequenceResume
 
 /**
  * Sequenzen im Diff-Pfad.
@@ -145,17 +146,8 @@ internal object MssqlDiffSequenceOps {
      * WITH` naemlich NICHT von selbst. Eine nicht-zyklische Sequenz am Rand ist
      * erschoepft: dann gibt es keinen gueltigen Fortsetzungspunkt.
      */
-    private fun resumePoint(value: Long, seq: SequenceDefinition): Long? {
-        val min = MssqlSequenceDdl.boundedMinValue(seq) ?: Long.MIN_VALUE
-        val max = MssqlSequenceDdl.boundedMaxValue(seq) ?: Long.MAX_VALUE
-        val next = runCatching { Math.addExact(value, seq.increment) }.getOrNull()
-        if (next != null && next in min..max) return next
-        return if (seq.cycle) {
-            if (seq.increment > 0) min else max
-        } else {
-            null
-        }
-    }
+    private fun resumePoint(value: Long, seq: SequenceDefinition): Long? =
+        MssqlSequenceResume.resumePoint(value, seq)
 
     /** T-SQL hat kein `ALTER SEQUENCE … RENAME TO`. */
     fun renderRenameSequence(op: DiffOperation.RenameSequence, ctx: MssqlDiffRenderContext) {

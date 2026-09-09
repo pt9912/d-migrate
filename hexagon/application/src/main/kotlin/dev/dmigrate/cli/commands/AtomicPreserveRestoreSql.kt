@@ -6,6 +6,8 @@ import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.SequenceCapabilityDefaults
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.driver.MssqlSequenceResume
 
 /**
  * Atomic-Preserve Phase C.1 (2026-06-01): per-dialect restore SQL
@@ -39,6 +41,13 @@ internal object AtomicPreserveRestoreSql {
         dialect: DatabaseDialect,
         sequenceRef: SequenceObjectRef,
         probe: SequenceCurrentValueProbeResult.Read,
+        /**
+         * Die Definition der Sequenz, wo der Dialekt sie zum Fortsetzen
+         * braucht. SQL Server rechnet den Fortsetzungspunkt aus Schrittweite
+         * und Schranken; die uebrigen drei schreiben den probierten Wert
+         * unveraendert zurueck und lassen sie deshalb `null`.
+         */
+        sequence: SequenceDefinition? = null,
     ): List<String> {
         // Capability-gefuehrt statt hartcodierter Dialekt-Aufzaehlung: ein
         // Dialekt, der spaeter Atomic-Preserve bekommt (siehe
@@ -52,7 +61,8 @@ internal object AtomicPreserveRestoreSql {
             DatabaseDialect.POSTGRESQL -> postgres(sequenceRef, probe)
             DatabaseDialect.MYSQL -> mysql(sequenceRef, probe)
             DatabaseDialect.SQLITE -> sqlite(sequenceRef, probe)
-            DatabaseDialect.MSSQL, DatabaseDialect.ORACLE ->
+            DatabaseDialect.MSSQL -> mssql(sequenceRef, probe, sequence)
+            DatabaseDialect.ORACLE ->
                 error("unreachable: guarded by the supportsAtomicPreserve check above")
         }
     }
@@ -67,6 +77,35 @@ internal object AtomicPreserveRestoreSql {
                 "(sequence=${sequenceRef.name})"
         }
         return listOf("SELECT setval($literal, ${probe.value}, $isCalled);")
+    }
+
+    /**
+     * `sys.sequences.current_value` ist der zuletzt **ausgegebene** Wert,
+     * `RESTART WITH` setzt den **naechsten** — dazwischen liegt die
+     * Schrittweite. Den probierten Wert unveraendert zurueckzuschreiben gaebe
+     * ihn ein zweites Mal aus.
+     *
+     * Fehlt die Definition oder ist die Sequenz an ihrem Rand erschoepft,
+     * wird **geworfen** statt geraten: der Executor macht daraus ein benanntes
+     * `Failed` mit Rollback, und der Anwender sieht, warum. Ein geratener
+     * Fortsetzungspunkt faende dagegen niemand, bis Schluessel kollidieren.
+     */
+    private fun mssql(
+        sequenceRef: SequenceObjectRef,
+        probe: SequenceCurrentValueProbeResult.Read,
+        sequence: SequenceDefinition?,
+    ): List<String> {
+        val definition = requireNotNull(sequence) {
+            "MSSQL atomic-preserve restore needs the sequence definition to compute the resume point " +
+                "(sequence=${sequenceRef.name}): RESTART WITH sets the NEXT value, so increment and " +
+                "bounds decide where it continues."
+        }
+        val next = requireNotNull(MssqlSequenceResume.resumePoint(probe.value, definition)) {
+            "Sequence '${sequenceRef.name}' is exhausted at ${probe.value} and does not cycle, so there is " +
+                "no value to resume at; SQL Server rejects a RESTART WITH outside the sequence's bounds."
+        }
+        val quoted = SqlIdentifiers.quoteIdentifier(sequenceRef.name, DatabaseDialect.MSSQL)
+        return listOf("ALTER SEQUENCE $quoted RESTART WITH $next;")
     }
 
     private fun mysql(

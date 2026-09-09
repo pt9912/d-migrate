@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.MssqlSequenceResume
 
 /**
  * Sequenz-DDL fuer T-SQL — geteilt zwischen `schema generate` und dem
@@ -22,11 +23,12 @@ internal object MssqlSequenceDdl {
      * CYCLE wuerde eine aufsteigende Sequenz dann auf -2^63 statt (wie in
      * PostgreSQL) auf 1 umbrechen — die Standard-Schranke wird dann explizit.
      */
-    fun boundedMinValue(seq: SequenceDefinition): Long? =
-        seq.minValue ?: if (seq.cycle && seq.increment > 0) minOf(1L, seq.start) else null
+    // Die Schrankenrechnung steht in `ports-read`, weil der
+    // Atomic-Preserve-Pfad der Anwendungsschicht dieselbe braucht und nicht
+    // in den Adapter greifen kann.
+    fun boundedMinValue(seq: SequenceDefinition): Long? = MssqlSequenceResume.boundedMinValue(seq)
 
-    fun boundedMaxValue(seq: SequenceDefinition): Long? =
-        seq.maxValue ?: if (seq.cycle && seq.increment < 0) maxOf(-1L, seq.start) else null
+    fun boundedMaxValue(seq: SequenceDefinition): Long? = MssqlSequenceResume.boundedMaxValue(seq)
 
     fun createSql(name: String, seq: SequenceDefinition): String = buildString {
         // BIGINT traegt jeden neutralen Wertebereich; der Reverse blendet die

@@ -413,7 +413,17 @@ object SequencePreserveStage {
             AtomicSequencePreserveRequest(
                 sequenceRef = ctx.applyRef,
                 renderRestore = { probe ->
-                    AtomicPreserveRestoreSql.forDialect(dialect, ctx.applyRef, probe)
+                    // Die Definition kommt aus dem SOLL-Schema: der Restore
+                    // laeuft NACH den geschuetzten Operationen, also gilt die
+                    // Sequenz, wie sie danach dasteht. SQL Server rechnet den
+                    // Fortsetzungspunkt daraus; die uebrigen Dialekte lassen
+                    // sie liegen.
+                    AtomicPreserveRestoreSql.forDialect(
+                        dialect,
+                        ctx.applyRef,
+                        probe,
+                        plan.desiredSchema?.sequences?.get(ctx.applyRef.name),
+                    )
                 },
             )
         }

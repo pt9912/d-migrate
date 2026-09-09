@@ -7,6 +7,7 @@ import dev.dmigrate.driver.sqlite.SqliteAtomicSequencePreserveExecutor
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import dev.dmigrate.driver.mssql.MssqlAtomicSequencePreserveExecutor
 
 /**
  * Atomic-Preserve Phase C.4: pin per-dialect resolution of the
@@ -47,14 +48,11 @@ class AtomicSequencePreserveDispatcherTest : FunSpec({
         }
     }
 
-    test("mssql has no atomic executor — the capability, not the gate, keeps it unreachable") {
-        // Unerreichbar bleibt der Atomic-Pfad, weil
-        // `SequenceCapabilityDefaults` fuer mssql kein Atomic-Preserve meldet;
-        // die Sperrstrategie dafuer ist weder entworfen noch belegt.
-        val ex = io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
-            AtomicSequencePreserveDispatcher.executorFor(DatabaseDialect.MSSQL)
-        }
-        ex.message!!.contains("no atomic preserve") shouldBe true
+    test("mssql resolves to its own executor, and the same instance every time") {
+        val first = AtomicSequencePreserveDispatcher.executorFor(DatabaseDialect.MSSQL)
+        val second = AtomicSequencePreserveDispatcher.executorFor(DatabaseDialect.MSSQL)
+        (first is MssqlAtomicSequencePreserveExecutor) shouldBe true
+        (first === second) shouldBe true
     }
 
     test("oracle has no atomic executor — the capability, not the gate, keeps it unreachable") {
