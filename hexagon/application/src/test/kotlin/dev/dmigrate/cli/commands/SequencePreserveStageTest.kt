@@ -42,7 +42,7 @@ import java.nio.file.Path
  *   appended behind each parent op with the sentinel current-value
  *   + rollbackImpossible=true.
  * - **Capability gate**: a candidate kind outside the dialect's
- *   `transactionalProtectedSequenceOperations` set blocks with
+ *   `protectedSequenceOperations` set blocks with
  *   `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` — verified via a synthetic
  *   capability overlay (default allowlist accepts all three kinds).
  */
@@ -406,7 +406,7 @@ class SequencePreserveStageTest : FunSpec({
             plan = synthesisePlan(listOf(createSeqOp())),
             capabilityResolver = { dialect ->
                 SequenceCapabilityDefaults.forDialect(dialect).copy(
-                    transactionalProtectedSequenceOperations = setOf(
+                    protectedSequenceOperations = setOf(
                         ProtectedOperationId("AlterSequence"),
                     ),
                 )
@@ -426,7 +426,7 @@ class SequencePreserveStageTest : FunSpec({
             plan = synthesisePlan(listOf(alterSeqOp(name = "a"), alterSeqOp(name = "b"))),
             capabilityResolver = { dialect ->
                 SequenceCapabilityDefaults.forDialect(dialect).copy(
-                    transactionalProtectedSequenceOperations = emptySet<ProtectedOperationId>(),
+                    protectedSequenceOperations = emptySet<ProtectedOperationId>(),
                 )
             },
         )
@@ -454,7 +454,7 @@ class SequencePreserveStageTest : FunSpec({
 
     // ── Phase D AllInPlan gate ────────────────────────────────────────
 
-    test("Phase D gate: multi-sequence plan + supportsAtomicPreserveAllInPlan=false blocks all candidates") {
+    test("Phase D gate: multi-sequence plan + preserveAllCandidatesInOneWindow=false blocks all candidates") {
         // Production defaults flip the flag to `true` per dialect
         // after Phase D (2026-06-01); the gate is exercised here via
         // a synthetic capability overlay that forces `false`. The
@@ -467,7 +467,7 @@ class SequencePreserveStageTest : FunSpec({
             plan = synthesisePlan(listOf(alterSeqOp(name = "a"), alterSeqOp(name = "b"))),
             capabilityResolver = { dialect ->
                 SequenceCapabilityDefaults.forDialect(dialect).copy(
-                    supportsAtomicPreserveAllInPlan = false,
+                    preserveAllCandidatesInOneWindow = false,
                 )
             },
         )
@@ -477,7 +477,7 @@ class SequencePreserveStageTest : FunSpec({
         outcome.diagnostics.all { it.message.contains("multi-sequence plan") } shouldBe true
     }
 
-    test("Phase D gate: single-sequence plan + supportsAtomicPreserveAllInPlan=false still proceeds") {
+    test("Phase D gate: single-sequence plan + preserveAllCandidatesInOneWindow=false still proceeds") {
         // A single-candidate plan is structurally a no-op for the
         // AllInPlan gate: the executor holds the lock across one
         // sequence by construction in every supported dialect, so
@@ -489,7 +489,7 @@ class SequencePreserveStageTest : FunSpec({
             plan = synthesisePlan(listOf(alterSeqOp(name = "only"))),
             capabilityResolver = { dialect ->
                 SequenceCapabilityDefaults.forDialect(dialect).copy(
-                    supportsAtomicPreserveAllInPlan = false,
+                    preserveAllCandidatesInOneWindow = false,
                 )
             },
         )
@@ -498,7 +498,7 @@ class SequencePreserveStageTest : FunSpec({
 
     test("Phase D: production defaults allow multi-sequence plans on PG/MySQL/SQLite") {
         // After Phase D landed (2026-06-01) the three production
-        // dialects all carry `supportsAtomicPreserveAllInPlan = true`,
+        // dialects all carry `preserveAllCandidatesInOneWindow = true`,
         // so a multi-sequence plan must surface as Succeeded with no
         // AllInPlan blocker. This guards against an accidental flip
         // back to `false` in the defaults file.

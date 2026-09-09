@@ -201,8 +201,8 @@ object PlannerBlockerClassifier {
      *   concurrency reproducer.
      * - `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` — the dialect or
      *   protected operation type lacks the
-     *   `supportsAtomicPreserve` / `supportsAtomicPreserveAllInPlan`
-     *   / `transactionalProtectedSequenceOperations` capability the
+     *   `preserveWindowIsolation` / `preserveAllCandidatesInOneWindow`
+     *   / `protectedSequenceOperations` capability the
      *   atomic-runner requires. Operator's remedy is either to swap
      *   target dialect / operation form, or to wait for the dialect
      *   to ship the capability.

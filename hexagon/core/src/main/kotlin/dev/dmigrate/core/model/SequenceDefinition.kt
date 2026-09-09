@@ -11,7 +11,7 @@ data class SequenceDefinition(
     /**
      * 0.9.7 preserve-current-value Sub-Slice A: opt-in to runtime-state
      * preservation across migrations. When `true` and the target
-     * dialect's `SequenceCapability.supportsAtomicPreserve` is set, the
+     * dialect's `SequenceCapability.preserveWindowIsolation` guards a window, the
      * planner emits an `AlterSequenceCurrentValue` follow-up so a
      * freshly-created or altered sequence resumes at the live
      * `last_value` / `next_value` instead of jumping back to `start`.

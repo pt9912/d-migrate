@@ -32,7 +32,7 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
  *    allowlist, SQLite without `--sqlite-named-sequences helper_table`,
  *    no candidates. Identical surface to the heutige Implementierung.
  * 3. **Capability gate** — every candidate's kind name must appear in
- *    the dialect's `SequenceCapability.transactionalProtectedSequenceOperations`
+ *    the dialect's `SequenceCapability.protectedSequenceOperations`
  *    set (populated by Phase C.4 wiring). A kind outside the allowlist
  *    blocks per candidate with `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`
  *    — no silent fall-through to the heutige Pfad.
@@ -52,7 +52,7 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
  * **Restrictions** *(not addressed by this stage)*:
  *
  * - Multi-sequence plans on a dialect where
- *   `SequenceCapability.supportsAtomicPreserveAllInPlan == false` are
+ *   `SequenceCapability.preserveAllCandidatesInOneWindow == false` are
  *   handled by a separate execution-stage gate (Phase D) — this stage
  *   builds the batch unconditionally, the gate downstream decides
  *   whether to run it.
@@ -130,7 +130,7 @@ object SequencePreserveStage {
         configInvalidIfMysqlNeedsIt(candidates, plan)?.let { return it }
 
         // C.1 capability gate: every candidate kind MUST be in the
-        // dialect's transactionalProtectedSequenceOperations allowlist
+        // dialect's protectedSequenceOperations allowlist
         // (Phase C.4 wires PG/MySQL/SQLite to CreateSequence /
         // AlterSequence / RenameSequence). Anything else surfaces the
         // SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED blocker — no fall-through
@@ -139,7 +139,7 @@ object SequencePreserveStage {
         unsupportedKindsBlocker(candidates, capability, plan)?.let { return it }
 
         // Phase D gate: a dialect whose
-        // `supportsAtomicPreserveAllInPlan == false` cannot hold the
+        // `preserveAllCandidatesInOneWindow == false` cannot hold the
         // lock across multiple sequences in the same plan. Plan §5
         // Phase D pins this gate so a future dialect that lands
         // single-sequence atomic-preserve before its cross-plan
@@ -189,7 +189,7 @@ object SequencePreserveStage {
 
     /**
      * Phase D gate: if a plan carries ≥ 2 preserve candidates and the
-     * dialect's `supportsAtomicPreserveAllInPlan` is `false`, block
+     * dialect's `preserveAllCandidatesInOneWindow` is `false`, block
      * every candidate with `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`.
      *
      * The gate runs **after** [unsupportedKindsBlocker] so a kind-
@@ -204,14 +204,14 @@ object SequencePreserveStage {
         plan: DiffResult,
     ): Outcome.Failed? {
         if (candidates.size < 2) return null
-        if (capability.supportsAtomicPreserveAllInPlan) return null
+        if (capability.preserveAllCandidatesInOneWindow) return null
         val diagnostics = candidates.map { ctx ->
             DiffDiagnostic(
                 code = ATOMIC_UNSUPPORTED_CODE,
                 message = "preserveCurrentValue on ${ctx.parentOp::class.simpleName} " +
                     "`${ctx.applyRef.name}` cannot run in a multi-sequence plan: the " +
                     "dialect's atomic-preserve runner does not yet hold the lock across " +
-                    "every preserve candidate in one plan (supportsAtomicPreserveAllInPlan = false).",
+                    "every preserve candidate in one plan (preserveAllCandidatesInOneWindow = false).",
                 severity = DiffDiagnostic.Severity.BLOCKER,
                 operationId = ctx.parentOp.id,
             )
@@ -224,7 +224,7 @@ object SequencePreserveStage {
         capability: SequenceCapability,
         plan: DiffResult,
     ): Outcome.Failed? {
-        val allowlist: Set<String> = capability.transactionalProtectedSequenceOperations
+        val allowlist: Set<String> = capability.protectedSequenceOperations
             .map { it.value }
             .toSet()
         val unsupported = candidates.filter { ctx ->
@@ -236,7 +236,7 @@ object SequencePreserveStage {
                 code = ATOMIC_UNSUPPORTED_CODE,
                 message = "preserveCurrentValue on ${ctx.parentOp::class.simpleName} " +
                     "`${ctx.applyRef.name}` is not in the dialect's atomic-preserve " +
-                    "allowlist (${capability.transactionalProtectedSequenceOperations.joinToString { it.value }}); " +
+                    "allowlist (${capability.protectedSequenceOperations.joinToString { it.value }}); " +
                     "operation kind cannot run inside the atomic transaction.",
                 severity = DiffDiagnostic.Severity.BLOCKER,
                 operationId = ctx.parentOp.id,
@@ -433,7 +433,7 @@ object SequencePreserveStage {
         // `MigrationDdlStatement.operationIds` (also instance IDs) to
         // route parent statements into the AtomicPreserveSegment;
         // the kind-name allowlist on
-        // `SequenceCapability.transactionalProtectedSequenceOperations`
+        // `SequenceCapability.protectedSequenceOperations`
         // is checked separately by [unsupportedKindsBlocker] above —
         // same `ProtectedOperationId` type, different namespace
         // (kind names in the capability, instance IDs in the batch).

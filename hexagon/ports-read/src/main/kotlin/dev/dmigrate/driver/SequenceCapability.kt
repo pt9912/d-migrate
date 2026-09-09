@@ -45,14 +45,15 @@ package dev.dmigrate.driver
  *   `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` based on this
  *   flag. The code is reserved for a later neutral-model extension
  *   that introduces an ownership field.
- * - [supportsAtomicPreserve]: dialect can execute Probe + Restore
- *   plus the protected sequence-bearing operations in a single
- *   transaction on one JDBC connection. Atomic-Preserve Phase C.4
- *   flipped this flag to `true` for PG / MySQL / SQLite (commit
- *   `11d04e57`). A dialect with `false` cannot run the atomic
- *   preserve path and surfaces `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`
- *   from the stage; there is no longer a non-atomic fallback path.
- * - [supportsAtomicPreserveAllInPlan]: dialect can hold the lock
+ * - [preserveWindowIsolation]: **was** das Fenster aus Probe,
+ *   geschuetzten Anweisungen und Restore zusichert. `ATOMIC` heisst
+ *   alles-oder-nichts in einer Transaktion (PostgreSQL, MySQL, SQLite,
+ *   SQL Server); `SERIALIZED` heisst, dass niemand dazwischenkommt, ein
+ *   Fehlschlag aber Angewandtes stehen laesst (Oracle — dort committet
+ *   jedes DDL implizit, und der Restore ist DDL); `NONE` heisst, der
+ *   Dialekt bietet das Fenster nicht an und die Stage meldet
+ *   `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`.
+ * - [preserveAllCandidatesInOneWindow]: dialect can hold the lock
  *   across **every** preserve candidate in one plan, not just one
  *   sequence at a time. `false` ⇒ the stage emits a
  *   `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` blocker when a plan
@@ -61,10 +62,12 @@ package dev.dmigrate.driver
  *   MySQL / SQLite after the Cross-Plan-Deadlock-Tests proved that
  *   the name-sorted lock acquisition closes the diamond between
  *   parallel runs.
- * - [transactionalProtectedSequenceOperations]: opaque
+ * - [protectedSequenceOperations]: opaque
  *   [ProtectedOperationId] values for operation kinds the dialect
- *   can execute **inside** the atomic-runner transaction without
- *   triggering an implicit commit. The empty default conservatively
+ *   can execute **inside** the geschuetzten Fenster. Bei `ATOMIC` heisst
+ *   das: ohne implizites Commit, also ruecknehmbar. Bei `SERIALIZED`
+ *   heisst es nur, dass sie im Fenster laufen duerfen — Oracle committet
+ *   sie, und das ist dort unvermeidlich. The empty default conservatively
  *   rejects every protected operation; Atomic-Preserve Phase C.4
  *   (commit `11d04e57`) populates the set from a per-dialect
  *   allowlist that the matching `AtomicSequencePreserveExecutor`
@@ -99,7 +102,7 @@ data class SequenceCapability(
     val emitsCachePreallocationWarning: Boolean,
     val supportsCurrentValuePreserve: Boolean,
     val supportsOwnedBy: Boolean,
-    val supportsAtomicPreserve: Boolean = false,
-    val supportsAtomicPreserveAllInPlan: Boolean = false,
-    val transactionalProtectedSequenceOperations: Set<ProtectedOperationId> = emptySet(),
+    val preserveWindowIsolation: PreserveWindowIsolation = PreserveWindowIsolation.NONE,
+    val preserveAllCandidatesInOneWindow: Boolean = false,
+    val protectedSequenceOperations: Set<ProtectedOperationId> = emptySet(),
 )

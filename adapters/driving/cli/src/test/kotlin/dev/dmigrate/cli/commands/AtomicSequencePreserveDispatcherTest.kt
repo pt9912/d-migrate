@@ -59,6 +59,6 @@ class AtomicSequencePreserveDispatcherTest : FunSpec({
         val ex = io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
             AtomicSequencePreserveDispatcher.executorFor(DatabaseDialect.ORACLE)
         }
-        ex.message!!.contains("no atomic preserve") shouldBe true
+        ex.message!!.contains("no preserve window") shouldBe true
     }
 })

@@ -113,7 +113,7 @@ interface AtomicSequencePreserveExecutor {
  * inside [AtomicSequencePreserveExecutor.execute]'s
  * `executeProtectedOperations` callback. The executor cross-checks
  * the IDs against the dialect's
- * `SequenceCapability.transactionalProtectedSequenceOperations`
+ * `SequenceCapability.protectedSequenceOperations`
  * allowlist; a non-matching ID surfaces as
  * `AtomicSequencePreserveResult.Failed` with
  * `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`.

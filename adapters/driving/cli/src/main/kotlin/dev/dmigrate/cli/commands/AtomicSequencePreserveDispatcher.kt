@@ -36,8 +36,8 @@ internal object AtomicSequencePreserveDispatcher {
     // docs/planning/next/atomic-preserve-mssql-oracle.md), braucht hier
     // keine Anpassung -- nur einen echten `when`-Zweig weiter unten.
     fun executorFor(dialect: DatabaseDialect): AtomicSequencePreserveExecutor {
-        check(SequenceCapabilityDefaults.forDialect(dialect).supportsAtomicPreserve) {
-            "unreachable: SequenceCapabilityDefaults declares no atomic preserve for " +
+        check(SequenceCapabilityDefaults.forDialect(dialect).preserveWindowIsolation.guardsWindow) {
+            "unreachable: SequenceCapabilityDefaults declares no preserve window for " +
                 "${dialect.name.lowercase()}, der Atomic-Pfad waehlt den Dialekt also nie aus."
         }
         return when (dialect) {
@@ -46,7 +46,7 @@ internal object AtomicSequencePreserveDispatcher {
             DatabaseDialect.SQLITE -> sqlite
             DatabaseDialect.MSSQL -> mssql
             DatabaseDialect.ORACLE ->
-                error("unreachable: guarded by the supportsAtomicPreserve check above")
+                error("unreachable: guarded by the preserveWindowIsolation check above")
         }
     }
 }

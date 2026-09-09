@@ -69,7 +69,7 @@ object SequenceCapabilityDefaults {
         // and `AtomicSequencePreserveDispatcher`; capability flip is
         // safe even before C.1 because Stage does not yet read the
         // flag (master-grün invariant). Phase D (2026-06-01) flips
-        // `supportsAtomicPreserveAllInPlan` to `true` after the
+        // `preserveAllCandidatesInOneWindow` to `true` after the
         // [PostgresAtomicPreserveCrossPlanDeadlockTest] proves that
         // the name-sorted advisory-lock acquisition closes the
         // diamond between parallel runs. The protected-operation
@@ -77,9 +77,9 @@ object SequenceCapabilityDefaults {
         // / AlterSequence / RenameSequence); PG executes all three
         // without implicit commit, so all three are inside the
         // atomic window.
-        supportsAtomicPreserve = true,
-        supportsAtomicPreserveAllInPlan = true,
-        transactionalProtectedSequenceOperations = setOf(
+        preserveWindowIsolation = PreserveWindowIsolation.ATOMIC,
+        preserveAllCandidatesInOneWindow = true,
+        protectedSequenceOperations = setOf(
             ProtectedOperationId("CreateSequence"),
             ProtectedOperationId("AlterSequence"),
             ProtectedOperationId("RenameSequence"),
@@ -105,13 +105,13 @@ object SequenceCapabilityDefaults {
         // `INSERT`/`UPDATE` against the `dmg_sequences` helper table
         // — those run cleanly inside `START TRANSACTION` without
         // implicit commit. Phase D (2026-06-01) flips
-        // `supportsAtomicPreserveAllInPlan` to `true` after the
+        // `preserveAllCandidatesInOneWindow` to `true` after the
         // [MysqlAtomicPreserveCrossPlanDeadlockTest] verifies that
         // name-sorted `FOR UPDATE` acquisitions serialise without
         // ER_LOCK_DEADLOCK.
-        supportsAtomicPreserve = true,
-        supportsAtomicPreserveAllInPlan = true,
-        transactionalProtectedSequenceOperations = setOf(
+        preserveWindowIsolation = PreserveWindowIsolation.ATOMIC,
+        preserveAllCandidatesInOneWindow = true,
+        protectedSequenceOperations = setOf(
             ProtectedOperationId("CreateSequence"),
             ProtectedOperationId("AlterSequence"),
             ProtectedOperationId("RenameSequence"),
@@ -146,14 +146,14 @@ object SequenceCapabilityDefaults {
         // would extend the RESERVED window and is excluded by
         // omission, surfacing as `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`
         // when Stage classifies a candidate of that kind.
-        // Phase D (2026-06-01) flips `supportsAtomicPreserveAllInPlan`
+        // Phase D (2026-06-01) flips `preserveAllCandidatesInOneWindow`
         // to `true`; for SQLite the cross-plan deadlock-diamond is
         // impossible by construction (the RESERVED lock is database-
         // wide, not per-row), so parallel runs serialise rather than
         // deadlock — see [SqliteAtomicPreserveCrossPlanDeadlockTest].
-        supportsAtomicPreserve = true,
-        supportsAtomicPreserveAllInPlan = true,
-        transactionalProtectedSequenceOperations = setOf(
+        preserveWindowIsolation = PreserveWindowIsolation.ATOMIC,
+        preserveAllCandidatesInOneWindow = true,
+        protectedSequenceOperations = setOf(
             ProtectedOperationId("CreateSequence"),
             ProtectedOperationId("AlterSequence"),
             ProtectedOperationId("RenameSequence"),
@@ -187,9 +187,9 @@ object SequenceCapabilityDefaults {
         emitsCachePreallocationWarning = false,
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
-        supportsAtomicPreserve = true,
-        supportsAtomicPreserveAllInPlan = true,
-        transactionalProtectedSequenceOperations = setOf(
+        preserveWindowIsolation = PreserveWindowIsolation.ATOMIC,
+        preserveAllCandidatesInOneWindow = true,
+        protectedSequenceOperations = setOf(
             ProtectedOperationId("CreateSequence"),
             ProtectedOperationId("AlterSequence"),
             ProtectedOperationId("RenameSequence"),
@@ -208,7 +208,7 @@ object SequenceCapabilityDefaults {
     // Abschnitt 9 fuehrt Oracle mit genau dieser Form.
     //
     // Der atomare Ausfuehrungspfad fehlt weiterhin -- deshalb bleiben die
-    // Atomic-Faehigkeiten false und transactionalProtectedSequenceOperations
+    // Atomic-Faehigkeiten false und protectedSequenceOperations
     // leer. Oracle steht trotzdem in SequencePreserveStage.PRESERVE_DIALECTS:
     // ein Preserve-Kandidat blockt so oder so, aber nur dort mit einer
     // wahren Begruendung (SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED statt
@@ -222,9 +222,9 @@ object SequenceCapabilityDefaults {
         emitsCachePreallocationWarning = false,
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
-        supportsAtomicPreserve = false,
-        supportsAtomicPreserveAllInPlan = false,
-        transactionalProtectedSequenceOperations = emptySet(),
+        preserveWindowIsolation = PreserveWindowIsolation.NONE,
+        preserveAllCandidatesInOneWindow = false,
+        protectedSequenceOperations = emptySet(),
     )
 
     fun forDialect(dialect: DatabaseDialect): SequenceCapability = when (dialect) {

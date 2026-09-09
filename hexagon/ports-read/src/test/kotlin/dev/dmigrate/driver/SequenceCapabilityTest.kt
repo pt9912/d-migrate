@@ -14,9 +14,9 @@ import io.kotest.matchers.shouldBe
 class SequenceCapabilityTest : FunSpec({
 
     // Atomic-Preserve Phase D (2026-06-01): the per-dialect defaults
-    // now carry `supportsAtomicPreserve = true` (flipped in C.4 once
+    // now carry `preserveWindowIsolation = ATOMIC` (flipped in C.4 once
     // the executor + dispatcher wiring landed) and
-    // `supportsAtomicPreserveAllInPlan = true` (flipped in D after
+    // `preserveAllCandidatesInOneWindow = true` (flipped in D after
     // the per-dialect Cross-Plan-Deadlock-Tests proved that the
     // name-sorted lock acquisition closes the diamond between
     // parallel runs). The protected-operation allowlist mirrors
@@ -40,9 +40,9 @@ class SequenceCapabilityTest : FunSpec({
             emitsCachePreallocationWarning = false,
             supportsCurrentValuePreserve = true,
             supportsOwnedBy = true,
-            supportsAtomicPreserve = true,
-            supportsAtomicPreserveAllInPlan = true,
-            transactionalProtectedSequenceOperations = atomicPreserveAllowlist,
+            preserveWindowIsolation = PreserveWindowIsolation.ATOMIC,
+            preserveAllCandidatesInOneWindow = true,
+            protectedSequenceOperations = atomicPreserveAllowlist,
         )
     }
 
@@ -56,9 +56,9 @@ class SequenceCapabilityTest : FunSpec({
             emitsCachePreallocationWarning = true,
             supportsCurrentValuePreserve = true,
             supportsOwnedBy = false,
-            supportsAtomicPreserve = true,
-            supportsAtomicPreserveAllInPlan = true,
-            transactionalProtectedSequenceOperations = atomicPreserveAllowlist,
+            preserveWindowIsolation = PreserveWindowIsolation.ATOMIC,
+            preserveAllCandidatesInOneWindow = true,
+            protectedSequenceOperations = atomicPreserveAllowlist,
         )
     }
 
@@ -72,9 +72,9 @@ class SequenceCapabilityTest : FunSpec({
             emitsCachePreallocationWarning = true,
             supportsCurrentValuePreserve = true,
             supportsOwnedBy = false,
-            supportsAtomicPreserve = true,
-            supportsAtomicPreserveAllInPlan = true,
-            transactionalProtectedSequenceOperations = atomicPreserveAllowlist,
+            preserveWindowIsolation = PreserveWindowIsolation.ATOMIC,
+            preserveAllCandidatesInOneWindow = true,
+            protectedSequenceOperations = atomicPreserveAllowlist,
         )
     }
 
@@ -97,14 +97,14 @@ class SequenceCapabilityTest : FunSpec({
                 // Bau steht aus — Phase B in
                 // docs/planning/next/atomic-preserve-mssql-oracle.md.
                 // SQL Server ist mit Phase A herausgefallen.
-                capability.supportsAtomicPreserve shouldBe false
-                capability.supportsAtomicPreserveAllInPlan shouldBe false
-                capability.transactionalProtectedSequenceOperations shouldBe
+                capability.preserveWindowIsolation shouldBe PreserveWindowIsolation.NONE
+                capability.preserveAllCandidatesInOneWindow shouldBe false
+                capability.protectedSequenceOperations shouldBe
                     emptySet<ProtectedOperationId>()
             } else {
-                capability.supportsAtomicPreserve shouldBe true
-                capability.supportsAtomicPreserveAllInPlan shouldBe true
-                capability.transactionalProtectedSequenceOperations shouldBe atomicPreserveAllowlist
+                capability.preserveWindowIsolation shouldBe PreserveWindowIsolation.ATOMIC
+                capability.preserveAllCandidatesInOneWindow shouldBe true
+                capability.protectedSequenceOperations shouldBe atomicPreserveAllowlist
             }
         }
     }

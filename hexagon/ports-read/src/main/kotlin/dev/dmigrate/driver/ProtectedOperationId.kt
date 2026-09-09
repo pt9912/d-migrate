@@ -12,7 +12,7 @@ package dev.dmigrate.driver
  * - The set of "atomic-safe" operations is dialect-dependent (MySQL
  *   commits implicitly on most DDL; PG mostly doesn't; SQLite varies
  *   per statement). The capability matrix
- *   ([SequenceCapability.transactionalProtectedSequenceOperations])
+ *   ([SequenceCapability.protectedSequenceOperations])
  *   pins per-dialect known-safe identifiers; the runner-side wire-up
  *   (`AtomicSequencePreserveBatch.protectedOperationIds`) carries
  *   the per-plan selection.

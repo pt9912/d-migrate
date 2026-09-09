@@ -43,6 +43,45 @@
 > liefert die negative Statuszahl, die die Sortierung verhindert.
 > Sabotage-geprueft ueber das entfernte `BEGIN TRANSACTION`.
 
+## Phase B: gemessen, und die Prämisse hält nicht (2026-09-09)
+
+Vor dem Bau gegen Oracle 23 gemessen. Der Befund betrifft nicht die
+Sperrstrategie, sondern die **Zusicherung**, die der Slice geben will.
+
+| Messung | Ergebnis |
+| --- | --- |
+| `GRANT EXECUTE ON DBMS_LOCK` als `system` | `ORA-01031` — nur **SYSDBA** darf es vergeben |
+| Ohne Grant: jeder `DBMS_LOCK`-Aufruf | `ORA-06550` (Paket nicht sichtbar) |
+| Mit Grant: `request(release_on_commit => TRUE)` | `0` — Sperre erteilt |
+| Zweite Session, während die erste hält, **ohne** DDL | `1` — Zeitüberschreitung, die Sperre greift |
+| Zweite Session, **nachdem** die erste `ALTER SEQUENCE` ausführte | **`0` — Sperre frei** |
+| Dasselbe mit `release_on_commit => FALSE` | `1` — Sperre überlebt das DDL |
+| `DBMS_LOCK.RELEASE` danach | `0`, Sperre wieder frei |
+
+**Oracle committet DDL implizit.** Der Restore ist dort
+`ALTER SEQUENCE … RESTART START WITH n`, die geschützten Operationen
+(`CreateSequence`/`AlterSequence`/`RenameSequence`) sind es ebenfalls. Eine
+transaktionsgebundene Sperre fällt damit **mitten im Fenster** weg — Zeile 5
+der Tabelle zeigt es: die zweite Session bekommt sie, während die erste noch
+zu arbeiten glaubt.
+
+Die session-gebundene Variante (Zeile 6/7) hält durch. Sie liefert aber nur
+die eine Hälfte dessen, was die anderen drei Dialekte zusichern:
+
+| Zusicherung | PostgreSQL / MySQL / SQLite | Oracle |
+| --- | --- | --- |
+| Niemand anderes verbraucht Sequenzwerte im Fenster | ja | **ja** (Session-Sperre) |
+| Alles oder nichts — Fehlschlag rollt zurück | ja | **nein**, DDL ist committet |
+
+Die zweite Zeile ist auf Oracle für **jedes** DDL unerreichbar, nicht nur
+hier. `supportsAtomicPreserve = true` für Oracle zu setzen behauptete also
+eine Rücknahmesicherheit, die es nicht gibt.
+
+**Das ist eine Eignerfrage**, keine Implementierungsfrage: entweder bekommt
+Oracle eine eigene, ehrlich benannte Zusicherung (Serialisierung ohne
+Atomarität), oder es bleibt bewusst außen vor. Ein `true` unter dem
+bestehenden Namen wäre ein Carve-Out mit falscher Aufschrift.
+
 ## Kontext
 
 Atomic-Preserve (Probe + Restore + geschützte DDL in einer einzigen
