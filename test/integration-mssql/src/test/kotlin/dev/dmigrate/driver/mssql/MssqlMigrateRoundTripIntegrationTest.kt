@@ -131,7 +131,7 @@ class MssqlMigrateRoundTripIntegrationTest : FunSpec({
                 // an der Spalte NICHT meldet. Ohne diese Naht plante der Lauf
                 // eine Nullability-Aenderung auf dem Schluessel, samt Loesen
                 // und Neuanlegen des Primaerschluessels.
-                targetAwareComparator = { left, right, canonicalize, _ ->
+                targetAwareComparator = { left, right, canonicalize, _, _ ->
                     SchemaComparator(canonicalize).compare(left, right)
                 },
                 rendererFor = { d -> if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else noRenderer() },
@@ -216,7 +216,7 @@ class MssqlMigrateRoundTripIntegrationTest : FunSpec({
                 },
                 dbLoader = { _, _ -> liveOperand(pool) },
                 comparator = { a, b -> SchemaComparator().compare(a, b) },
-                targetAwareComparator = { left, right, canonicalize, _ ->
+                targetAwareComparator = { left, right, canonicalize, _, _ ->
                     SchemaComparator(canonicalize).compare(left, right)
                 },
                 rendererFor = { d -> if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else noRenderer() },
@@ -325,7 +325,7 @@ class MssqlMigrateRoundTripIntegrationTest : FunSpec({
                 },
                 dbLoader = { _, _ -> liveOperand(pool) },
                 comparator = { a, b -> SchemaComparator().compare(a, b) },
-                targetAwareComparator = { left, right, canonicalize, _ ->
+                targetAwareComparator = { left, right, canonicalize, _, _ ->
                     SchemaComparator(canonicalize).compare(left, right)
                 },
                 rendererFor = { d -> if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else noRenderer() },
@@ -400,7 +400,7 @@ class MssqlMigrateRoundTripIntegrationTest : FunSpec({
                 },
                 dbLoader = { _, _ -> liveOperand(pool) },
                 comparator = { a, b -> SchemaComparator().compare(a, b) },
-                targetAwareComparator = { left, right, canonicalize, _ ->
+                targetAwareComparator = { left, right, canonicalize, _, _ ->
                     SchemaComparator(canonicalize).compare(left, right)
                 },
                 rendererFor = { d -> if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else noRenderer() },
@@ -485,7 +485,7 @@ class MssqlMigrateRoundTripIntegrationTest : FunSpec({
                 },
                 dbLoader = { _, _ -> liveOperand(pool) },
                 comparator = { a, b -> SchemaComparator().compare(a, b) },
-                targetAwareComparator = { left, right, canonicalize, _ ->
+                targetAwareComparator = { left, right, canonicalize, _, _ ->
                     SchemaComparator(canonicalize).compare(left, right)
                 },
                 rendererFor = { d -> if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else noRenderer() },

@@ -121,9 +121,9 @@ class SchemaMigrateGenerationCanonicalizationWiringTest : FunSpec({
             dbLoader = null,
             normalizer = { it },
             comparator = { a, b -> SchemaComparator().compare(a, b) },
-            targetAwareComparator = { a, b, projection, authorship ->
+            targetAwareComparator = { a, b, projection, authorship, serverForm ->
                 capturedProjection = projection
-                SchemaComparator(projection, authorship).compare(a, b)
+                SchemaComparator(projection, authorship, serverForm).compare(a, b)
             },
             planner = planner,
             rendererFor = { d ->

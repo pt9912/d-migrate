@@ -114,6 +114,6 @@ bestehenden waere schlechter als eine, die mit ihr zusammen wandert.
 
 Externe Durchsicht der neutralen Form (2026-09-08), am PostgreSQL-Reverse
 nachgemessen. Verwandt, aber nicht dasselbe:
-[`raw-sql-text-drift.md`](../open/raw-sql-text-drift.md) fragt, warum derselbe Text
+[`raw-sql-text-drift.md`](raw-sql-text-drift.md) fragt, warum derselbe Text
 gegen **denselben** Server driftet; hier geht es um seine Gueltigkeit auf
 einem **anderen**.

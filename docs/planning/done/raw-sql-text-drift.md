@@ -1,10 +1,17 @@
 ---
 id: raw-sql-text-drift
 title: "Roher SQL-Text im Modell driftet gegen den Server — Sichten, CHECKs und Ausdrucks-Indizes gleichermassen"
-status: open
+status: done
 ---
 
 # Roher SQL-Text driftet
+
+> **Gebaut (2026-09-10).** Alle fuenf Schnitt-Punkte stehen: Overlay v2, das
+> Herkunfts-Overlay, der Vergleich aus der Herkunft, der Post-Compare
+> Serverform-gegen-Serverform und der Wegwerf-Sandkasten fuer PostgreSQL. Der
+> Migrationslauf konvergiert. Was **nicht** eintrat, steht bei Punkt 3: die im
+> ADR unter seinen Punkten 3 und 5 angekuendigte Entwertung bestehender
+> Overlays — ihre Voraussetzung, eine geaenderte Projektion, gab es nicht.
 
 ## Befund
 
@@ -234,44 +241,36 @@ unterlaufen.
    ohne Herkunfts-Overlay. Was damit **noch nicht** geht: eine Handaenderung
    zwischen zwei Laeufen zu erkennen, denn dafuer muesste die Katalogform den
    Lauf ueberdauern. Genau das leistet Punkt 2.
-5. **Sandkasten** (Option D), per Konfigurationsdatei einzuschalten, greift
-   dort, wo Herkunft fehlt.
+5. ~~**Sandkasten** (Option D), per Konfigurationsdatei einzuschalten, greift
+   dort, wo Herkunft fehlt.~~ — **gebaut, fuer den Dialekt, der ihn traegt.**
 
-   **Vermessen, noch nicht gebaut.** Die Praemisse traegt, die Reichweite ist
-   aber kleiner als der ADR annahm:
+   `migrate.raw_sql_sandbox: true` in der `.d-migrate.yaml` schaltet ihn ein.
+   Der Sandkasten wendet das Soll in einem eigenen Schema auf demselben Server
+   an, liest die Katalogform und **rollt alles zurueck**.
 
-   | Gemessen | Ergebnis |
+   **Zurueckrollen statt aufraeumen** — und das ist der Grund, warum
+   ausgerechnet PostgreSQL ihn traegt: dort ist DDL transaktional. Die im ADR
+   genannte Aufraeumpflicht entfaellt damit, es gibt kein Zeitfenster, in dem
+   ein fremdes Schema herumsteht, und ein abgebrochener Lauf hinterlaesst
+   nichts.
+
+   | Gemessen gegen PostgreSQL 16 | Ergebnis |
    | --- | --- |
-   | PostgreSQL 16: Sandkasten-Schema gegen Ziel, derselbe CHECK | `CHECK ((((status)::text = 'A'::text) AND (nm <> ''::text)))` — **zeichengleich** |
-   | PostgreSQL 16: derselbe Ausdrucks-Index | `btree (upper(nm))` auf beiden Seiten — **zeichengleich** |
-   | PostgreSQL 16: `CREATE SCHEMA` / `DROP SCHEMA … CASCADE` als gewoehnlicher Nutzer | geht, und das Aufraeumen ist vollstaendig |
-   | Oracle 23: `CREATE USER dmg_sandbox` als Migrationsnutzer | **`ORA-01031: insufficient privileges`** (Sitzungsrechte: `CREATE TABLE`, `CREATE SESSION`) |
-   | Oracle 23: `CREATE SCHEMA AUTHORIZATION` | `ORA-02421` — die Anweisung legt bei Oracle gar kein Schema an |
+   | Form im Sandkasten gegen Form im Ziel, derselbe CHECK samt `--`-Kommentar | **gleich**, und der Kommentar ist auf beiden Seiten weg |
+   | Was nach dem Lauf an Sandkasten-Schemata stehen bleibt | **0** (mit `commit` statt `rollback`: 2 — sabotage-geprueft) |
+   | Ein Soll, das sich dort nicht anwenden laesst | nennt seinen Grund, statt stumm nichts zu liefern |
 
-   Bei Oracle **ist** ein Schema ein Benutzer; der Sandkasten ist dort keine
-   Frage des Willens, sondern der Rechte. Festgehalten als
-   `DialectCapabilities.supportsRawTextSandbox` (PostgreSQL `true`, Oracle
-   `false`; MySQL, SQL Server und SQLite sind ungemessen und stehen deshalb
-   auf `false`).
+   Drei Bedingungen, alle drei notwendig: eingeschaltet, vom Dialekt getragen
+   (`DialectCapabilities.supportsRawTextSandbox`), und das Soll liess sich
+   anwenden. Faellt eine aus, gibt es keine Serverform — und der Vergleich
+   entscheidet am Text, also konservativ.
 
-## Was Schritt 5 nach Schritt 3 noch wert ist — Eigner-Entscheidung
+   Die Herkunft hat Vorrang: sie braucht den Server nicht.
 
-Der ADR entschied Option D, **bevor** Schritt 3 gebaut war. Danach sieht die
-Rechnung anders aus:
+## Was offen bleibt
 
-- **Ohne Sandkasten** kostet fehlende Herkunft **einen** ueberfluessigen Lauf.
-  Danach liegt Herkunft vor, und es konvergiert (Punkt 2 der fuenf
-  Entscheidungen: konservativ planen).
-- **Mit Sandkasten** entfaellt dieser eine Lauf — fuer PostgreSQL, MySQL und
-  SQL Server, sofern der Nutzer ein Schema anlegen darf und den Schalter setzt.
-  Fuer Oracle gar nicht.
-- Bezahlt wird er mit einer **Nebenwirkung auf dem Zielserver** (ein
-  Wegwerf-Schema wird angelegt und wieder verworfen), einer Aufraeumpflicht und
-  einer Konfigurationsflaeche.
-
-`schema compare` bleibt nach ADR-Entscheidung 4 ohnehin streng — der
-Sandkasten greift also nur im Migrations-Planen, nicht im Vergleichsbefehl.
-
-Zu entscheiden ist damit, ob dieser eine gesparte Lauf die Nebenwirkung
-rechtfertigt. Die Messung lag zum Zeitpunkt der ADR-Entscheidung nicht vor;
-der ADR bleibt gueltig, aber die Grundlage ist heute genauer.
+MySQL, SQL Server und SQLite sind **ungemessen** und stehen deshalb auf
+`supportsRawTextSandbox = false`. Ob sie ihn tragen koennten, ist eine Messung
+wert, aber keine Annahme: MySQL committet DDL implizit (wie Oracle), SQL Server
+hat transaktionales DDL (wie PostgreSQL), und SQLite kennt `ATTACH` statt
+Schemata. Jeder Fall ist ein eigener.

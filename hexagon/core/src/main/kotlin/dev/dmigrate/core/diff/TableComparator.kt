@@ -33,6 +33,8 @@ internal class TableComparator(
      * traegt die unveraenderten Definitionen.
      */
     private val authorship: RawTextAuthorship? = null,
+    /** Der Sandkasten als zweite Quelle; siehe [RawTextServerForm]. */
+    private val serverForm: RawTextServerForm? = null,
 ) {
 
     fun compareTables(left: SchemaDefinition, right: SchemaDefinition): TableDiffs {
@@ -52,7 +54,7 @@ internal class TableComparator(
         return TableDiffs(added, removed, changed)
     }
 
-    private val folding = RawTextFolding(authorship)
+    private val folding = RawTextFolding(authorship, serverForm)
 
     internal fun compareTable(
         name: String,

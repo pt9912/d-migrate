@@ -21,11 +21,23 @@ class PostgresSchemaReader(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
 ) : SchemaReader {
 
-    override fun read(pool: ConnectionPool, options: SchemaReadOptions): SchemaReadResult {
+    override fun read(pool: ConnectionPool, options: SchemaReadOptions): SchemaReadResult =
+        pool.borrow().asJdbc().use { conn -> read(conn, options) }
+
+    /**
+     * Liest auf einer Verbindung, die der Aufrufer besitzt und offen haelt.
+     *
+     * Gebraucht wird das vom Wegwerf-Sandkasten: er haelt eine Transaktion
+     * offen, in der das Soll probeweise angewandt wurde. Eine andere Verbindung
+     * saehe weder das Schema noch den Suchpfad — und eine in den Pool
+     * zurueckgegebene rollte die Transaktion zurueck, bevor gelesen werden
+     * kann.
+     */
+    fun read(conn: Connection, options: SchemaReadOptions): SchemaReadResult {
         val notes = mutableListOf<SchemaReadNote>()
         val skipped = mutableListOf<SkippedObject>()
 
-        pool.borrow().asJdbc().use { conn ->
+        run {
             val session = jdbcFactory(conn)
             val schema = currentSchema(conn)
             val database = conn.catalog ?: "unknown"

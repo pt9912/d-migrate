@@ -95,7 +95,7 @@ class PostgresPartitionMigrateIntegrationTest : FunSpec({
                 },
                 dbLoader = { _, _ -> livePgOperand(pool) },
                 comparator = { a, b -> SchemaComparator().compare(a, b) },
-                targetAwareComparator = { left, right, canonicalize, _ ->
+                targetAwareComparator = { left, right, canonicalize, _, _ ->
                     SchemaComparator(canonicalize).compare(left, right)
                 },
                 rendererFor = { d ->

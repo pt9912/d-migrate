@@ -1455,6 +1455,14 @@ zurück.
   der neuen Version neu. Siehe [Fehlerbehebung](#5-fehlerbehebung).
 - Ist das Rücknahme-Skript bewusst unvollständig, benötigen Sie zusätzlich
   `--allow-partial-rollback`.
+- **Ohne Herkunft geht auch ein Wegwerf-Schema** — wenn Ihr Ziel PostgreSQL
+  ist und Sie es einschalten (`migrate.raw_sql_sandbox: true` in
+  `.d-migrate.yaml`). d-migrate wendet Ihr Soll dann probeweise in einem
+  eigenen Schema auf demselben Server an, liest dort die Katalogform und rollt
+  alles zurück — das Ziel wird nicht berührt, und es bleibt nichts stehen.
+  Damit entfällt auch der eine überflüssige erste Lauf. Der Schalter steht
+  bewusst auf `false`: es braucht das Recht, ein Schema anzulegen. Bei Oracle
+  geht es nicht, dort **ist** ein Schema ein Benutzer.
 - **Damit ein Lauf konvergiert, geben Sie die Herkunft mit.** Schreiben Sie sie
   beim Anwenden (`--provenance-output herkunft.json`) und geben Sie die Datei
   beim nächsten Lauf über `--migration-overlay herkunft.json` zurück. Dann

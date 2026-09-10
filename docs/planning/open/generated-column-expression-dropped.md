@@ -50,7 +50,7 @@ die **Spalte**. Folgen, die ueber den PostgreSQL-Fall hinausgehen:
   Spalte ein `AddColumn` — und weil der naechste Reverse sie wieder nicht
   sieht, plant es der uebernaechste Lauf erneut. Nicht konvergent, dieselbe
   Gestalt wie
-  [`raw-sql-text-drift.md`](raw-sql-text-drift.md), aber aus anderer Ursache.
+  [`raw-sql-text-drift.md`](../done/raw-sql-text-drift.md), aber aus anderer Ursache.
 
 `PRAGMA table_xinfo` liefert die Angabe fertig mit; die Umstellung ist keine
 Interpretationsfrage.
@@ -85,7 +85,7 @@ mit `VIRTUAL_COLUMN = 'YES'`), SQLite (aus `sqlite_master`).
   genau dafuer da, und der Fingerabdruck projiziert `generation` bereits.
 - **Der Ausdruck ist roher SQL-Text.** Damit erbt die berechnete Spalte
   jedes Problem, das
-  [`raw-sql-text-drift.md`](raw-sql-text-drift.md) beschreibt (der Server
+  [`raw-sql-text-drift.md`](../done/raw-sql-text-drift.md) beschreibt (der Server
   gibt ihn anders zurueck, als er hineinging) und
   [`check-expression-cross-dialect-portability.md`](../done/check-expression-cross-dialect-portability.md)
   (er ist nicht ohne Weiteres portabel). Wer diesen Slice schneidet, schneidet
@@ -200,7 +200,7 @@ Spaltenaenderung erneut.
 Der heutige Zustand ist ein **stiller Verlust**; ohne jenen Mechanismus wuerde
 daraus eine **nicht konvergierende Migration**. Das ist kein Fortschritt,
 sondern ein Tausch nach unten. Der Slice wartet deshalb auf
-[`raw-sql-text-drift.md`](raw-sql-text-drift.md).
+[`raw-sql-text-drift.md`](../done/raw-sql-text-drift.md).
 
 ## Herkunft
 

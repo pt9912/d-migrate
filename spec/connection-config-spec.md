@@ -430,6 +430,20 @@ ddl:
     partition_storage: PRIMARY       # Filegroup, auf der partitionierte Daten liegen
     hash_partitions: action_required # action_required | computed_column (HASH-Emulation)
 
+# ── Migration ──────────────────────────────────
+migrate:
+  # Wo keine Herkunft vorliegt (erster Lauf, verlorenes Overlay), darf
+  # d-migrate das Soll probeweise in einem Wegwerf-Schema auf demselben
+  # Server anwenden und die Katalogform von dort lesen. Damit stehen beide
+  # Seiten des Vergleichs in Serverform, und rohes SQL fuehrt nicht zu einer
+  # ueberfluessigen Aenderung.
+  #
+  # Default false, und das bewusst: es legt ein Schema auf dem Zielserver an
+  # (und verwirft es wieder), und dafuer braucht es Rechte. Nur Dialekte mit
+  # transaktionalem DDL tragen es — heute PostgreSQL; bei Oracle IST ein
+  # Schema ein Benutzer, den ein Migrationsnutzer nicht anlegen darf.
+  raw_sql_sandbox: false
+
 # ── Dokumentationsgenerierung ──────────────────
 documentation:
   enabled_formats:                   # Aktivierte Ausgabeformate

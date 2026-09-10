@@ -130,7 +130,7 @@ class MysqlMigrateRoundTripIntegrationTest : FunSpec({
                 // Spalte nicht. Ohne diese Naht plant der Lauf eine
                 // Nullability-Aenderung auf dem Schluessel und blockt sie dann
                 // selbst (MYSQL_NULLABILITY_REQUIRES_COLUMN_TYPE).
-                targetAwareComparator = { left, right, canonicalize, _ ->
+                targetAwareComparator = { left, right, canonicalize, _, _ ->
                     SchemaComparator(canonicalize).compare(left, right)
                 },
                 rendererFor = { d -> if (d == DatabaseDialect.MYSQL) MysqlDiffDdlGenerator() else null },

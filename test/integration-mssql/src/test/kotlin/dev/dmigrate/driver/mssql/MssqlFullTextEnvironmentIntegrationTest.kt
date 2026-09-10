@@ -289,7 +289,7 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
                         )
                     },
                     comparator = { a, b -> SchemaComparator().compare(a, b) },
-                    targetAwareComparator = { l, r, canon, _ -> SchemaComparator(canon).compare(l, r) },
+                    targetAwareComparator = { l, r, canon, _, _ -> SchemaComparator(canon).compare(l, r) },
                     rendererFor = { d ->
                         if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else error("nur MSSQL")
                     },

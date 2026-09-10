@@ -118,6 +118,46 @@ class SchemaComparatorRawTextProvenanceTest : FunSpec({
         SchemaComparator(authorship = authorship(changed = false)).compare(left, right)
             .tablesChanged.shouldBeEmpty()
     }
+
+    // ── Sandkasten: die zweite Quelle, wo die Herkunft schweigt ──────────
+
+    /** Sagt fuer jedes Feld dieselbe Serverform. */
+    fun sandbox(form: String?) = RawTextServerForm { _, _, _, _ -> form }
+
+    test("ohne Herkunft entscheidet der Sandkasten — zwei Serverformen sind vergleichbar") {
+        // Der Autorentext `age >= 18`, vom Server geparst, ergibt genau die
+        // Form, die das Ziel fuehrt. Also keine Aenderung.
+        val diff = SchemaComparator(authorship = null, serverForm = sandbox("((age >= 18))"))
+            .compare(catalog, authored)
+
+        diff.tablesChanged.shouldBeEmpty()
+    }
+
+    test("eine andere Serverform ist sehr wohl eine Aenderung") {
+        val diff = SchemaComparator(authorship = null, serverForm = sandbox("((age >= 21))"))
+            .compare(catalog, authored)
+
+        diff.tablesChanged.single().constraintsChanged.shouldNotBeEmptyList()
+    }
+
+    test("die Herkunft hat Vorrang — sie braucht den Server nicht") {
+        // Sagt die Herkunft, der Autor habe geaendert, wird geplant, auch wenn
+        // der Sandkasten dieselbe Form liefert.
+        val diff = SchemaComparator(
+            authorship = authorship(changed = true),
+            serverForm = sandbox("((age >= 18))"),
+        ).compare(catalog, authored)
+
+        diff.tablesChanged.single().constraintsChanged.shouldNotBeEmptyList()
+    }
+
+    test("ohne Serverform fuer dieses Feld bleibt es beim Textvergleich") {
+        val diff = SchemaComparator(authorship = null, serverForm = sandbox(null))
+            .compare(catalog, authored)
+
+        diff.tablesChanged.single().constraintsChanged.shouldNotBeEmptyList()
+    }
+
 })
 
 private fun <T> List<T>.shouldNotBeEmptyList() {

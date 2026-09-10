@@ -122,7 +122,7 @@ class OracleIdentityRebuildIntegrationTest : FunSpec({
             },
             dbLoader = { _, _ -> liveOperand() },
             comparator = { a, b -> SchemaComparator().compare(a, b) },
-            targetAwareComparator = { left, right, canonicalize, _ -> SchemaComparator(canonicalize).compare(left, right) },
+            targetAwareComparator = { left, right, canonicalize, _, _ -> SchemaComparator(canonicalize).compare(left, right) },
             rendererFor = { d -> if (d == DatabaseDialect.ORACLE) OracleDiffDdlGenerator() else noRenderer() },
             executor = { _, _, segments, _, _ -> executeAgainstPool(pool, segments.flatMap { it.statements }) },
             renderReport = { r, _ -> r.toString().also { errors += it } },

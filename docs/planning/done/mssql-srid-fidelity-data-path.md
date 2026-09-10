@@ -62,7 +62,7 @@ verliert sie deshalb nicht; SpatiaLite ebenso.
 - **`data export` → `data import` über eine Datei.** Der Dateiweg trägt kein
   Quellschema; dort gilt weiter der Typ-Default. Das Chunk-Format müsste die
   SRID je Spalte mitführen — ein eigener Schnitt, siehe
-  [`raw-sql-text-drift`](../open/raw-sql-text-drift.md) für die verwandte Frage, was
+  [`raw-sql-text-drift`](raw-sql-text-drift.md) für die verwandte Frage, was
   ein Artefakt über seine Herkunft aussagen muss.
 
 ## Herkunft

@@ -6,6 +6,7 @@ import dev.dmigrate.core.diff.TargetProjection
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.RawTextAuthorship
+import dev.dmigrate.core.diff.RawTextServerForm
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
@@ -93,6 +94,7 @@ class SchemaMigrateRunner(
             SchemaDefinition,
             projection: TargetProjection,
             authorship: RawTextAuthorship?,
+            serverForm: RawTextServerForm?,
         ) -> SchemaDiff
     )? = null,
     private val planner: DiffPlanner = DiffPlanner(),
@@ -111,6 +113,12 @@ class SchemaMigrateRunner(
      */
     private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
     private val postApplyStatusProbe: PostApplyStatusProbeFn? = null,
+    /**
+     * Der Wegwerf-Sandkasten, wo keine Herkunft vorliegt. `null` = nicht
+     * eingeschaltet oder vom Dialekt nicht getragen; dann entscheidet der
+     * Textvergleich, also konservativ.
+     */
+    private val rawTextSandboxProbe: RawTextSandboxProbeFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
     private val atomicWriter: (Path, String) -> Unit = ::defaultAtomicWriter,
@@ -543,6 +551,14 @@ class SchemaMigrateRunner(
                 // entscheidet wie bisher der Textvergleich — und der plant
                 // konservativ.
                 OverlayRawTextAuthorship.of(mergedOverlays),
+                // Und, falls eingeschaltet, der Sandkasten als zweite Quelle.
+                // Nur gegen eine Datenbank: ein Datei-Ziel hat keinen Server,
+                // auf dem sich etwas probeweise anwenden liesse.
+                (prep.targetOp as? CompareOperand.Database)?.let { db ->
+                    rawTextSandboxProbe?.invoke(
+                        db, request.cliConfigPath, prep.sourceNormalized.schema, prep.effectiveDialect,
+                    )
+                },
             )
             ?: comparator(prep.targetNormalized.schema, prep.sourceNormalized.schema)
         val overlayPreflight = MigrationOverlayPreflight.validateBeforePlan(

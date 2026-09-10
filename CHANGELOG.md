@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`migrate.raw_sql_sandbox: true`** lässt d-migrate das Soll dort, wo keine
+  Herkunft vorliegt, probeweise in einem Wegwerf-Schema auf demselben Server
+  anwenden und die Katalogform von dort lesen. Beide Seiten des Vergleichs
+  stehen damit in Serverform, und der eine sonst nötige überflüssige Lauf
+  entfällt. Alles läuft in einer Transaktion, die **zurückgerollt** wird — das
+  Ziel wird nicht berührt, und es bleibt nichts stehen; deshalb trägt heute nur
+  PostgreSQL ihn (transaktionales DDL). Bei Oracle **ist** ein Schema ein
+  Benutzer, den ein Migrationsnutzer nicht anlegen darf. Der Schalter steht
+  bewusst auf `false`: es braucht das Recht, ein Schema anzulegen.
+
 - **Ein Migrationslauf konvergiert jetzt, wenn die Herkunft mitgegeben wird.**
   Der Vergleich fragte für Sichten-Rümpfe, CHECK-Ausdrücke und
   Index-Ausdrücke, ob sich der Dateitext von der Katalogform unterscheidet —

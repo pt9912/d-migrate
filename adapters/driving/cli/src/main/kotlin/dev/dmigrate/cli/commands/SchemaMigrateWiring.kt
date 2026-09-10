@@ -152,8 +152,8 @@ internal object SchemaMigrateWiring {
             },
             dbLoader = { op, cfgPath -> loadFromDb(op, cfgPath, validator) },
             comparator = { left, right -> SchemaComparator().compare(left, right) },
-            targetAwareComparator = { left, right, projection, authorship ->
-                SchemaComparator(projection, authorship).compare(left, right)
+            targetAwareComparator = { left, right, projection, authorship, serverForm ->
+                SchemaComparator(projection, authorship, serverForm).compare(left, right)
             },
             rendererFor = MigrateRendererRegistry::forDialect,
             executor = SegmentAwareMigrationExecutor::executeWithDefaults,
@@ -163,6 +163,7 @@ internal object SchemaMigrateWiring {
             checkPreflightProbe = CheckPreflightProbeRunner::probe,
             mysqlSequenceCanonicityProbe = MysqlSequenceCanonicityProbeRunner::probe,
             postApplyStatusProbe = PostApplyStatusProbeRunner::probe,
+            rawTextSandboxProbe = RawTextSandboxProbeRunner::probe,
             urlScrubber = LogScrubber::maskUrl,
             renderReport = SchemaMigrateReportRenderer::render,
             printError = { msg, src -> formatter.printError(msg, src) },

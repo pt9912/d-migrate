@@ -19,10 +19,16 @@ class SchemaComparator(
      * ausdruecken.
      */
     private val authorship: RawTextAuthorship? = null,
+    /**
+     * Was der Server aus einem Autorentext machen wuerde (siehe
+     * [RawTextServerForm]); `null` = kein Sandkasten. Greift nur dort, wo die
+     * Herkunft schweigt.
+     */
+    private val serverForm: RawTextServerForm? = null,
 ) {
 
-    private val tableComparator = TableComparator(targetProjection, authorship)
-    private val folding = RawTextFolding(authorship)
+    private val tableComparator = TableComparator(targetProjection, authorship, serverForm)
+    private val folding = RawTextFolding(authorship, serverForm)
 
     fun compare(left: SchemaDefinition, right: SchemaDefinition): SchemaDiff {
         val metadataDiff = compareMetadata(left, right)
