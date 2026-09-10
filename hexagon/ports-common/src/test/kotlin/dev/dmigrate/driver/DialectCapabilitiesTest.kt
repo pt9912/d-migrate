@@ -12,4 +12,13 @@ class DialectCapabilitiesTest : FunSpec({
         DialectCapabilities.forDialect(DatabaseDialect.MYSQL).partitionChildrenAreTables shouldBe false
         DialectCapabilities.forDialect(DatabaseDialect.SQLITE).partitionChildrenAreTables shouldBe false
     }
+
+    test("einen Wegwerf-Sandkasten kann nur, wessen Schema kein Benutzer ist") {
+        // Gemessen: PostgreSQL legt mit gewoehnlichen Rechten ein Schema an und
+        // raeumt es per CASCADE wieder weg; die Katalogform darin ist
+        // zeichengleich die des Ziels. Bei Oracle IST ein Schema ein Benutzer,
+        // und `CREATE USER` scheitert am Migrationsnutzer mit ORA-01031.
+        DialectCapabilities.forDialect(DatabaseDialect.POSTGRESQL).supportsRawTextSandbox shouldBe true
+        DialectCapabilities.forDialect(DatabaseDialect.ORACLE).supportsRawTextSandbox shouldBe false
+    }
 })

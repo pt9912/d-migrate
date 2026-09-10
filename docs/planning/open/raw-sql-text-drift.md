@@ -237,8 +237,41 @@ unterlaufen.
 5. **Sandkasten** (Option D), per Konfigurationsdatei einzuschalten, greift
    dort, wo Herkunft fehlt.
 
-## Nicht betroffen
+   **Vermessen, noch nicht gebaut.** Die Praemisse traegt, die Reichweite ist
+   aber kleiner als der ADR annahm:
 
-`schema generate` und `schema reverse` sind unberuehrt — beide erzeugen
-gueltige Ergebnisse. Es geht ausschliesslich um den **wiederholten**
-Vergleich gegen eine Datenbank.
+   | Gemessen | Ergebnis |
+   | --- | --- |
+   | PostgreSQL 16: Sandkasten-Schema gegen Ziel, derselbe CHECK | `CHECK ((((status)::text = 'A'::text) AND (nm <> ''::text)))` — **zeichengleich** |
+   | PostgreSQL 16: derselbe Ausdrucks-Index | `btree (upper(nm))` auf beiden Seiten — **zeichengleich** |
+   | PostgreSQL 16: `CREATE SCHEMA` / `DROP SCHEMA … CASCADE` als gewoehnlicher Nutzer | geht, und das Aufraeumen ist vollstaendig |
+   | Oracle 23: `CREATE USER dmg_sandbox` als Migrationsnutzer | **`ORA-01031: insufficient privileges`** (Sitzungsrechte: `CREATE TABLE`, `CREATE SESSION`) |
+   | Oracle 23: `CREATE SCHEMA AUTHORIZATION` | `ORA-02421` — die Anweisung legt bei Oracle gar kein Schema an |
+
+   Bei Oracle **ist** ein Schema ein Benutzer; der Sandkasten ist dort keine
+   Frage des Willens, sondern der Rechte. Festgehalten als
+   `DialectCapabilities.supportsRawTextSandbox` (PostgreSQL `true`, Oracle
+   `false`; MySQL, SQL Server und SQLite sind ungemessen und stehen deshalb
+   auf `false`).
+
+## Was Schritt 5 nach Schritt 3 noch wert ist — Eigner-Entscheidung
+
+Der ADR entschied Option D, **bevor** Schritt 3 gebaut war. Danach sieht die
+Rechnung anders aus:
+
+- **Ohne Sandkasten** kostet fehlende Herkunft **einen** ueberfluessigen Lauf.
+  Danach liegt Herkunft vor, und es konvergiert (Punkt 2 der fuenf
+  Entscheidungen: konservativ planen).
+- **Mit Sandkasten** entfaellt dieser eine Lauf — fuer PostgreSQL, MySQL und
+  SQL Server, sofern der Nutzer ein Schema anlegen darf und den Schalter setzt.
+  Fuer Oracle gar nicht.
+- Bezahlt wird er mit einer **Nebenwirkung auf dem Zielserver** (ein
+  Wegwerf-Schema wird angelegt und wieder verworfen), einer Aufraeumpflicht und
+  einer Konfigurationsflaeche.
+
+`schema compare` bleibt nach ADR-Entscheidung 4 ohnehin streng — der
+Sandkasten greift also nur im Migrations-Planen, nicht im Vergleichsbefehl.
+
+Zu entscheiden ist damit, ob dieser eine gesparte Lauf die Nebenwirkung
+rechtfertigt. Die Messung lag zum Zeitpunkt der ADR-Entscheidung nicht vor;
+der ADR bleibt gueltig, aber die Grundlage ist heute genauer.

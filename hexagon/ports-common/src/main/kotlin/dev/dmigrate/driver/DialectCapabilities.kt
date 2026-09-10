@@ -163,6 +163,21 @@ data class DialectCapabilities(
      */
     val rendersViewRefreshSetting: Boolean = false,
     /**
+     * Ob sich auf demselben Server ein **Wegwerf-Schema** anlegen laesst, in dem
+     * das Soll probeweise angewandt und die Katalogform gelesen werden kann.
+     *
+     * Der Zweck ist der Vergleich rohen SQL-Texts: Autorentext und Katalogform
+     * stimmen nie ueberein, aber zwei Katalogformen tun es. Gemessen gegen
+     * PostgreSQL 16 liefert ein Sandkasten-Schema **zeichengleich** dieselbe
+     * Form wie das Ziel.
+     *
+     * Bei **Oracle** ist ein Schema ein Benutzer, und `CREATE USER` verlangt
+     * Rechte, die ein Migrationsnutzer nicht hat (`ORA-01031`, gemessen mit
+     * `CREATE TABLE` + `CREATE SESSION`). Die Faehigkeit ist deshalb keine
+     * Frage des Willens, sondern des Dialekts.
+     */
+    val supportsRawTextSandbox: Boolean = false,
+    /**
      * Ob der Dialekt die **untere** Grenze einer RANGE-Partition fuehrt.
      * PostgreSQL tut es (`FOR VALUES FROM … TO …`); Oracle, MySQL und SQL
      * Server kennen nur die obere und leiten die untere aus der
@@ -302,6 +317,7 @@ data class DialectCapabilities(
 
         fun forDialect(dialect: DatabaseDialect): DialectCapabilities = when (dialect) {
             DatabaseDialect.POSTGRESQL -> DialectCapabilities(
+                supportsRawTextSandbox = true,
                 supportsViews = true,
                 supportsFunctions = true,
                 supportsProcedures = true,
