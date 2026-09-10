@@ -291,22 +291,32 @@ internal object OracleDiffTableOps {
         if (isIdentity(sourceType) && !isIdentity(targetType)) {
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY ${ctx.sql.quote(column)} DROP IDENTITY;")
         }
-        // Wie im PostgreSQL-Diff-Pfad: eine werte-basierte Enum-Spalte rendert
-        // hier ungebunden (VARCHAR2(4000)), OHNE den CHECK, den ein frisches
-        // CreateTable via OracleColumnConstraintHelper bekaeme -- der CHECK ist
-        // eine eigene Operation (AddConstraint, Sub-Slice 5b), keine Typfrage.
-        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY ${ctx.sql.quote(column)} ${ctx.sql.toSql(targetType)};")
-        // Der Waechter fragt NICHT nach `values`: `OracleTypeMapper.toSql`
-        // rendert JEDE Enum als ungebundenes VARCHAR2(4000) -- eine
-        // `refType`-Enum degradiert genauso wie eine wertebasierte (Oracle hat
-        // keinen nativen Enum-Typ, anders als PostgreSQL, wo nur der
-        // inline-values-Fall verliert).
-        if (ctx.direction == OracleRenderDirection.UP && targetType is NeutralType.Enum) {
+        // Der Wertevorrat der Zielseite — aufgeloest wie beim Rendern der
+        // Spalte selbst, damit ein `refType` denselben Weg nimmt.
+        val targetValues = ctx.schemaForDirection()
+            ?.let { columnHelper.enumValuesOf(targetType, it) }
+            ?.takeIf { it.isNotEmpty() }
+        // Der alte Wertevorrat zuerst: sein CHECK belegt den Namen, den der
+        // neue tragen soll, und er wiese Werte ab, die der neue erlaubt.
+        ctx.enumValueCheckName(table, column)?.let { name ->
+            ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT ${ctx.sql.quote(name)};")
+        }
+        // Eine wertebasierte Enum-Spalte ist so breit wie ihr laengster Wert —
+        // dieselbe Regel, nach der `CREATE TABLE` sie anlegt. Der ungebundene
+        // `VARCHAR2(4000)` aus dem Typ-Mapper ist der Fall ohne Werte.
+        val typeSql = targetValues?.let { "VARCHAR2(${OracleTypeMapper.enumWidth(it)})" } ?: ctx.sql.toSql(targetType)
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY ${ctx.sql.quote(column)} $typeSql;")
+        targetValues?.let { values ->
+            ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD ${columnHelper.enumCheckClause(table, column, values)};")
+        }
+        // Uebrig bleibt der Fall, in dem es nichts durchzusetzen gibt: ein Enum
+        // ohne Werte, oder ein `refType` auf eine DOMAIN (die als CLOB dasteht).
+        if (ctx.direction == OracleRenderDirection.UP && targetType is NeutralType.Enum && targetValues == null) {
             ctx.warning(
                 op,
-                "Column `$table.$column` is altered to an enum type but rendered as unbounded VARCHAR2(4000); " +
-                    "the declared values are not enforced (a bounded, CHECK-constrained enum column is only " +
-                    "produced by CreateTable — add the CHECK constraint separately if value enforcement is required).",
+                "Column `$table.$column` is altered to an enum type that carries no values; it is rendered as " +
+                    "unbounded VARCHAR2(4000) and nothing is enforced in the target (declare the values, or " +
+                    "reference a custom type that carries them).",
                 code = "W134",
             )
         }

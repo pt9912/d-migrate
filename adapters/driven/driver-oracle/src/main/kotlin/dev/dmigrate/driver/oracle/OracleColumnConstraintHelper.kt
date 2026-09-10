@@ -156,7 +156,7 @@ internal class OracleColumnConstraintHelper(
      * beim Rendern der Spalte selbst. Ein `refType` auf eine DOMAIN hat keine
      * (die Spalte wird CLOB), ebenso eine Enum ohne Werte.
      */
-    private fun enumValuesOf(type: NeutralType, schema: SchemaDefinition): List<String>? {
+    fun enumValuesOf(type: NeutralType, schema: SchemaDefinition): List<String>? {
         val enum = type as? NeutralType.Enum ?: return null
         val customType = enum.refType?.let { schema.customTypes[it] }
         if (customType?.kind == CustomTypeKind.DOMAIN) return null

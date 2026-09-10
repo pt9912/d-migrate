@@ -156,7 +156,7 @@ class OracleDiffDdlGeneratorTest : FunSpec({
         r.isBlocked shouldBe false
     }
 
-    test("AlterColumnType: inline-values enum warns W134 (unbounded, no CHECK)") {
+    test("AlterColumnType: an inline-values enum gets the bounded column and its CHECK") {
         val diff = SchemaDiff(
             tablesChanged = listOf(
                 TableDiff(
@@ -171,11 +171,16 @@ class OracleDiffDdlGeneratorTest : FunSpec({
             ),
         )
         val r = planAndUp(diff)
-        r.statements.single().sql shouldContain "VARCHAR2(4000)"
-        r.diagnostics.any { it.code == "W134" } shouldBe true
+        // Dieselbe Breite und derselbe benannte CHECK, die `CREATE TABLE`
+        // schreibt — sonst haengt die Form davon ab, wie die Spalte entstand.
+        r.statements.map { it.sql } shouldBe listOf(
+            "ALTER TABLE \"users\" MODIFY \"status\" VARCHAR2(1);",
+            "ALTER TABLE \"users\" ADD CONSTRAINT \"ck_users_status\" CHECK (\"status\" IN ('a', 'b'));",
+        )
+        r.diagnostics.any { it.code == "W134" } shouldBe false
     }
 
-    test("AlterColumnType: refType enum degrades identically and also warns W134") {
+    test("AlterColumnType: an enum whose values cannot be resolved still warns W134") {
         // Anders als PostgreSQL (natives ENUM-Objekt) hat Oracle keinen
         // nativen Enum-Typ -- auch eine refType-Enum landet auf VARCHAR2(4000).
         val diff = SchemaDiff(

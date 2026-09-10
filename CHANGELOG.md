@@ -261,6 +261,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Eine Spalte, die auf Oracle per ALTER zum Enum wurde, verlor ihren
+  Wertevorrat — und der Lauf konvergierte nie.** `CREATE TABLE` schreibt dort
+  `VARCHAR2(<längster Wert>)` + benannten `CHECK`; der ALTER-Pfad machte die
+  Spalte stattdessen zu ungebundenem `VARCHAR2(4000)` ohne `CHECK` (mit
+  `W134`). Weil das Ziel den Vorrat damit nie trug, plante **jeder** weitere
+  Lauf dieselbe Änderung erneut und endete mit Exit 5.
+
+  Der ALTER-Pfad schreibt jetzt dieselbe Form wie `CREATE TABLE`: den
+  bestehenden `CHECK` lösen, auf die begrenzte Breite wechseln, den neuen
+  `CHECK` anlegen. Beide Wege enden damit bei derselben Spalte.
+
 - **Eine Enum-Spalte liess `schema migrate` auf PostgreSQL und SQLite bei
   **keinem** Lauf konvergieren.** Der Migrationspfad rendert dort seit jeher
   bloßes `TEXT` (mit `W134`), während `schema generate` die Textspalte samt

@@ -288,7 +288,7 @@ des Vorrats wirklich ab.
 - **Oracles ALTER-Pfad** rendert den gebundenen `VARCHAR2` + `CHECK` nur im
   `CreateTable`; eine Spalte, die per ALTER zum Enum wird, bekommt ungebundenes
   `VARCHAR2(4000)` und `W134`. Eigenes Ticket:
-  [`oracle-alter-column-enum-check.md`](../open/oracle-alter-column-enum-check.md).
+  [`oracle-alter-column-enum-check.md`](oracle-alter-column-enum-check.md).
 - **MySQLs Charset-Introducer-Form** wird nicht erkannt — folgenlos, weil MySQL
   einen nativen `ENUM` hat und dort kein CHECK entsteht (bekannte Grenze in
   ADR 0048).

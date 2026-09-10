@@ -5,6 +5,8 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.core.diff.EnumCheckProjection
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -192,6 +194,23 @@ internal class OracleDiffRenderContext(
             operationId = operationId,
         )
     }
+
+    /**
+     * Der Name des CHECKs, der den Wertevorrat von [column] aufzaehlt, auf der
+     * Seite, von der **weg** geaendert wird — oder `null`, wenn dort keiner
+     * steht.
+     *
+     * Oracle kennt kein `DROP CONSTRAINT IF EXISTS`: eine Anweisung auf einen
+     * Constraint, den es nicht gibt, endet in ORA-02443. Gefragt wird deshalb
+     * das zurueckgelesene Schema, nicht der Spaltentyp — dort steht der
+     * Wertevorrat als eigener Constraint, waehrend die Spalte nur `VARCHAR2`
+     * ist.
+     */
+    fun enumValueCheckName(table: String, column: String): String? =
+        schemaOppositeOfDirection()?.tables?.get(table)?.constraints
+            ?.firstOrNull {
+                it.type == ConstraintType.CHECK && EnumCheckProjection.valuesOf(it.expression, column) != null
+            }?.name
 
     /** Spaltendefinition von `table.column` auf der Seite, die diese Richtung liest. */
     fun columnFor(table: String, column: String): ColumnDefinition? =

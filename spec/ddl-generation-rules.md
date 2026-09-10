@@ -465,7 +465,10 @@ Besonderheiten:
 - `enum` → `VARCHAR2(<längster Wert>)` + benannter `CHECK`
   (`ck_<table>_<column>`), kein separater Typ; `ref_type` auf eine
   `DOMAIN` faltet auf `CLOB` + `action_required` E053 (keine
-  Basistyp-Auflösung)
+  Basistyp-Auflösung). Der ALTER-Pfad schreibt dieselbe Form: erst den
+  bestehenden Wertevorrat-`CHECK` lösen (Oracle kennt kein
+  `DROP CONSTRAINT IF EXISTS`, die Anweisung entfällt also, wenn keiner
+  dasteht), dann `MODIFY` auf die begrenzte Breite, dann den neuen `CHECK`
 - **Benannte Spalten-Constraints**: `UNIQUE` → `uq_<table>_<column>`,
   `PRIMARY KEY` → `pk_<table>`. **Kein** benanntes `DEFAULT` — Oracle kennt
   (anders als MSSQL) keine benannten DEFAULT-Constraints, `DEFAULT` ist
