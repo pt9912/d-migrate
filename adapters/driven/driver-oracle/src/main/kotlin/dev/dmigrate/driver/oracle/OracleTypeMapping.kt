@@ -168,11 +168,31 @@ internal object OracleTypeMapping {
     /** Kategorien, zu denen `TYPE_NAME` keinen in einer Signatur nennbaren Namen führt. */
     private val UNNAMEABLE_CATEGORIES = setOf("REF CURSOR", "PL/SQL RECORD", "PL/SQL TABLE", "OPAQUE", "UNDEFINED")
 
+    /**
+     * Ob ein Parametertyp den Rueckweg unveraendert uebersteht.
+     *
+     * Gefragt wird nicht eine gepflegte Liste, sondern der Rueckweg selbst:
+     * gelesen und wieder gerendert. Was dabei anders herauskommt, ist genau
+     * das, was der Anwender wissen muss — und die Antwort kann nicht veralten,
+     * wenn sich eine der beiden Richtungen aendert.
+     *
+     * Benutzerdefinierte Typen sind ausgenommen: ihr Name wird durchgereicht
+     * und kommt unveraendert wieder.
+     */
+    fun paramTypeSurvivesRoundTrip(dataType: String): Boolean {
+        val original = dataType.trim()
+        if (isUserDefinedCategory(original)) return true
+        return OracleRoutineDdl.paramTypeSql(mapParamType(original)).equals(original, ignoreCase = true)
+    }
+
     fun mapParamType(typeName: String): String = when (typeName.uppercase().trim()) {
         "NUMBER", "FLOAT" -> "decimal"
         "BINARY_INTEGER", "PLS_INTEGER" -> "integer"
         "BINARY_DOUBLE", "BINARY_FLOAT" -> "float"
-        "VARCHAR2", "NVARCHAR2", "CHAR", "NCHAR", "CLOB", "NCLOB", "LONG", "VARCHAR" -> "text"
+        // `char` und nicht `text`: das neutrale Modell fuehrt beide getrennt,
+        // und die Auffuellung auf feste Laenge ginge sonst verloren.
+        "CHAR", "NCHAR" -> "char"
+        "VARCHAR2", "NVARCHAR2", "CLOB", "NCLOB", "LONG", "VARCHAR" -> "text"
         "RAW", "LONG RAW", "BLOB" -> "binary"
         // Oracles DATE traegt eine Uhrzeit; `date` waere die stille Verengung,
         // die [mapTemporal] fuer Spalten schon vermeidet.

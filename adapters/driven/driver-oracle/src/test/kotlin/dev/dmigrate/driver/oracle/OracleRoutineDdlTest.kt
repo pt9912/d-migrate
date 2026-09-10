@@ -35,8 +35,26 @@ class OracleRoutineDdlTest : FunSpec({
         )
         // `IN VARCHAR2(10)` und `RETURN NUMBER(10,2)` erzeugen die Routine INVALID.
         OracleRoutineDdl.functionSql("calc", fn, "BEGIN RETURN a; END;", quote) shouldBe
-            "CREATE OR REPLACE FUNCTION \"calc\"(\"a\" IN NUMBER, \"b\" IN VARCHAR2)\n" +
+            "CREATE OR REPLACE FUNCTION \"calc\"(\"a\" IN NUMBER, \"b\" IN CLOB)\n" +
             "RETURN NUMBER IS\nBEGIN RETURN a; END;"
+    }
+
+    test("unbegrenzter Text wird CLOB, nicht VARCHAR2 — wie in einer Spalte auch") {
+        // Ein PL/SQL-VARCHAR2 endet bei 32767 Zeichen; live gemessen bricht der
+        // Aufruf dort mit ORA-06502 ab, waehrend derselbe Wert an einem
+        // CLOB-Parameter durchgeht. Der Spalten-Pfad rendert `Text()` ebenfalls
+        // als CLOB, PostgreSQL `text` und SQL Server `NVARCHAR(MAX)`.
+        OracleRoutineDdl.paramTypeSql("text") shouldBe "CLOB"
+    }
+
+    test("begrenzte Textarten bleiben VARCHAR2 — dort ist es keine Verengung") {
+        OracleRoutineDdl.paramTypeSql("uuid") shouldBe "VARCHAR2"
+        OracleRoutineDdl.paramTypeSql("email") shouldBe "VARCHAR2"
+        OracleRoutineDdl.paramTypeSql("enum") shouldBe "VARCHAR2"
+    }
+
+    test("char bleibt CHAR — sonst faellt die Auffuellung auf feste Laenge weg") {
+        OracleRoutineDdl.paramTypeSql("char") shouldBe "CHAR"
     }
 
     test("an empty parameter list renders without parentheses") {
@@ -56,7 +74,7 @@ class OracleRoutineDdlTest : FunSpec({
             ),
         )
         OracleRoutineDdl.procedureSql("p", proc, "BEGIN NULL; END;", quote) shouldContain
-            "(\"i\" IN NUMBER, \"o\" OUT NUMBER, \"b\" IN OUT VARCHAR2)"
+            "(\"i\" IN NUMBER, \"o\" OUT NUMBER, \"b\" IN OUT CLOB)"
     }
 
     test("DETERMINISTIC and AUTHID CURRENT_USER render; DEFINER stays implicit") {

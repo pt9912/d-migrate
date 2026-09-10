@@ -133,6 +133,7 @@ internal object OracleRoutineReader {
             }
             val body = checkNotNull(OracleRoutineBody.splitRoutine(source.source)).body
             noteDroppedHints(kind, source.name, properties)
+            noteParamTypesThatDoNotReturn(kind, source.name, arguments)
             val parameters = parametersOf(arguments)
             val key = ObjectKeyCodec.routineKey(source.name, parameters)
             if (source.type == "FUNCTION") {
@@ -303,6 +304,41 @@ internal object OracleRoutineReader {
          * wiedererzeugte Trigger feuert bei jeder Aenderung, also oefter als
          * das Original.
          */
+        /**
+         * Ein Parametertyp, der neu erzeugt anders heisst als im Original.
+         *
+         * Eine PL/SQL-Signatur traegt keine Laenge — der Reverse legt
+         * Parametertypen deshalb ohne ab, und einige Oracle-Typen fallen dabei
+         * mit anderen zusammen. Wer die Routine aus dem gelesenen Schema neu
+         * erzeugt, bekommt sie mit dem breiteren Typ zurueck.
+         *
+         * Gemeldet wird nur, was den Rueckweg wirklich nicht uebersteht; die
+         * Antwort kommt aus dem Rueckweg selbst, nicht aus einer Liste.
+         */
+        private fun noteParamTypesThatDoNotReturn(
+            kind: String,
+            name: String,
+            arguments: List<OracleRoutineQueries.RoutineArgumentRow>,
+        ) {
+            val changed = arguments
+                .filterNot { OracleTypeMapping.paramTypeSurvivesRoundTrip(it.dataType) }
+                .map { arg ->
+                    val rendered = OracleRoutineDdl.paramTypeSql(OracleTypeMapping.mapParamType(arg.dataType))
+                    "${arg.name ?: "<return>"} ${arg.dataType.trim()} -> $rendered"
+                }
+                .distinct()
+            if (changed.isEmpty()) return
+            notes += SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "R368",
+                objectName = name,
+                message = "The $kind '$name' has parameter types the neutral model cannot distinguish, so a " +
+                    "regenerated $kind declares them differently: ${changed.joinToString(", ")}. " +
+                    "A PL/SQL signature carries no length, and the neutral parameter type is a bare name.",
+                hint = "Check callers and overloads if the exact declared type matters.",
+            )
+        }
+
         private fun noteDroppedUpdateOf(name: String, columns: List<String>) {
             if (columns.isEmpty()) return
             notes += SchemaReadNote(

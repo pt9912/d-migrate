@@ -1360,7 +1360,7 @@ liest sie zurück und prüft nach dem Anwenden `ALL_OBJECTS.status`.
 Zwei Befunde blieben offen und haben eigene Tickets:
 [`oracle-routine-post-apply-status.md`](../done/oracle-routine-post-apply-status.md)
 (die Statusprüfung braucht einen neuen Port und zwei Entscheidungen) und
-[`oracle-routine-signature-type-narrowing.md`](../open/oracle-routine-signature-type-narrowing.md)
+[`oracle-routine-signature-type-narrowing.md`](../done/oracle-routine-signature-type-narrowing.md)
 (`CLOB`→`VARCHAR2` und Verwandte, ohne Meldung).
 
 ## Slice 10 im Detail — Materialized Views

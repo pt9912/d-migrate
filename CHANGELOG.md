@@ -228,6 +228,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ein Oracle-`CLOB`-Parameter wurde beim Neuerzeugen auf `VARCHAR2` verengt.**
+  Ein PL/SQL-`VARCHAR2` endet bei 32767 Zeichen; gegen ein echtes Oracle
+  gemessen bricht der Aufruf darüber mit `ORA-06502` ab, während derselbe Wert
+  an einem `CLOB`-Parameter durchgeht. Der neutrale `text`-Parameter rendert
+  jetzt als `CLOB` — dieselbe unbegrenzte Form, die der Spaltenpfad wählt
+  (`Text()` → `CLOB`) und die auch PostgreSQL (`text`) und SQL Server
+  (`NVARCHAR(MAX)`) rendern. `char` bleibt `CHAR` statt `VARCHAR2`, damit die
+  Auffüllung auf feste Länge erhalten bleibt. **Folge:** auch `VARCHAR2` kommt
+  neu erzeugt als `CLOB` zurück — die Verbreiterung bricht keinen Aufruf, und
+  freistehende Oracle-Routinen lassen sich nicht überladen, können also nicht
+  kollidieren.
+- **Der Reverse schwieg zu Parametertypen, die er anders darstellt.** Neue
+  Notiz **R368** je Parameter, dessen Typ den Rückweg nicht unverändert
+  übersteht (`VARCHAR2` → `CLOB`, `DATE` → `TIMESTAMP`, `BINARY_FLOAT` →
+  `BINARY_DOUBLE`, `RAW` → `BLOB`, `NCLOB`/`NVARCHAR2`/`NCHAR`/`LONG`), mit
+  Vorher und Nachher. Welche Typen das sind, ergibt sich aus dem Rückweg selbst
+  statt aus einer gepflegten Liste.
 - **Eine Oracle-Routine, die der Server nicht übersetzen konnte, galt als
   erfolgreich angewandt.** Ein `CREATE OR REPLACE` mit einem Fehler im Rumpf
   gelingt über JDBC; das Objekt steht danach im Katalog und ist nicht

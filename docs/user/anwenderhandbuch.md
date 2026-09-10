@@ -2009,6 +2009,15 @@ Report als **E054** vermerkt:
   `WITH`-Optionsklausel wie `SCHEMABINDING` oder `EXECUTE AS`, mit einem
   tabellenwertigen Parameter und mehrteilige Tabellenfunktionen: für alle drei
   hat das neutrale Modell kein Feld, und ein Zurückschreiben verlöre sie still.
+- **Oracle, Parametertypen:** Eine PL/SQL-Signatur trägt keine Länge, und der
+  neutrale Parametertyp ist ein blanker Name. Wird eine gelesene Routine neu
+  erzeugt, steht deshalb an manchen Parametern ein anderer Typ als im Original —
+  am häufigsten `VARCHAR2` → `CLOB`. Die Richtung ist bewusst die breitere:
+  `CLOB` nimmt an, was `VARCHAR2` annimmt, und zusätzlich lange Werte, an denen
+  `VARCHAR2` in PL/SQL mit `ORA-06502` scheitert. Kollidieren kann das nicht —
+  freistehende Oracle-Routinen lassen sich nicht überladen. Der Reverse meldet
+  jeden solchen Parameter als **R368** mit Vorher und Nachher; prüfen Sie
+  Aufrufer, wenn der genau deklarierte Typ für Sie zählt.
 - **Oracle:** Ein Rumpf, den der Server nicht übersetzen kann, lässt das
   `CREATE OR REPLACE` **gelingen** — die Routine steht danach im Katalog und ist
   nicht aufrufbar. `schema migrate --execute` fragt deshalb nach dem Anwenden
@@ -2745,6 +2754,7 @@ nie stillschweigend:
 | `R361` | Ein Trigger, den es so nur in Oracle gibt: Compound-, System- und `CALL`-Trigger, abgeschaltete Trigger, Crossedition-Trigger, eigene `REFERENCING`-Namen |
 | `R362` | Ein `UPDATE OF spalte`-Trigger — er wird gelesen, feuert nach dem Wiederanlegen aber bei **jeder** Änderung |
 | `R363` | `PARALLEL_ENABLE` oder `RESULT_CACHE`; die Routine wird gelesen, läuft neu erzeugt aber ohne diese Angabe |
+| `R368` | Ein Parametertyp, den der neutrale Name nicht unterscheiden kann (`VARCHAR2` → `CLOB`, `DATE` → `TIMESTAMP`, `BINARY_FLOAT` → `BINARY_DOUBLE`, `RAW` → `BLOB`, …); die Notiz nennt Vorher und Nachher je Parameter |
 | `R365` | `ALL_SDO_GEOM_METADATA` ist nicht lesbar (Oracle Spatial fehlt oder das Recht darauf); Geometriespalten kommen ohne Koordinatensystem zurück |
 
 PL/SQL-**Packages** bleiben ganz außen vor (`R342`): das neutrale Modell führt

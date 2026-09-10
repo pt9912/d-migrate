@@ -136,8 +136,20 @@ internal object OracleRoutineDdl {
         // `NUMBER` daraus zu machen aenderte den Aufrufvertrag.
         "boolean" -> "BOOLEAN"
         "float" -> "BINARY_DOUBLE"
-        "text", "char", "email", "enum" -> "VARCHAR2"
-        "uuid" -> "VARCHAR2"
+        // `text` heisst unbegrenzter Text -- so liest der Spalten-Pfad ihn
+        // (`Text()` -> CLOB) und so rendern ihn die anderen Dialekte
+        // (PostgreSQL `text`, SQL Server `NVARCHAR(MAX)`). `VARCHAR2` endet in
+        // PL/SQL bei 32767 Zeichen; live gemessen bricht der Aufruf dort mit
+        // ORA-06502 ab, waehrend derselbe Wert an einem CLOB-Parameter
+        // durchgeht. Ein kurzes Literal nimmt CLOB ebenso an.
+        "text" -> "CLOB"
+        // Aufgefuellt auf feste Laenge -- `VARCHAR2` waere es nicht. Eine
+        // Laenge traegt eine PL/SQL-Signatur nicht, ein blankes `CHAR` ist
+        // gueltig (gemessen).
+        "char" -> "CHAR"
+        // Beide sind ihrer Natur nach begrenzt, `VARCHAR2` ist hier also
+        // keine Verengung.
+        "email", "enum", "uuid" -> "VARCHAR2"
         "binary" -> "BLOB"
         "date", "datetime" -> "TIMESTAMP"
         "json" -> "JSON"

@@ -1717,6 +1717,34 @@ für SQL\*Plus gehört ausschließlich in die Skriptdarstellung und steht dort a
 Trenner je Anweisung (`DdlStatement.scriptTerminator`), nicht als Trenner je
 Dialekt.
 
+Ein **Parametertyp** trägt in PL/SQL keine Länge — `IN VARCHAR2(10)` erzeugt
+die Routine `INVALID`. Der neutrale Parametertyp ist deshalb ein blanker Name,
+und er wird auf die **unbegrenzte** Oracle-Form gerendert, dieselbe, die der
+Spaltenpfad für den entsprechenden Typ wählt:
+
+| neutral | Oracle-Parameter | warum |
+|---|---|---|
+| `text` | `CLOB` | unbegrenzter Text; `VARCHAR2` endet in PL/SQL bei 32767 Zeichen und bricht darüber mit `ORA-06502` ab |
+| `char` | `CHAR` | die Auffüllung auf feste Länge bleibt erhalten |
+| `email`, `enum`, `uuid` | `VARCHAR2` | ihrer Natur nach begrenzt |
+| `datetime` | `TIMESTAMP` | fasst `DATE`, `TIMESTAMP` und `TIMESTAMP WITH TIME ZONE` zusammen; `TIMESTAMP` ist der breiteste der drei |
+| `binary` | `BLOB` | `binary` trägt keine Länge, wie bei einer Spalte auch |
+| `float` | `BINARY_DOUBLE` | der Parametername trägt keine Gleitkomma-Genauigkeit |
+
+Das trifft auch `VARCHAR2`, den häufigsten Parametertyp: er kommt als `CLOB`
+zurück. Gewählt ist die Richtung, die keinen Aufruf brechen kann — `CLOB` nimmt
+an, was `VARCHAR2` annimmt, und zusätzlich das, woran `VARCHAR2` scheitert.
+Kollidieren kann der breitere Typ nicht: freistehende Oracle-Routinen lassen
+sich nicht überladen (eine zweite gleichen Namens ersetzt die erste),
+Überladung gibt es nur in Packages, und die trägt das neutrale Modell nicht
+(`R342`).
+
+Wo der Rückweg den Typ **nicht** unverändert zurückgibt (`VARCHAR2`, `DATE`,
+`BINARY_FLOAT`, `RAW`, `LONG`, sowie die `N`-Varianten `NCLOB`, `NVARCHAR2`,
+`NCHAR`), meldet der Reverse `R368` mit Vorher und Nachher. Welche Typen das
+sind, ergibt sich aus dem Rückweg selbst — gelesen und wieder gerendert —, nicht
+aus einer gepflegten Liste.
+
 Beim **Zurücklesen** kommt die Signatur aus `ALL_ARGUMENTS` (`data_level = 0`,
 `package_name IS NULL`; Position 0 ist der Rückgabewert) und der Rumpf aus
 `ALL_SOURCE`, geschnitten am ersten `IS`/`AS` auf oberster Ebene. Trigger
@@ -1732,6 +1760,7 @@ neutrale Modell nicht trägt, meldet der Reverse:
 | `R361` | Trigger ohne neutrale Entsprechung: Compound, System-Ereignis, `CALL`-Aktion, `DISABLED`, Crossedition, eigene `REFERENCING`-Namen |
 | `R362` | `UPDATE OF spalte` — der Trigger wird gelesen, feuert wiedererzeugt aber bei jeder Änderung |
 | `R363` | `PARALLEL_ENABLE`/`RESULT_CACHE` — die Routine wird gelesen, läuft neu erzeugt aber ohne die Angabe |
+| `R368` | Ein Parametertyp, den der neutrale Name nicht unterscheiden kann; die Notiz nennt Vorher und Nachher je Parameter |
 
 Die `UPDATE OF`-Spaltenliste steht in `ALL_TRIGGER_COLS` (`COLUMN_LIST = 'YES'`),
 **nicht** in `ALL_TRIGGERS.COLUMN_NAME`. PL/SQL-Packages bleiben ungelesen
