@@ -90,4 +90,5 @@ internal fun generation(gen: ColumnGeneration?): String = when (gen) {
         gen.sequenceName?.let { append(",sequence=$it") }
         if (gen.legacySerialSyntax) append(",legacy_serial=true")
     }
+    is ColumnGeneration.Computed -> "computed:stored=${gen.stored},expr=${gen.expression}"
 }

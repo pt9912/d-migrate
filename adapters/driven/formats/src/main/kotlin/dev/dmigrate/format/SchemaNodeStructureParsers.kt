@@ -166,6 +166,10 @@ private fun parseGeneration(node: JsonNode?): ColumnGeneration? {
             sequenceName = node.optionalText("sequence_name"),
             legacySerialSyntax = node.boolOrDefault("legacy_serial_syntax", false),
         )
+        "computed" -> ColumnGeneration.Computed(
+            expression = node.requiredText("expression"),
+            stored = node.boolOrDefault("stored", false),
+        )
         else -> throw IllegalArgumentException("Unknown column generation type: $type")
     }
 }

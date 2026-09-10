@@ -36,7 +36,7 @@ class SchemaValidator {
         for ((tableName, table) in schema.tables) {
             for ((colName, col) in table.columns) {
                 val path = "tables.$tableName.columns.$colName"
-                columnErrors += SchemaColumnValidationRules.validate(path, col, schema)
+                columnErrors += SchemaColumnValidationRules.validate(path, col, table, schema)
             }
         }
         return ValidationResult(

@@ -158,6 +158,11 @@ private fun buildGeneration(mapper: ObjectMapper, generation: ColumnGeneration):
             if (generation.sequenceName != null) node.put("sequence_name", generation.sequenceName)
             if (generation.legacySerialSyntax) node.put("legacy_serial_syntax", true)
         }
+        is ColumnGeneration.Computed -> {
+            node.put("type", "computed")
+            node.put("expression", generation.expression)
+            if (generation.stored) node.put("stored", true)
+        }
     }
     return node
 }

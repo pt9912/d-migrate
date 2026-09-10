@@ -52,6 +52,8 @@ neuen Version.
 | E122 - E123 | Sequence-Default-Validierung |
 | E124 | Support-Namenskollision |
 | E125 | Sequence-internal-Validierung (Inkrement/Bereich) |
+| E130 - E133 | Identity-Generation-Validierung (Typ, Default-Konflikt, `sequence_name`) |
+| E134 - E136 | Computed-Generation-Validierung: fehlender Ausdruck, Default-Konflikt, unbekannte oder selbstbezuegliche Spalte im Ausdruck |
 | W001 | Float-fuer-Geldbetraege-Warnung |
 | W100 - W112 | Dialekt-Warnungen (Typ-Mapping, Index-Konvertierung) |
 | W113 | Circular-FK-Warnung |

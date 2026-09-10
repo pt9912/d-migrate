@@ -298,6 +298,18 @@ data class DialectCapabilities(
      * `ColumnGeneration.Identity.sequenceName` nie.
      */
     val namesIdentitySequences: Boolean = true,
+    /**
+     * Ob der Dialekt eine **virtuelle** berechnete Spalte kennt — eine, deren
+     * Wert bei jedem Lesen neu berechnet statt gespeichert wird.
+     *
+     * Vier der fuenf tun es und legen sie sogar als Vorgabe an. PostgreSQL
+     * nicht: dort ist `STORED` Pflicht, `VIRTUAL` ist ein Syntaxfehler (live
+     * gemessen). `ColumnGeneration.Computed.stored` ist dort also keine Wahl,
+     * sondern eine Konstante — und ein Vergleich, der die beiden Werte
+     * unterscheidet, meldete auf PostgreSQL bei jedem Round-Trip eine
+     * Aenderung, die niemand machen kann.
+     */
+    val supportsVirtualComputedColumns: Boolean = true,
 ) {
     companion object {
         /**
@@ -316,85 +328,99 @@ data class DialectCapabilities(
         ).joinToString("\n")
 
         fun forDialect(dialect: DatabaseDialect): DialectCapabilities = when (dialect) {
-            DatabaseDialect.POSTGRESQL -> DialectCapabilities(
-                supportsRawTextSandbox = true,
-                supportsViews = true,
-                supportsFunctions = true,
-                supportsProcedures = true,
-                supportsTriggers = true,
-                supportsSequences = true,
-                supportsCustomTypes = true,
-                supportsPartitioning = true,
-                supportsDisableFkChecks = false,
-                supportsTriggerDisable = true,
-                supportsTriggerStrict = true,
-                supportsSchemaParameter = true,
-                partitionChildrenAreTables = true,
-                supportsIndexIncludeColumns = true,
-                // Der Reverse liest den system-vergebenen Sequenznamen einer
-                // IDENTITY-Spalte schema-qualifiziert zurueck; gerendert wird
-                // er von keinem Dialekt, ein Soll-Schema kann ihn also nicht
-                // tragen.
-                namesIdentitySequences = false,
-                // `SERIAL` und `GENERATED ... AS IDENTITY` sind in PostgreSQL
-                // zwei verschiedene Dinge, nicht zwei Schreibweisen desselben.
-                rendersAutoIncrementAsIdentity = false,
-            )
-            DatabaseDialect.MYSQL -> DialectCapabilities(
-                supportsViews = true,
-                supportsFunctions = true,
-                supportsProcedures = true,
-                supportsTriggers = true,
-                supportsSequences = false,
-                supportsCustomTypes = false,
-                supportsPartitioning = true,
-                supportsDisableFkChecks = true,
-                supportsTriggerDisable = false,
-                supportsTriggerStrict = false,
-                supportsSchemaParameter = true,
-                carriesFullTextConfiguration = false,
-            )
-            DatabaseDialect.SQLITE -> DialectCapabilities(
-                supportsViews = true,
-                supportsFunctions = false,
-                supportsProcedures = false,
-                supportsTriggers = true,
-                supportsSequences = false,
-                supportsCustomTypes = false,
-                supportsPartitioning = false,
-                namesSingleColumnConstraints = false,
-                supportsDisableFkChecks = true,
-                supportsTriggerDisable = false,
-                supportsTriggerStrict = false,
-                supportsSchemaParameter = false,
-                carriesFullTextConfiguration = false,
-            )
+            DatabaseDialect.POSTGRESQL -> postgresql()
+            DatabaseDialect.MYSQL -> mysql()
+            DatabaseDialect.SQLITE -> sqlite()
+            DatabaseDialect.MSSQL -> mssql()
+            DatabaseDialect.ORACLE -> oracle()
+        }
+
+        private fun postgresql(): DialectCapabilities = DialectCapabilities(
+            supportsVirtualComputedColumns = false,
+            supportsRawTextSandbox = true,
+            supportsViews = true,
+            supportsFunctions = true,
+            supportsProcedures = true,
+            supportsTriggers = true,
+            supportsSequences = true,
+            supportsCustomTypes = true,
+            supportsPartitioning = true,
+            supportsDisableFkChecks = false,
+            supportsTriggerDisable = true,
+            supportsTriggerStrict = true,
+            supportsSchemaParameter = true,
+            partitionChildrenAreTables = true,
+            supportsIndexIncludeColumns = true,
+            // Der Reverse liest den system-vergebenen Sequenznamen einer
+            // IDENTITY-Spalte schema-qualifiziert zurueck; gerendert wird
+            // er von keinem Dialekt, ein Soll-Schema kann ihn also nicht
+            // tragen.
+            namesIdentitySequences = false,
+            // `SERIAL` und `GENERATED ... AS IDENTITY` sind in PostgreSQL
+            // zwei verschiedene Dinge, nicht zwei Schreibweisen desselben.
+            rendersAutoIncrementAsIdentity = false,
+        )
+
+        private fun mysql(): DialectCapabilities = DialectCapabilities(
+            supportsViews = true,
+            supportsFunctions = true,
+            supportsProcedures = true,
+            supportsTriggers = true,
+            supportsSequences = false,
+            supportsCustomTypes = false,
+            supportsPartitioning = true,
+            supportsDisableFkChecks = true,
+            supportsTriggerDisable = false,
+            supportsTriggerStrict = false,
+            supportsSchemaParameter = true,
+            carriesFullTextConfiguration = false,
+        )
+
+        private fun sqlite(): DialectCapabilities = DialectCapabilities(
+            supportsViews = true,
+            supportsFunctions = false,
+            supportsProcedures = false,
+            supportsTriggers = true,
+            supportsSequences = false,
+            supportsCustomTypes = false,
+            supportsPartitioning = false,
+            namesSingleColumnConstraints = false,
+            supportsDisableFkChecks = true,
+            supportsTriggerDisable = false,
+            supportsTriggerStrict = false,
+            supportsSchemaParameter = false,
+            carriesFullTextConfiguration = false,
+        )
             // Objekttyp-Flags = Faehigkeiten von SQL Server (2017+, ADR 0047);
             // die Import-Modus-Flags (FK-/Trigger-Disable) beschreiben den
             // Werkzeug-Pfad, den d-migrate fuer MSSQL nicht faehrt.
-            DatabaseDialect.MSSQL -> DialectCapabilities(
-                supportsViews = true,
-                supportsFunctions = true,
-                supportsProcedures = true,
-                supportsTriggers = true,
-                supportsSequences = true,
-                supportsCustomTypes = false,
-                supportsPartitioning = true,
-                supportsDisableFkChecks = false,
-                supportsTriggerDisable = false,
-                supportsTriggerStrict = false,
-                supportsSchemaParameter = true,
-                partitionChildrenAreTables = false,
-                batchSeparator = "GO",
-                scriptPreamble = MSSQL_SCRIPT_PREAMBLE,
-                requiresPrimaryKeyForSkip = true,
-                supportsIndexIncludeColumns = true,
-                supportsClusteredIndexes = true,
-                namesFullTextIndexes = false,
-                carriesFullTextConfiguration = false,
-                namesPartitions = false,
-                supportsListPartitioning = false,
-            )
+
+            // Objekttyp-Flags = Faehigkeiten von SQL Server (2017+, ADR 0047);
+            // die Import-Modus-Flags (FK-/Trigger-Disable) beschreiben den
+            // Werkzeug-Pfad, den d-migrate fuer MSSQL nicht faehrt.
+        private fun mssql(): DialectCapabilities = DialectCapabilities(
+            supportsViews = true,
+            supportsFunctions = true,
+            supportsProcedures = true,
+            supportsTriggers = true,
+            supportsSequences = true,
+            supportsCustomTypes = false,
+            supportsPartitioning = true,
+            supportsDisableFkChecks = false,
+            supportsTriggerDisable = false,
+            supportsTriggerStrict = false,
+            supportsSchemaParameter = true,
+            partitionChildrenAreTables = false,
+            batchSeparator = "GO",
+            scriptPreamble = MSSQL_SCRIPT_PREAMBLE,
+            requiresPrimaryKeyForSkip = true,
+            supportsIndexIncludeColumns = true,
+            supportsClusteredIndexes = true,
+            namesFullTextIndexes = false,
+            carriesFullTextConfiguration = false,
+            namesPartitions = false,
+            supportsListPartitioning = false,
+        )
             // Objekttyp-Flags nach dem Oracle-Inventar (ADR 0052).
             // supportsCustomTypes bleibt bewusst false: Oracle-Objekttypen
             // (CREATE TYPE) bildet d-migrate nicht ab.
@@ -411,33 +437,49 @@ data class DialectCapabilities(
             // bei MySQL die `PARTITION (name)`-Klausel, sind keine eigenstaendig
             // adressierbaren Relationen. namesFullTextIndexes=true: Oracle-Text-
             // Indizes (CONTEXT/CTXCAT) tragen anders als MSSQL einen Namen.
-            DatabaseDialect.ORACLE -> DialectCapabilities(
-                rendersViewRefreshSetting = true,
-                supportsViews = true,
-                supportsFunctions = true,
-                supportsProcedures = true,
-                supportsTriggers = true,
-                supportsSequences = true,
-                supportsCustomTypes = false,
-                supportsPartitioning = true,
-                supportsDisableFkChecks = true,
-                supportsTriggerDisable = false,
-                supportsTriggerStrict = false,
-                supportsSchemaParameter = true,
-                partitionChildrenAreTables = false,
-                requiresPrimaryKeyForSkip = true,
-                supportsIndexIncludeColumns = false,
-                supportsClusteredIndexes = false,
-                namesFullTextIndexes = true,
-                namesIdentitySequences = false,
-                supportsBitmapIndexes = true,
-                carriesFullTextConfiguration = false,
-                carriesPartialIndexPredicate = false,
-                carriesPartitionLowerBounds = false,
-                carriesPartitionHashModulus = false,
-                separatesDateFromDateTime = false,
-                batchSeparator = null,
-            )
-        }
+
+            // Objekttyp-Flags nach dem Oracle-Inventar (ADR 0052).
+            // supportsCustomTypes bleibt bewusst false: Oracle-Objekttypen
+            // (CREATE TYPE) bildet d-migrate nicht ab.
+            // batchSeparator bleibt null. `/` ist zwar die SQL*Plus/SQLcl-
+            // Konvention -- aber es bedeutet etwas anderes als T-SQLs `GO`:
+            // `GO` beendet einen Batch, `/` fuehrt den Puffer ERNEUT aus.
+            // Hinter einer mit `;` abgeschlossenen Anweisung laeuft sie damit
+            // zweimal; jedes `CREATE SEQUENCE` meldete beim zweiten Durchlauf
+            // `ORA-00955`, bei einem Datenskript waere es ein doppelter INSERT
+            // gewesen. `/` gehoert nur zu PL/SQL-Bloecken und dort ANSTELLE
+            // des `;` -- also an die einzelne Anweisung
+            // (`DdlStatement.scriptTerminator`), nicht an den Dialekt.
+            // partitionChildrenAreTables=false: Oracle-Partitionen brauchen wie
+            // bei MySQL die `PARTITION (name)`-Klausel, sind keine eigenstaendig
+            // adressierbaren Relationen. namesFullTextIndexes=true: Oracle-Text-
+            // Indizes (CONTEXT/CTXCAT) tragen anders als MSSQL einen Namen.
+        private fun oracle(): DialectCapabilities = DialectCapabilities(
+            rendersViewRefreshSetting = true,
+            supportsViews = true,
+            supportsFunctions = true,
+            supportsProcedures = true,
+            supportsTriggers = true,
+            supportsSequences = true,
+            supportsCustomTypes = false,
+            supportsPartitioning = true,
+            supportsDisableFkChecks = true,
+            supportsTriggerDisable = false,
+            supportsTriggerStrict = false,
+            supportsSchemaParameter = true,
+            partitionChildrenAreTables = false,
+            requiresPrimaryKeyForSkip = true,
+            supportsIndexIncludeColumns = false,
+            supportsClusteredIndexes = false,
+            namesFullTextIndexes = true,
+            namesIdentitySequences = false,
+            supportsBitmapIndexes = true,
+            carriesFullTextConfiguration = false,
+            carriesPartialIndexPredicate = false,
+            carriesPartitionLowerBounds = false,
+            carriesPartitionHashModulus = false,
+            separatesDateFromDateTime = false,
+            batchSeparator = null,
+        )
     }
 }

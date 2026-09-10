@@ -81,12 +81,17 @@ columns:
     ref_type: order_status     # nur bei enum (Verweis auf custom_types)
     element_type: text         # nur bei array (Pflicht)
 
-    # Identity/Generation (optional; nur integer oder biginteger)
+    # Generation (optional): woher der Wert kommt, wenn nicht durch Schreiben
     generation:
-      type: identity           # aktuell einzige Generation-Form
-      mode: by_default         # by_default | always
+      type: identity           # identity | computed
+      mode: by_default         # nur bei identity: by_default | always
       sequence_name: users_id_seq
       legacy_serial_syntax: true
+
+    generation:
+      type: computed           # berechnete Spalte
+      expression: "menge * einzelpreis"   # Pflicht
+      stored: true             # optional, Default false (virtuell)
 
     # Foreign Key (optional)
     references:
@@ -107,6 +112,19 @@ ist kein Migrationsschritt).
 `generation.sequence_name` beschreibt eine an die Spalte gebundene
 owned/implizite Sequence; dieselbe Sequence darf nicht zusaetzlich unter
 `sequences:` als eigenstaendige Business-Sequence definiert werden.
+
+`type: identity` gilt nur fuer `integer` und `biginteger`.
+
+`type: computed` traegt eine berechnete Spalte. `expression` ist roher
+SQL-Text und wird nicht uebersetzt — er muss auf dem Zieldialekt gueltig sein.
+Geprueft wird, was ohne SQL-Parser entscheidbar ist: dass ein Ausdruck
+dasteht, dass er sich nicht auf die Spalte bezieht, die er berechnet, und dass
+die genannten Spalten existieren.
+
+`stored` unterscheidet die gespeicherte von der virtuellen Form. Nicht jeder
+Dialekt kennt beide: **PostgreSQL kennt nur die gespeicherte** — dort wird der
+Wert unabhaengig von der Angabe gespeichert, und der Vergleich rechnet das ein,
+damit ein Round-Trip nicht als Aenderung erscheint.
 
 ### Default-Werte
 

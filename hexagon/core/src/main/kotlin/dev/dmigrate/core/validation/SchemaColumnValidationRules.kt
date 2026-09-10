@@ -7,6 +7,7 @@ internal object SchemaColumnValidationRules {
     fun validate(
         path: String,
         column: ColumnDefinition,
+        table: TableDefinition,
         schema: SchemaDefinition,
     ): List<ValidationError> {
         val errors = mutableListOf<ValidationError>()
@@ -17,7 +18,7 @@ internal object SchemaColumnValidationRules {
         validateRefTypeExists(path, column, schema, errors)
         validateDefaultTypeCompatibility(path, column, errors)
         validateSequenceDefaultReference(path, column, schema, errors)
-        validateGeneration(path, column, schema, errors)
+        validateGeneration(path, column, table, schema, errors)
         return errors
     }
 
@@ -208,12 +209,61 @@ internal object SchemaColumnValidationRules {
     private fun validateGeneration(
         path: String,
         column: ColumnDefinition,
+        table: TableDefinition,
         schema: SchemaDefinition,
         errors: MutableList<ValidationError>,
     ) {
         val generation = column.generation ?: return
         when (generation) {
             is ColumnGeneration.Identity -> validateIdentityGeneration(path, column, generation, schema, errors)
+            is ColumnGeneration.Computed -> validateComputedGeneration(path, column, generation, table, errors)
+        }
+    }
+
+    /**
+     * Eine berechnete Spalte bezieht ihren Wert aus einem Ausdruck ueber
+     * andere Spalten **derselben** Zeile.
+     *
+     * Geprueft wird, was ohne SQL-Parser entscheidbar ist: dass ueberhaupt ein
+     * Ausdruck dasteht, dass er sich nicht auf die Spalte bezieht, die er
+     * berechnet, dass die genannten Spalten existieren — mit derselben
+     * zurueckhaltenden Erkennung wie beim CHECK-Ausdruck ([CheckExpressionColumns]) —
+     * und dass die Spalte nicht zugleich einen Default fuehrt: zwei Wege zu
+     * einem Wert, von denen der Server nur einen kennt.
+     */
+    private fun validateComputedGeneration(
+        path: String,
+        column: ColumnDefinition,
+        computed: ColumnGeneration.Computed,
+        table: TableDefinition,
+        errors: MutableList<ValidationError>,
+    ) {
+        val columnName = path.substringAfterLast('.')
+        if (computed.expression.isBlank()) {
+            errors += ValidationError("E134", "computed generation requires an expression", "$path.generation")
+            return
+        }
+        if (column.default != null) {
+            errors += ValidationError(
+                "E135",
+                "computed generation and default are mutually exclusive",
+                "$path.generation",
+            )
+        }
+        for (reference in CheckExpressionColumns.referencedIn(computed.expression)) {
+            if (reference == columnName) {
+                errors += ValidationError(
+                    "E136",
+                    "computed expression of column '$columnName' references itself",
+                    "$path.generation.expression",
+                )
+            } else if (reference !in table.columns) {
+                errors += ValidationError(
+                    "E136",
+                    "computed expression of column '$columnName' references unknown column '$reference'",
+                    "$path.generation.expression",
+                )
+            }
         }
     }
 

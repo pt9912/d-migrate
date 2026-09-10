@@ -94,6 +94,8 @@ internal object SchemaCompareHelpers {
             if (generation.legacySerialSyntax) append(",legacy_serial_syntax=true")
             append(")")
         }
+        is ColumnGeneration.Computed ->
+            "computed(${generation.expression}${if (generation.stored) ", stored" else ""})"
     }
 
     // ── Projection: SchemaDiff → DiffView ─────────────────────────

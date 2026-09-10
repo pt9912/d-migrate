@@ -35,7 +35,7 @@ class SchemaColumnValidationRulesTest : FunSpec({
             references = ReferenceDefinition(table = "users", column = "id"),
         )
 
-        val errors = SchemaColumnValidationRules.validate(
+        val errors = validateColumn(
             path = "tables.orders.columns.user_id",
             column = column,
             schema = schema,
@@ -45,7 +45,7 @@ class SchemaColumnValidationRulesTest : FunSpec({
     }
 
     test("validate returns E122 for legacy nextval function call") {
-        val errors = SchemaColumnValidationRules.validate(
+        val errors = validateColumn(
             path = "tables.orders.columns.order_id",
             column = ColumnDefinition(
                 type = NeutralType.Integer,
@@ -58,7 +58,7 @@ class SchemaColumnValidationRulesTest : FunSpec({
     }
 
     test("validate returns E123 for missing sequence_nextval target") {
-        val errors = SchemaColumnValidationRules.validate(
+        val errors = validateColumn(
             path = "tables.orders.columns.order_id",
             column = ColumnDefinition(
                 type = NeutralType.Integer,
@@ -79,7 +79,7 @@ class SchemaColumnValidationRulesTest : FunSpec({
             ),
             sequences = mapOf("order_seq" to SequenceDefinition(start = 1)),
         )
-        val errors = SchemaColumnValidationRules.validate(
+        val errors = validateColumn(
             path = "tables.orders.columns.user_id",
             column = ColumnDefinition(
                 type = NeutralType.Integer,
@@ -93,7 +93,7 @@ class SchemaColumnValidationRulesTest : FunSpec({
     }
 
     test("validate accepts identity generation on biginteger without standalone sequence") {
-        val errors = SchemaColumnValidationRules.validate(
+        val errors = validateColumn(
             path = "tables.orders.columns.id",
             column = ColumnDefinition(
                 type = NeutralType.BigInteger,
@@ -109,7 +109,7 @@ class SchemaColumnValidationRulesTest : FunSpec({
     }
 
     test("validate rejects identity generation on non-integer column") {
-        val errors = SchemaColumnValidationRules.validate(
+        val errors = validateColumn(
             path = "tables.orders.columns.id",
             column = ColumnDefinition(
                 type = NeutralType.Text(),
@@ -122,7 +122,7 @@ class SchemaColumnValidationRulesTest : FunSpec({
     }
 
     test("validate rejects identity generation with default") {
-        val errors = SchemaColumnValidationRules.validate(
+        val errors = validateColumn(
             path = "tables.orders.columns.id",
             column = ColumnDefinition(
                 type = NeutralType.BigInteger,
@@ -136,7 +136,7 @@ class SchemaColumnValidationRulesTest : FunSpec({
     }
 
     test("validate rejects identity sequence duplicated as standalone sequence") {
-        val errors = SchemaColumnValidationRules.validate(
+        val errors = validateColumn(
             path = "tables.orders.columns.id",
             column = ColumnDefinition(
                 type = NeutralType.BigInteger,
@@ -148,3 +148,19 @@ class SchemaColumnValidationRulesTest : FunSpec({
         errors.single().code shouldBe "E133"
     }
 })
+
+/**
+ * Die Spaltenregeln fuer eine Spalte, die allein in ihrer Tabelle steht — den
+ * Tabellenkontext braucht nur die Pruefung berechneter Spalten, und ihn in
+ * jedem Fall auszuschreiben verdeckte, worum es dem Test geht.
+ */
+private fun validateColumn(
+    path: String,
+    column: ColumnDefinition,
+    schema: SchemaDefinition,
+) = SchemaColumnValidationRules.validate(
+    path = path,
+    column = column,
+    table = TableDefinition(columns = mapOf(path.substringAfterLast('.') to column)),
+    schema = schema,
+)

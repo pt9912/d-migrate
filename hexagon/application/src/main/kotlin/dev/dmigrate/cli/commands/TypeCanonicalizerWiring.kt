@@ -250,11 +250,19 @@ fun capabilityConstraintNameCanonicalizer(
 fun capabilityGenerationCanonicalizer(
     dialect: DatabaseDialect,
 ): (ColumnGeneration?) -> ColumnGeneration? {
-    if (DialectCapabilities.forDialect(dialect).namesIdentitySequences) return { it }
+    val capabilities = DialectCapabilities.forDialect(dialect)
+    val dropsSequenceName = !capabilities.namesIdentitySequences
+    // Wo es keine virtuelle Form gibt, ist `stored` keine Wahl: der Server
+    // legt die Spalte gespeichert an, gleich was dastand.
+    val foldsStored = !capabilities.supportsVirtualComputedColumns
+    if (!dropsSequenceName && !foldsStored) return { it }
     return { generation ->
         when (generation) {
             null -> null
-            is ColumnGeneration.Identity -> generation.copy(sequenceName = null)
+            is ColumnGeneration.Identity ->
+                if (dropsSequenceName) generation.copy(sequenceName = null) else generation
+            is ColumnGeneration.Computed ->
+                if (foldsStored) generation.copy(stored = true) else generation
         }
     }
 }
