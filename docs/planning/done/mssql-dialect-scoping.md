@@ -217,7 +217,7 @@ Entscheidung 2):
 | **2** ✅ | `DdlGenerator` + Typtabelle NeutralType→T-SQL (Generate-Richtung) | `schema generate --target mssql` |
 | **3** ✅ | `DataReader`/`DataWriter` (Transfer; Fast-Path später); **3b** ✅ sample-db-MSSQL-Leg im Harness (`examples/sample-db`, fetch+compose gemäß [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)): Reverse→Generate→Import-Roundtrip-Smoke als eigener Workflow | `data export/import/transfer` + MSSQL-Smoke in CI |
 | **4** ✅ | `NeutralTypeCanonicalizer` + Postcompare-Fingerprint-Beleg gegen echtes SQL Server, Spec-Sequenz-Matrix, `transferCompatibility` (bereits mit Slice 3 geliefert) + Cross-Dialekt-sample-db-Smoke in der Gegenrichtung (MSSQL→PG) | Vergleichs-Substrat für Slice 5 + Cross-Smoke |
-| **5** ✅ | Diff/Migrate (`MssqlDiff*Ops` — bei allen Dialekten der größte Brocken) **inkl. Beitritt zum Cross-Dialekt-Matrix-Sweep** (`test/cross-dialect-matrix`: Renderer und Matrix-Zellen gehören zusammen, sonst entstünden Wegwerf-Carve-outs) und Entscheidung zur Enum-CHECK-Kante ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md)) | `schema migrate` |
+| **5** ✅ | Diff/Migrate (`MssqlDiff*Ops` — bei allen Dialekten der größte Brocken) **inkl. Beitritt zum Cross-Dialekt-Matrix-Sweep** (`test/cross-dialect-matrix`: Renderer und Matrix-Zellen gehören zusammen, sonst entstünden Wegwerf-Carve-outs) und Entscheidung zur Enum-CHECK-Kante ([`enum-inline-check-fidelity.md`](../done/enum-inline-check-fidelity.md)) | `schema migrate` |
 | **6** ✅ | Gefilterte Indizes (WHERE) + clustered/nonclustered-Steuerung + INCLUDE-Spalten, Reverse + Generate + Diff | volle Index-Treue |
 | **7** ✅ | Partitionierung: Partition Functions + Schemes + Filegroups (Anschluss an `PartitionBoundScanner`/Cross-Dialekt-Muster des PG-Slices) | Partitionstabellen im Round-Trip |
 | **8** ✅ | Volltext: Full-Text Search (Muster aus dem Fulltext-Slice, `fullTextVectorColumn`-Modell) | Volltext-Indizes Generate + Reverse |
@@ -420,7 +420,7 @@ Spalten-Helfer des Generate-Pfads zu fragen:
 3. Eine Operation ohne Down-Risikoprofil ließ `emit` mit einer Exception
    scheitern, statt einen Blocker zu liefern.
 
-**Die Enum-CHECK-Entscheidung** ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md))
+**Die Enum-CHECK-Entscheidung** ([`enum-inline-check-fidelity.md`](../done/enum-inline-check-fidelity.md))
 fällt entgegen der ursprünglichen Zeile **nicht** in 5c. Ob der Diff-Pfad den
 CHECK rendert, war nie offen: er tut es seit 5a, weil `CreateTable` und
 `AddColumn` den Spalten-Helfer nutzen. Offen ist der Round-Trip — der Reverse
@@ -1035,6 +1035,6 @@ ausgeschnitten und einzeln nachhaltbar:
 | [`mssql-bulk-import-fast-path.md`](mssql-bulk-import-fast-path.md) | Der Import schreibt gebatchte `INSERT`s, ohne `BULK INSERT`-Weg. Durchsatz, kein Defekt. |
 | [`mssql-import-skip-without-pk-preflight.md`](mssql-import-skip-without-pk-preflight.md) | `--on-conflict skip` ohne Primärschlüssel meldet sich im Import-Pfad später als im Transfer-Pfad. |
 | [`routine-body-cross-dialect-portability.md`](routine-body-cross-dialect-portability.md) | Routinen-Rümpfe werden nach Herkunft übersprungen statt inhaltlich beurteilt. Cross-dialektal. |
-| [`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md) | Enum-CHECK-Kante aus Slice 5; wartet auf eine Eigner-Entscheidung zwischen drei Varianten. |
+| [`enum-inline-check-fidelity.md`](../done/enum-inline-check-fidelity.md) | Enum-CHECK-Kante aus Slice 5; wartet auf eine Eigner-Entscheidung zwischen drei Varianten. |
 | [`no-transaction-execution-strategy.md`](../done/no-transaction-execution-strategy.md) | `CREATE FULLTEXT INDEX` verträgt keine offene Transaktion (Slice 8d, `E072`); dieselbe Naht wartet PGs `CREATE INDEX CONCURRENTLY` ab. |
 | [`partition-boundary-change-operation.md`](../done/partition-boundary-change-operation.md) | Erledigt (v1.1.0): Grenzänderungen an Partitionen werden erkannt und als Migrations-Operation ausgeführt statt nur gemeldet. |

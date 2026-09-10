@@ -77,7 +77,7 @@ Drei Eigenschaften bestimmen die Regel:
   zusätzlichen CHECK weiterhin als Unterschied.
 - Der Reverse bleibt unverändert. Ob er den Enum eines Tages selbst
   rekonstruieren soll, ist eine eigene Frage
-  ([`enum-inline-check-fidelity.md`](../planning/open/enum-inline-check-fidelity.md),
+  ([`enum-inline-check-fidelity.md`](../planning/done/enum-inline-check-fidelity.md),
   Weg A) — sie wird durch diese Entscheidung nicht vorweggenommen.
 
 ## Bekannte Grenze: nur SQL Server und SQLite liefern eine erkennbare Form

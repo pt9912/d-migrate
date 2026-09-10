@@ -1,21 +1,23 @@
-# Enum-Inline-Fidelity im migrate-Pfad (2b): `TEXT`+`CHECK` + Reverse-Rekonstruktion
+# Enum-Inline-Fidelity im migrate-Pfad (2b): `TEXT`+`CHECK`
 
-> Status: **Vorabklärung/Entscheidung** — Design-Gabelung offen, noch nicht gebaut.
-> Plan-Review 1 Runde eingearbeitet (B1–B5): Default MUSS „aus" (konform zu ADR 0027),
-> Blast-Radius + Cross-Dialect-Semantik + Erkenner-Signatur + Diff↔Reverse-Kopplung
-> geschärft; Balance Richtung **C/B** verschoben.
-> **Wiedereinstieg (morgen):** Entscheidung treffen — **A** (Reverse-Rekonstruktion,
-> Default-aus, Registry-Eintrag) / **B** (Kanonisierer-Fold, v8-Bump) / **C** (zurückstellen
-> bis belegter Bedarf; Status quo W134). Siehe „## Cut-blockierende Entscheidungen".
-> Danach: bei A/B Scope-Schnitt (AP + Abnahme) + `open`→`next`; bei C Ticket als
-> geparkte Entscheidung belassen.
-> Trigger: Folge-Slice („2b") aus dem Enum-Migrate-Slice
-> ([`../done/enum-migrate-silent-degradation.md`](../done/enum-migrate-silent-degradation.md),
-> Nicht-Scope). Der gelieferte Slice (Option 2a + `W134`) macht PG-inline- und
-> SQLite-Enums im migrate-Pfad **laut** (bare `TEXT` + `W134`), aber **nicht treu**.
-> 2b will die Werte-**Durchsetzung** (`CHECK`) + treuen Round-Trip.
-> Severity/Charakter: **Fidelity-Upgrade, kein Bugfix** — der Status quo (W134, laut,
-> driftfrei) ist vertretbar; ROI beim Schnitt abwägen.
+> Status: **GEBAUT** (2026-09-10). Die Eigner-Entscheidung (Weg B, unten) ist
+> umgesetzt, und zwar an beiden Stellen, die der Migrationslauf braucht:
+> im Fingerabdruck ([ADR 0048](../../adr/0048-enum-wertevorrat-im-fingerprint.md),
+> `v8`) und im zielbewussten Vergleich
+> ([ADR 0055](../../adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md)).
+> PostgreSQL und SQLite rendern den `CHECK` jetzt auch im Migrationspfad.
+>
+> **Der Befund war schwerer als das Ticket annahm.** Es führte den Status quo
+> als „laut, driftfrei" und die Arbeit als „Fidelity-Upgrade, kein Bugfix".
+> Gegen echte Container gemessen (2026-09-10) stimmte beides nicht:
+>
+> | Dialekt | gemessen, vor dieser Arbeit |
+> | --- | --- |
+> | PostgreSQL, SQLite | eine Enum-Spalte liess `schema migrate` bei **keinem** Lauf konvergieren — Exit 5 auch auf leerer Datenbank. Der authored Wertevorrat geht seit `v8` in den Abdruck ein, das Ziel trug ihn nirgends. |
+> | SQL Server, Oracle | der **zweite** Lauf gegen unverändertes Soll löste den `CHECK`, den der erste angelegt hatte, und meldete danach Drift. Eine geänderte Werteliste wurde nie migriert. |
+>
+> Die Annahme „für PostgreSQL und SQLite folgenlos" in ADR 0048 betrachtete nur
+> die Constraint-Seite; die Typseite trägt den Vorrat aber ebenso.
 
 ## Der Kern-Konflikt (Ist-Stand code-belegt 2026-07-05)
 
@@ -246,3 +248,47 @@ Das ist damit **kein Teil von MSSQL-5e**, sondern ein eigener, dialekt-
 - **Kein „nur migrate" (Review B4):** falls A, ist der Reverse-Wurzel-Eingriff
   **explizit In-Scope** über `schema reverse` / `data transfer` / `generate`-aus-reversten-
   Modellen (Goldens, Cross-Dialect) — nicht als migrate-lokal darstellen.
+
+## Was gebaut wurde (2026-09-10)
+
+- **Eine Erkennung für beide Projektionen.** `EnumCheckProjection` liegt in
+  `dev.dmigrate.core.diff` und wird von `MigrationFingerprint` **und**
+  `TableComparator` benutzt. Der Wertevorrat ist im Vergleich eine eigene
+  Dimension der Spalte: der Zieldialekt faltet `enum` und Textspalte auf
+  denselben Typ, über den Typvergleich wäre eine geänderte Werteliste also
+  nicht mehr zu sehen.
+- **PostgreSQLs Normalform wird gelesen** (`spalte = ANY (ARRAY['a'::text, …])`,
+  Casts an Literalen und Spalte, einelementige Liste als `=`), gegen einen
+  echten Container gemessen und dort festgehalten
+  (`PostgresEnumCheckReverseFormIntegrationTest`). Dafür `schema-fingerprint-v16`.
+- **Der Diff-Pfad rendert den CHECK** — PostgreSQL unbenannt (der Server
+  benennt selbst), SQLite benannt (`ck_<tabelle>_<spalte>`), weil ein
+  unbenannter Constraint aus `sqlite_master` nicht als Constraint zurückkommt.
+  Die Klausel selbst kommt aus `EnumValueCheck` in `driver-common`, damit
+  `generate` und `migrate` wortgleich schreiben.
+- **Zwei Stellen fragten nach einer Umwandlung, wo keine stattfindet**: der
+  PostgreSQL-ALTER verlangte eine `USING`-Angabe, SQLites Cast-Matrix eine
+  Freigabe. Beide fragen jetzt erst, wenn sich der deklarierte Typ ändert.
+- **`W134` retiriert** für die dann treuen Fälle und bleibt für den Rest: ein
+  `enum` ohne Werte und ohne `ref_type`.
+
+Abgenommen live: `PostgresEnumMigrateConvergenceIntegrationTest`,
+`SqliteEnumMigrateConvergenceIntegrationTest`,
+`MssqlEnumMigrateConvergenceIntegrationTest` — anlegen, zweiter Lauf mit null
+Operationen, geänderte Werteliste, und die Datenbank weist einen Wert außerhalb
+des Vorrats wirklich ab.
+
+## Nicht mitgebaut
+
+- **Weg A (Reverse rekonstruiert den Enum)** bleibt unangetastet: der Reverse
+  liefert weiterhin Textspalte plus Constraint, nur der Vergleich sieht beide
+  als dasselbe. Der Zielkonflikt aus
+  [ADR 0027](../../adr/0027-reverse-preferences-inhaerente-mehrdeutigkeit.md)
+  stellt sich damit nicht.
+- **Oracles ALTER-Pfad** rendert den gebundenen `VARCHAR2` + `CHECK` nur im
+  `CreateTable`; eine Spalte, die per ALTER zum Enum wird, bekommt ungebundenes
+  `VARCHAR2(4000)` und `W134`. Eigenes Ticket:
+  [`oracle-alter-column-enum-check.md`](../open/oracle-alter-column-enum-check.md).
+- **MySQLs Charset-Introducer-Form** wird nicht erkannt — folgenlos, weil MySQL
+  einen nativen `ENUM` hat und dort kein CHECK entsteht (bekannte Grenze in
+  ADR 0048).

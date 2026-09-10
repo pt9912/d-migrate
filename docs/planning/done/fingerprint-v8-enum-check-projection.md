@@ -3,7 +3,7 @@
 - **Status**: **GEBAUT** (2026-08-23), AP0–AP5 durch,
   [ADR 0048](../../adr/0048-enum-wertevorrat-im-fingerprint.md) accepted.
   Die Design-Entscheidung (Eigner, Weg B) steht in
-  [`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md).
+  [`enum-inline-check-fidelity.md`](../done/enum-inline-check-fidelity.md).
 - **Trigger**: MSSQL-Sub-Slice 5e
   ([`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) lässt
   das `DialectCommandGate` für `schema migrate` fallen. Ab dann läuft der

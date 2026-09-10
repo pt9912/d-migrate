@@ -88,5 +88,5 @@ Unterschied, den ein Anwender sehen will.
   zerstörenden zweiten Lauf, macht aber eine geänderte Werteliste unsichtbar —
   aus einem Schaden würde ein stiller.
 - **Den Reverse den Enum rekonstruieren lassen** (Weg A aus
-  [`enum-inline-check-fidelity.md`](../planning/open/enum-inline-check-fidelity.md)).
+  [`enum-inline-check-fidelity.md`](../planning/done/enum-inline-check-fidelity.md)).
   Unverändert der breitere Eingriff, unverändert nicht vorweggenommen.
