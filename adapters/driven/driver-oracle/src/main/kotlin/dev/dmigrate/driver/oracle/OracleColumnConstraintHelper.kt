@@ -12,6 +12,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.ManualActionRequired
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.RawSqlExpressionPortability
@@ -95,7 +96,9 @@ internal class OracleColumnConstraintHelper(
         }
         val parts = mutableListOf(quoteIdentifier(ctx.colName), typeMapper.toSql(ctx.col.type))
         parts += "GENERATED $modeSql AS IDENTITY"
-        if (ctx.col.unique && ctx.inlineNamedConstraints) parts += uniqueClause(ctx.tableName, ctx.colName)
+        if (NamedUniqueConstraints.rendersInline(ctx.col) && ctx.inlineNamedConstraints) {
+            parts += uniqueClause(ctx.tableName, ctx.colName)
+        }
         if (ctx.col.default != null) {
             ctx.notes += identityDroppedNote(
                 ctx.tableName, ctx.colName,
@@ -297,7 +300,7 @@ internal class OracleColumnConstraintHelper(
             parts += "DEFAULT ${typeMapper.toDefaultSql(default, ctx.col.type)}"
         }
         if (ctx.col.required) parts += "NOT NULL"
-        if (ctx.col.unique && ctx.inlineNamedConstraints) {
+        if (NamedUniqueConstraints.rendersInline(ctx.col) && ctx.inlineNamedConstraints) {
             if (lob) {
                 ctx.notes += unkeyableKeyNote(ctx.tableName, "uq_${ctx.tableName}_${ctx.colName}", "UNIQUE", listOf(ctx.colName))
             } else {

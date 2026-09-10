@@ -133,7 +133,19 @@ class OracleDdlGenerator private constructor(
             )
         }
 
-        lines += NamedUniqueConstraints.clauses(table, ::quoteIdentifier)
+        // Ein benannter einspaltiger UNIQUE wird als Tabellen-Constraint
+        // gerendert -- aber nicht auf einer Spalte, die Oracle nicht als
+        // Schluessel zulaesst. `ORA-02329` gilt fuer die Constraint-Form
+        // ebenso wie fuer einen `CREATE UNIQUE INDEX` (`ORA-02327`), es gibt
+        // dort also keine Ausweichform. Dieselbe Wache traegt der
+        // Spalten-Pfad fuer den ungenannten Fall.
+        for ((colName, constraintName) in NamedUniqueConstraints.named(table)) {
+            if (colName in unkeyableColumns) {
+                notes += columnHelper.unkeyableKeyNote(name, constraintName, "UNIQUE", listOf(colName))
+            } else {
+                lines += NamedUniqueConstraints.clause(colName, constraintName, ::quoteIdentifier)
+            }
+        }
         for (constraint in table.constraints) {
             if (options.deferForeignKeys && constraint.type == ConstraintType.FOREIGN_KEY) continue
             if ((name to constraint.name) in deferredConstraints) continue

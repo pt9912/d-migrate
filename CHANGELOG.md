@@ -228,6 +228,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ein benannter UNIQUE auf einer Oracle-LOB-Spalte brach das Anwenden ab.**
+  Seit die Spalte ihren Constraint-Namen führt, rendert d-migrate einen
+  benannten einspaltigen UNIQUE als Tabellen-Constraint. Oracle bekam diese
+  Zeile ohne die Wache, die sein Spalten-Pfad längst hatte: auf einem `CLOB`
+  lehnt Oracle die Eindeutigkeit ab (`ORA-02329`), und auch ein eindeutiger
+  Index geht dort nicht (`ORA-02327`). Ein unbegrenztes `text` fällt auf
+  `CLOB`, das erzeugte `CREATE TABLE` scheiterte also am Server. Der Constraint
+  wird jetzt übersprungen und mit **E057** gemeldet — derselbe Weg wie im
+  ungenannten Fall.
+- **Auf Oracle standen für einen benannten UNIQUE zwei Constraints.** Der
+  Spalten-Pfad rendert das inline `UNIQUE` jetzt nur noch für den ungenannten
+  Fall (`NamedUniqueConstraints.rendersInline`), wie die vier anderen Dialekte
+  es schon taten. Zuvor kam zum benannten Tabellen-Constraint ein zweiter,
+  synthetisch benannter dazu; Oracle lehnt den mit `ORA-02261` ab.
+
 - **Der Migrationsbericht behauptete für MySQL und Oracle eine Rücknahme, die
   es nicht gibt.** `execution.statementGroups[].transactionBoundary` meldete
   für jede Anweisung im Geltungsbereich des Laufs `INSIDE` — also „fällt mit

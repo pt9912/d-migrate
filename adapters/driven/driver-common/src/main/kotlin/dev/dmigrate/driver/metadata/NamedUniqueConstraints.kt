@@ -21,11 +21,24 @@ object NamedUniqueConstraints {
     fun rendersInline(column: ColumnDefinition): Boolean =
         column.unique && column.uniqueConstraintName == null
 
-    /** Die Tabellen-Klauseln fuer alle benannten einspaltigen UNIQUE-Constraints. */
-    fun clauses(table: TableDefinition, quote: (String) -> String): List<String> =
+    /**
+     * Spaltenname zu Constraint-Name, fuer alle benannten einspaltigen
+     * UNIQUE-Constraints der Tabelle.
+     *
+     * Getrennt von [clauses], weil ein Dialekt einzelne davon ablehnen kann und
+     * dann sagen muss, welche: Oracle laesst auf einer LOB-Spalte keine
+     * Eindeutigkeit zu (`ORA-02329`) und meldet die uebersprungene mit `E057`.
+     */
+    fun named(table: TableDefinition): Map<String, String> =
         table.columns
             .filter { (_, column) -> column.unique && column.uniqueConstraintName != null }
-            .map { (name, column) ->
-                "CONSTRAINT ${quote(column.uniqueConstraintName!!)} UNIQUE (${quote(name)})"
-            }
+            .mapValues { (_, column) -> column.uniqueConstraintName!! }
+
+    /** Die Tabellen-Klausel eines benannten einspaltigen UNIQUE-Constraints. */
+    fun clause(columnName: String, constraintName: String, quote: (String) -> String): String =
+        "CONSTRAINT ${quote(constraintName)} UNIQUE (${quote(columnName)})"
+
+    /** Die Tabellen-Klauseln fuer alle benannten einspaltigen UNIQUE-Constraints. */
+    fun clauses(table: TableDefinition, quote: (String) -> String): List<String> =
+        named(table).map { (columnName, constraintName) -> clause(columnName, constraintName, quote) }
 }

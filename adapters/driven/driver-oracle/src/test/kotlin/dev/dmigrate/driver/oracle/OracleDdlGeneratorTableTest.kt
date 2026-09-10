@@ -16,6 +16,7 @@ import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -33,6 +34,57 @@ class OracleDdlGeneratorTableTest : FunSpec({
     /** Nur das reine `CREATE TABLE`-SQL, ohne die vorangestellten Notiz-Kommentare. */
     fun createTableSql(result: dev.dmigrate.driver.DdlResult): String =
         result.statements.single { it.sql.startsWith("CREATE TABLE") }.sql
+
+    test("ein benannter UNIQUE auf einer LOB-Spalte wird nicht erzeugt, sondern gemeldet") {
+        // Oracle laesst auf einem LOB keine Eindeutigkeit zu — weder als
+        // Constraint (ORA-02329) noch als eindeutiger Index (ORA-02327). Ein
+        // unbegrenztes `text` faellt auf CLOB, der Constraint kann also nicht
+        // mitkommen.
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, ordinal = 1),
+                "email" to ColumnDefinition(
+                    NeutralType.Text(), ordinal = 2, required = true,
+                    unique = true, uniqueConstraintName = "customers_email_key",
+                ),
+            ),
+        )
+        val result = generator.generate(schema(mapOf("customers" to table)))
+
+        createTableSql(result) shouldNotContain "UNIQUE"
+        result.statements.flatMap { it.notes }.map { it.code } shouldContain "E057"
+    }
+
+    test("ein benannter UNIQUE steht genau einmal da, nicht zweimal") {
+        // Der Spalten-Pfad rendert das inline `UNIQUE` nur fuer den
+        // UNGENANNTEN Fall; sonst stuenden zwei Constraints auf derselben
+        // Spalte, und Oracle lehnte den zweiten mit ORA-02261 ab.
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, ordinal = 1),
+                "code" to ColumnDefinition(
+                    NeutralType.Text(50), ordinal = 2,
+                    unique = true, uniqueConstraintName = "uq_code",
+                ),
+            ),
+        )
+        val sql = createTableSql(generator.generate(schema(mapOf("t" to table))))
+
+        sql.split("UNIQUE").size - 1 shouldBe 1
+        sql shouldContain "CONSTRAINT \"uq_code\" UNIQUE (\"code\")"
+    }
+
+    test("ein ungenannter UNIQUE bleibt inline an der Spalte") {
+        val table = TableDefinition(
+            columns = mapOf(
+                "code" to ColumnDefinition(NeutralType.Text(50), ordinal = 1, unique = true),
+            ),
+        )
+        val sql = createTableSql(generator.generate(schema(mapOf("t" to table))))
+
+        sql shouldContain "CONSTRAINT \"uq_t_code\" UNIQUE"
+        sql.split("UNIQUE").size - 1 shouldBe 1
+    }
 
     // Oracle ist an dieser Stelle strenger als die vier anderen Dialekte:
     // die DEFAULT-Klausel MUSS vor der Inline-Constraint stehen.

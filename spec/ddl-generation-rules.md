@@ -663,6 +663,15 @@ rendern alle dieselbe.
 SQL Server benennt einen UNIQUE-Constraint ohnehin (`uq_<tabelle>_<spalte>`,
 als eigenes Objekt); traegt das Modell einen Namen, gilt dieser.
 
+**Oracle kennt keine Eindeutigkeit auf einer LOB-Spalte.** Ein unbegrenztes
+`text` (oder eines ueber 4000 Byte) faellt dort auf `CLOB`, und darauf lehnt
+Oracle sowohl den Constraint (`ORA-02329`) als auch einen eindeutigen Index
+(`ORA-02327`) ab — es gibt keine Ausweichform. Der Constraint wird deshalb
+nicht erzeugt, sondern mit **E057** gemeldet; das gilt fuer den benannten wie
+fuer den ungenannten Fall gleichermassen. Wer die Eindeutigkeit braucht,
+begrenzt die Spalte (`max_length` bis 4000), dann rendert sie als `VARCHAR2(n)`
+und traegt den Constraint.
+
 ### 4.2 Foreign Key
 
 ```sql
