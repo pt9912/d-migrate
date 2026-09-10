@@ -198,7 +198,8 @@ class SqliteDdlGeneratorTest : FunSpec({
         val result = generator.generate(s)
         val sql = result.tableSql()
 
-        sql shouldContain "\"status\" TEXT NOT NULL CHECK (\"status\" IN ('open', 'in_progress', 'done'))"
+        sql shouldContain "\"status\" TEXT NOT NULL CONSTRAINT \"ck_tasks_status\" " +
+            "CHECK (\"status\" IN ('open', 'in_progress', 'done'))"
     }
 
     // ── 6. Enum with ref_type resolves values from customTypes ──────

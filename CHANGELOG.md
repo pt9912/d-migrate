@@ -261,6 +261,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Eine Enum-Spalte liess `schema migrate` auf PostgreSQL und SQLite bei
+  **keinem** Lauf konvergieren.** Der Migrationspfad rendert dort seit jeher
+  bloßes `TEXT` (mit `W134`), während `schema generate` die Textspalte samt
+  `CHECK (spalte IN (…))` schreibt. Der Wertevorrat stand im Ziel damit
+  nirgends — der Post-Compare las das als Drift und beendete **jeden** Lauf mit
+  Exit 5, auch den auf einer leeren Datenbank.
+
+  Beide Pfade rendern jetzt dieselbe Form. Eine geänderte Werteliste wird über
+  den ALTER-Pfad angewendet: PostgreSQL löst den alten `CHECK` unter seinem
+  echten Katalognamen und legt den neuen an, SQLite schreibt ihn im
+  Tabellen-Neubau mit. SQLite **benennt** den Constraint (`ck_<tabelle>_<spalte>`),
+  weil ein unbenannter aus `sqlite_master` nicht als Constraint zurückkommt —
+  bestehende SQLite-Datenbanken bekommen den Namen beim nächsten Lauf.
+
+  `W134` warnt nur noch, wenn es nichts durchzusetzen gibt: ein `enum` ohne
+  Werte und ohne `ref_type`.
+
 - **Ein wiederholter `schema migrate --execute` löste die Werte-Durchsetzung
   einer Enum-Spalte auf SQL Server wieder auf.** T-SQL hat keinen Enum-Typ: der
   Wertevorrat landet als `NVARCHAR` plus benannter CHECK in der Datenbank, und
@@ -403,7 +420,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Fingerabdruck-Verfahren auf `schema-fingerprint-v15`** (von `v11`). Vier
+- **Fingerabdruck-Verfahren auf `schema-fingerprint-v16`** (von `v11`). Fünf
   Schritte: `v12` blendet die Text-Search-Konfiguration eines Volltext-Index
   bei MySQL, SQLite und SQL Server aus sowie den system-vergebenen
   Sequenznamen einer PostgreSQL-IDENTITY-Spalte — keiner der Dialekte kann
@@ -416,7 +433,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mit `generation: identity`) dort zusammen, wo der Dialekt beide zum selben
   DDL rendert — der Vergleich tat das bereits, der Abdruck nicht, und der
   Post-Compare meldete deshalb Drift auf einer Spalte, die genau wie
-  gewünscht angewendet worden war.
+  gewünscht angewendet worden war. `v16` liest PostgreSQLs Normalform einer
+  Werteaufzählung (`spalte = ANY (ARRAY['a'::text, …])`, dazu Typ-Casts an
+  Literalen und Spalte) als das, was sie ist — bis dahin erkannte die
+  Projektion nur die Formen von SQLite, Oracle und SQL Server.
 
   **Bestehende Rollback-Artefakte und Overlays müssen neu erzeugt werden.**
   `schema rollback` lehnt ein älteres Artefakt mit

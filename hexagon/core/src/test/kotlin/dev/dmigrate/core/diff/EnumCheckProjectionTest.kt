@@ -102,4 +102,43 @@ class EnumCheckProjectionTest : FunSpec({
     test("nested outer parentheses are peeled, unbalanced ones are not") {
         EnumCheckProjection.valuesOf("((mood='a'))", "mood") shouldBe listOf("a")
     }
+
+    // ── PostgreSQLs Normalform (live gemessen) ──────
+
+    test("die ANY-ARRAY-Form mit Typ-Casts an den Literalen") {
+        EnumCheckProjection.valuesOf("((mood = ANY (ARRAY['red'::text, 'green'::text])))", "mood") shouldBe
+            listOf("red", "green")
+    }
+
+    test("ein escapetes Hochkomma und ein Komma im Wert ueberstehen die ANY-ARRAY-Form") {
+        EnumCheckProjection.valuesOf("((quoted = ANY (ARRAY['it''s'::text, 'b,c'::text])))", "quoted") shouldBe
+            listOf("it's", "b,c")
+    }
+
+    test("eine einelementige Liste kommt als Gleichheit zurueck, mit gecasteter Spalte") {
+        // `shade IN ('a')` auf einer varchar-Spalte.
+        EnumCheckProjection.valuesOf("(((shade)::text = 'a'::text))", "shade") shouldBe listOf("a")
+    }
+
+    test("die OR-Kette mit Casts an beiden Seiten") {
+        EnumCheckProjection.valuesOf("(((tone = 'x'::text) OR (tone = 'y'::text)))", "tone") shouldBe
+            listOf("x", "y")
+    }
+
+    test("ein mehrwortiger Typname im Cast") {
+        EnumCheckProjection.valuesOf("(shade)::character varying = 'a'::character varying(5)", "shade") shouldBe
+            listOf("a")
+    }
+
+    test("die ANY-ARRAY-Form ueber eine andere Spalte zaehlt nicht") {
+        EnumCheckProjection.valuesOf("((other = ANY (ARRAY['red'::text])))", "mood") shouldBe null
+    }
+
+    test("ein ALL statt ANY ist etwas anderes") {
+        EnumCheckProjection.valuesOf("((mood = ALL (ARRAY['red'::text])))", "mood") shouldBe null
+    }
+
+    test("eine Klammer im Wert zerlegt den Ausdruck nicht") {
+        EnumCheckProjection.valuesOf("mood IN ('a)b')", "mood") shouldBe listOf("a)b")
+    }
 })

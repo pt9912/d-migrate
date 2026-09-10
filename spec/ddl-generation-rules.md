@@ -194,7 +194,8 @@ Besonderheiten:
 - `boolean` → `BOOLEAN` (native Unterstützung)
 - `json` → `JSONB` (binäres JSON, performanter)
 - `enum` mit `ref_type` → separater `CREATE TYPE` (vor der Tabelle)
-- `enum` inline → `TEXT` + `CHECK` Constraint
+- `enum` inline → `TEXT` + `CHECK` Constraint; unbenannt, damit `CREATE TABLE`
+  und der ALTER-Pfad denselben Constraint erzeugen (PostgreSQL vergibt den Namen)
 - `datetime` mit `timezone: true` → `TIMESTAMP WITH TIME ZONE`
 
 ### 3.4 MySQL
@@ -243,7 +244,9 @@ Besonderheiten:
 - `json` → `TEXT` (JSON-Funktionen verfügbar ab 3.38)
 - `datetime`, `date`, `time` → `TEXT` (ISO 8601 Format)
 - `decimal` → `REAL` + Warnung W200 (Präzisionsverlust)
-- `enum` → `TEXT` + `CHECK` Constraint
+- `enum` → `TEXT` + benannter `CHECK` Constraint (`ck_<tabelle>_<spalte>`): ein
+  unbenannter Constraint kommt aus `sqlite_master` nicht als Constraint zurueck,
+  und was nicht zurueckkommt, kann der Vergleich nicht sehen
 - Foreign Keys inline oder als `CONSTRAINT`
 - Kein `ALTER TABLE ADD COLUMN ... REFERENCES` (FK müssen inline sein)
 

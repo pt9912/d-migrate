@@ -58,7 +58,7 @@ internal object SqliteDiffSimpleOps {
         val solePrimaryKey = op.table.primaryKey.singleOrNull()
         for ((colName, col) in effectiveColumns.inOrdinalOrder()) {
             val isSolePrimaryKey = solePrimaryKey == colName
-            lines += "    " + ctx.sql.columnLine(colName, col, isSolePrimaryKey)
+            lines += "    " + ctx.sql.columnLine(tableName, colName, col, isSolePrimaryKey)
             if (SqliteCompositePkIdentity.isDroppedAutoincrement(col.type, isSolePrimaryKey)) {
                 ctx.warning(op, SqliteCompositePkIdentity.message(colName), SqliteCompositePkIdentity.W_CODE)
             }
@@ -150,7 +150,7 @@ internal object SqliteDiffSimpleOps {
             ctx.emit(op, SqliteSpatialDiffOps.addGeometryColumnSql(table, column, op.column))
             return
         }
-        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(table, column, op.column)};")
         SqliteEnumDegradation.warnIfEnum(op, ctx, column, op.column)
         // 0.9.7 G5: when the new column carries SequenceNextVal,
         // emit the `_bi`/`_ai` trigger pair against the sequence

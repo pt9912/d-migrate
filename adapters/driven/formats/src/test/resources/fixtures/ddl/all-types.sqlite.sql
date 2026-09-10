@@ -23,6 +23,6 @@ CREATE TABLE "type_test" (
     "col_xml" TEXT,
     "col_binary" BLOB,
     "col_email" TEXT,
-    "col_enum" TEXT CHECK ("col_enum" IN ('a', 'b', 'c')),
+    "col_enum" TEXT CONSTRAINT "ck_type_test_col_enum" CHECK ("col_enum" IN ('a', 'b', 'c')),
     "col_array" TEXT
 );

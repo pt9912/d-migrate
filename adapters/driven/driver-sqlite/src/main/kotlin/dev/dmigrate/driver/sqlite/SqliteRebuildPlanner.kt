@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.util.sha256Hex
@@ -392,6 +393,29 @@ internal object SqliteRebuildPlanner {
             .toList()
     }
 
+    /**
+     * Ob sich die beiden Typen allein im Wertevorrat unterscheiden.
+     *
+     * Ein `enum` ist in SQLite eine Textspalte mit einem CHECK darueber. Wird
+     * der Wertevorrat geaendert — oder bekommt eine Textspalte einen —, bleibt
+     * die Ablage dieselbe und nur der CHECK ist ein anderer. Es gibt dann
+     * nichts umzuwandeln, und die Cast-Matrix hat nichts zu entscheiden; der
+     * neue CHECK entscheidet beim Kopieren der Daten selbst, ob sie passen.
+     *
+     * Bewusst eng auf Paare mit Enum-Beteiligung: SQLite legt auch alle
+     * Integer- und alle Textbreiten gleich ab, und dort **ist** die Umwandlung
+     * eine Aussage — sie zaehlt fuer den Ziel-Dialekt einer spaeteren
+     * Migration, auch wenn SQLite selbst sie nicht ausdrueckt.
+     */
+    private fun onlyVocabularyDiffers(
+        source: NeutralType,
+        target: NeutralType,
+        sql: SqliteDiffSqlBuilders,
+    ): Boolean {
+        if (source !is NeutralType.Enum && target !is NeutralType.Enum) return false
+        return sql.toSql(source) == sql.toSql(target)
+    }
+
     private fun computeColumnMapping(
         source: TableDefinition,
         target: TableDefinition,
@@ -407,7 +431,16 @@ internal object SqliteRebuildPlanner {
             val sourceCol = source.columns[name]
             val quoted = sql.quote(name)
             when {
-                sourceCol != null && sourceCol.type == targetCol.type ->
+                // Gleicher neutraler Typ, oder zwei neutrale Typen, die SQLite
+                // in derselben Spaltenform ablegt: dann wird nichts umgewandelt,
+                // und die Cast-Matrix hat nichts zu entscheiden. Ein `enum` und
+                // eine Textspalte sind hier dasselbe — was sie unterscheidet,
+                // ist der CHECK ueber dem Wertevorrat, nicht die Ablage.
+                sourceCol != null &&
+                    (
+                        sourceCol.type == targetCol.type ||
+                            onlyVocabularyDiffers(sourceCol.type, targetCol.type, sql)
+                        ) ->
                     preserved += ColumnCopyMapping(
                         sourceColumn = name,
                         targetColumn = name,

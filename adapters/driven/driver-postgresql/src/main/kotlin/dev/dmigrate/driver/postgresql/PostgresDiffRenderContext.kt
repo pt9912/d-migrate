@@ -6,6 +6,8 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.diff.EnumCheckProjection
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
@@ -321,6 +323,24 @@ internal class PostgresDiffRenderContext(
         } else {
             existing.operationIds += operationId
         }
+    }
+
+    /**
+     * Der Name des CHECKs, der den Wertevorrat von [column] aufzaehlt, auf der
+     * Seite, von der **weg** geaendert wird — oder `null`, wenn dort keiner
+     * steht.
+     *
+     * Der echte Katalogname, nicht ein nachgebildeter: PostgreSQL benennt einen
+     * unbenannten Constraint selbst, haengt bei Kollision eine Ziffer an und
+     * kuerzt lange Namen (live gemessen). Ein erratener Name traefe genau die
+     * Faelle nicht, in denen es darauf ankommt.
+     */
+    fun enumValueCheckName(table: String, column: String): String? {
+        val schema = if (direction == PostgresRenderDirection.UP) currentSchema else desiredSchema
+        val definition = schema?.tables?.get(table) ?: return null
+        return definition.constraints.firstOrNull {
+            it.type == ConstraintType.CHECK && EnumCheckProjection.valuesOf(it.expression, column) != null
+        }?.name
     }
 
     /** Columns of [table] on the side this render direction reads (UP=desired, DOWN=current). */

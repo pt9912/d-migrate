@@ -8,6 +8,7 @@ import dev.dmigrate.driver.migration.TransactionScope
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.inOrdinalOrder
@@ -191,34 +192,64 @@ internal object PostgresDiffTableOps {
         ) {
             return
         }
-        val usingExpression = if (ctx.sql.isSafeImplicitCast(op.before, op.after)) {
-            null
+        val sourceType = if (ctx.direction == PostgresRenderDirection.UP) op.before else op.after
+        // Ein `refType`-Enum verweist auf den nativen Typ; ein Inline-Enum wird
+        // zur Textspalte, deren Wertevorrat ein eigener CHECK durchsetzt.
+        val typeSql = declaredTypeSql(targetType, ctx)
+        // Aendert sich nur der Wertevorrat, bleibt der deklarierte Typ derselbe.
+        // Dann gibt es keinen Cast, fuer den eine `USING`-Angabe noetig waere —
+        // und nichts, was eine `TYPE`-Anweisung zu tun haette.
+        val typeUnchanged = typeSql == declaredTypeSql(sourceType, ctx)
+        val usingClause = if (typeUnchanged) {
+            ""
         } else {
-            PostgresUsingOverlayResolver.resolve(op, ctx) ?: return
+            val expression = if (ctx.sql.isSafeImplicitCast(op.before, op.after)) {
+                null
+            } else {
+                PostgresUsingOverlayResolver.resolve(op, ctx) ?: return
+            }
+            expression?.let { " USING $it" }.orEmpty()
         }
-        val usingClause = usingExpression?.let { " USING $it" }.orEmpty()
-        // Enum-Degradations-Slice (Review F4): altering a column TO a `refType` enum
-        // references the native type; an inline-values enum degrades to TEXT and is
-        // made loud via W134 (UP only) instead of silently dropping the enum values.
-        val typeSql = (targetType as? NeutralType.Enum)?.refType?.let { ctx.sql.quote(it) }
-            ?: ctx.sql.toSql(targetType)
-        ctx.emit(
-            op,
-            "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} " +
-                "TYPE $typeSql$usingClause;",
-        )
-        if (ctx.direction == PostgresRenderDirection.UP &&
-            targetType is NeutralType.Enum && targetType.refType == null
-        ) {
-            ctx.warning(
+        // Der alte Wertevorrat zuerst: solange er steht, weist er Werte ab, die
+        // der neue erlaubt — und die Spalte traegt danach zwei Aufzaehlungen,
+        // von denen der Vergleich keine mehr eindeutig zuordnen kann.
+        dropExistingEnumValueCheck(op, ctx, table, column)
+        val newValues = EnumValueCheck.inlineValues(targetType)
+        if (!typeUnchanged || newValues == null) {
+            ctx.emit(
                 op,
-                "Column `$table.$column` is altered to enum type but rendered as bare TEXT; the " +
-                    "declared values are not enforced (native enum materialisation is not yet in the " +
-                    "PostgreSQL migrate ALTER path — model the enum as a custom type for a native type).",
-                code = "W134",
+                "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} " +
+                    "TYPE $typeSql$usingClause;",
             )
         }
+        newValues?.let { values ->
+            ctx.emit(
+                op,
+                "ALTER TABLE ${ctx.sql.quote(table)} ADD ${EnumValueCheck.clause(column, values, ctx.sql::quote)};",
+            )
+        }
+        warnIfUnenforceableEnum(op, ctx, "$table.$column", targetType)
     }
+
+    /** Der Typ, wie er in der Spaltendeklaration steht. */
+    private fun declaredTypeSql(type: NeutralType, ctx: PostgresDiffRenderContext): String =
+        (type as? NeutralType.Enum)?.refType?.let { ctx.sql.quote(it) } ?: ctx.sql.toSql(type)
+
+    /**
+     * Loest den CHECK, der den Wertevorrat der Spalte bisher durchsetzt —
+     * unter seinem echten Katalognamen ([PostgresDiffRenderContext.enumValueCheckName]).
+     * Steht dort keiner, entfaellt die Anweisung.
+     */
+    private fun dropExistingEnumValueCheck(
+        op: DiffOperation.AlterColumnType,
+        ctx: PostgresDiffRenderContext,
+        table: String,
+        column: String,
+    ) {
+        val name = ctx.enumValueCheckName(table, column) ?: return
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT IF EXISTS ${ctx.sql.quote(name)};")
+    }
+
 
     fun renderAlterColumnNullability(op: DiffOperation.AlterColumnNullability, ctx: PostgresDiffRenderContext) {
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
@@ -331,17 +362,28 @@ internal object PostgresDiffTableOps {
         ctx: PostgresDiffRenderContext,
         colName: String,
         col: ColumnDefinition,
+    ) = warnIfUnenforceableEnum(op, ctx, colName, col.type)
+
+    /**
+     * Ein Enum, dessen Wertevorrat nirgends landet: es fuehrt weder eigene
+     * Werte (dann setzt sie ein CHECK durch) noch einen `refType` (dann traegt
+     * sie ein eigener Typ). Uebrig bleibt eine blanke Textspalte.
+     */
+    private fun warnIfUnenforceableEnum(
+        op: DiffOperation,
+        ctx: PostgresDiffRenderContext,
+        objectName: String,
+        type: NeutralType,
     ) {
-        val type = col.type
-        if (type is NeutralType.Enum && type.refType == null) {
-            ctx.warning(
-                op,
-                "Enum column `$colName` is migrated as bare TEXT; the declared values are not " +
-                    "enforced in the target (native enum materialisation is not yet implemented in the " +
-                    "PostgreSQL migrate/diff path — model the enum as a custom type for a native CREATE TYPE).",
-                code = "W134",
-            )
-        }
+        if (type !is NeutralType.Enum || type.refType != null) return
+        if (EnumValueCheck.inlineValues(type) != null) return
+        ctx.warning(
+            op,
+            "Enum column `$objectName` carries neither values nor a `ref_type`; it is migrated as bare " +
+                "TEXT and nothing is enforced in the target (declare the values, or model the enum as a " +
+                "custom type for a native CREATE TYPE).",
+            code = "W134",
+        )
     }
 
     private fun TableDefinition.hasGeometryColumns(): Boolean =

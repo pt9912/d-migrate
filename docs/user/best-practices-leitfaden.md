@@ -120,7 +120,7 @@ Abschnitte 2–4; hier die praxisrelevanten Empfehlungen und Anti-Patterns:
 | **`DECIMAL`/Zeit-Präzision** | Präzision/Skala und Zeit-Sub-Sekunden sind dialektabhängig; SQLite bildet `DECIMAL` auf `REAL` ab (**W200**, Präzisionsverlust möglich). |
 | **String-Längen** | Längenerhaltung ist dialektabhängig; unbegrenzte `TEXT`-Indizes brauchen in MySQL eine Präfixlänge. |
 | **Arrays** (`text[]`) | In MySQL als `JSON`, in SQLite als `TEXT` (SQLite hat keinen JSON-Typ). |
-| **ENUM** | PG-`enum` → MySQL-`ENUM` → SQLite `TEXT`. Im `schema generate`-Pfad **mit** `CHECK`-Constraint; im migrate/diff-Pfad **ohne** — dann warnt **W134**, dass die deklarierten Enum-Werte im Ziel **nicht** durchgesetzt werden (SQLite hat keinen nativen Enum-Typ). Gilt für alle SQLite-Enums und PG-Inline-`values`-Enums; MySQL-`ENUM` und PG-`refType` bleiben nativ. |
+| **ENUM** | PG-`enum` → MySQL-`ENUM` → SQLite `TEXT`. Wo ein Dialekt keinen Enum-Typ hat, setzt ein `CHECK` über der Textspalte den Wertevorrat durch — in `schema generate` und `schema migrate` gleich. **W134** warnt nur noch, wenn es nichts durchzusetzen gibt: ein `enum` ohne Werte und ohne `ref_type`. MySQL-`ENUM` und PG-`refType` bleiben nativ. |
 | **Identity-Spalte in zusammengesetztem PK** | SQLite kann `AUTOINCREMENT` nur beim **einspaltigen** Primärschlüssel; landet eine Serial-/Identity-Spalte in einem **zusammengesetzten** PK (z. B. via partitionierter MySQL-Zwischenstufe), wird `AUTOINCREMENT` verworfen (**W135**) — die IDs müssen dann explizit geliefert werden. |
 
 **Faustregel:** Warnungen sind das Feature, nicht das Rauschen. Jede gemeldete

@@ -15,6 +15,7 @@ import dev.dmigrate.core.model.toSqlEventClause
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.RoutineBodyOrigin
+import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 /**
@@ -39,7 +40,12 @@ internal class SqliteDiffSqlBuilders {
 
     fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.SQLITE)
 
-    fun columnLine(name: String, col: ColumnDefinition, isSolePrimaryKey: Boolean = true): String {
+    fun columnLine(
+        table: String,
+        name: String,
+        col: ColumnDefinition,
+        isSolePrimaryKey: Boolean = true,
+    ): String {
         val parts = mutableListOf<String>()
         parts += quote(name)
         // SQLite renders an `identifier` column inline as `INTEGER PRIMARY KEY AUTOINCREMENT`
@@ -50,6 +56,12 @@ internal class SqliteDiffSqlBuilders {
         if (col.required) parts += "NOT NULL"
         if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         col.default?.let { parts += "DEFAULT ${typeMapper.toDefaultSql(it, col.type)}" }
+        // Der Wertevorrat eines Inline-Enums wird durchgesetzt, wie ihn auch
+        // `schema generate` schreibt. Ohne ihn traegt das Ziel den Vorrat
+        // nirgends, und der Vergleich meldet nach jedem Lauf Drift.
+        EnumValueCheck.inlineValues(col.type)?.let {
+            parts += EnumValueCheck.namedClause(table, name, it, ::quote)
+        }
         col.references?.let { ref ->
             val onDelete = ref.onDelete?.let { " ON DELETE ${referentialActionSql(it)}" } ?: ""
             val onUpdate = ref.onUpdate?.let { " ON UPDATE ${referentialActionSql(it)}" } ?: ""

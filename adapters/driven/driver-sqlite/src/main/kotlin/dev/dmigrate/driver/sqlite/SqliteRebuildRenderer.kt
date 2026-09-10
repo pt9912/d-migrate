@@ -384,7 +384,7 @@ internal class SqliteRebuildRenderer(
         // TABLES phase: schema reshape. Statements that touch data inherit bucketRisk;
         // CREATE temp is structurally safe (no data yet).
         ctx.emitRebuildStatement(
-            buildCreateTempSql(tempName, plan.newTable),
+            buildCreateTempSql(tempName, originalTable, plan.newTable),
             opIds, risk = safe, phase = DiffPhase.TABLES,
         )
         ctx.emitRebuildStatement(
@@ -593,14 +593,19 @@ internal class SqliteRebuildRenderer(
         }
     }
 
-    private fun buildCreateTempSql(tempName: String, target: TableDefinition): String {
+    /**
+     * [finalName] statt [tempName] fuer die Constraint-Namen: die Tabelle wird
+     * am Ende auf ihren echten Namen umbenannt, die Namen ihrer Constraints
+     * wandern unveraendert mit — sie duerfen nicht die Zwischenstation tragen.
+     */
+    private fun buildCreateTempSql(tempName: String, finalName: String, target: TableDefinition): String {
         val lines = mutableListOf<String>()
         val solePrimaryKey = target.primaryKey.singleOrNull()
         for ((colName, col) in target.columns.inOrdinalOrder()) {
             // SQLite's PRIMARY KEY does not imply NOT NULL; materialise the
             // neutral model's "PK ⇒ required" invariant on the rebuilt table.
             val effectiveCol = SqlitePrimaryKeyNullability.materialize(colName, col, target.primaryKey)
-            lines += "    " + sql.columnLine(colName, effectiveCol, solePrimaryKey == colName)
+            lines += "    " + sql.columnLine(finalName, colName, effectiveCol, solePrimaryKey == colName)
         }
         sql.primaryKeyClause(target)?.let { lines += "    $it" }
         for (c in target.constraints.sortedBy { it.name }) {

@@ -283,7 +283,8 @@ class SqliteDdlGeneratorTableTestPart2 : FunSpec({
         val result = generator.generate(s)
         val sql = result.tableSql()
 
-        sql shouldContain "\"priority\" TEXT NOT NULL DEFAULT 'medium' CHECK (\"priority\" IN ('low', 'medium', 'high'))"
+        sql shouldContain "\"priority\" TEXT NOT NULL DEFAULT 'medium' " +
+            "CONSTRAINT \"ck_tasks_priority\" CHECK (\"priority\" IN ('low', 'medium', 'high'))"
     }
 
     test("string default value with single quote is escaped") {

@@ -15,9 +15,10 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
 /**
- * Enum-Degradations-Slice (AP3, W134). SQLite has no native enum type, so the
- * migrate/diff path renders every enum as bare TEXT — now LOUD via W134 at both
- * CreateTable and AddColumn (Review F1). Inline TEXT+CHECK fidelity is Option 2b.
+ * SQLite hat keinen Enum-Typ: der Wertevorrat wird als `CHECK` an der
+ * Textspalte durchgesetzt — an jeder Render-Stelle gleich, auch im
+ * Tabellen-Neubau, der die ganze Tabelle neu schreibt. `W134` bleibt fuer den
+ * Fall, in dem es nichts durchzusetzen gibt.
  */
 class SqliteDiffEnumDegradationTest : FunSpec({
 
@@ -27,7 +28,7 @@ class SqliteDiffEnumDegradationTest : FunSpec({
     fun planAndUp(diff: SchemaDiff) =
         gen.generateUp(planner.plan(emptySchema(), emptySchema(), diff), DdlGenerationOptions())
 
-    test("CreateTable enum → bare TEXT but LOUD via W134") {
+    test("CreateTable renders the enum column with the CHECK that enforces its values") {
         val table = TableDefinition(
             columns = mapOf(
                 "id" to ColumnDefinition(NeutralType.Identifier(), required = true),
@@ -37,11 +38,13 @@ class SqliteDiffEnumDegradationTest : FunSpec({
         )
         val diff = SchemaDiff(tablesAdded = listOf(NamedTable("tickets", table)))
         val r = planAndUp(diff)
-        r.statements.map { it.sql }.first { it.contains("CREATE TABLE") } shouldContainStr "\"status\" TEXT"
-        r.diagnostics.any { it.code == "W134" } shouldBe true
+        val createTable = r.statements.map { it.sql }.first { it.contains("CREATE TABLE") }
+        createTable shouldContainStr "\"status\" TEXT"
+        createTable shouldContainStr "CHECK (\"status\" IN ('open', 'closed'))"
+        r.diagnostics.any { it.code == "W134" } shouldBe false
     }
 
-    test("ADD COLUMN enum → W134 (Review F1)") {
+    test("ADD COLUMN carries the same CHECK") {
         val diff = SchemaDiff(
             tablesChanged = listOf(
                 TableDiff(
@@ -51,13 +54,27 @@ class SqliteDiffEnumDegradationTest : FunSpec({
             ),
         )
         val r = planAndUp(diff)
-        r.diagnostics.any { it.code == "W134" } shouldBe true
+        r.statements.map { it.sql }.first { it.contains("ADD COLUMN") } shouldContainStr
+            "CHECK (\"prio\" IN ('lo', 'hi'))"
+        r.diagnostics.any { it.code == "W134" } shouldBe false
     }
 
-    // Review F2: a rebuild-triggering change (SQLite has no in-place ALTER COLUMN
-    // nullability) re-renders the whole table — including the enum column as TEXT
-    // — via SqliteRebuildRenderer, which must also warn W134 (not silently degrade).
-    test("table rebuild re-renders an enum column as TEXT → W134") {
+    test("an enum without values keeps the warning — there is nothing to enforce") {
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "tickets",
+                    columnsAdded = mapOf("prio" to ColumnDefinition(NeutralType.Enum())),
+                ),
+            ),
+        )
+        planAndUp(diff).diagnostics.any { it.code == "W134" } shouldBe true
+    }
+
+    // Ein Neubau schreibt die ganze Tabelle neu (SQLite kennt kein
+    // ALTER COLUMN fuer die Nullbarkeit). Die Enum-Spalte muss dabei ihren
+    // CHECK behalten — sonst verlaere gerade der Neubau die Durchsetzung.
+    test("the table rebuild keeps the enum column's CHECK") {
         fun schema(noteRequired: Boolean) = SchemaDefinition(
             name = "App",
             version = "1",
@@ -77,7 +94,8 @@ class SqliteDiffEnumDegradationTest : FunSpec({
         val diff = SchemaComparator().compare(current, desired)
         val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
         // sanity: the change really went through the rebuild path (temp-table recreate)
-        r.statements.map { it.sql }.any { it.contains("CREATE TABLE") } shouldBe true
-        r.diagnostics.any { it.code == "W134" } shouldBe true
+        val createTable = r.statements.map { it.sql }.first { it.contains("CREATE TABLE") }
+        createTable shouldContainStr "CHECK (\"status\" IN ('open', 'closed'))"
+        r.diagnostics.any { it.code == "W134" } shouldBe false
     }
 })

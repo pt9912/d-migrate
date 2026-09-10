@@ -17,11 +17,13 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
 /**
- * Enum-Degradations-Slice (Option 2a + W134), PostgreSQL migrate/diff path:
- *  - a `refType` enum references its native type (CreateCustomType → CREATE TYPE),
- *    ordered types-before-tables (Review F4), and does NOT warn — faithful (AP2);
- *  - an inline-`values` enum still degrades to bare TEXT but is now LOUD via W134
- *    (AP3), at both CreateTable and AddColumn (Review F1).
+ * Wie der PostgreSQL-Migrationspfad ein Enum rendert:
+ *
+ * - ein `refType`-Enum verweist auf seinen nativen Typ, und der `CREATE TYPE`
+ *   steht vor der Tabelle;
+ * - ein Inline-Enum wird zur Textspalte, deren Wertevorrat ein `CHECK`
+ *   durchsetzt — dieselbe Form, die `schema generate` schreibt;
+ * - `W134` bleibt fuer den Fall, in dem nichts durchzusetzen ist.
  */
 class PostgresDiffTableOpsEnumTest : FunSpec({
 
@@ -55,7 +57,7 @@ class PostgresDiffTableOpsEnumTest : FunSpec({
         planAndUp(diff).diagnostics.any { it.code == "W134" } shouldBe false
     }
 
-    test("inline-values enum → bare TEXT but LOUD via W134 (CreateTable)") {
+    test("an inline enum becomes TEXT with the CHECK that enforces its values (CreateTable)") {
         val table = TableDefinition(
             columns = mapOf(
                 "id" to ColumnDefinition(NeutralType.Identifier(), required = true),
@@ -65,11 +67,14 @@ class PostgresDiffTableOpsEnumTest : FunSpec({
         )
         val diff = SchemaDiff(tablesAdded = listOf(NamedTable("tickets", table)))
         val r = planAndUp(diff)
-        r.statements.map { it.sql }.first { it.contains("CREATE TABLE \"tickets\"") } shouldContainStr "\"status\" TEXT"
-        r.diagnostics.any { it.code == "W134" } shouldBe true
+        val createTable = r.statements.map { it.sql }.first { it.contains("CREATE TABLE \"tickets\"") }
+        createTable shouldContainStr "\"status\" TEXT"
+        createTable shouldContainStr "CHECK (\"status\" IN ('open', 'closed'))"
+        // Nichts geht mehr verloren, also gibt es auch nichts zu melden.
+        r.diagnostics.any { it.code == "W134" } shouldBe false
     }
 
-    test("inline-values enum via ADD COLUMN → bare TEXT but LOUD via W134 (Review F1)") {
+    test("an inline enum added by ALTER carries the same CHECK") {
         val diff = SchemaDiff(
             tablesChanged = listOf(
                 TableDiff(
@@ -79,7 +84,23 @@ class PostgresDiffTableOpsEnumTest : FunSpec({
             ),
         )
         val r = planAndUp(diff)
-        r.statements.map { it.sql }.any { it.contains("ADD COLUMN") && it.contains("\"status\" TEXT") } shouldBe true
+        val addColumn = r.statements.map { it.sql }.first { it.contains("ADD COLUMN") }
+        addColumn shouldContainStr "\"status\" TEXT"
+        addColumn shouldContainStr "CHECK (\"status\" IN ('a', 'b'))"
+        r.diagnostics.any { it.code == "W134" } shouldBe false
+    }
+
+    test("an enum without values keeps the warning — there is nothing to enforce") {
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "tickets",
+                    columnsAdded = mapOf("status" to ColumnDefinition(NeutralType.Enum())),
+                ),
+            ),
+        )
+        val r = planAndUp(diff)
+        r.statements.map { it.sql }.first { it.contains("ADD COLUMN") } shouldContainStr "\"status\" TEXT"
         r.diagnostics.any { it.code == "W134" } shouldBe true
     }
 })

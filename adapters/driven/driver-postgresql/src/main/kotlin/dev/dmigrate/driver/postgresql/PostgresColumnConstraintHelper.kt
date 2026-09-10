@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 internal class PostgresColumnConstraintHelper(
@@ -65,8 +66,7 @@ internal class PostgresColumnConstraintHelper(
                 if (col.required) parts += "NOT NULL"
                 if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
                 if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
-                val allowed = enumValues.joinToString(", ") { "'${it.replace("'", "''")}'" }
-                parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
+                parts += EnumValueCheck.clause(colName, enumValues, quoteIdentifier)
                 return parts.joinToString(" ")
             }
         }

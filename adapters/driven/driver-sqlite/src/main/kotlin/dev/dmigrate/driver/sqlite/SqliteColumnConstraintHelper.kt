@@ -2,6 +2,7 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 internal class SqliteColumnConstraintHelper(
@@ -133,8 +134,7 @@ internal class SqliteColumnConstraintHelper(
         if (col.required) parts += "NOT NULL"
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
         if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
-        val allowed = type.values!!.joinToString(", ") { "'${it.replace("'", "''")}'" }
-        parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
+        parts += EnumValueCheck.namedClause(tableName, colName, type.values!!, quoteIdentifier)
         if (col.references != null && (tableName to colName) !in deferredFks) parts += inlineForeignKey(col.references!!)
         return parts.joinToString(" ")
     }

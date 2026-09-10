@@ -15,10 +15,19 @@ import dev.dmigrate.core.model.TableDefinition
  * eine gemeinsame Form koennen die beiden Seiten nicht gleich hashen (siehe
  * `docs/planning/done/fingerprint-v8-enum-check-projection.md`).
  *
- * **Zwei Schreibweisen, dieselbe Aussage.** Geschrieben wird die Liste als
- * `spalte IN ('a','b')` — zurueck kommt sie so aber nicht unbedingt: SQL Server
- * speichert den Ausdruck normalisiert als `spalte='b' OR spalte='a'`, mit
- * eigener Reihenfolge (live gemessen). Beide Formen werden deshalb erkannt,
+ * **Dieselbe Aussage, je Server anders aufgeschrieben.** Geschrieben wird die
+ * Liste als `spalte IN ('a','b')` — zurueck kommt sie so nur bei SQLite und
+ * Oracle. Live gemessen:
+ *
+ * | Server | was er aus `mood IN ('red','green')` macht |
+ * | --- | --- |
+ * | SQLite, Oracle | der Text, wie geschrieben |
+ * | SQL Server | `mood='green' OR mood='red'` — umsortiert |
+ * | PostgreSQL | `((mood = ANY (ARRAY['red'::text, 'green'::text])))` |
+ *
+ * PostgreSQL setzt zusaetzlich Typ-Casts an jedes Literal, castet bei einer
+ * `varchar`-Spalte auch die **Spalte** (`(shade)::text`) und schreibt eine
+ * einelementige Liste als `=` statt `IN`. Alle diese Formen werden erkannt,
  * und die Werte gelten als Menge.
  *
  * Die Erkennung ist **formbasiert, nicht namensbasiert**: PostgreSQL vergibt
@@ -30,7 +39,7 @@ import dev.dmigrate.core.model.TableDefinition
  * etwas anderem als String-Literalen, Verknuepfungen mit `AND`, und alles, was
  * nach dem Ausdruck noch weitergeht.
  */
-internal object EnumCheckProjection {
+object EnumCheckProjection {
 
     /**
      * Der Wertevorrat je Spalte, so wie die Spaltentypen der Tabelle ihn
@@ -106,7 +115,9 @@ internal object EnumCheckProjection {
      */
     fun valuesOf(expression: String?, column: String): List<String>? {
         val text = unwrapOuterParens(expression?.trim() ?: return null)
-        return inListValues(text, column) ?: equalityChainValues(text, column)
+        return inListValues(text, column)
+            ?: anyArrayValues(text, column)
+            ?: equalityChainValues(text, column)
     }
 
     /**
@@ -125,12 +136,27 @@ internal object EnumCheckProjection {
 
     /** `spalte IN ('a', 'b')` — die Form, die d-migrate selbst schreibt. */
     private fun inListValues(text: String, column: String): List<String>? {
-        val afterColumn = stripLeadingIdentifier(text, column) ?: return null
+        val afterColumn = stripLeadingColumnRef(text, column) ?: return null
         val afterIn = stripLeadingKeyword(afterColumn, "IN") ?: return null
         if (!afterIn.startsWith("(")) return null
         val closing = afterIn.lastIndexOf(')')
         if (closing != afterIn.length - 1) return null
         return parseStringList(afterIn.substring(1, closing))
+    }
+
+    /**
+     * `spalte = ANY (ARRAY['a'::text, 'b'::text])` — die Form, in die
+     * PostgreSQL eine `IN`-Liste beim Speichern umschreibt.
+     */
+    private fun anyArrayValues(text: String, column: String): List<String>? {
+        val afterColumn = stripLeadingColumnRef(text, column) ?: return null
+        if (!afterColumn.startsWith("=")) return null
+        val afterAny = stripLeadingKeyword(afterColumn.substring(1).trimStart(), "ANY") ?: return null
+        if (!afterAny.startsWith("(") || !afterAny.endsWith(")")) return null
+        val inner = afterAny.substring(1, afterAny.length - 1).trim()
+        val afterArray = stripLeadingKeyword(inner, "ARRAY") ?: return null
+        if (!afterArray.startsWith("[") || !afterArray.endsWith("]")) return null
+        return parseStringList(afterArray.substring(1, afterArray.length - 1))
     }
 
     /**
@@ -141,7 +167,7 @@ internal object EnumCheckProjection {
         val values = mutableListOf<String>()
         for (term in splitTopLevelOr(text) ?: return null) {
             val trimmed = unwrapOuterParens(term.trim())
-            val afterColumn = stripLeadingIdentifier(trimmed, column) ?: return null
+            val afterColumn = stripLeadingColumnRef(trimmed, column) ?: return null
             if (!afterColumn.startsWith("=")) return null
             val literal = parseStringList(afterColumn.substring(1).trim())?.singleOrNull() ?: return null
             values += literal
@@ -157,17 +183,7 @@ internal object EnumCheckProjection {
     private fun unwrapOuterParens(text: String): String {
         var current = text.trim()
         while (current.startsWith("(") && current.endsWith(")")) {
-            var depth = 0
-            var closesAtEnd = true
-            for ((i, ch) in current.withIndex()) {
-                if (ch == '(') depth++
-                if (ch == ')') depth--
-                if (depth == 0 && i < current.length - 1) {
-                    closesAtEnd = false
-                    break
-                }
-            }
-            if (!closesAtEnd) return current
+            if (matchingParen(current) != current.length - 1) return current
             current = current.substring(1, current.length - 1).trim()
         }
         return current
@@ -214,6 +230,76 @@ internal object EnumCheckProjection {
     private fun isWordChar(ch: Char?): Boolean = ch != null && (ch.isLetterOrDigit() || ch == '_')
 
     /**
+     * Ob nach einem Schluesselwort dessen Argument beginnt — durch Abstand
+     * getrennt, oder direkt als Klammer (`IN(...)`) bzw. eckige Klammer
+     * (`ARRAY[...]`).
+     */
+    private fun startsArgument(rest: String): Boolean =
+        rest.first().isWhitespace() || rest.startsWith("(") || rest.startsWith("[")
+
+    /**
+     * Entfernt den Spaltenbezug am Anfang, samt allem, was ein Server um ihn
+     * herum schreibt: eine Klammer und einen Typ-Cast.
+     *
+     * PostgreSQL castet die Spalte, wenn ihr Typ nicht schon der des Literals
+     * ist — aus `shade IN ('a')` auf einer `varchar`-Spalte wird
+     * `(shade)::text = 'a'::text`. Ohne diesen Schritt liefe die Erkennung
+     * genau an den Spalten vorbei, die eine Laengenbegrenzung tragen.
+     */
+    private fun stripLeadingColumnRef(text: String, column: String): String? {
+        val direct = stripLeadingIdentifier(text, column)
+        val rest = direct ?: stripParenthesizedIdentifier(text, column) ?: return null
+        return stripCast(rest)
+    }
+
+    /** `(spalte)` — die Klammer, die PostgreSQL vor einen Cast setzt. */
+    private fun stripParenthesizedIdentifier(text: String, column: String): String? {
+        if (!text.startsWith("(")) return null
+        val closing = matchingParen(text) ?: return null
+        val inner = text.substring(1, closing).trim()
+        if (stripLeadingIdentifier(inner, column) != "") return null
+        return text.substring(closing + 1).trimStart()
+    }
+
+    /**
+     * Ein `::typ`-Suffix, falls eines dasteht. Der Typname kann aus mehreren
+     * Woertern bestehen (`character varying`) und eine Laenge tragen.
+     */
+    private fun stripCast(text: String): String {
+        if (!text.startsWith("::")) return text
+        var i = 2
+        while (i < text.length && isTypeNameChar(text[i])) i++
+        if (i < text.length && text[i] == '(') {
+            val closing = matchingParen(text, i) ?: return text.substring(i).trimStart()
+            i = closing + 1
+        }
+        return text.substring(i).trimStart()
+    }
+
+    /** Woraus ein Typname besteht — mehrwortig erlaubt (`character varying`). */
+    private fun isTypeNameChar(ch: Char): Boolean = ch.isLetterOrDigit() || ch == '_' || ch == ' '
+
+    /** Die Position der Klammer, die die bei [from] schliesst — literal-bewusst. */
+    private fun matchingParen(text: String, from: Int = 0): Int? {
+        var depth = 0
+        var inLiteral = false
+        for (i in from until text.length) {
+            val ch = text[i]
+            if (ch == '\'') {
+                inLiteral = !inLiteral
+                continue
+            }
+            if (inLiteral) continue
+            if (ch == '(') depth++
+            if (ch == ')') {
+                depth--
+                if (depth == 0) return i
+            }
+        }
+        return null
+    }
+
+    /**
      * Entfernt den Spaltenbezug am Anfang — mit oder ohne Quoting. Der Reverse
      * liefert je nach Dialekt `mood`, `"mood"`, `[mood]` oder `` `mood` ``.
      */
@@ -229,7 +315,7 @@ internal object EnumCheckProjection {
     private fun stripLeadingKeyword(text: String, keyword: String): String? {
         if (!text.regionMatches(0, keyword, 0, keyword.length, ignoreCase = true)) return null
         val rest = text.substring(keyword.length)
-        if (rest.isNotEmpty() && !rest.first().isWhitespace() && !rest.startsWith("(")) return null
+        if (rest.isNotEmpty() && !startsArgument(rest)) return null
         return rest.trimStart()
     }
 
@@ -259,6 +345,9 @@ internal object EnumCheckProjection {
                 i++
             }
             values += sb.toString()
+            // `'red'::text` — PostgreSQL haengt den Typ an jedes Literal.
+            val afterCast = stripCast(body.substring(i))
+            i = body.length - afterCast.length
             while (i < body.length && body[i].isWhitespace()) i++
             if (i >= body.length) break
             if (body[i] != ',') return null

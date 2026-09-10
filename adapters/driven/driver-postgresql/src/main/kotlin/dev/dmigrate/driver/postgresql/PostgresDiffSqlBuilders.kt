@@ -13,6 +13,7 @@ import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 /**
@@ -32,7 +33,7 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
         // PostgreSQL type (created by the CreateCustomType op → `CREATE TYPE … AS
         // ENUM`) instead of degrading to bare TEXT — mirrors the generate path
         // (PostgresColumnConstraintHelper). Only the type NAME is needed, so no
-        // schema lookup. Inline-values enums (no refType) stay TEXT (2b / W134).
+        // schema lookup.
         // Review F3: only take this fast path with no inline FK — otherwise fall
         // through to the generic body so the `REFERENCES …` clause is preserved
         // (the ENUM type degrades to TEXT there rather than dropping the FK).
@@ -49,6 +50,10 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
         if (col.required) parts += "NOT NULL"
         if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         col.default?.let { parts += "DEFAULT ${typeMapper.toDefaultSql(it, col.type)}" }
+        // Der Wertevorrat eines Inline-Enums wird durchgesetzt, wie ihn auch
+        // `schema generate` schreibt. Ohne ihn traegt das Ziel den Vorrat
+        // nirgends, und der Vergleich meldet nach jedem Lauf Drift.
+        EnumValueCheck.inlineValues(col.type)?.let { parts += EnumValueCheck.clause(name, it, ::quote) }
         col.references?.let { ref ->
             val onDelete = ref.onDelete?.let { " ON DELETE ${referentialActionSql(it)}" } ?: ""
             val onUpdate = ref.onUpdate?.let { " ON UPDATE ${referentialActionSql(it)}" } ?: ""
