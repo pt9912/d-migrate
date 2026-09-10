@@ -268,6 +268,39 @@ A und B sind ohne Herkunft beide unbrauchbar; C verschiebt die Aussage auf
 einen Schalter, den man einschalten muss. Welche Zusage hier gilt, ist eine
 Eigner-Entscheidung.
 
+## Nachtrag: die Gabelung besteht aus zwei Fragen, nicht einer
+
+Die Messung von Weg A galt `DROP COLUMN` + `ADD COLUMN` — dem Ausweichweg, den
+PostgreSQL 16 erzwingt. **PostgreSQL 17 kennt `SET EXPRESSION`**, und damit
+verschwinden die beiden schweren Gefahren (live gemessen, 17.11, 200 000
+Zeilen):
+
+| | `DROP`+`ADD` (PG 16) | `SET EXPRESSION` (PG 17) |
+| --- | --- | --- |
+| abhaengige Sicht | **scheitert** | **ueberlebt** |
+| Index auf der Spalte | **still verloren** | **ueberlebt** |
+| Neuschreibung | ja | ja (263 ms) |
+| Wert danach | neu berechnet | neu berechnet |
+
+Die Neuschreibung bleibt in beiden Faellen — sie ist unvermeidlich, weil
+gespeicherte Werte neu berechnet werden muessen. Verloren geht nur beim
+Ausweichweg etwas.
+
+Damit zerfaellt die Entscheidung sauber in zwei:
+
+1. **Wann wird der Ausdruck ueberhaupt verglichen?** Das ist Weg C — nur wo
+   Herkunft oder Sandkasten Serverform gegen Serverform stellen koennen. Wo
+   nicht, ist die Frage unentscheidbar; das muss **gesagt** werden (Meldung),
+   sonst traegt C denselben stillen Fehlschlag, den dieser Slice beheben soll.
+2. **Was geschieht bei einer belegten Aenderung?** Das haengt am Server, nicht
+   an der Gabelung — dieselbe Bauweise wie bei Oracles `DROP … IF EXISTS`: den
+   Server fragen, statt eine Version zu unterstellen.
+   - PostgreSQL ab 17: `SET EXPRESSION`.
+   - PostgreSQL 16: kein Weg in place — blocken mit benannter Meldung, **nicht**
+     `DROP`+`ADD`, wegen der oben gemessenen Gefahren.
+   - MySQL, SQLite, SQL Server, Oracle: **ungemessen**. Vor dem Bau je Dialekt
+     zu klaeren, ob es einen Weg in place gibt und was er kostet.
+
 ## Die Vorbedingung ist erfuellt (2026-09-10)
 
 [`raw-sql-text-drift.md`](../done/raw-sql-text-drift.md) ist gebaut: der
