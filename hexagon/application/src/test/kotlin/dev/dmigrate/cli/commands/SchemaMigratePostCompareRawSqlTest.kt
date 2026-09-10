@@ -12,6 +12,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 
@@ -42,7 +43,11 @@ class SchemaMigratePostCompareRawSqlTest : FunSpec({
     )
     val target = CompareOperand.Database("db:test")
 
-    fun stage(observed: SchemaDefinition, printed: MutableList<String> = mutableListOf()) =
+    fun stage(
+        observed: SchemaDefinition,
+        printed: MutableList<String> = mutableListOf(),
+        provenanceSink: ProvenanceSink? = null,
+    ) =
         SchemaMigrateExecutionStage(
             executor = null,
             dbLoader = { _, _ ->
@@ -54,6 +59,7 @@ class SchemaMigratePostCompareRawSqlTest : FunSpec({
             normalizer = { it },
             fingerprint = MigrationFingerprint::compute,
             printError = { message, _ -> printed += message },
+            provenanceSink = provenanceSink,
         )
 
     test("Autorentext gegen Katalogform ist keine Drift — sonst meldete jeder Lauf eine") {
@@ -110,6 +116,38 @@ class SchemaMigratePostCompareRawSqlTest : FunSpec({
         )
 
         outcome.shouldBeInstanceOf<PostCompareOutcome.Clean>()
+    }
+
+    test("die Herkunft entsteht nur bei sauberem Vergleich") {
+        // Erst dann steht fest, dass das Ziel dem Soll entspricht — und nur
+        // dann gehoert das Paar (Autorentext, Katalogform) zusammen.
+        val recorded = mutableListOf<Pair<SchemaDefinition, SchemaDefinition>>()
+        val catalog = schemaWithCheck("((age >= 18))")
+
+        stage(catalog, provenanceSink = { _, authored, observed -> recorded += authored to observed })
+            .runPostCompare(
+                request, schemaWithCheck("age >= 18"), target,
+                rawSqlBaseline = RawSqlBaseline(observedBeforeRun = catalog, touchedObjects = emptySet()),
+            )
+
+        val (authored, observed) = recorded.single()
+        // Der Autorentext links, die Katalogform rechts — genau das Paar, das
+        // sich spaeter nicht mehr herstellen laesst.
+        authored.tables["customers"]!!.constraints.single().expression shouldBe "age >= 18"
+        observed.tables["customers"]!!.constraints.single().expression shouldBe "((age >= 18))"
+    }
+
+    test("nach einer Drift entsteht keine — sie waere eine Zusage, die der Lauf nicht hat") {
+        val recorded = mutableListOf<Pair<SchemaDefinition, SchemaDefinition>>()
+        val before = schemaWithCheck("((age >= 18))")
+        val after = schemaWithCheck("((age >= 21))")
+
+        stage(after, provenanceSink = { _, a, o -> recorded += a to o }).runPostCompare(
+            request, schemaWithCheck("age >= 18"), target,
+            rawSqlBaseline = RawSqlBaseline(observedBeforeRun = before, touchedObjects = emptySet()),
+        )
+
+        recorded.shouldBeEmpty()
     }
 
     test("eine echte Strukturaenderung faellt weiterhin auf") {

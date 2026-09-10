@@ -89,6 +89,22 @@ object MigrationOverlayCanonicalJson {
                 },
             )
 
+            is RawTextProvenanceOverlayEntry -> JsonObject(
+                buildList {
+                    add("kind" to JsonString(entry.kind))
+                    add("id" to JsonString(entry.id))
+                    add("objectType" to JsonString(entry.objectType))
+                    // Der Pfad in DEKLARIERTER Reihenfolge: er ist der Weg zum
+                    // Objekt, keine Menge.
+                    add("objectPath" to stringArray(entry.objectPath))
+                    add("field" to JsonString(entry.field))
+                    entry.keyPosition?.let { add("keyPosition" to JsonString(it.toString())) }
+                    add("appliedAuthorText" to JsonString(entry.appliedAuthorText))
+                    add("observedCatalogText" to JsonString(entry.observedCatalogText))
+                    add("requiredFeatures" to stringArray(entry.requiredFeatures.sorted()))
+                },
+            )
+
             is RenameMappingOverlayEntry -> JsonObject(
                 buildList {
                     add("kind" to JsonString(entry.kind))

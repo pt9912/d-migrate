@@ -23,6 +23,7 @@ data class MigrationOverlayValidationContext(
         MigrationOverlayKinds.USING_EXPRESSION,
         MigrationOverlayKinds.RENAME_MAPPING,
         MigrationOverlayKinds.PARTITION_MAPPING,
+        MigrationOverlayKinds.RAW_TEXT_PROVENANCE,
     ),
     val supportedRequiredFeatures: Set<String> = emptySet(),
     /**
@@ -388,6 +389,46 @@ object MigrationOverlayValidator {
         }
     }
 
+    /**
+     * Ein Herkunfts-Eintrag sagt, WELCHES Feld welchen Objekts gemeint ist.
+     * Beide Texte duerfen leer sein — ein Feld kann zuvor ungesetzt gewesen
+     * sein —, die Zuordnung nicht: ein Eintrag, den niemand zuordnen kann,
+     * ist ein stiller Platzhalter.
+     */
+    private fun validateProvenanceEntry(
+        entry: RawTextProvenanceOverlayEntry,
+        block: (String, String, MigrationOverlayEntry) -> Unit,
+    ) {
+        if (entry.objectType.isBlank()) {
+            block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "objectType is required", entry)
+        }
+        if (entry.field.isBlank()) {
+            block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "field is required", entry)
+        } else if (entry.field !in RawTextProvenanceFields.ALL) {
+            block(
+                MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING,
+                "field '${entry.field}' is not one of the four raw-SQL fields " +
+                    "(${RawTextProvenanceFields.ALL.sorted().joinToString(", ")})",
+                entry,
+            )
+        }
+        if (entry.objectPath.isEmpty() || entry.objectPath.any { it.isBlank() }) {
+            block(
+                MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING,
+                "objectPath is required and must not contain blank segments",
+                entry,
+            )
+        }
+        if (entry.field == RawTextProvenanceFields.INDEX_KEY_EXPRESSION && entry.keyPosition == null) {
+            block(
+                MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING,
+                "keyPosition is required for a key-expression entry: the key order of an index is " +
+                    "part of its meaning, so the expression alone does not identify the key",
+                entry,
+            )
+        }
+    }
+
     private fun validateEntryRequiredFields(
         entry: MigrationOverlayEntry,
         context: MigrationOverlayValidationContext,
@@ -457,6 +498,8 @@ object MigrationOverlayValidator {
                     )
                 }
             }
+
+            is RawTextProvenanceOverlayEntry -> validateProvenanceEntry(entry, block)
 
             is RenameMappingOverlayEntry -> {
                 requireEntryNonBlank("objectType", entry.objectType)

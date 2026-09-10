@@ -6,6 +6,11 @@ import dev.dmigrate.core.diff.TargetProjection
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayCanonicalJson
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
+import dev.dmigrate.core.diff.migration.overlay.RawTextProvenance
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.IndexDefinition
@@ -173,6 +178,7 @@ class SchemaMigrateRunner(
         printError = userFacingPrintError,
         lockTimeoutMillis = lockTimeoutMillis,
         postApplyStatusProbe = postApplyStatusProbe,
+        provenanceSink = ::writeProvenance,
     )
 
     private val rollbackComposer = SchemaMigrateRollbackComposer(createdByVersion)
@@ -424,6 +430,44 @@ class SchemaMigrateRunner(
             request, withExecution, report, rollbackArtefact,
             executionTrace, postCompareOutcome, recoveryContext,
         )
+    }
+
+    /**
+     * Schreibt die Herkunft der rohen SQL-Textfelder, wenn der Aufrufer einen
+     * Ort dafuer genannt hat.
+     *
+     * Gebunden an den Fingerabdruck des Schemas, das sie beschreibt — eine
+     * Aussage ueber eine Darstellung, nicht ueber einen Uebergang. Der
+     * Schreibfehler bleibt ein Schreibfehler: er wird gemeldet, macht aber aus
+     * einem geglueckten Lauf keinen gescheiterten, denn das DDL steht bereits.
+     */
+    private fun writeProvenance(
+        request: SchemaMigrateRequest,
+        authored: SchemaDefinition,
+        observed: SchemaDefinition,
+    ) {
+        val path = request.provenanceOutput ?: return
+        val entries = RawTextProvenance.entriesOf(authored, observed)
+        if (entries.isEmpty()) return
+        val document = MigrationOverlay(
+            overlayKind = MigrationOverlayKinds.RAW_TEXT_PROVENANCE,
+            binding = MigrationOverlayBinding.Representation(
+                MigrationFingerprint.compute(authored),
+            ),
+            dialect = request.dialect?.name?.lowercase().orEmpty(),
+            entries = entries,
+            createdAt = clock.instant().toString(),
+            createdByVersion = createdByVersion,
+        ).withComputedHash()
+        try {
+            atomicWriter(path, MigrationOverlayCanonicalJson.encode(document))
+        } catch (e: Exception) {
+            userFacingPrintError(
+                "Provenance overlay could not be written to $path: ${e.message} " +
+                    "(the migration itself succeeded; the next run will plan conservatively without it).",
+                request.target,
+            )
+        }
     }
 
     /**
@@ -703,6 +747,12 @@ data class SchemaMigrateRequest(
     val output: Path? = null,
     val report: Path? = null,
     val rollbackOutput: Path? = null,
+    /**
+     * Wohin die Herkunft der rohen SQL-Textfelder geschrieben wird, wenn der
+     * Lauf sauber durchlief. Ohne Angabe entsteht keine — und der naechste
+     * Lauf plant dann konservativ, statt zu raten.
+     */
+    val provenanceOutput: Path? = null,
     /**
      * F.4 Sub-Slice G.2 (2026-05-19): optional output path for the
      * signed `migration-plan.v1` artifact. When set, the runner

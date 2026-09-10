@@ -85,7 +85,9 @@ data class MigrationOverlay(
          */
         fun requiredBindingFor(overlayKind: String): BindingKind? = when (overlayKind) {
             MigrationOverlayKinds.USING_EXPRESSION, MigrationOverlayKinds.RENAME_MAPPING -> BindingKind.TRANSITION
-            MigrationOverlayKinds.PARTITION_MAPPING -> BindingKind.REPRESENTATION
+            MigrationOverlayKinds.PARTITION_MAPPING,
+            MigrationOverlayKinds.RAW_TEXT_PROVENANCE,
+            -> BindingKind.REPRESENTATION
             else -> null
         }
     }
@@ -118,6 +120,23 @@ object MigrationOverlayKinds {
      * Uebergang — deshalb `Representation`-gebunden.
      */
     const val PARTITION_MAPPING: String = "partition-mapping"
+
+    /**
+     * Die Herkunft der vier rohen SQL-Textfelder: welcher **Autorentext**
+     * zuletzt angewandt wurde, und welche **Katalogform** der Server daraufhin
+     * fuehrte.
+     *
+     * Ohne sie steht bei jedem Vergleich Autorentext gegen Katalogform, und
+     * die stimmen nie ueberein — der Server druckt aus seinem Parsebaum, ein
+     * `--`-Kommentar ist danach spurlos weg. Mit ihr lautet die Frage nicht
+     * mehr „unterscheidet sich der Dateitext von der Katalogform?", sondern
+     * „hat der Autor den Text seit dem letzten Anwenden geaendert?" — eine
+     * Aussage ueber zwei Autorentexte, die den Server nicht braucht.
+     *
+     * Eine Aussage ueber die **Darstellung** eines Schemas, nicht ueber einen
+     * Uebergang — deshalb `Representation`-gebunden.
+     */
+    const val RAW_TEXT_PROVENANCE: String = "raw-text-provenance"
 }
 
 sealed interface MigrationOverlayEntry {
@@ -209,4 +228,60 @@ data class RenameMappingOverlayEntry(
     override val requiredFeatures: Set<String> = emptySet(),
 ) : MigrationOverlayEntry {
     override val kind: String = MigrationOverlayKinds.RENAME_MAPPING
+}
+
+/**
+ * Die Herkunft **eines** rohen SQL-Textfeldes.
+ *
+ * [appliedAuthorText] ist, was in der Schemadatei stand, als zuletzt angewandt
+ * wurde; [observedCatalogText] ist, was der Server daraufhin fuehrte. Beides
+ * zusammen erlaubt zwei Fragen, die je fuer sich beantwortbar sind:
+ *
+ * - **Hat der Autor geaendert?** Der heutige Dateitext gegen
+ *   [appliedAuthorText] — zwei Autorentexte, wortgleich vergleichbar.
+ * - **Hat jemand am Server geaendert?** Die heutige Katalogform gegen
+ *   [observedCatalogText] — zwei Serverformen, ebenso.
+ *
+ * Was NICHT geht und nie ging: Autorentext gegen Katalogform.
+ */
+data class RawTextProvenanceOverlayEntry(
+    override val id: String,
+    /** `view`, `constraint` oder `index`. */
+    val objectType: String,
+    /** Der Pfad des Objekts: `[sicht]`, `[tabelle, constraint]`, `[tabelle, index]`. */
+    val objectPath: List<String>,
+    /** Welches der vier Felder: `query`, `expression`, `where` oder `key-expression`. */
+    val field: String,
+    /**
+     * Die Stellung des Schluessels, wenn [field] `key-expression` ist — die
+     * Reihenfolge der Schluessel eines Index ist bedeutungstragend, ein
+     * Ausdruck allein identifiziert ihn nicht.
+     */
+    val keyPosition: Int? = null,
+    val appliedAuthorText: String,
+    val observedCatalogText: String,
+    override val requiredFeatures: Set<String> = emptySet(),
+) : MigrationOverlayEntry {
+    override val kind: String = MigrationOverlayKinds.RAW_TEXT_PROVENANCE
+}
+
+/**
+ * Die vier Felder, die rohen SQL-Text tragen — als Namen, die Erzeuger und
+ * Leser eines Herkunfts-Overlays teilen. Sie frei zu schreiben hiesse, dass ein
+ * Tippfehler den Eintrag stumm unauffindbar macht.
+ */
+object RawTextProvenanceFields {
+    /** `ViewDefinition.query`. */
+    const val VIEW_QUERY: String = "query"
+
+    /** `ConstraintDefinition.expression` (CHECK). */
+    const val CHECK_EXPRESSION: String = "expression"
+
+    /** `IndexDefinition.where` — das Praedikat eines partiellen Index. */
+    const val INDEX_WHERE: String = "where"
+
+    /** `IndexColumn.expression` — ein Ausdrucks-Schluessel. */
+    const val INDEX_KEY_EXPRESSION: String = "key-expression"
+
+    val ALL: Set<String> = setOf(VIEW_QUERY, CHECK_EXPRESSION, INDEX_WHERE, INDEX_KEY_EXPRESSION)
 }

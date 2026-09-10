@@ -34,6 +34,14 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
         help = "Spatial type handling profile (postgis, native, spatialite, none)")
     val output by option("--output", help = "Up-SQL output file").path()
     val rollbackOutput by option("--rollback-output", help = "Down-SQL output file").path()
+    val provenanceOutput by option(
+        "--provenance-output",
+        help = "Where to write the raw-text-provenance overlay after a clean --execute. It records, per " +
+            "view body / CHECK expression / index predicate and expression key, the author text that was " +
+            "applied and the catalog form the server holds for it. Pass the file back via " +
+            "--migration-overlay on the next run so planning can ask whether the AUTHOR changed the text, " +
+            "instead of comparing author text against catalog form — which never matches.",
+    ).path()
     val report by option("--report", help = "Report output file (required with --execute)").path()
     val planArtefact by option(
         "--plan-artefact",
@@ -123,6 +131,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
                 spatialProfile = spatialProfile,
                 output = output,
                 rollbackOutput = rollbackOutput,
+                provenanceOutput = provenanceOutput,
                 report = report,
                 planArtefact = planArtefact,
                 reportFormat = reportFormat,

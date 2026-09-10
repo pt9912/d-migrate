@@ -14,6 +14,7 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.OverlayText
 import dev.dmigrate.core.diff.migration.overlay.PartitionMappingOverlayEntry
+import dev.dmigrate.core.diff.migration.overlay.RawTextProvenanceOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.RenameMappingOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.UsingExpressionOverlayEntry
 import java.io.InputStream
@@ -125,6 +126,7 @@ class MigrationOverlayJsonCodec {
             MigrationOverlayKinds.USING_EXPRESSION -> parseUsingEntry(node, path)
             MigrationOverlayKinds.RENAME_MAPPING -> parseRenameEntry(node, path)
             MigrationOverlayKinds.PARTITION_MAPPING -> parsePartitionEntry(node, path)
+            MigrationOverlayKinds.RAW_TEXT_PROVENANCE -> parseProvenanceEntry(node, path)
             else -> decode(
                 MigrationOverlayDiagnostics.UNKNOWN_ENTRY_KIND,
                 "$path.kind",
@@ -183,6 +185,38 @@ class MigrationOverlayJsonCodec {
             },
             rangeUpperBound = node.optionalText("rangeUpperBound", path),
             requiredFeatures = parseRequiredFeatures(node.get("requiredFeatures"), "$path.requiredFeatures"),
+        )
+    }
+
+    private fun parseProvenanceEntry(node: JsonNode, path: String): RawTextProvenanceOverlayEntry {
+        requireOnlyFields(node, PROVENANCE_ENTRY_FIELDS, path)
+        return RawTextProvenanceOverlayEntry(
+            id = node.requiredText("id", path),
+            objectType = node.requiredText("objectType", path),
+            objectPath = node.requiredArray("objectPath", path).mapIndexed { index, segment ->
+                if (!segment.isTextual) {
+                    decode(
+                        MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH,
+                        "$path.objectPath[$index]",
+                        "Expected string",
+                    )
+                }
+                segment.asText()
+            },
+            field = node.requiredText("field", path),
+            // Die Stellung steht als Zeichenkette auf dem Draht, wie jede
+            // andere Zahl im kanonischen JSON auch: die Form ist ueber alle
+            // Eintragsarten dieselbe, und der Hash haengt daran.
+            keyPosition = node.optionalText("keyPosition", path)?.let { raw ->
+                raw.toIntOrNull() ?: decode(
+                    MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH,
+                    "$path.keyPosition",
+                    "Expected an integer, got '$raw'",
+                )
+            },
+            appliedAuthorText = node.requiredText("appliedAuthorText", path),
+            observedCatalogText = node.requiredText("observedCatalogText", path),
+            requiredFeatures = parseRequiredFeatures(node.get("requiredFeatures"), path),
         )
     }
 
@@ -360,6 +394,17 @@ class MigrationOverlayJsonCodec {
             "toName",
             "fromStructureFingerprint",
             "toStructureFingerprint",
+            "requiredFeatures",
+        )
+        private val PROVENANCE_ENTRY_FIELDS = setOf(
+            "kind",
+            "id",
+            "objectType",
+            "objectPath",
+            "field",
+            "keyPosition",
+            "appliedAuthorText",
+            "observedCatalogText",
             "requiredFeatures",
         )
         private val TEXT_FIELDS = setOf("value", "secret")

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`schema migrate --execute --provenance-output <datei>`** schreibt nach einem
+  sauberen Lauf ein `raw-text-provenance`-Overlay: je Sichten-Rumpf,
+  CHECK-Ausdruck, Index-Prädikat und Ausdrucks-Schlüssel den **angewandten
+  Autorentext** und die **Katalogform**, die der Server daraufhin führt. Genau
+  dieses Paar lässt sich später nicht mehr herstellen — der Server druckt aus
+  seinem Parsebaum, ein `--`-Kommentar ist danach spurlos weg. Das Dokument ist
+  darstellungsgebunden und wird beim nächsten Lauf über `--migration-overlay`
+  zurückgegeben. Es entsteht nur bei sauberem Post-Compare: vorher steht nicht
+  fest, dass das Paar zusammengehört.
+
 - **`schema migrate --pg-concurrent-indexes`** legt und baut PostgreSQL-Indizes
   mit `CONCURRENTLY` ab — die Tabelle bleibt beim Indexbau schreibbar. Die
   Anweisung läuft außerhalb jeder Transaktion; ein abgebrochener Lauf

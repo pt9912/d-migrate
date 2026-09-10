@@ -181,10 +181,13 @@ unterlaufen.
    `Transition`/`Representation`, `migration-overlay.v2`; ein
    Uebergangs-Dokument bleibt v1 und unveraendert lesbar. Die Vorbedingung
    steht damit; sie kam ohnehin auch `partition-mapping` zugute.
-2. **Herkunfts-Overlay** `raw-text-provenance`, `Representation`-gebunden: je
-   Objekt und Feld der zuletzt **angewandte Autorentext** und die daraufhin
-   beobachtete **Katalogform**. Erzeugt von `migrate --execute`, gelesen ueber
-   `--migration-overlay`.
+2. ~~**Herkunfts-Overlay** `raw-text-provenance`, `Representation`-gebunden~~ —
+   **gebaut.** Je Objekt und Feld der zuletzt angewandte Autorentext und die
+   daraufhin beobachtete Katalogform. Erzeugt von
+   `migrate --execute --provenance-output`, und zwar **nur nach sauberem
+   Post-Compare**: vorher steht nicht fest, dass das Paar zusammengehoert.
+   Gelesen wird es ueber `--migration-overlay` — was heute nur heisst, dass es
+   angenommen und geprueft wird; ausgewertet wird es erst mit Punkt 3.
 3. **Vergleich aus der Herkunft** in allen **drei** Projektionen zugleich
    (Comparator, `MigrationFingerprint`, `CanonicalPayload`) — Punkt 5 oben.
    Fingerabdruck-Anhebung geht mit.

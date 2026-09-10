@@ -663,6 +663,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--generate-rollback` | Nein | Boolean | Down-Plan erzeugen und prüfen. Bei Routine-Replace (`ReplaceFunction`/`ReplaceProcedure`) blockt der Renderer mit `ROUTINE_DOWN_BODY_UNKNOWN` und `primaryBlockedReason = ROLLBACK_NOT_POSSIBLE`, wenn der alte Routine-Body nicht vollstaendig bekannt ist. Bei Datei-zu-DB darf der Reverse-Pfad alte Bodies aus der Live-DB lesen; bei Datei-zu-Datei muss der Operator den Vorbody im Schema-File mitliefern oder ohne `--generate-rollback` migrieren. Verwandte Render-Blocker ohne `--generate-rollback`-Bezug: `ROUTINE_BODY_UNKNOWN` (Up-Body fehlt), `ROUTINE_REPLACE_UP_BODY_UNKNOWN` (Replace-Up-Body fehlt), `ROUTINE_BODY_DOLLAR_TAG_COLLISION` (Body enthaelt den Renderer-Dollar-Tag `$body$`) |
 | `--plan-only` | Nein | Boolean | Nur Plan-/Risiko-Report, kein SQL; in dieser Kombination ist `--rollback-output` unzulässig |
 | `--report` | Bedingt | Pfad | Strukturierter Plan-/Risiko-Report; **Pflicht bei `--execute`** |
+| `--provenance-output` | Nein | Pfad | Wohin nach einem sauberen `--execute` das `raw-text-provenance`-Overlay geschrieben wird: je Sichten-Rumpf, CHECK-Ausdruck, Index-Praedikat und Ausdrucks-Schluessel der **angewandte Autorentext** und die **Katalogform**, die der Server daraufhin fuehrt. Entsteht nur bei sauberem Post-Compare — vorher gehoert das Paar nicht zusammen. Zurueckgegeben wird es beim naechsten Lauf ueber `--migration-overlay`. Ein Schreibfehler wird gemeldet, macht aus dem geglueckten Lauf aber keinen gescheiterten: das DDL steht bereits. |
 | `--plan-artefact` | Nein | Pfad | Signierter `migration-plan.v1`-JSON wird atomar an diesen Pfad geschrieben (additiv zu `--report`/`--output`/`--rollback-output`). Der Artefakt-Vertrag ist im Abschnitt **migration-plan.v1 Artefakt** unten beschrieben. Wird auch im `--plan-only`- und Exit-8-Pfad emittiert, sofern der Plan ueberhaupt berechnet werden konnte. Schreibfehler beendet mit Exit 7. |
 | `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen DB-Target ausführen; nur mit DB-Target zulässig |
 | `--lock-timeout-ms` | Nein | Millisekunden | Atomic-Preserve Lock-Acquire-Budget fuer den `--execute`-Pfad. Default: `5000`. Gueltiger Bereich: `10` bis `60000`; Werte ausserhalb des Bereichs beenden den Lauf vor der Pipeline mit Exit `2` |
@@ -1210,6 +1211,37 @@ Regeln:
   Abdruck des vorgelegten Dokuments im Meldungstext. Er ist eine Inhaltssumme,
   kein Geheimnis — wer die Datei hat, kann ihn ausrechnen; ohne ihn waere ein
   von Hand geschriebenes Overlay nicht abzugeben.
+
+### Overlay-Art `raw-text-provenance`
+
+Traegt die **Herkunft** der vier Felder, die rohen SQL-Text fuehren: welcher
+Autorentext zuletzt angewandt wurde, und welche Katalogform der Server
+daraufhin fuehrt.
+
+Der Grund ist, dass die beiden nie uebereinstimmen und die eine aus der anderen
+nicht rekonstruierbar ist: der Server druckt den Ausdruck aus seinem Parsebaum,
+ein `--`-Kommentar ist danach spurlos weg. Mit der Herkunft lautet die Frage
+beim Planen nicht mehr „unterscheidet sich der Dateitext von der Katalogform?"
+— das tut er immer —, sondern „hat der **Autor** den Text seit dem letzten
+Anwenden geaendert?". Das ist eine Aussage ueber zwei Autorentexte und braucht
+den Server nicht.
+
+| Feld | Pflicht | Inhalt |
+| --- | --- | --- |
+| `objectType` | ja | `view`, `constraint` oder `index` |
+| `objectPath` | ja | Der Weg zum Objekt: `[sicht]`, `[tabelle, constraint]`, `[tabelle, index]` |
+| `field` | ja | `query`, `expression`, `where` oder `key-expression` |
+| `keyPosition` | bedingt | Die 1-basierte Stellung des Schluessels; **Pflicht** bei `key-expression`, weil die Reihenfolge der Schluessel eines Index bedeutungstragend ist |
+| `appliedAuthorText` | ja | Was in der Schemadatei stand, als zuletzt angewandt wurde (darf leer sein) |
+| `observedCatalogText` | ja | Was der Server daraufhin fuehrt (darf leer sein) |
+
+**Darstellungs**-gebunden: die Herkunft beschreibt ein Schema, keinen Uebergang.
+
+Erzeugt wird das Dokument von `schema migrate --execute --provenance-output`,
+und **nur nach einem sauberen Post-Compare** — vorher steht nicht fest, dass
+das Paar zusammengehoert. Gelesen wird es beim naechsten Lauf ueber
+`--migration-overlay`. Ohne Herkunft wird konservativ geplant: die Aenderung
+wird ausgefuehrt, auch wenn sie vielleicht unnoetig ist.
 
 ### Overlay-Art `partition-mapping`
 

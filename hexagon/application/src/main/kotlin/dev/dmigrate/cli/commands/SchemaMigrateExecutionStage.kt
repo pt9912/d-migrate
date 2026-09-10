@@ -37,6 +37,17 @@ typealias PostApplyStatusProbeFn =
  * Katalogform) zwei vergleichbare (Katalogform gegen Katalogform) —
  * [ADR 0053](../../../../../../../../docs/adr/0053-vergleich-rohen-sql-texts.md).
  */
+/**
+ * Nimmt die Herkunft eines geglueckten Laufs entgegen: den Autorentext, der
+ * angewandt wurde, und die Katalogform, die der Server daraufhin fuehrt.
+ *
+ * Als Naht und nicht als Schreibvorgang, weil nur diese Stelle beide Schemata
+ * zugleich hat — der Post-Compare liest das Ziel unmittelbar nach dem Anwenden
+ * zurueck, und danach ist das Paar nicht mehr herstellbar.
+ */
+internal typealias ProvenanceSink =
+    (request: SchemaMigrateRequest, authored: SchemaDefinition, observed: SchemaDefinition) -> Unit
+
 internal data class RawSqlBaseline(
     val observedBeforeRun: SchemaDefinition,
     val touchedObjects: Set<String>,
@@ -62,6 +73,7 @@ internal class SchemaMigrateExecutionStage(
     private val printError: (message: String, source: String) -> Unit,
     private val lockTimeoutMillis: Long = DEFAULT_LOCK_TIMEOUT_MILLIS,
     private val postApplyStatusProbe: PostApplyStatusProbeFn? = null,
+    private val provenanceSink: ProvenanceSink? = null,
 ) {
 
     companion object {
@@ -291,6 +303,10 @@ internal class SchemaMigrateExecutionStage(
         )
         rawSqlHandChange(request, rawSqlBaseline, postNormalized.schema)?.let { return it }
         return if (observed == desiredFp) {
+            // Nur bei sauberem Vergleich: erst dann steht fest, dass das Ziel
+            // dem Soll entspricht und das Paar (Autorentext, Katalogform)
+            // wirklich zusammengehoert.
+            provenanceSink?.invoke(request, desired, postNormalized.schema)
             PostCompareOutcome.Clean(observed)
         } else {
             printError(

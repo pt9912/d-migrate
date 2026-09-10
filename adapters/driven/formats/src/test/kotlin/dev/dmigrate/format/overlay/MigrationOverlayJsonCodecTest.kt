@@ -8,6 +8,8 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.OverlayText
 import dev.dmigrate.core.diff.migration.overlay.PartitionMappingOverlayEntry
+import dev.dmigrate.core.diff.migration.overlay.RawTextProvenanceFields
+import dev.dmigrate.core.diff.migration.overlay.RawTextProvenanceOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.RenameMappingOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.UsingExpressionOverlayEntry
 import io.kotest.assertions.throwables.shouldThrow
@@ -159,6 +161,33 @@ class MigrationOverlayJsonCodecTest : FunSpec({
         ex.code shouldBe MigrationOverlayDiagnostics.UNKNOWN_FORMAT_VERSION
         ex.path shouldBe "$.schemaFingerprint"
     }
+    test("ein Herkunfts-Overlay uebersteht Schreiben und Lesen unveraendert") {
+        val written = ByteArrayOutputStream()
+        codec.write(written, signedProvenanceOverlay())
+
+        val read = codec.read(written.toByteArray().inputStream())
+
+        read shouldBe signedProvenanceOverlay()
+        read.formatVersion shouldBe MigrationOverlay.FORMAT_VERSION_V2
+        read.binding shouldBe MigrationOverlayBinding.Representation("schema-fp")
+    }
+
+    test("ein Kommentar im Autorentext ueberlebt das Dokument — er ist der Grund fuer die Herkunft") {
+        // Genau dieser Text ist aus der Katalogform nicht rekonstruierbar:
+        // PostgreSQL druckt den Ausdruck aus seinem Parsebaum, der Kommentar
+        // ist danach spurlos weg. Das Dokument muss ihn deshalb tragen.
+        val written = ByteArrayOutputStream()
+        codec.write(written, signedProvenanceOverlay())
+
+        val entry = codec.read(written.toByteArray().inputStream())
+            .entries
+            .filterIsInstance<RawTextProvenanceOverlayEntry>()
+            .single { it.field == RawTextProvenanceFields.CHECK_EXPRESSION }
+
+        entry.appliedAuthorText shouldBe "status = 'A'   -- nur aktive\nAND deleted = false"
+        entry.observedCatalogText shouldBe "(((status = 'A'::text) AND (deleted = false)))"
+    }
+
 })
 
 private fun signedPartitionOverlay(): MigrationOverlay =
@@ -245,5 +274,33 @@ private fun signedRenameOverlay(): MigrationOverlay =
             ),
         ),
         createdAt = "2026-05-12T10:15:30Z",
+        createdByVersion = "d-migrate-test",
+    ).withComputedHash()
+
+private fun signedProvenanceOverlay(): MigrationOverlay =
+    MigrationOverlay(
+        overlayKind = MigrationOverlayKinds.RAW_TEXT_PROVENANCE,
+        binding = MigrationOverlayBinding.Representation("schema-fp"),
+        dialect = "postgresql",
+        entries = listOf(
+            RawTextProvenanceOverlayEntry(
+                id = "chk-status",
+                objectType = "constraint",
+                objectPath = listOf("orders", "chk_status"),
+                field = RawTextProvenanceFields.CHECK_EXPRESSION,
+                appliedAuthorText = "status = 'A'   -- nur aktive\nAND deleted = false",
+                observedCatalogText = "(((status = 'A'::text) AND (deleted = false)))",
+            ),
+            RawTextProvenanceOverlayEntry(
+                id = "idx-key",
+                objectType = "index",
+                objectPath = listOf("customers", "idx_upper_nm"),
+                field = RawTextProvenanceFields.INDEX_KEY_EXPRESSION,
+                keyPosition = 1,
+                appliedAuthorText = "upper(nm)",
+                observedCatalogText = "upper(nm::text)",
+            ),
+        ),
+        createdAt = "2026-09-08T10:00:00Z",
         createdByVersion = "d-migrate-test",
     ).withComputedHash()
