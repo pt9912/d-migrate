@@ -224,6 +224,37 @@ Das ist **aelter als dieser Slice** und trifft auch `identity`; es faellt hier
 nur auf, weil der Slice die Generation erstmals zu etwas macht, das sich
 aendern kann.
 
+## Gemessen: welcher Server den Ausdruck in place aendern kann (2026-09-10)
+
+Alle fuenf gefragt, statt der Doku zu glauben. Jeweils mit einem Index auf der
+berechneten Spalte **und** einer Sicht darauf — genau die Faelle, an denen der
+Ausweichweg scheitert.
+
+| Server | Weg in place | was gemessen wurde |
+| --- | --- | --- |
+| PostgreSQL 17 | `ALTER COLUMN … SET EXPRESSION AS (…)` | Sicht **und** Index ueberleben; Tabelle wird neu geschrieben |
+| PostgreSQL 16 | **keiner** | nur `DROP`+`ADD`: Index still weg, und der `DROP` **scheitert** bei abhaengiger Sicht |
+| MySQL 8.0 | `MODIFY COLUMN … GENERATED ALWAYS AS (…)` | Sicht **und** Index ueberleben, Wert neu berechnet; `ALGORITHM=INSTANT` wird abgelehnt |
+| SQLite 3.51 | **keiner** (`ALTER COLUMN` ist ein Syntaxfehler) | `DROP COLUMN` geht; der Tabellen-Neubau ist dort ohnehin d-migrates Weg und schreibt Indizes mit |
+| SQL Server 2022 | **keiner** (`ALTER COLUMN … AS (…)` ist ein Syntaxfehler) | der `DROP` **scheitert laut**, solange ein Index auf der Spalte liegt — anders als PostgreSQL, das ihn stillschweigend mitnimmt |
+| Oracle 23, `VIRTUAL` | `MODIFY (… GENERATED ALWAYS AS (…) VIRTUAL)` | **`ORA-54022`**, sobald ein Index auf der Spalte liegt |
+| Oracle 23, `MATERIALIZED` | **keiner** | **`ORA-54060`**: „A materialized expression column cannot be modified" |
+
+Zwei Dinge, die daraus folgen:
+
+- **Es gibt keinen Dialekt-uebergreifenden Weg.** Zwei Server koennen es sauber
+  (PG ab 17, MySQL), zwei gar nicht (SQL Server, Oracle-materialisiert), und
+  zwei nur unter Bedingungen (Oracle-virtuell ohne Index, PG 16 nur ueber
+  `DROP`+`ADD`). Ein `AlterColumnGeneration` muss das je Dialekt und je
+  Serverversion entscheiden — dieselbe Bauweise wie bei Oracles
+  `DROP … IF EXISTS`.
+- **Wo es scheitert, scheitert es meist laut.** Ausser bei PostgreSQL 16, wo der
+  `DROP` den Index stillschweigend mitnimmt. Das ist der einzige Fall, in dem
+  ein automatischer Weg etwas verloere, ohne es zu sagen.
+
+Nicht isoliert gemessen: ob bei Oracle eine **Sicht allein** (ohne Index) den
+`MODIFY` ebenfalls blockt — der Index-Fehler kam zuerst.
+
 ## Die Gabelung, die daran haengt
 
 Geschlossen ist das jetzt an beiden Enden — nicht durch eine Operation, sondern
