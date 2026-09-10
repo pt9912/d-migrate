@@ -856,8 +856,16 @@ Report-Felder für Materialized Views:
   `operationId`, `action`, `path`, `dialect`, `status`,
   `stalenessAfterUp`, `refreshSteps`, `locking`, `rollback` und das
   optionale `primaryBlockedReason` (`null` bei `status=READY`).
-- PostgreSQL Create/Drop sind diff-basiert renderbar; das Vertrags-Mapping
-  läuft wie folgt:
+- Materialized Views rendern **PostgreSQL und Oracle**; MySQL, SQLite und
+  SQL Server blocken (SQL Server kennt keine, der Generate-Pfad degradiert
+  dort zur gewöhnlichen Sicht mit `W103`). Welcher Dialekt was kann,
+  entscheidet seine Capability, nicht eine Liste im Bericht.
+- `rollback` sagt, ob sich die **Definition** wiederherstellen lässt — nie,
+  ob die materialisierten Zeilen zurückkommen. Sie kommen in keiner Richtung
+  zurück: `CREATE MATERIALIZED VIEW` baut sie neu auf.
+  `SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED` heißt deshalb wörtlich,
+  was es sagt: die Quellabfrage ist da, ein Refresh bleibt nötig.
+- Das Vertrags-Mapping läuft wie folgt:
 
   | Op + Renderer-Ausgang | `status` | `stalenessAfterUp` | `refreshSteps` | `locking` | `rollback` |
   |---|---|---|---|---|---|
@@ -909,7 +917,14 @@ Report-Felder für `--execute`:
   `statementEndExclusive`, `transactionScope` und `transactionBoundary`.
   Statement-Indizes sind nullbasiert und end-exklusiv.
 - `transactionBoundary` ist `BEFORE`, `INSIDE`, `AFTER` oder `NONE` relativ
-  zur effektiven Runner- oder Stream-Transaktion.
+  zur effektiven Runner- oder Stream-Transaktion. `INSIDE` sagt zu, dass die
+  Gruppe mit dieser Transaktion zurückfällt, und gilt deshalb **nur** für
+  Anweisungen, deren `transactionBehavior` `FULLY_TRANSACTIONAL` ist. Wo der
+  Dialekt implizit committet (`IMPLICIT_COMMIT` — MySQL- und Oracle-DDL) oder
+  das Verhalten nicht erklärt ist (`UNKNOWN`), steht `NONE`: die Gruppe steht
+  in keiner Transaktion, die sie zurücknehmen könnte. `NONE` heißt damit nicht
+  „keine Transaktion vorhanden" — welcher Fall vorliegt, sagt das
+  danebenstehende `transactionScope`.
 - Nach Execute-Fehlern enthaelt `execution.recoverability` eine konservative
   Einschaetzung: `FULL_ROLLBACK_CONFIRMED`, `ROLLBACK_ATTEMPTED`,
   `PARTIAL_STATE_POSSIBLE` oder `UNKNOWN`. Bei erfolgreichem Execute ist das

@@ -64,6 +64,52 @@ class MigrationExecutionStatusBuilderTest : FunSpec({
             listOf(0 to 1, 1 to 4, 4 to 5)
     }
 
+    test("ein implizites Commit steht in keiner Transaktion — auch wenn der Lauf eine fuehrt") {
+        // MySQL und Oracle committen vor und nach jeder DDL-Anweisung. `INSIDE`
+        // haette dort eine Ruecknahme behauptet, die es nicht gibt: scheitert
+        // die zweite Anweisung, steht die erste.
+        val groups = MigrationExecutionStatusBuilder.statementGroups(
+            listOf(
+                stmt("DROP VIEW v;", "op-1", TransactionScope.RUNNER_OWNED, TransactionBehavior.IMPLICIT_COMMIT),
+                stmt(
+                    "CREATE VIEW v AS SELECT 1;", "op-1",
+                    TransactionScope.RUNNER_OWNED, TransactionBehavior.IMPLICIT_COMMIT,
+                ),
+            ),
+        )
+
+        groups.single().transactionBoundary shouldBe TransactionBoundary.NONE
+        // Der Geltungsbereich bleibt, was er war — er sagt, WER die Transaktion
+        // fuehrt, nicht ob die Anweisung darin geschuetzt ist.
+        groups.single().transactionScope shouldBe TransactionScope.RUNNER_OWNED
+    }
+
+    test("ein nicht erklaertes Verhalten behauptet keine Ruecknahme") {
+        // `TransactionBehavior.UNKNOWN` traegt die Regel selbst: der Bericht
+        // darf dafuer keine vollstaendige Ruecknahme behaupten.
+        val groups = MigrationExecutionStatusBuilder.statementGroups(
+            listOf(
+                stmt(
+                    "ALTER TABLE a ADD COLUMN c INT;", "op-1",
+                    TransactionScope.RUNNER_OWNED, TransactionBehavior.UNKNOWN,
+                ),
+            ),
+        )
+
+        groups.single().transactionBoundary shouldBe TransactionBoundary.NONE
+    }
+
+    test("nur ein erklaert transaktionales Statement steht INSIDE") {
+        val groups = MigrationExecutionStatusBuilder.statementGroups(
+            listOf(
+                stmt("ALTER TABLE a ADD COLUMN c INT;", "op-1", TransactionScope.RUNNER_OWNED,
+                    TransactionBehavior.FULLY_TRANSACTIONAL),
+            ),
+        )
+
+        groups.single().transactionBoundary shouldBe TransactionBoundary.INSIDE
+    }
+
     test("§G.3 recoverability derives from executor observations") {
         MigrationExecutionStatusBuilder.recoverability(
             ExecutionTrace(

@@ -228,6 +228,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Der Migrationsbericht behauptete für MySQL und Oracle eine Rücknahme, die
+  es nicht gibt.** `execution.statementGroups[].transactionBoundary` meldete
+  für jede Anweisung im Geltungsbereich des Laufs `INSIDE` — also „fällt mit
+  der Transaktion zurück" — unabhängig davon, was der Dialekt zusagt. MySQL-
+  und Oracle-DDL committet vor und nach jeder Anweisung; scheitert die zweite,
+  steht die erste. `INSIDE` gilt jetzt nur noch für Anweisungen mit
+  `transactionBehavior = FULLY_TRANSACTIONAL`; implizites Commit und nicht
+  erklärtes Verhalten melden `NONE`. Der Vertragstyp trug die Regel bereits
+  („The report MUST NOT claim full rollback for `UNKNOWN`"). Ein neuer
+  Enum-Wert war nicht nötig — welcher Fall vorliegt, sagt das danebenstehende
+  `transactionScope`.
+
 - **Ein CHECK mit Funktionsaufruf oder Cast wurde als Schemafehler abgelehnt.**
   Die Prüfung auf unbekannte Spaltenbezüge (`E012`) zog alle Wörter aus dem
   Ausdruck und hielt für einen Spaltenbezug, was nicht in einer kurzen

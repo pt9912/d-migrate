@@ -78,21 +78,50 @@ internal object MigrationExecutionStatusBuilder {
         }
     }
 
+    /**
+     * Wo die Gruppe zur wirksamen Transaktion steht.
+     *
+     * Der Geltungsbereich sagt, WER die Transaktion fuehrt; ob die Anweisung
+     * darin auch geschuetzt ist, sagt erst ihr Verhalten. Beides
+     * gleichzusetzen wuerde fuer jeden Dialekt mit implizitem Commit — MySQL
+     * und Oracle — eine Ruecknahme behaupten, die es nicht gibt: dort
+     * committet jede DDL-Anweisung vor und nach sich selbst.
+     */
     private fun transactionBoundary(
         statement: MigrationDdlStatement,
         streamTxSeen: Boolean,
-    ): TransactionBoundary = when (statement.transactionScope) {
-        TransactionScope.RUNNER_OWNED -> TransactionBoundary.INSIDE
-        TransactionScope.NO_TRANSACTION -> TransactionBoundary.NONE
-        TransactionScope.STREAM_OWNED -> when (statement.hints.transactionBehavior) {
-            TransactionBehavior.NOT_TRANSACTIONAL -> if (streamTxSeen) {
-                TransactionBoundary.AFTER
-            } else {
-                TransactionBoundary.BEFORE
+    ): TransactionBoundary {
+        val behavior = statement.hints.transactionBehavior
+        return when (statement.transactionScope) {
+            TransactionScope.RUNNER_OWNED -> insideOnlyIfProtected(behavior)
+            TransactionScope.NO_TRANSACTION -> TransactionBoundary.NONE
+            TransactionScope.STREAM_OWNED -> when (behavior) {
+                TransactionBehavior.NOT_TRANSACTIONAL -> if (streamTxSeen) {
+                    TransactionBoundary.AFTER
+                } else {
+                    TransactionBoundary.BEFORE
+                }
+                else -> insideOnlyIfProtected(behavior)
             }
-            else -> TransactionBoundary.INSIDE
         }
     }
+
+    /**
+     * `INSIDE` sagt: diese Gruppe steht in der wirksamen Transaktion und
+     * faellt mit ihr zurueck. Behaupten darf das nur, wer es weiss —
+     * [TransactionBehavior.UNKNOWN] traegt die Regel selbst („The report MUST
+     * NOT claim full rollback"), und ein implizites Commit widerlegt sie.
+     *
+     * `NONE` heisst hier nicht „keine Transaktion vorhanden", sondern „diese
+     * Gruppe steht in keiner". Welcher Fall vorliegt, sagt das
+     * danebenstehende `transactionScope`.
+     */
+    private fun insideOnlyIfProtected(behavior: TransactionBehavior): TransactionBoundary =
+        if (behavior == TransactionBehavior.FULLY_TRANSACTIONAL) {
+            TransactionBoundary.INSIDE
+        } else {
+            TransactionBoundary.NONE
+        }
 
     private fun opensStreamTransaction(statement: MigrationDdlStatement): Boolean =
         statement.transactionScope == TransactionScope.STREAM_OWNED &&

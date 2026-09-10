@@ -1430,7 +1430,7 @@ womit **beide** D.3-Oracle-Zellen gepinnt sind statt einer gepinnten und einer
 gecarvten.
 
 Offen geblieben und ticketiert:
-[`materialized-view-refresh-contract.md`](../open/materialized-view-refresh-contract.md).
+[`materialized-view-refresh-contract.md`](../done/materialized-view-refresh-contract.md).
 
 ### Was offen bleibt
 
