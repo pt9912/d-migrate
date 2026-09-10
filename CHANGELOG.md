@@ -261,6 +261,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ein wiederholter `schema migrate --execute` löste die Werte-Durchsetzung
+  einer Enum-Spalte auf SQL Server wieder auf.** T-SQL hat keinen Enum-Typ: der
+  Wertevorrat landet als `NVARCHAR` plus benannter CHECK in der Datenbank, und
+  der Reverse liefert ihn als eigenständigen Constraint zurück — das Soll führt
+  ihn am Spaltentyp. Der Planer sah darin zwei verschiedene Dinge und plante
+  beim **zweiten** Lauf gegen unverändertes Soll das Lösen genau des CHECKs, den
+  der erste angelegt hatte; danach meldete der Post-Compare Drift (Exit 5).
+  Aus demselben Grund migrierte eine **geänderte** Werteliste gar nicht: der
+  alte CHECK wurde gelöst, ein neuer nicht angelegt.
+
+  Ein CHECK, der den Wertevorrat einer Spalte aufzählt, zählt jetzt auch im
+  zielbewussten Vergleich zur Spalte, und der Wertevorrat wird als eigene
+  Dimension verglichen ([ADR 0055](docs/adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md)).
+  Ein zweiter Lauf plant damit null Operationen, eine geänderte Werteliste wird
+  angewendet. **Der Fingerabdruck springt nicht** — gespeicherte
+  Plan-Artefakte und Overlays behalten ihre Gültigkeit. `schema compare` bleibt
+  streng.
+
 - **`schema migrate --execute` meldete nach jedem Lauf Drift, sobald eine
   Sicht, ein CHECK oder ein Ausdrucks-Index im Spiel war.** Der Post-Compare
   verglich den Autorentext aus der Schemadatei gegen die Katalogform des

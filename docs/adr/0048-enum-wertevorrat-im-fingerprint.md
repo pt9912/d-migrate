@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0055
 date: 2026-08-23
 decision-makers: pt9912
 consulted: docs/planning/done/fingerprint-v8-enum-check-projection.md, docs/planning/open/enum-inline-check-fidelity.md

@@ -48,6 +48,51 @@ class RawSqlTextProjectionTest : FunSpec({
         RawSqlTextProjection.blank(authored) shouldBe RawSqlTextProjection.blank(catalog)
     }
 
+    test("ein CHECK, der einen Wertevorrat aufzaehlt, wird nicht ausgeblendet sondern kanonisiert") {
+        // Ausgeblendet naehme er dem Fingerabdruck die Angabe, aus der er ein
+        // authored `enum` und seine zurueckgelesene Gestalt zur Deckung bringt.
+        val schema = SchemaDefinition(
+            name = "s", version = "1",
+            tables = mapOf("t" to TableDefinition(
+                columns = mapOf("mood" to ColumnDefinition(NeutralType.Text(5))),
+                constraints = listOf(
+                    ConstraintDefinition(name = "c", type = ConstraintType.CHECK, expression = "mood IN ('red','green')"),
+                ),
+            )),
+        )
+
+        val projected = RawSqlTextProjection.blank(schema).tables.getValue("t").constraints.single()
+
+        projected.expression shouldNotBe RawSqlTextProjection.PLACEHOLDER
+        projected.expression shouldBe "mood IN ('green', 'red')"
+    }
+
+    test("die IN-Liste und die OR-Kette desselben Wertevorrats fallen auf dieselbe Form") {
+        // SQL Server liefert die Liste als OR-Kette zurueck, mit eigener
+        // Reihenfolge — geschrieben wurde sie als `IN`.
+        fun withCheck(expression: String) = SchemaDefinition(
+            name = "s", version = "1",
+            tables = mapOf("t" to TableDefinition(
+                columns = mapOf("mood" to ColumnDefinition(NeutralType.Text(5))),
+                constraints = listOf(
+                    ConstraintDefinition(name = "c", type = ConstraintType.CHECK, expression = expression),
+                ),
+            )),
+        )
+
+        RawSqlTextProjection.blank(withCheck("mood IN ('red', 'green')")) shouldBe
+            RawSqlTextProjection.blank(withCheck("mood='green' OR mood='red'"))
+    }
+
+    test("ein gewoehnlicher CHECK bleibt ausgeblendet") {
+        val schema = schemaWith(
+            constraints = listOf(ConstraintDefinition(name = "c", type = ConstraintType.CHECK, expression = "a >= 18")),
+        )
+
+        RawSqlTextProjection.blank(schema).tables.getValue("t").constraints.single()
+            .expression shouldBe RawSqlTextProjection.PLACEHOLDER
+    }
+
     test("zwei Schreibweisen desselben Sichten-Rumpfs ebenso") {
         val authored = schemaWith(views = mapOf("v" to ViewDefinition(query = "SELECT a FROM t")))
         val catalog = schemaWith(views = mapOf("v" to ViewDefinition(query = " SELECT\n  a\n FROM t;")))

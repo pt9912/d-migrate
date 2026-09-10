@@ -1,4 +1,9 @@
-package dev.dmigrate.core.diff.migration
+package dev.dmigrate.core.diff
+
+import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.TableDefinition
 
 /**
  * Erkennt einen CHECK, der den erlaubten Wertevorrat **einer** Spalte
@@ -28,6 +33,70 @@ package dev.dmigrate.core.diff.migration
 internal object EnumCheckProjection {
 
     /**
+     * Der Wertevorrat je Spalte, so wie die Spaltentypen der Tabelle ihn
+     * fuehren. Sortiert, weil er hier nur zum Abgleich zweier Darstellungen
+     * dient — der Typ selbst behaelt seine Reihenfolge, MySQLs nativer `ENUM`
+     * hat Ordinal-Semantik.
+     */
+    fun declaredVocabulary(table: TableDefinition): Map<String, List<String>> =
+        table.columns.mapNotNull { (colName, col) ->
+            (col.type as? NeutralType.Enum)?.values?.let { colName to it.sorted() }
+        }.toMap()
+
+    /**
+     * Welche CHECK-Constraints der Tabelle als Wertevorrat gelten, und fuer
+     * welche Spalte mit welchen Werten.
+     *
+     * **Vor** dem Falten bestimmt, damit das Ergebnis nicht von der
+     * Reihenfolge in `table.constraints` abhaengt. Zwei Faelle bleiben
+     * ausdruecklich ungefaltet:
+     *
+     * - **Mehr als ein passender CHECK auf derselben Spalte.** Dann ist nicht
+     *   entscheidbar, welcher den Wertevorrat beschreibt — und zwei Constraints
+     *   in eine Projektion zu falten liesse einen davon spurlos verschwinden,
+     *   samt dem Unterschied, den er ausmacht.
+     * - **Ein CHECK, der dem Spaltentyp widerspricht.** Ein handgeschriebener
+     *   CHECK mit anderen Werten als das authored `enum` bleibt sichtbar.
+     */
+    fun foldable(table: TableDefinition): Map<ConstraintDefinition, Pair<String, List<String>>> {
+        val declared = declaredVocabulary(table)
+        val candidates = mutableListOf<Pair<ConstraintDefinition, Pair<String, List<String>>>>()
+        for (c in table.constraints) {
+            if (c.type != ConstraintType.CHECK) continue
+            for (colName in table.columns.keys) {
+                val values = valuesOf(c.expression, colName)?.sorted() ?: continue
+                candidates += c to (colName to values)
+                break
+            }
+        }
+        val perColumn = candidates.groupBy { it.second.first }
+        return candidates
+            .filter { (_, hit) ->
+                val (colName, values) = hit
+                val fromType = declared[colName]
+                perColumn.getValue(colName).size == 1 && (fromType == null || fromType == values)
+            }
+            .toMap()
+    }
+
+    /**
+     * Der Wertevorrat je Spalte, gleich in welcher Darstellung er vorliegt —
+     * am Spaltentyp oder als eigener CHECK.
+     *
+     * Das ist die gemeinsame Form, auf die beide Seiten eines Vergleichs
+     * gebracht werden: eine Textspalte mit ihrem `IN`-CHECK und eine
+     * `enum`-Spalte sagen dasselbe, und nur so faellt der Unterschied
+     * zwischen den WERTEN auf statt der zwischen den Schreibweisen.
+     */
+    fun vocabulary(table: TableDefinition): Map<String, List<String>> {
+        val result = declaredVocabulary(table).toMutableMap()
+        for ((colName, values) in foldable(table).values) {
+            result[colName] = values
+        }
+        return result
+    }
+
+    /**
      * Die Werte, wenn [expression] den Wertevorrat von [column] aufzaehlt —
      * sonst `null`.
      *
@@ -38,6 +107,20 @@ internal object EnumCheckProjection {
     fun valuesOf(expression: String?, column: String): List<String>? {
         val text = unwrapOuterParens(expression?.trim() ?: return null)
         return inListValues(text, column) ?: equalityChainValues(text, column)
+    }
+
+    /**
+     * Der Wertevorrat als Text, in genau einer Schreibweise.
+     *
+     * Gebraucht, wo der Ausdruck als Text im Vergleich bleibt, statt in die
+     * Spalte gefaltet zu werden: die beiden Seiten schreiben dieselbe Aussage
+     * verschieden auf (`IN`-Liste hier, OR-Kette dort, je eigene Reihenfolge),
+     * und ein Textvergleich liest das als Unterschied. Das Ergebnis ist wieder
+     * eine Form, die [valuesOf] erkennt — die Faltung greift danach unveraendert.
+     */
+    fun canonicalText(column: String, values: List<String>): String {
+        val literals = values.sorted().joinToString(", ") { "'" + it.replace("'", "''") + "'" }
+        return "$column IN ($literals)"
     }
 
     /** `spalte IN ('a', 'b')` — die Form, die d-migrate selbst schreibt. */

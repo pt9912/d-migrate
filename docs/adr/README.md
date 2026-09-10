@@ -101,10 +101,11 @@ argumentiert werden.
 | 0045 | [Ein Branch statt `develop` → `main` — Entwicklung nach v1.0.1 auf `main`](0045-ein-branch-main-statt-develop-main.md) | accepted |
 | 0046 | [Hadoop bleibt im Parquet-Adapter — parquet-java erzwingt es](0046-hadoop-bleibt-im-parquet-adapter.md) | accepted |
 | 0047 | [MS SQL Server als vierter Dialekt — 2017+, voller Umfang als Slices, CI in jedem Lauf](0047-mssql-vierter-dialekt-scoping.md) | accepted |
-| 0048 | [Der Wertevorrat eines Enums zählt im Fingerprint unabhängig von seiner Darstellung, `schema-fingerprint-v7` → `v8`](0048-enum-wertevorrat-im-fingerprint.md) | accepted |
+| 0048 | [Der Wertevorrat eines Enums zählt im Fingerprint unabhängig von seiner Darstellung, `schema-fingerprint-v7` → `v8`](0048-enum-wertevorrat-im-fingerprint.md) | superseded by ADR-0055 |
 | 0049 | [Abdeckende und clustered Indizes stehen erstklassig im neutralen Modell, `schema-fingerprint-v8` → `v9`](0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md) | accepted |
 | 0050 | [Overlay-Bindung: Übergang bindet an ein Paar, Darstellung an ein Schema](0050-overlay-bindung-uebergang-vs-darstellung.md) | accepted |
 | 0051 | [Server-State-Schema wird neutral gepflegt, Flyway-Migrationen werden generiert statt handgeschrieben](0051-server-state-schema-generiert-statt-handgeschrieben.md) | accepted |
 | 0052 | [Oracle als fünfter Dialekt — 23ai Free als Testziel, voller Umfang als Slices, PL/SQL-Packages ohne Liefertermin](0052-oracle-fuenfter-dialekt-scoping.md) | accepted |
 | 0053 | [Vergleich rohen SQL-Texts — Server-Form gegen Server-Form statt Normalisierung](0053-vergleich-rohen-sql-texts.md) | accepted |
 | 0054 | [Routinen-Rümpfe werden nicht übersetzt — die Herkunft entscheidet, nicht der Inhalt](0054-routinen-ruempfe-werden-nicht-uebersetzt.md) | accepted |
+| 0055 | [Der Wertevorrat eines Enums zählt auch im zielbewussten Vergleich, nicht nur im Fingerprint](0055-enum-wertevorrat-im-zielbewussten-vergleich.md) | accepted |

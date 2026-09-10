@@ -55,6 +55,7 @@ internal class TableComparator(
     }
 
     private val folding = RawTextFolding(authorship, serverForm)
+    private val indexComparator = TableIndexComparator(targetProjection, folding)
 
     internal fun compareTable(
         name: String,
@@ -77,14 +78,14 @@ internal class TableComparator(
             pkRight = rightPk,
         )
 
-        val columnDiffs = compareColumns(left, right, absorbedColumns)
+        val columnDiffs = compareColumns(left, right, absorbedColumns, enumVocabularies(left, right))
         val pkDiff = when {
             targetProjection != null && EffectivePrimaryKey.of(left) == EffectivePrimaryKey.of(right) -> null
             left.primaryKey == right.primaryKey -> null
             else -> ValueChange(left.primaryKey, right.primaryKey)
         }
 
-        val indexDiffs = compareIndices(name, left.indices, right.indices)
+        val indexDiffs = indexComparator.compareIndices(name, left.indices, right.indices)
         val constraintDiffs = compareConstraints(name, leftNorm, rightNorm)
         val metadataDiff = if (left.metadata == right.metadata) null
             else ValueChange(left.metadata, right.metadata)
@@ -159,7 +160,10 @@ internal class TableComparator(
             // ADR 0025: project child-local indices too (drop the generate-only FULLTEXT
             // hints) so a partition's FULLTEXT index does not phantom-diff authored-vs-reversed
             // — same exclusion the table-level compareIndices applies.
-            partition.copy(indices = partition.indices.map { projectIndex(it) }.sortedBy { indexKey(it) })
+            partition.copy(
+                indices = partition.indices.map { indexComparator.projectIndex(it) }
+                    .sortedBy { indexComparator.indexKey(it) },
+            )
         }.toSet()
 
     // ── Columns ───────────────────────────────────
@@ -177,8 +181,26 @@ internal class TableComparator(
         val changed: List<ColumnDiff>,
     )
 
+    /**
+     * Der gefaltete Wertevorrat beider Seiten, je Spalte.
+     *
+     * Im strikten Modus leer: `schema compare` soll den Unterschied zwischen
+     * einer `enum`-Spalte und einer Textspalte mit ihrem CHECK zeigen.
+     */
+    private data class EnumVocabularies(
+        val left: Map<String, List<String>>,
+        val right: Map<String, List<String>>,
+    )
+
+    private fun enumVocabularies(left: TableDefinition, right: TableDefinition): EnumVocabularies =
+        if (targetProjection == null) {
+            EnumVocabularies(emptyMap(), emptyMap())
+        } else {
+            EnumVocabularies(EnumCheckProjection.vocabulary(left), EnumCheckProjection.vocabulary(right))
+        }
+
     private fun compareColumns(
-        left: TableDefinition, right: TableDefinition, absorbed: AbsorbedColumns,
+        left: TableDefinition, right: TableDefinition, absorbed: AbsorbedColumns, vocabularies: EnumVocabularies,
     ): ColumnDiffs {
         val leftNames = left.columns.keys
         val rightNames = right.columns.keys
@@ -187,20 +209,32 @@ internal class TableComparator(
         val removed = (leftNames - rightNames).sorted()
             .associateWith { projectColumn(left.columns.getValue(it)) }
         val changed = (leftNames intersect rightNames).sorted().mapNotNull { name ->
-            compareColumn(name, left.columns.getValue(name), right.columns.getValue(name), absorbed)
+            compareColumn(
+                name, left.columns.getValue(name), right.columns.getValue(name), absorbed,
+                vocabularies.left[name] to vocabularies.right[name],
+            )
         }
         return ColumnDiffs(added, removed, changed)
     }
 
     private fun compareColumn(
         name: String, left: ColumnDefinition, right: ColumnDefinition, absorbed: AbsorbedColumns,
+        vocabulary: Pair<List<String>?, List<String>?>,
     ): ColumnDiff? {
         val canon = targetProjection?.type
         // Typen, die der Ziel-Dialekt auf denselben deklarierten Typ faltet,
         // sind dort keine ausdrückbare Änderung — ein geplanter Alter wäre ein
         // ewiger No-Op-Rebuild (Post-Compare wäre per v7 clean).
-        val typeDiff = if (canon != null && canon(left.type) == canon(right.type)) null
-            else diffValueChangeOrNull(left.type, right.type)
+        //
+        // Der Wertevorrat ist davon ausgenommen und zaehlt zuerst: ein Dialekt
+        // ohne Enum-Typ faltet `enum` und Textspalte auf denselben Typ, und
+        // eine geaenderte Werteliste faende danach keinen Unterschied mehr —
+        // die Migration liesse den alten Wertevorrat stehen.
+        val typeDiff = when {
+            vocabulary.first != vocabulary.second -> ValueChange(left.type, right.type)
+            canon != null && canon(left.type) == canon(right.type) -> null
+            else -> diffValueChangeOrNull(left.type, right.type)
+        }
         // PK ⇒ NOT NULL — required vergleicht im ziel-bewussten Modus effektiv.
         val requiredDiff = if (canon != null && effectiveRequiredEqual(name, left, right, absorbed)) null
             else diffValueChangeOrNull(left.required, right.required)
@@ -294,8 +328,19 @@ internal class TableComparator(
             }
         }
 
+        // Ein CHECK, der den Wertevorrat einer Spalte aufzaehlt, ist die
+        // Darstellung, in der ein Enum in Dialekten ohne Enum-Typ in der
+        // Datenbank landet. Er gehoert zur Spalte, nicht in den
+        // Constraint-Block: sonst meldete der Vergleich gegen ein
+        // `enum`-Soll eine Constraint-Kante, und der Plan loeste die
+        // Werte-Durchsetzung, die er gerade angelegt hat.
+        val foldedEnumChecks =
+            if (targetProjection == null) emptySet() else EnumCheckProjection.foldable(table).keys
+
         for (constraint in table.constraints) {
             when {
+                constraint in foldedEnumChecks -> Unit
+
                 constraint.type == ConstraintType.UNIQUE && constraint.columns?.size == 1 -> {
                     val colName = constraint.columns.first()
                     singleUnique.add(colName)
@@ -469,57 +514,6 @@ internal class TableComparator(
         references = ConstraintReferenceDefinition(sig.refTable, listOf(sig.refColumn), sig.onDelete, sig.onUpdate),
     )
 
-    // ── Indices ──────────────────────────────────
-
-    private data class IndexDiffResult(
-        val added: List<IndexDefinition>, val removed: List<IndexDefinition>,
-        val changed: List<ValueChange<IndexDefinition>>,
-    )
-
-    private fun compareIndices(
-        tableName: String,
-        left: List<IndexDefinition>,
-        right: List<IndexDefinition>,
-    ): IndexDiffResult {
-        val leftByKey = byProjectedKey(left)
-        val rightByKey = byProjectedKey(right)
-        val leftKeys = leftByKey.keys
-        val rightKeys = rightByKey.keys
-        val added = (rightKeys - leftKeys).sorted().map { rightByKey.getValue(it) }
-        val removed = (leftKeys - rightKeys).sorted().map { leftByKey.getValue(it) }
-        val changed = (leftKeys intersect rightKeys).sorted().mapNotNull { key ->
-            val l = leftByKey.getValue(key); val r = rightByKey.getValue(key)
-            val folded = folding.index(tableName, l, r)
-            if (projectIndex(l) == projectIndex(folded)) null else ValueChange(l, r)
-        }
-        return IndexDiffResult(added, removed, changed)
-    }
-
-    /**
-     * ADR 0025: a FULLTEXT index's `fullTextVectorColumn` / `fullTextAccessMethod` are
-     * generate-only reconstruction hints (which tsvector column PostgreSQL materialises and
-     * with which access method) — they do not change the fulltext *capability*. Null them out
-     * before equality so an authored index (hint absent) and the reversed live index (hint
-     * set) are not reported as changed, mirroring [projectColumn] for non-semantic fields.
-     * Guarded on the index type (only FULLTEXT carries the hints) so the field list lives in
-     * one place — the `copy` — and a future hint can't slip past a stale guard condition.
-     *
-     * Contract (keep in sync): the index identity is shared by THREE projections — this
-     * denylist (excludes the generate-only hints), `MigrationFingerprint.appendIndex` and
-     * `CanonicalPayload.index` (allowlists of the semantic fields). A new *semantic* index
-     * field must be added to both allowlists; a new generate-only *hint* must be added to the
-     * `copy` here. `SchemaComparatorFullTextHintsTest` pins the hint exclusion across all three.
-     */
-    private fun projectIndex(index: IndexDefinition): IndexDefinition {
-        // Erst die Faehigkeits-Projektion des Ziels (sie kann den Indextyp
-        // falten und den synthetisierten Volltext-Namen nullen), dann die
-        // dialekt-unabhaengige Hinweis-Denylist unten -- sonst pruefte deren
-        // FULLTEXT-Bedingung einen Typ, den das Ziel gar nicht ablegt.
-        val projected = targetProjection?.index?.invoke(index) ?: index
-        return if (projected.type != IndexType.FULLTEXT) projected
-        else projected.copy(fullTextVectorColumn = null, fullTextAccessMethod = null)
-    }
-
     /**
      * Die Partitionierung durch die Ziel-Projektion -- vor der Ableitung der
      * unteren Grenzen, damit die Ableitung auf den bereits gefalteten
@@ -540,35 +534,6 @@ internal class TableComparator(
         return project(generation)
     }
 
-    /**
-     * Indizes unter dem Schluessel, den das **Ziel** von ihnen sieht.
-     *
-     * Der Schluessel entscheidet, ob zwei Indizes ueberhaupt einander
-     * zugeordnet werden — vor jedem Feldvergleich. Ihn ungefaltet zu bilden
-     * machte die Projektion an genau der Stelle wirkungslos, an der sie am
-     * meisten zaehlt: wo ein Dialekt den Namen gar nicht ablegt, synthetisiert
-     * sein Reverse einen anderen, die Schluesselmengen waeren disjunkt, und
-     * aus einem unveraenderten Index wuerden `DropIndex` + `AddIndex` — bei
-     * jedem Lauf erneut, obwohl der Fingerabdruck (der dieselbe Projektion
-     * schon nutzt) Ruhe meldet.
-     *
-     * Fallen zwei Indizes derselben Seite auf denselben gefalteten Schluessel,
-     * kann das Ziel sie nicht unterscheiden. Der zweite bleibt dann unter
-     * seinem **ungefalteten** Schluessel stehen, statt still aus dem Vergleich
-     * zu verschwinden.
-     */
-    private fun byProjectedKey(indices: List<IndexDefinition>): Map<String, IndexDefinition> {
-        val byKey = LinkedHashMap<String, IndexDefinition>()
-        for (index in indices) {
-            if (byKey.putIfAbsent(indexKey(projectIndex(index)), index) != null) {
-                byKey[indexKey(index)] = index
-            }
-        }
-        return byKey
-    }
-
-    private fun indexKey(index: IndexDefinition): String =
-        index.name ?: "idx:${index.columns.joinToString(",")}:${index.type}:${index.unique}:${index.where.orEmpty()}"
 }
 
 internal data class TableDiffs(

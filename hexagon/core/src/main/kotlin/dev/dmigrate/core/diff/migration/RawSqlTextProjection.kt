@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.diff.EnumCheckProjection
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
@@ -24,6 +25,14 @@ import dev.dmigrate.core.model.ViewDefinition
  * in `CanonicalPayload`: der Text IST die Aussage einer Sicht, eines CHECKs und
  * eines Ausdrucks-Index, und ihn dort auszublenden hiesse, eine echte Aenderung
  * nicht mehr zu sehen.
+ *
+ * **Eine Ausnahme, und zwar eine notwendige.** Ein CHECK, der den Wertevorrat
+ * einer Spalte aufzaehlt, ist kein unvergleichbarer Text: [EnumCheckProjection]
+ * liest seine Form. Ihn auszublenden nimmt dem Fingerabdruck genau die Angabe,
+ * aus der er beide Darstellungen eines Enums zur Deckung bringt — und ein
+ * Lauf, der eine Enum-Spalte anlegt, meldete danach Drift auf einer Migration,
+ * die getan hat, was verlangt war. Er wird deshalb nicht ausgeblendet, sondern
+ * auf seine kanonische Form gebracht.
  */
 object RawSqlTextProjection {
 
@@ -41,7 +50,7 @@ object RawSqlTextProjection {
 
     private fun blank(table: TableDefinition): TableDefinition = table.copy(
         indices = table.indices.map(::blank),
-        constraints = table.constraints.map(::blank),
+        constraints = table.constraints.map { blank(it, table.columns.keys) },
     )
 
     private fun blank(index: IndexDefinition): IndexDefinition = index.copy(
@@ -58,8 +67,24 @@ object RawSqlTextProjection {
         column.copy(name = PLACEHOLDER, expression = PLACEHOLDER)
     }
 
-    private fun blank(constraint: ConstraintDefinition): ConstraintDefinition =
-        constraint.copy(expression = constraint.expression?.let { PLACEHOLDER })
+    private fun blank(constraint: ConstraintDefinition, columns: Set<String>): ConstraintDefinition =
+        constraint.copy(expression = constraint.expression?.let { enumCheckText(it, columns) ?: PLACEHOLDER })
+
+    /**
+     * Die kanonische Form, wenn der Ausdruck den Wertevorrat einer der
+     * [columns] aufzaehlt — sonst `null`.
+     *
+     * Die erste passende Spalte gewinnt, wie beim Falten im Fingerabdruck: ein
+     * Ausdruck kann sich nur auf eine Spalte beziehen, und die Reihenfolge der
+     * Suche darf das Ergebnis nicht bestimmen.
+     */
+    private fun enumCheckText(expression: String, columns: Set<String>): String? {
+        for (column in columns) {
+            val values = EnumCheckProjection.valuesOf(expression, column) ?: continue
+            return EnumCheckProjection.canonicalText(column, values)
+        }
+        return null
+    }
 
     private fun blank(view: ViewDefinition): ViewDefinition =
         view.copy(query = view.query?.let { PLACEHOLDER })

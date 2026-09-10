@@ -2,6 +2,7 @@ package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.ConstraintDiffContract
 import dev.dmigrate.core.diff.EffectivePrimaryKey
+import dev.dmigrate.core.diff.EnumCheckProjection
 import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
@@ -13,9 +14,9 @@ import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
-import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.ProcedureDefinition
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
@@ -402,10 +403,8 @@ object MigrationFingerprint {
         // Datenbank in ihrem CHECK zurueckliefert, ist nicht zugesichert. Der
         // Typ selbst behaelt seine Reihenfolge — MySQLs nativer ENUM hat
         // Ordinal-Semantik, dort ist sie bedeutsam.
-        for ((colName, col) in table.columns) {
-            (col.type as? NeutralType.Enum)?.values?.let { enumByCol[colName] = it.sorted() }
-        }
-        val foldable = foldableEnumChecks(table, enumByCol)
+        enumByCol.putAll(EnumCheckProjection.declaredVocabulary(table))
+        val foldable = EnumCheckProjection.foldable(table)
         for (c in table.constraints) {
             // Fold only onto columns that exist — a constraint on an unknown column
             // must stay in the block, not silently vanish from the projection.
@@ -432,7 +431,7 @@ object MigrationFingerprint {
                 // `enum` am Spaltentyp — er wandert in dieselbe Projektion
                 // statt in den Constraint-Block, damit beide Seiten gleich
                 // hashen. Welche Constraints das sind, steht vorher fest
-                // ([foldableEnumChecks]); hier wird nur noch zugeordnet.
+                // ([EnumCheckProjection.foldable]); hier wird nur noch zugeordnet.
                 c.type == ConstraintType.CHECK && foldable.containsKey(c) -> {
                     enumByCol[foldable.getValue(c).first] = foldable.getValue(c).second
                 }
@@ -444,43 +443,6 @@ object MigrationFingerprint {
             }
         }
         return FoldedConstraints(unique, fkByCol, enumByCol, remaining)
-    }
-
-    /**
-     * Welche CHECK-Constraints als Wertevorrat gelten — **vor** dem Falten
-     * bestimmt, damit das Ergebnis nicht von der Reihenfolge in
-     * `table.constraints` abhaengt.
-     *
-     * Zwei Faelle bleiben ausdruecklich ungefaltet:
-     *
-     * - **Mehr als ein passender CHECK auf derselben Spalte.** Dann ist nicht
-     *   entscheidbar, welcher den Wertevorrat beschreibt — und zwei Constraints
-     *   in eine Projektion zu falten liesse einen davon spurlos verschwinden,
-     *   samt dem Unterschied, den er ausmacht.
-     * - **Ein CHECK, der dem Spaltentyp widerspricht.** Ein handgeschriebener
-     *   CHECK mit anderen Werten als das authored `enum` bleibt sichtbar.
-     */
-    private fun foldableEnumChecks(
-        table: TableDefinition,
-        fromColumnTypes: Map<String, List<String>>,
-    ): Map<ConstraintDefinition, Pair<String, List<String>>> {
-        val candidates = mutableListOf<Pair<ConstraintDefinition, Pair<String, List<String>>>>()
-        for (c in table.constraints) {
-            if (c.type != ConstraintType.CHECK) continue
-            for (colName in table.columns.keys) {
-                val values = EnumCheckProjection.valuesOf(c.expression, colName)?.sorted() ?: continue
-                candidates += c to (colName to values)
-                break
-            }
-        }
-        val perColumn = candidates.groupBy { it.second.first }
-        return candidates
-            .filter { (_, hit) ->
-                val (colName, values) = hit
-                val declared = fromColumnTypes[colName]
-                perColumn.getValue(colName).size == 1 && (declared == null || declared == values)
-            }
-            .toMap()
     }
 
     /** Single-column FK signature — delegiert an [reference], damit es genau EIN

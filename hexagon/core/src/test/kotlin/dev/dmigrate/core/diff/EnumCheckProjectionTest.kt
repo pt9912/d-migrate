@@ -1,4 +1,4 @@
-package dev.dmigrate.core.diff.migration
+package dev.dmigrate.core.diff
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
