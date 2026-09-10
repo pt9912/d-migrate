@@ -27,7 +27,7 @@ class MysqlProfilingIntegrationTest : FunSpec({
     val primaryDb = "profiling_test"
     val tenantDb = "profiling_tenant"
 
-    val container = MySQLContainer("mysql:8")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName(primaryDb)
         .withUsername("test")
         .withPassword("test")

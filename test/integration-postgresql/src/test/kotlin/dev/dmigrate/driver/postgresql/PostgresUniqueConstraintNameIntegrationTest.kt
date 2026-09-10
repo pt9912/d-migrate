@@ -28,7 +28,7 @@ import org.testcontainers.containers.PostgreSQLContainer
  */
 class PostgresUniqueConstraintNameIntegrationTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
     lateinit var pool: ConnectionPool
 
     beforeSpec {

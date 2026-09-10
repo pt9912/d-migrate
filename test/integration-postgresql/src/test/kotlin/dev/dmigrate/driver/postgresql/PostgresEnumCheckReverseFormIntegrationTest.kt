@@ -36,7 +36,7 @@ import io.kotest.matchers.shouldBe
  */
 class PostgresEnumCheckReverseFormIntegrationTest : FunSpec({
 
-    val container = org.testcontainers.containers.PostgreSQLContainer("postgres:16-alpine")
+    val container = org.testcontainers.containers.PostgreSQLContainer("postgres:18-alpine")
     lateinit var pool: ConnectionPool
 
     beforeSpec {
@@ -76,12 +76,15 @@ class PostgresEnumCheckReverseFormIntegrationTest : FunSpec({
         reverseTable().constraints.single { it.name == name }.expression.orEmpty()
 
     test("the server's normal form for a value list is ANY over an ARRAY, with casts") {
-        expressionOf("ck_mood") shouldBe "((mood = ANY (ARRAY['red'::text, 'green'::text])))"
-        expressionOf("ck_quoted") shouldBe "((quoted = ANY (ARRAY['it''s'::text, 'b,c'::text])))"
+        // Die Klammertiefe ist serverabhaengig: PostgreSQL 16 legte eine
+        // weitere Ebene darum. Die Erkennung traegt sie ab — deshalb ist sie
+        // formbasiert und nicht wortgleich gebaut.
+        expressionOf("ck_mood") shouldBe "(mood = ANY (ARRAY['red'::text, 'green'::text]))"
+        expressionOf("ck_quoted") shouldBe "(quoted = ANY (ARRAY['it''s'::text, 'b,c'::text]))"
         // Eine einelementige Liste ist keine Liste mehr, und die Spalte selbst
         // traegt den Cast, weil ihr Typ nicht der des Literals ist.
-        expressionOf("ck_shade") shouldBe "(((shade)::text = 'a'::text))"
-        expressionOf("ck_tone") shouldBe "(((tone = 'x'::text) OR (tone = 'y'::text)))"
+        expressionOf("ck_shade") shouldBe "((shade)::text = 'a'::text)"
+        expressionOf("ck_tone") shouldBe "((tone = 'x'::text) OR (tone = 'y'::text))"
     }
 
     test("an authored enum matches the reverse-read column with its CHECK") {

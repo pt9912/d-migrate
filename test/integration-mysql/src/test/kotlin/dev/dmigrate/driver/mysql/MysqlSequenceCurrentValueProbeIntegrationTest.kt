@@ -30,7 +30,7 @@ import java.sql.DriverManager
  */
 class MysqlSequenceCurrentValueProbeIntegrationTest : FunSpec({
 
-    val container = MySQLContainer("mysql:8")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName("preserve_it")
         .withUsername("test")
         .withPassword("test")

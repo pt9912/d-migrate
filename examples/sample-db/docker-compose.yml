@@ -10,7 +10,7 @@
 
 services:
   postgres:
-    image: postgres:17.10-trixie
+    image: postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
     env_file:
       - .env
     ports:
@@ -37,7 +37,7 @@ services:
   # (employees.sql `source`t die Dumps mit relativen Pfaden). Quell-/Ziel-
   # DBs (employees, employees_my_target) legt der Scale-Smoke selbst an.
   mysql:
-    image: mysql:8.4
+    image: mysql:9.7.2@sha256:b2cf29815e62fea06b7de22b8b8e57dfe0eb32706e38ce951930bde6faef4ab6
     env_file:
       - .env
     ports:
@@ -58,7 +58,7 @@ services:
   # postgres-Service (Phase 1/2). DBs (geo_pg_src/geo_pg_target) legt
   # sql-postgis/ an; CREATE EXTENSION postgis + Tabellen macht smoke-spatial.sh.
   postgis:
-    image: postgis/postgis:16-3.4
+    image: postgis/postgis:18-3.6@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677
     env_file:
       - .env
     ports:
@@ -79,7 +79,7 @@ services:
   # Compose-Netz in die postgis-Quelle lädt (nur on-demand via `compose run gdal`,
   # FETCH_NYC=1 + smoke-spatial.sh). Kein Auto-Start (profile tools).
   gdal:
-    image: ghcr.io/osgeo/gdal:ubuntu-small-3.13.1
+    image: ghcr.io/osgeo/gdal:ubuntu-small-3.13.2@sha256:49b1b7a9779340ad66e7f87ea78ea632e923867df24e68c6d17f0079220e16b3
     user: "${SAMPLE_DB_DMIGRATE_USER:-0:0}"
     profiles: ["tools"]
     env_file:
@@ -97,7 +97,7 @@ services:
   # Hermetizität (die tpch-Extension ist mitgepinnt, kein Laufzeit-Download).
   # Nur on-demand (profile tools), via scripts/tpch-generate.sh.
   duckdb:
-    image: debian:bookworm-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716
+    image: debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
     user: "${SAMPLE_DB_DMIGRATE_USER:-0:0}"
     profiles: ["tools"]
     network_mode: "none"
@@ -114,7 +114,7 @@ services:
   # non-root uid 10001; Ziel-DBs legt smoke-cross-pg2ms.sh per sqlcmd an
   # (SQL Server hat kein docker-entrypoint-initdb.d).
   mssql:
-    image: mcr.microsoft.com/mssql/server@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
+    image: mcr.microsoft.com/mssql/server:2025-CU1-ubuntu-24.04@sha256:698682bab57c02c42bc0aa274b158aeb242d8e9104149a7489628d5535805816
     env_file:
       - .env
     environment:
@@ -141,7 +141,7 @@ services:
   # Der Kaltstart dauert ~2-3 Minuten; das Leg ist deshalb nicht Teil des
   # Standard-Smokes, sondern hat ein eigenes Make-Target.
   oracle:
-    image: gvenzl/oracle-free@sha256:f5ff19033860d662c821cb04eb10483fa94f14f78eae252d054291ea07028093
+    image: gvenzl/oracle-free:23-slim-faststart@sha256:f5ff19033860d662c821cb04eb10483fa94f14f78eae252d054291ea07028093
     env_file:
       - .env
     ports:
@@ -164,7 +164,7 @@ services:
   # 1 GB groesser, deshalb bleibt sie diesem Leg vorbehalten; eigenes Volume
   # und eigener Port, damit beide Varianten nebeneinander laufen koennen.
   oracle-spatial:
-    image: gvenzl/oracle-free@sha256:33322969a450d72c507b08d7f690d9e1d9b60aebaebc35a75b7c0b8ab4baac77
+    image: gvenzl/oracle-free:23-faststart@sha256:33322969a450d72c507b08d7f690d9e1d9b60aebaebc35a75b7c0b8ab4baac77
     env_file:
       - .env
     ports:
@@ -229,7 +229,7 @@ services:
   # v3.6.7 per DIGEST gepinnt — NICHT :latest (= unfertiger Rewrite-Branch laut Recherche).
   # Gecappter Client (2 CPU/4 GB) wie dmigrate-capped, fairer Vergleich. profile tools.
   pgloader:
-    image: dimitri/pgloader@sha256:d29ea680cf1aaaf7269690a922dd69167567b91b35e9c48a0b54a99cef96c0ed
+    image: dimitri/pgloader:latest@sha256:756758ca8269404bdca9384c2fb04bcc7de744a713d26885ba8b556e4005eab4
     cpus: 2
     mem_limit: 4g
     profiles: ["tools"]

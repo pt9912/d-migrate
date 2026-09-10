@@ -33,7 +33,7 @@ import java.util.concurrent.TimeUnit
  */
 class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("atomic_preserve_it")
         .withUsername("test")
         .withPassword("test")

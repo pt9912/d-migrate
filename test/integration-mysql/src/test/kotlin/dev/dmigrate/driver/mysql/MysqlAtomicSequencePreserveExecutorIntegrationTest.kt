@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit
  */
 class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
 
-    val container = MySQLContainer("mysql:8")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName("atomic_preserve_it")
         .withUsername("test")
         .withPassword("test")

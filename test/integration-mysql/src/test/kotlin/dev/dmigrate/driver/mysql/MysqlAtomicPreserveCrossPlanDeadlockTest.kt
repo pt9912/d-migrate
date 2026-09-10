@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class MysqlAtomicPreserveCrossPlanDeadlockTest : FunSpec({
 
-    val container = MySQLContainer("mysql:8.0")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName("atomic_xplan_it")
         .withUsername("test")
         .withPassword("test")

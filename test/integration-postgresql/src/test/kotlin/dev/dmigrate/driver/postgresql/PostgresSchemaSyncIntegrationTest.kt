@@ -24,7 +24,7 @@ private fun qi(name: String): String = SqlIdentifiers.quoteIdentifier(name, Data
 class PostgresSchemaSyncIntegrationTest : FunSpec({
 
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_test")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

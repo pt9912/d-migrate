@@ -10,7 +10,7 @@ import java.sql.DriverManager
 // Slice 1 echte Port-Implementierungen dagegen getestet werden.
 class MssqlContainerConnectIntegrationTest : FunSpec({
 
-    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2022-latest")
+    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
         // Das Image startet nur mit akzeptierter Microsoft-EULA
         // (ACCEPT_EULA=Y, siehe docs/user/quality.md).
         .acceptLicense()
@@ -22,12 +22,12 @@ class MssqlContainerConnectIntegrationTest : FunSpec({
         container.start()
     }
 
-    test("SELECT @@VERSION antwortet mit SQL Server 2022") {
+    test("SELECT @@VERSION antwortet mit SQL Server 2025") {
         DriverManager.getConnection(container.jdbcUrl, container.username, container.password).use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.executeQuery("SELECT @@VERSION").use { rs ->
                     rs.next() shouldBe true
-                    rs.getString(1) shouldContain "Microsoft SQL Server 2022"
+                    rs.getString(1) shouldContain "Microsoft SQL Server 2025"
                 }
             }
         }

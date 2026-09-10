@@ -20,7 +20,7 @@ import org.testcontainers.mysql.MySQLContainer
 class MysqlSchemaSyncIntegrationTest : FunSpec({
 
 
-    val container = MySQLContainer("mysql:8.0")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName("dmigrate_test")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

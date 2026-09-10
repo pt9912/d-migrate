@@ -46,7 +46,7 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class PostgresAtomicPreserveCrossPlanDeadlockTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("atomic_xplan_it")
         .withUsername("test")
         .withPassword("test")

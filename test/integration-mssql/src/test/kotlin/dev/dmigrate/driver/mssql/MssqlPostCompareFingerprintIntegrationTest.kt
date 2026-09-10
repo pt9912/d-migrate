@@ -42,7 +42,7 @@ import java.sql.DriverManager
  */
 class MssqlPostCompareFingerprintIntegrationTest : FunSpec({
 
-    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2022-latest")
+    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
         .acceptLicense()
         .withUrlParam("encrypt", "false")
 

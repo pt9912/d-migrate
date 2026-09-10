@@ -32,7 +32,7 @@ import java.sql.DriverManager
  */
 class PostgresSequenceCurrentValueProbeIntegrationTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("preserve_it")
         .withUsername("test")
         .withPassword("test")

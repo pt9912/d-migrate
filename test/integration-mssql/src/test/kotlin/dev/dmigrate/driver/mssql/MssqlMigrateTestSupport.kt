@@ -24,7 +24,7 @@ import java.sql.DriverManager
  * Spec wieder waechst.
  */
 internal fun startMssqlContainer(): MSSQLServerContainer =
-    MSSQLServerContainer("mcr.microsoft.com/mssql/server:2022-latest")
+    MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
         .acceptLicense()
         .withUrlParam("encrypt", "false")
 

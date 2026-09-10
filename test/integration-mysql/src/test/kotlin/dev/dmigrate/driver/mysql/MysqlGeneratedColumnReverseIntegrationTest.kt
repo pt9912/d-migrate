@@ -26,7 +26,7 @@ import org.testcontainers.containers.MySQLContainer
  */
 class MysqlGeneratedColumnReverseIntegrationTest : FunSpec({
 
-    val container = MySQLContainer("mysql:8.0")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName("dmigrate_generated")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

@@ -31,7 +31,7 @@ import java.sql.DriverManager
  */
 class MssqlProfilingIntegrationTest : FunSpec({
 
-    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2022-latest")
+    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
         .acceptLicense()
         .withUrlParam("encrypt", "false")
 

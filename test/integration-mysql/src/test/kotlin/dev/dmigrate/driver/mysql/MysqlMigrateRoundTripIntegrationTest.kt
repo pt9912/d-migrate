@@ -39,7 +39,7 @@ import kotlin.io.path.createTempDirectory
  * first reversible operation matrix per Plan §6.3 (AddColumn /
  * DropColumn). The MySQL-specific deltas vs the PG smoke are:
  *
- * - `MySQLContainer("mysql:8.0")` with `--log-bin-trust-function-creators=1`
+ * - `MySQLContainer("mysql:9.7.2")` with `--log-bin-trust-function-creators=1`
  *   and the `allowPublicKeyRetrieval=true` JDBC param (Connector-J
  *   default-auth quirk in container envs).
  * - Reverse-reader sets `required = false` on PK columns (`MysqlSchemaReader.kt:151`)
@@ -61,7 +61,7 @@ import kotlin.io.path.createTempDirectory
 class MysqlMigrateRoundTripIntegrationTest : FunSpec({
 
 
-    val container = MySQLContainer("mysql:8.0")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName("dmigrate_test")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

@@ -35,7 +35,7 @@ import java.sql.DriverManager
  */
 class MysqlSequenceCanonicityProbeIntegrationTest : FunSpec({
 
-    val container = MySQLContainer("mysql:8")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName("drift")
         .withUsername("test")
         .withPassword("test")

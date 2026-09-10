@@ -36,7 +36,7 @@ import kotlin.io.path.createTempDirectory
  */
 class PostgresComputedColumnMigrateIntegrationTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
     lateinit var pool: ConnectionPool
 
     beforeSpec {

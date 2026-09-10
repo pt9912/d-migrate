@@ -33,7 +33,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
  */
 class PostgresExpressionIndexIntegrationTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_expr")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

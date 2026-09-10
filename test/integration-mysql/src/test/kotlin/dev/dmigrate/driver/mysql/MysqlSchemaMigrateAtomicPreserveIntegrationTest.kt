@@ -47,7 +47,7 @@ import kotlin.io.path.createTempDirectory
  */
 class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
 
-    val container = MySQLContainer("mysql:8")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName("atomic_preserve_e2e")
         .withUsername("test")
         .withPassword("test")

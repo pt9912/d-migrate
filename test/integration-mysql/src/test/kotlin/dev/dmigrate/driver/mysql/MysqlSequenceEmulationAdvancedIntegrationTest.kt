@@ -32,7 +32,7 @@ import java.sql.DriverManager
 class MysqlSequenceEmulationAdvancedIntegrationTest : FunSpec({
 
 
-    val container = MySQLContainer("mysql:8")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName("seqtest")
         .withUsername("test")
         .withPassword("test")

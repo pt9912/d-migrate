@@ -25,7 +25,7 @@ import java.sql.DriverManager
  */
 class PostgresDiffCanonicalKeyIntegrationTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_keys")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

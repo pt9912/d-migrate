@@ -45,7 +45,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
  */
 class PostgresConcurrentIndexIntegrationTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_cc")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

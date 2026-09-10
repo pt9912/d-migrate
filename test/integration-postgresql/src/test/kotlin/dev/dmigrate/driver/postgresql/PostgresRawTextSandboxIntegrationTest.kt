@@ -15,6 +15,7 @@ import dev.dmigrate.driver.connection.asJdbc
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.testcontainers.postgresql.PostgreSQLContainer
 
@@ -27,7 +28,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
  */
 class PostgresRawTextSandboxIntegrationTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_test").withUsername("dmigrate").withPassword("dmigrate")
 
     lateinit var pool: ConnectionPool
@@ -89,10 +90,23 @@ class PostgresRawTextSandboxIntegrationTest : FunSpec({
                CONSTRAINT chk_status CHECK (status = 'A'   -- nur aktive
                AND nm <> ''))""",
         )
-        val fromTarget = targetCheckForm().removePrefix("CHECK ")
+        // Verglichen wird durch **denselben Leser**, durch den auch der
+        // Migrationslauf beide Seiten sieht. Das ist die Aussage, auf die es
+        // ankommt — und nicht die gegen `pg_get_constraintdef`: die beiden
+        // Katalog-Drucker stimmten bis PostgreSQL 16 ueberein und tun es seit
+        // 18 nicht mehr (eine Klammerebene Unterschied). Wer gegen den
+        // fremden Drucker prueft, prueft eine Uebereinstimmung, die die
+        // Produktion gar nicht braucht.
+        val fromTarget = PostgresSchemaReader().read(pool).schema
+            .tables.getValue("orders").constraints.single().expression
 
         withClue("Sandkasten='$fromSandbox' Ziel='$fromTarget'") {
             fromSandbox shouldBe fromTarget
+        }
+        // Die Gegenprobe, dass hier nicht zwei Ergebnisse derselben Abfrage
+        // verglichen werden: der rohe Katalog-Drucker sagt es anders.
+        withClue(targetCheckForm()) {
+            targetCheckForm().removePrefix("CHECK ") shouldNotBe fromTarget
         }
         // Und der Kommentar ist auf beiden Seiten weg — das ist der Grund,
         // warum der Autorentext nie gegen die Katalogform stehen darf.
