@@ -120,7 +120,7 @@ internal object SchemaStructureValidationRules {
         for (constraint in table.constraints) {
             if (constraint.type != ConstraintType.CHECK) continue
             val expression = constraint.expression ?: continue
-            val referencedColumns = extractIdentifiers(expression)
+            val referencedColumns = CheckExpressionColumns.referencedIn(expression)
             for (reference in referencedColumns) {
                 if (reference !in table.columns) {
                     errors += ValidationError(
@@ -186,22 +186,5 @@ internal object SchemaStructureValidationRules {
                 }
             }
         }
-    }
-
-    private fun extractIdentifiers(expression: String): List<String> {
-        val stripped = expression.replace(Regex("'[^']*'"), "")
-        val sqlKeywords = setOf(
-            "AND", "OR", "NOT", "IN", "IS", "NULL", "TRUE", "FALSE",
-            "BETWEEN", "LIKE", "ILIKE", "SIMILAR", "ANY", "ALL", "SOME",
-            "EXISTS", "CASE", "WHEN", "THEN", "ELSE", "END",
-            "CHECK", "VALUE", "CURRENT_TIMESTAMP",
-            "ASC", "DESC", "HAVING", "OLD", "NEW",
-        )
-        return Regex("[a-zA-Z_][a-zA-Z0-9_]*")
-            .findAll(stripped)
-            .map { it.value }
-            .filter { it.uppercase() !in sqlKeywords }
-            .distinct()
-            .toList()
     }
 }

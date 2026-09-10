@@ -1,6 +1,7 @@
 package dev.dmigrate.core.validation
 
 import dev.dmigrate.core.model.*
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
@@ -162,6 +163,66 @@ class SchemaValidatorExtendedTest : FunSpec({
         ))
         val result = validator.validate(s)
         result.errors.none { it.code == "E012" } shouldBe true
+    }
+
+    test("ein CHECK in Katalogform wird angenommen — Casts und ARRAY sind keine Spalten") {
+        // Die Form, die PostgreSQL aus `operation IN (...)` macht. Sie wortgleich
+        // in die Schemadatei zu schreiben ist der Weg, auf dem ein CHECK
+        // textlich konvergiert; zuvor scheiterte genau der an E012, weil `text`,
+        // `ARRAY`, `character` und `varying` als Spaltenbezuege galten.
+        val s = schema(tables = mapOf(
+            "change" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "operation" to col(NeutralType.Text(20)),
+                ),
+                primaryKey = listOf("id"),
+                constraints = listOf(ConstraintDefinition(
+                    name = "chk_change_operation", type = ConstraintType.CHECK,
+                    expression = "((operation)::text = ANY ((ARRAY['INSERT'::character varying, " +
+                        "'UPDATE'::character varying, 'DELETE'::character varying])::text[]))",
+                )),
+            )
+        ))
+        validator.validate(s).errors.none { it.code == "E012" } shouldBe true
+    }
+
+    test("ein CHECK mit Funktionsaufruf oder Cast wird angenommen") {
+        for (expression in listOf(
+            "LENGTH(name) > 3",
+            "COALESCE(name, '') <> ''",
+            "CAST(name AS integer) > 0",
+            "EXTRACT(YEAR FROM created_at) > 2000",
+            "created_at < CURRENT_DATE",
+        )) {
+            val s = schema(tables = mapOf(
+                "items" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Identifier(true)),
+                        "name" to col(NeutralType.Text(50)),
+                        "created_at" to col(NeutralType.DateTime()),
+                    ),
+                    primaryKey = listOf("id"),
+                    constraints = listOf(ConstraintDefinition(
+                        name = "chk", type = ConstraintType.CHECK, expression = expression,
+                    )),
+                )
+            ))
+            withClue(expression) { validator.validate(s).errors.none { it.code == "E012" } shouldBe true }
+        }
+    }
+
+    test("ein echter Tippfehler in einer Spalte bleibt E012") {
+        val s = schema(tables = mapOf(
+            "items" to table(
+                columns = mapOf("id" to col(NeutralType.Identifier(true)), "name" to col(NeutralType.Text(50))),
+                primaryKey = listOf("id"),
+                constraints = listOf(ConstraintDefinition(
+                    name = "chk", type = ConstraintType.CHECK, expression = "LENGTH(naem) > 3",
+                )),
+            )
+        ))
+        validator.validate(s).errors.any { it.code == "E012" } shouldBe true
     }
 
     test("array with invalid element_type name produces E015") {

@@ -228,6 +228,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ein CHECK mit Funktionsaufruf oder Cast wurde als Schemafehler abgelehnt.**
+  Die Prüfung auf unbekannte Spaltenbezüge (`E012`) zog alle Wörter aus dem
+  Ausdruck und hielt für einen Spaltenbezug, was nicht in einer kurzen
+  Schlüsselwortliste stand. `LENGTH(name) > 3`, `COALESCE(name, '') <> ''`,
+  `CAST(x AS integer) > 0`, `EXTRACT(YEAR FROM d) > 2000`, `amount > 0::numeric`
+  und `created_at < CURRENT_DATE` scheiterten damit alle an `E012` — ebenso die
+  Katalogform eines `IN`-Ausdrucks, die PostgreSQL zurückliefert
+  (`((operation)::text = ANY ((ARRAY['A'::character varying])::text[]))`), an
+  der gleich vier vermeintliche Spalten gemeldet wurden. Erkannt wird jetzt an
+  der Stellung im Ausdruck statt an Namen: ein Bezeichner vor `(` ist ein
+  Funktionsname, vor `[` ein Feldkonstruktor, vor `.` eine Qualifizierung, und
+  was auf `::` oder `AS` folgt, ist ein Typname — auch mehrwortig
+  (`character varying`, `double precision`). Ein echter Tippfehler bleibt
+  `E012`.
+
 - **Ein Oracle-`CLOB`-Parameter wurde beim Neuerzeugen auf `VARCHAR2` verengt.**
   Ein PL/SQL-`VARCHAR2` endet bei 32767 Zeichen; gegen ein echtes Oracle
   gemessen bricht der Aufruf darüber mit `ORA-06502` ab, während derselbe Wert
