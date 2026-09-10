@@ -1,9 +1,11 @@
 package dev.dmigrate.core.diff.migration.overlay
 
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.SchemaDefinition
 
 /**
- * Baut die Herkunft der vier rohen SQL-Textfelder aus einem geglueckten Lauf.
+ * Baut die Herkunft der rohen SQL-Textfelder aus einem geglueckten Lauf.
  *
  * Nach einem sauberen Post-Compare steht fest, dass das Ziel dem Soll
  * entspricht. Damit ist fuer jedes Textfeld ein Paar belegt: der Text, den der
@@ -29,6 +31,15 @@ object RawTextProvenance {
             }
             for ((tableName, authoredTable) in authored.tables) {
                 val observedTable = observed.tables[tableName] ?: continue
+                for ((columnName, authoredColumn) in authoredTable.columns) {
+                    val counterpart = observedTable.columns[columnName] ?: continue
+                    addEntry(
+                        objectType = "column", path = listOf(tableName, columnName),
+                        field = RawTextProvenanceFields.COLUMN_GENERATION_EXPRESSION,
+                        authoredText = computedExpression(authoredColumn),
+                        observedText = computedExpression(counterpart),
+                    )
+                }
                 val observedConstraints = observedTable.constraints.associateBy { it.name }
                 for (constraint in authoredTable.constraints) {
                     val counterpart = observedConstraints[constraint.name] ?: continue
@@ -69,6 +80,10 @@ object RawTextProvenance {
      */
     fun entryId(objectType: String, path: List<String>, field: String, keyPosition: Int? = null): String =
         listOfNotNull(objectType, path.joinToString("."), field, keyPosition?.toString()).joinToString(":")
+
+    /** Der Berechnungsausdruck einer Spalte — oder `null`, wenn sie keine hat. */
+    private fun computedExpression(column: ColumnDefinition): String? =
+        (column.generation as? ColumnGeneration.Computed)?.expression
 
     private fun MutableList<RawTextProvenanceOverlayEntry>.addEntry(
         objectType: String,

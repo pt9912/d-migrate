@@ -1,5 +1,7 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 
@@ -40,6 +42,7 @@ internal object RawSqlServerFormCheck {
             val afterTable = after.tables[name] ?: continue
             compareIndices(name, beforeTable.indices, afterTable.indices, findings)
             compareConstraints(name, beforeTable, afterTable, findings)
+            compareColumnGenerations(name, beforeTable, afterTable, findings)
         }
         for ((name, beforeView) in before.views) {
             if (!untouched(name)) continue
@@ -47,6 +50,31 @@ internal object RawSqlServerFormCheck {
             report(findings, "view '$name'", "query", beforeView.query, afterView.query)
         }
         return findings
+    }
+
+    /**
+     * Der Berechnungsausdruck einer Spalte — dasselbe Wesen wie ein
+     * CHECK-Ausdruck, und derselbe Vergleich: zwei Formen desselben Servers,
+     * vor und nach dem Lauf.
+     */
+    private fun compareColumnGenerations(
+        table: String,
+        before: TableDefinition,
+        after: TableDefinition,
+        findings: MutableList<String>,
+    ) {
+        for ((columnName, beforeColumn) in before.columns) {
+            val afterColumn = after.columns[columnName] ?: continue
+            val beforeExpression = (beforeColumn.generation as? ColumnGeneration.Computed)?.expression
+            val afterExpression = (afterColumn.generation as? ColumnGeneration.Computed)?.expression
+            report(
+                findings,
+                "column '$columnName' on '$table'",
+                "generation expression",
+                beforeExpression,
+                afterExpression,
+            )
+        }
     }
 
     private fun compareIndices(

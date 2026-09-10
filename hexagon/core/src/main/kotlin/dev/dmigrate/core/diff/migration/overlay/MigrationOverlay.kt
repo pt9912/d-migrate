@@ -283,5 +283,14 @@ object RawTextProvenanceFields {
     /** `IndexColumn.expression` — ein Ausdrucks-Schluessel. */
     const val INDEX_KEY_EXPRESSION: String = "key-expression"
 
-    val ALL: Set<String> = setOf(VIEW_QUERY, CHECK_EXPRESSION, INDEX_WHERE, INDEX_KEY_EXPRESSION)
+    /** `ColumnGeneration.Computed.expression` — die Berechnung einer Spalte. */
+    const val COLUMN_GENERATION_EXPRESSION: String = "generation-expression"
+
+    val ALL: Set<String> = setOf(
+        VIEW_QUERY,
+        CHECK_EXPRESSION,
+        INDEX_WHERE,
+        INDEX_KEY_EXPRESSION,
+        COLUMN_GENERATION_EXPRESSION,
+    )
 }

@@ -1,6 +1,8 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.EnumCheckProjection
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
@@ -9,11 +11,12 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
 
 /**
- * Blendet die vier Felder aus, die rohen SQL-Text tragen.
+ * Blendet die Felder aus, die rohen SQL-Text tragen.
  *
- * Das neutrale Modell fuehrt an vier Stellen Text statt Bausteinen:
+ * Das neutrale Modell fuehrt an fuenf Stellen Text statt Bausteinen:
  * `ViewDefinition.query`, `ConstraintDefinition.expression`,
- * `IndexDefinition.where` und `IndexColumn.expression`. Server geben ihn nicht
+ * `IndexDefinition.where`, `IndexColumn.expression` und
+ * `ColumnGeneration.Computed.expression`. Server geben ihn nicht
  * wortgleich zurueck — PostgreSQL druckt ihn aus seinem Parsebaum, ein
  * `--`-Kommentar ist danach spurlos weg. Ein Autorentext und eine Katalogform
  * desselben Ausdrucks stimmen deshalb nie ueberein.
@@ -49,9 +52,19 @@ object RawSqlTextProjection {
     )
 
     private fun blank(table: TableDefinition): TableDefinition = table.copy(
+        columns = table.columns.mapValues { (_, column) -> blank(column) },
         indices = table.indices.map(::blank),
         constraints = table.constraints.map { blank(it, table.columns.keys) },
     )
+
+    /**
+     * Der Berechnungsausdruck einer Spalte. Die Speicherform daneben bleibt
+     * stehen: sie ist keine Textfrage, und der Vergleich soll sie sehen.
+     */
+    private fun blank(column: ColumnDefinition): ColumnDefinition {
+        val computed = column.generation as? ColumnGeneration.Computed ?: return column
+        return column.copy(generation = computed.copy(expression = PLACEHOLDER))
+    }
 
     private fun blank(index: IndexDefinition): IndexDefinition = index.copy(
         where = index.where?.let { PLACEHOLDER },

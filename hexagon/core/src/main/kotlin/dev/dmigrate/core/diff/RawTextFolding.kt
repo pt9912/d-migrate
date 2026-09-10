@@ -1,5 +1,7 @@
 package dev.dmigrate.core.diff
 
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.IndexDefinition
 
@@ -62,6 +64,31 @@ internal class RawTextFolding(
         )
     }
 
+    /**
+     * Die Berechnung einer Spalte.
+     *
+     * Gefaltet wird nur der Ausdruck. Die Speicherform daneben ist keine
+     * Textfrage: sie steht als eigenes Feld und soll sichtbar bleiben.
+     */
+    fun columnGeneration(
+        tableName: String,
+        columnName: String,
+        current: ColumnDefinition,
+        desired: ColumnDefinition,
+    ): ColumnDefinition {
+        val desiredComputed = desired.generation as? ColumnGeneration.Computed ?: return desired
+        val currentComputed = current.generation as? ColumnGeneration.Computed ?: return desired
+        val path = listOf(tableName, columnName)
+        if (!unchanged(
+                "column", path, GENERATION_EXPRESSION, null,
+                desiredComputed.expression, currentComputed.expression,
+            )
+        ) {
+            return desired
+        }
+        return desired.copy(generation = desiredComputed.copy(expression = currentComputed.expression))
+    }
+
     /** Der Rumpf einer Sicht — als Text, weil der Vergleich dort feldweise laeuft. */
     fun viewQuery(viewName: String, current: String?, desired: String?): String? =
         if (unchanged("view", listOf(viewName), VIEW_QUERY, null, desired, current)) current else desired
@@ -94,5 +121,6 @@ internal class RawTextFolding(
         const val EXPRESSION = "expression"
         const val WHERE = "where"
         const val KEY_EXPRESSION = "key-expression"
+        const val GENERATION_EXPRESSION = "generation-expression"
     }
 }

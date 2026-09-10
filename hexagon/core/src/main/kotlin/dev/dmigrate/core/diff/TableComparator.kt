@@ -78,7 +78,7 @@ internal class TableComparator(
             pkRight = rightPk,
         )
 
-        val columnDiffs = compareColumns(left, right, absorbedColumns, enumVocabularies(left, right))
+        val columnDiffs = compareColumns(name, left, right, absorbedColumns, enumVocabularies(left, right))
         val pkDiff = when {
             targetProjection != null && EffectivePrimaryKey.of(left) == EffectivePrimaryKey.of(right) -> null
             left.primaryKey == right.primaryKey -> null
@@ -199,8 +199,25 @@ internal class TableComparator(
             EnumVocabularies(EnumCheckProjection.vocabulary(left), EnumCheckProjection.vocabulary(right))
         }
 
+    /**
+     * Die beiden Seiten einer Spalte, dazu die Soll-Seite mit gefaltetem
+     * Berechnungsausdruck.
+     *
+     * Verglichen wird gegen [foldedRight], gemeldet wird [right]: eine
+     * Vergleichs-Projektion darf nicht in die erzeugte DDL fliessen.
+     */
+    private data class ColumnPair(
+        val left: ColumnDefinition,
+        val right: ColumnDefinition,
+        val foldedRight: ColumnDefinition,
+    )
+
     private fun compareColumns(
-        left: TableDefinition, right: TableDefinition, absorbed: AbsorbedColumns, vocabularies: EnumVocabularies,
+        tableName: String,
+        left: TableDefinition,
+        right: TableDefinition,
+        absorbed: AbsorbedColumns,
+        vocabularies: EnumVocabularies,
     ): ColumnDiffs {
         val leftNames = left.columns.keys
         val rightNames = right.columns.keys
@@ -209,8 +226,16 @@ internal class TableComparator(
         val removed = (leftNames - rightNames).sorted()
             .associateWith { projectColumn(left.columns.getValue(it)) }
         val changed = (leftNames intersect rightNames).sorted().mapNotNull { name ->
+            val currentColumn = left.columns.getValue(name)
+            val desiredColumn = right.columns.getValue(name)
             compareColumn(
-                name, left.columns.getValue(name), right.columns.getValue(name), absorbed,
+                name,
+                ColumnPair(
+                    left = currentColumn,
+                    right = desiredColumn,
+                    foldedRight = folding.columnGeneration(tableName, name, currentColumn, desiredColumn),
+                ),
+                absorbed,
                 vocabularies.left[name] to vocabularies.right[name],
             )
         }
@@ -218,9 +243,13 @@ internal class TableComparator(
     }
 
     private fun compareColumn(
-        name: String, left: ColumnDefinition, right: ColumnDefinition, absorbed: AbsorbedColumns,
+        name: String,
+        pair: ColumnPair,
+        absorbed: AbsorbedColumns,
         vocabulary: Pair<List<String>?, List<String>?>,
     ): ColumnDiff? {
+        val left = pair.left
+        val right = pair.right
         val canon = targetProjection?.type
         // Typen, die der Ziel-Dialekt auf denselben deklarierten Typ faltet,
         // sind dort keine ausdrückbare Änderung — ein geplanter Alter wäre ein
@@ -247,7 +276,7 @@ internal class TableComparator(
             else if (left.references == right.references) null
             else ValueChange(left.references, right.references)
         val generationDiff = when {
-            projectGeneration(left.generation) == projectGeneration(right.generation) -> null
+            projectGeneration(left.generation) == projectGeneration(pair.foldedRight.generation) -> null
             identitySpelledDifferently(left, right) -> null
             else -> ValueChange(left.generation, right.generation)
         }
