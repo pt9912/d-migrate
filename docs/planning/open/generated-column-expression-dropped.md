@@ -187,6 +187,69 @@ benennen statt es zu uebergehen — und sollte pruefen, ob wenigstens der
 Schreibpfad sich schuetzen laesst (eine `INSERT`-Ablehnung des Servers benannt
 weiterreichen, statt sie als gewoehnlichen Fehler durchzulassen).
 
+## Gebaut (2026-09-10), und wo es anhaelt
+
+Zwei Arbeitspunkte stehen:
+
+1. **Die Modellform.** `ColumnGeneration.Computed(expression, stored)`, mit
+   Codec in beide Richtungen, Validierung (fehlender Ausdruck, Default-Konflikt,
+   unbekannte oder selbstbezuegliche Spalte — mit derselben zurueckhaltenden
+   Erkennung wie bei `E012`) und beiden Identitaets-Projektionen. PostgreSQLs
+   `stored`-Konstante traegt eine Faehigkeit
+   (`supportsVirtualComputedColumns`), die die Ziel-Projektion einrechnet.
+2. **Der Ausdruck als fuenftes rohes SQL-Textfeld** — im Post-Compare
+   ausgeblendet, in der Herkunft gefuehrt, im Vergleich gefaltet, in der
+   Pruefung auf Handaenderungen mit dabei.
+
+Der PostgreSQL-Lesepfad und beide Render-Pfade sind **gebaut und live
+gemessen** (anlegen, zweiter Lauf mit null Operationen, der Server rechnet
+wirklich: `3 × 7.00 → 21.00`), aber **nicht committet**. Der Grund steht unten.
+
+## Der Befund, der den Schnitt anhaelt: eine geaenderte Generation wird gar nicht geplant
+
+`OperationMapper.mapColumnChange` bildet genau drei Felder eines
+`ColumnDiff` ab: `type`, `required`, `default`. **`generation` nicht.** Eine
+Aenderung daran erzeugt keine Operation — der Planer laesst sie fallen.
+
+Live gemessen: ein Lauf, der den Ausdruck von `quantity * unit_price` auf
+`quantity * unit_price * 2` aendert, plant **null Operationen**, endet mit
+Exit 0, und die Datenbank rechnet weiter nach der alten Formel. Still.
+
+Das ist **aelter als dieser Slice** und trifft auch `identity`; es faellt hier
+nur auf, weil der Slice die Generation erstmals zu etwas macht, das sich
+aendern kann.
+
+## Die Gabelung, die daran haengt
+
+Der Lesepfad darf erst dazu, wenn das geschlossen ist — sonst tausche ich einen
+**gemeldeten** Verlust gegen einen **stillen**, und das ist ein Tausch nach
+unten.
+
+Die Schliessung ist aber keine reine Bauentscheidung, weil ohne Herkunft die
+Autorenform und die Katalogform **immer** verschieden aussehen
+(`quantity * unit_price` gegen `((quantity)::numeric * unit_price)`, gemessen):
+
+- **A — planen wie bei den anderen vier Textfeldern.** ADR 0053 sagt fuer sie:
+  ohne Herkunft konservativ, also die Aenderung planen. Bei einer Sicht heisst
+  das `CREATE OR REPLACE`. Bei einer berechneten Spalte heisst es
+  `DROP COLUMN` + `ADD COLUMN` — PostgreSQL 16 kann den Ausdruck nicht in
+  place aendern (`SET EXPRESSION` gibt es erst ab 17). Der Wert selbst ist
+  abgeleitet und geht nicht verloren, **Indizes und Constraints auf der Spalte
+  aber schon**. Und ohne Herkunft passierte das bei **jedem** Lauf.
+- **B — blocken.** Eine Aenderung, die das Werkzeug nicht sicher ausfuehren
+  kann, endet mit `MANUAL_ACTION_REQUIRED` (Exit 8) und einer benannten
+  Meldung. Ehrlich und nicht destruktiv — aber ohne Herkunft blockiert auch der
+  Lauf, der gar nichts geaendert hat.
+- **C — die Faltung zur Vorbedingung machen.** Der Ausdruck wird nur
+  verglichen, wo eine Herkunft (`--provenance-output`-Overlay) oder der
+  Sandkasten (`migrate.raw_sql_sandbox`) eine Serverform gegen eine Serverform
+  stellen kann; sonst gilt er als unentscheidbar und wird nicht geplant, mit
+  einem Hinweis. Konvergiert im Normalfall, sagt aber im Zweifel nichts.
+
+A und B sind ohne Herkunft beide unbrauchbar; C verschiebt die Aussage auf
+einen Schalter, den man einschalten muss. Welche Zusage hier gilt, ist eine
+Eigner-Entscheidung.
+
 ## Die Vorbedingung ist erfuellt (2026-09-10)
 
 [`raw-sql-text-drift.md`](../done/raw-sql-text-drift.md) ist gebaut: der
