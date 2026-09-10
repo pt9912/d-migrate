@@ -7,9 +7,22 @@ import dev.dmigrate.core.model.*
 class SchemaComparator(
     /** Ziel-bewusster Vergleichsmodus (siehe [TargetProjection]); null = strikt. */
     targetProjection: TargetProjection? = null,
+    /**
+     * Die Herkunft der rohen SQL-Textfelder (siehe [RawTextAuthorship]);
+     * `null` = keine, dann entscheidet wie bisher der Textvergleich.
+     *
+     * Wirkt wie [TargetProjection] **ausschliesslich auf die
+     * Vergleichsentscheidung**: die geplante Operation traegt weiterhin die
+     * unveraenderten Definitionen, und weder Fingerabdruck noch
+     * `CanonicalPayload` sehen davon etwas. Eine Aussage ueber zwei
+     * Autorentexte laesst sich in einer Ein-Schema-Projektion ohnehin nicht
+     * ausdruecken.
+     */
+    private val authorship: RawTextAuthorship? = null,
 ) {
 
-    private val tableComparator = TableComparator(targetProjection)
+    private val tableComparator = TableComparator(targetProjection, authorship)
+    private val folding = RawTextFolding(authorship)
 
     fun compare(left: SchemaDefinition, right: SchemaDefinition): SchemaDiff {
         val metadataDiff = compareMetadata(left, right)
@@ -135,7 +148,13 @@ class SchemaComparator(
             name = name,
             materialized = valueChangeOrNull(left.materialized, right.materialized),
             refresh = valueChangeOrNull(left.refresh, right.refresh),
-            query = valueChangeOrNull(left.query, right.query),
+            // Gemeldet wird der unveraenderte Soll-Text; gefaltet wird nur,
+            // woran verglichen wird.
+            query = if (left.query == folding.viewQuery(name, left.query, right.query)) {
+                null
+            } else {
+                valueChangeOrNull(left.query, right.query)
+            },
             columnsChanged = left.columns != right.columns,
             sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
         )

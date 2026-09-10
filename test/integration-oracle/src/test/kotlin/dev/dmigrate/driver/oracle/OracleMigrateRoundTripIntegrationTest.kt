@@ -181,7 +181,7 @@ class OracleMigrateRoundTripIntegrationTest : FunSpec({
                 },
                 dbLoader = { _, _ -> liveOperand() },
                 comparator = { a, b -> SchemaComparator().compare(a, b) },
-                targetAwareComparator = { left, right, canonicalize ->
+                targetAwareComparator = { left, right, canonicalize, _ ->
                     SchemaComparator(canonicalize).compare(left, right)
                 },
                 rendererFor = { d -> if (d == DatabaseDialect.ORACLE) OracleDiffDdlGenerator() else noRenderer() },

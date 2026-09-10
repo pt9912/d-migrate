@@ -26,6 +26,13 @@ internal class TableComparator(
      * `schema compare` bleibt strikt (null).
      */
     private val targetProjection: TargetProjection? = null,
+    /**
+     * Die Herkunft der rohen SQL-Textfelder; `null` = keine, dann entscheidet
+     * wie bisher der Textvergleich. Wirkt wie [targetProjection]
+     * ausschliesslich auf die Vergleichsentscheidung — die gemeldete Aenderung
+     * traegt die unveraenderten Definitionen.
+     */
+    private val authorship: RawTextAuthorship? = null,
 ) {
 
     fun compareTables(left: SchemaDefinition, right: SchemaDefinition): TableDiffs {
@@ -44,6 +51,8 @@ internal class TableComparator(
 
         return TableDiffs(added, removed, changed)
     }
+
+    private val folding = RawTextFolding(authorship)
 
     internal fun compareTable(
         name: String,
@@ -73,8 +82,8 @@ internal class TableComparator(
             else -> ValueChange(left.primaryKey, right.primaryKey)
         }
 
-        val indexDiffs = compareIndices(left.indices, right.indices)
-        val constraintDiffs = compareConstraints(leftNorm, rightNorm)
+        val indexDiffs = compareIndices(name, left.indices, right.indices)
+        val constraintDiffs = compareConstraints(name, leftNorm, rightNorm)
         val metadataDiff = if (left.metadata == right.metadata) null
             else ValueChange(left.metadata, right.metadata)
         val partitioningDiff = comparePartitioning(left.partitioning, right.partitioning)
@@ -324,7 +333,11 @@ internal class TableComparator(
         val changed: List<ValueChange<ConstraintDefinition>>,
     )
 
-    private fun compareConstraints(left: NormalizedConstraints, right: NormalizedConstraints): ConstraintDiffResult {
+    private fun compareConstraints(
+        tableName: String,
+        left: NormalizedConstraints,
+        right: NormalizedConstraints,
+    ): ConstraintDiffResult {
         val added = mutableListOf<ConstraintDefinition>()
         val removed = mutableListOf<ConstraintDefinition>()
         val changed = mutableListOf<ValueChange<ConstraintDefinition>>()
@@ -367,7 +380,9 @@ internal class TableComparator(
         for (name in (multiLeftNames intersect multiRightNames).sorted()) {
             val l = left.multiColumnConstraints.getValue(name)
             val r = right.multiColumnConstraints.getValue(name)
-            if (l != r) changed.add(ValueChange(l, r))
+            // Gemeldet wird das unveraenderte Paar; gefaltet wird nur, WORAN
+            // verglichen wird.
+            if (l != folding.constraint(tableName, name, l, r)) changed.add(ValueChange(l, r))
         }
 
         return ConstraintDiffResult(added, removed, changed)
@@ -459,7 +474,11 @@ internal class TableComparator(
         val changed: List<ValueChange<IndexDefinition>>,
     )
 
-    private fun compareIndices(left: List<IndexDefinition>, right: List<IndexDefinition>): IndexDiffResult {
+    private fun compareIndices(
+        tableName: String,
+        left: List<IndexDefinition>,
+        right: List<IndexDefinition>,
+    ): IndexDiffResult {
         val leftByKey = byProjectedKey(left)
         val rightByKey = byProjectedKey(right)
         val leftKeys = leftByKey.keys
@@ -468,7 +487,8 @@ internal class TableComparator(
         val removed = (leftKeys - rightKeys).sorted().map { leftByKey.getValue(it) }
         val changed = (leftKeys intersect rightKeys).sorted().mapNotNull { key ->
             val l = leftByKey.getValue(key); val r = rightByKey.getValue(key)
-            if (projectIndex(l) == projectIndex(r)) null else ValueChange(l, r)
+            val folded = folding.index(tableName, l, r)
+            if (projectIndex(l) == projectIndex(folded)) null else ValueChange(l, r)
         }
         return IndexDiffResult(added, removed, changed)
     }

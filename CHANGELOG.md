@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ein Migrationslauf konvergiert jetzt, wenn die Herkunft mitgegeben wird.**
+  Der Vergleich fragte für Sichten-Rümpfe, CHECK-Ausdrücke und
+  Index-Ausdrücke, ob sich der Dateitext von der Katalogform unterscheidet —
+  das tut er immer, und deshalb plante **jeder** Lauf dieselbe Änderung erneut.
+  Liegt ein `raw-text-provenance`-Overlay vor, lautet die Frage stattdessen, ob
+  der **Autor** den Text seit dem letzten Anwenden geändert hat: zwei
+  Autorentexte, wortgleich vergleichbar. Ohne Herkunft bleibt es beim
+  Textvergleich, also konservativ. `schema compare` bleibt streng.
+
+  Die Herkunft wirkt ausschließlich auf die **Vergleichsentscheidung**;
+  Fingerabdruck und Operations-IDs bleiben unverändert. **Bestehende Overlays
+  behalten damit ihre Gültigkeit.**
+
 - **`schema migrate --execute --provenance-output <datei>`** schreibt nach einem
   sauberen Lauf ein `raw-text-provenance`-Overlay: je Sichten-Rumpf,
   CHECK-Ausdruck, Index-Prädikat und Ausdrucks-Schlüssel den **angewandten

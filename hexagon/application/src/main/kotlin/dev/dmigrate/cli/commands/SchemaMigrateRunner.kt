@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TargetProjection
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
+import dev.dmigrate.core.diff.RawTextAuthorship
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
@@ -87,7 +88,12 @@ class SchemaMigrateRunner(
      * (Test-Verdrahtungen).
      */
     private val targetAwareComparator: (
-        (SchemaDefinition, SchemaDefinition, projection: TargetProjection) -> SchemaDiff
+        (
+            SchemaDefinition,
+            SchemaDefinition,
+            projection: TargetProjection,
+            authorship: RawTextAuthorship?,
+        ) -> SchemaDiff
     )? = null,
     private val planner: DiffPlanner = DiffPlanner(),
     private val rendererFor: (DatabaseDialect) -> DiffDdlGenerator?,
@@ -529,7 +535,15 @@ class SchemaMigrateRunner(
             constraintName = capabilityConstraintNameCanonicalizer(prep.effectiveDialect),
         )
         val diff = targetAwareComparator
-            ?.invoke(prep.targetNormalized.schema, prep.sourceNormalized.schema, projection)
+            ?.invoke(
+                prep.targetNormalized.schema,
+                prep.sourceNormalized.schema,
+                projection,
+                // Die Herkunft aus den mitgegebenen Overlays. Ohne sie
+                // entscheidet wie bisher der Textvergleich — und der plant
+                // konservativ.
+                OverlayRawTextAuthorship.of(mergedOverlays),
+            )
             ?: comparator(prep.targetNormalized.schema, prep.sourceNormalized.schema)
         val overlayPreflight = MigrationOverlayPreflight.validateBeforePlan(
             documents = mergedOverlays,

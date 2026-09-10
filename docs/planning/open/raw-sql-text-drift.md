@@ -156,6 +156,12 @@ fuenf offenen Punkte sind dort entschieden:
 
 ## Vorbedingung, die beim Aufsetzen des Baus herauskam
 
+> **Erledigt.** Der folgende Abschnitt beschreibt den Stand beim Aufsetzen des
+> Schnitts. Overlay v2 ist inzwischen gebaut (Schnitt-Punkt 1), und das
+> Herkunfts-Overlay bindet als `Representation` (Punkt 2) — die Vorbedingung
+> steht. Der Abschnitt bleibt stehen, weil er begruendet, warum der Schnitt so
+> geschnitten ist.
+
 Die Herkunft beschreibt **ein** Schema: „so stand der Text, als zuletzt
 angewandt wurde". Der Overlay-Vertrag kann das heute nicht ausdruecken.
 `MigrationOverlay` traegt `sourceFingerprint` **und** `targetFingerprint`
@@ -188,9 +194,34 @@ unterlaufen.
    Post-Compare**: vorher steht nicht fest, dass das Paar zusammengehoert.
    Gelesen wird es ueber `--migration-overlay` — was heute nur heisst, dass es
    angenommen und geprueft wird; ausgewertet wird es erst mit Punkt 3.
-3. **Vergleich aus der Herkunft** in allen **drei** Projektionen zugleich
+3. ~~**Vergleich aus der Herkunft** in allen **drei** Projektionen zugleich
    (Comparator, `MigrationFingerprint`, `CanonicalPayload`) — Punkt 5 oben.
-   Fingerabdruck-Anhebung geht mit.
+   Fingerabdruck-Anhebung geht mit.~~ — **gebaut, und billiger als gedacht.**
+
+   Der Comparator fragt fuer die vier Textfelder die Herkunft: hat der **Autor**
+   den Text seit dem letzten Anwenden geaendert? Ohne Herkunft entscheidet wie
+   bisher der Textvergleich — konservativ, also planend statt meldend.
+
+   **Der Fingerabdruck wurde NICHT angehoben, und `CanonicalPayload` blieb
+   unberuehrt.** Nachgemessen, statt dem Entwurf zu folgen:
+
+   - `TableComparator.indexKey` bildet die Identitaet eines benannten Index aus
+     seinem **Namen**. Roher Text geht dort nur in die **Gleichheit** ein, nicht
+     in die Identitaet — der Drei-Projektionen-Vertrag ist also gar nicht
+     beruehrt.
+   - Die Endpunkt-Abdruecke sind **Bezeichner** fuer die Overlay-Bindung; sie
+     werden nicht gegeneinander verglichen. Dass Autorentext und Katalogform zu
+     verschiedenen Abdruecken fuehren, stoert dort nichts.
+   - Die Herkunft wirkt damit an derselben Naht wie `TargetProjection`:
+     **ausschliesslich auf die Vergleichsentscheidung**. Die gemeldete Aenderung
+     traegt weiterhin die unveraenderten Definitionen.
+
+   **Folge: bestehende Overlays werden NICHT entwertet.** Die im ADR unter
+   Punkt 3 und 5 angekuendigte Konsequenz tritt nicht ein, weil ihre
+   Voraussetzung — eine geaenderte **Projektion** — nicht eingetreten ist. Der
+   ADR ist damit nicht ueberholt; die dort befuerchteten Kosten fielen nur
+   nicht an.
+
 4. ~~**Post-Compare Server-Form gegen Server-Form** fuer die vier Felder.~~
    — **gebaut.** Die vier Textfelder fallen ueber `RawSqlTextProjection` aus
    dem Fingerabdruck des Post-Compare und werden getrennt geprueft: wie der

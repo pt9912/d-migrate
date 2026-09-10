@@ -109,7 +109,7 @@ class MssqlListPartitionMigrateIntegrationTest : FunSpec({
                 },
                 dbLoader = { _, _ -> liveOperand(pool) },
                 comparator = { a, b -> SchemaComparator().compare(a, b) },
-                targetAwareComparator = { left, right, canonicalize ->
+                targetAwareComparator = { left, right, canonicalize, _ ->
                     SchemaComparator(canonicalize).compare(left, right)
                 },
                 rendererFor = { MssqlDiffDdlGenerator() },

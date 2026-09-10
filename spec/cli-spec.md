@@ -926,6 +926,17 @@ Report-Felder für `--execute`:
   in keiner Transaktion, die sie zurücknehmen könnte. `NONE` heißt damit nicht
   „keine Transaktion vorhanden" — welcher Fall vorliegt, sagt das
   danebenstehende `transactionScope`.
+- **Auch das Planen vergleicht rohen SQL-Text nicht gegen den Dateitext.**
+  Liegt ein `raw-text-provenance`-Overlay vor (`--migration-overlay`), lautet
+  die Frage fuer die vier Textfelder nicht „unterscheidet sich der Dateitext
+  von der Katalogform?" — das tut er immer —, sondern „hat der **Autor** den
+  Text seit dem letzten Anwenden geaendert?". Das ist eine Aussage ueber zwei
+  Autorentexte. Ohne Herkunft (erster Lauf, verlorenes Dokument) wird
+  **konservativ** geplant: die Aenderung wird ausgefuehrt, auch wenn sie
+  vielleicht unnoetig ist. Die Herkunft wirkt dabei ausschliesslich auf die
+  **Vergleichsentscheidung** — die geplante Operation traegt weiterhin die
+  unveraenderten Definitionen, und weder Fingerabdruck noch Operations-IDs
+  aendern sich. `schema compare` bleibt streng.
 - **Der Post-Compare vergleicht rohen SQL-Text nicht gegen den Dateitext.**
   Die vier Textfelder (`views[].query`, CHECK-`expression`, `where` und
   Ausdruecks-Schluessel eines Index) stehen auf den beiden Seiten in

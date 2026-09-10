@@ -1455,6 +1455,15 @@ zurück.
   der neuen Version neu. Siehe [Fehlerbehebung](#5-fehlerbehebung).
 - Ist das Rücknahme-Skript bewusst unvollständig, benötigen Sie zusätzlich
   `--allow-partial-rollback`.
+- **Damit ein Lauf konvergiert, geben Sie die Herkunft mit.** Schreiben Sie sie
+  beim Anwenden (`--provenance-output herkunft.json`) und geben Sie die Datei
+  beim nächsten Lauf über `--migration-overlay herkunft.json` zurück. Dann
+  fragt d-migrate nicht mehr „unterscheidet sich mein Dateitext von dem, was
+  der Server führt?" — das tut er immer —, sondern „habe **ich** den Text seit
+  dem letzten Anwenden geändert?". Ohne die Datei wird konservativ geplant: die
+  Änderung läuft erneut, auch wenn sie unnötig ist. Bei einer Sicht ist das ein
+  `CREATE OR REPLACE`, bei einem CHECK ein Abbau und Aufbau — kurz ohne
+  Prüfung, aber ohne Datenverlust.
 - **Rohes SQL wird nach dem Anwenden nicht gegen Ihren Dateitext geprüft.**
   Eine Sicht, ein CHECK-Ausdruck und der Schlüssel oder das Prädikat eines
   Ausdrucks-Index sind Text, und Server geben ihn nicht wortgleich zurück:
