@@ -34,17 +34,65 @@ Fehler führen: dann gilt weiter „nicht entscheidbar, also nicht melden". Die
 heutige zurückhaltende Erkennung bleibt damit als Rückfallweg nützlich, sie
 wird nicht ersetzt, sondern vorgelagert.
 
-## Was vor dem Bau zu messen ist
+## Was vor dem Bau zu messen war — gemessen
 
-1. **Native Image.** d-migrate liefert ein GraalVM-Binary aus. Ob der Parser
-   dort ohne Reflection-Konfiguration läuft, entscheidet über den Aufwand und
-   ist vor der Abhängigkeitsentscheidung zu prüfen.
-2. **Lizenz und CVE-Fläche** des Parsers im ausgelieferten Artefakt — dieselbe
-   Sorgfaltspflicht wie bei `ojdbc11` (FUTC) und den Befunden aus
-   [`open/dependency-cve-exposure-shipped-artifact.md`](dependency-cve-exposure-shipped-artifact.md).
-3. **Ausdrucksfragmente.** Ein CHECK ist kein Statement. Ob der Parser ein
-   blankes Prädikat liest und wie er sich bei dialektspezifischer Syntax
-   verhält (`::`, `~`, `ARRAY[...]`), ist zu messen, nicht anzunehmen.
+Gemessen gegen `com.github.jsqlparser:jsqlparser:5.3` (aktuelles Release,
+Stand der Messung), außerhalb des Repos.
+
+### 1. Ausdrucksfragmente — beantwortet, positiv
+
+`CCJSqlParserUtil.parseCondExpression` liest ein blankes Prädikat, kein
+Statement nötig. **Alle zwölf** bekannten Fälle parsen, und die gefundenen
+Spalten sind **identisch** mit dem, was die heutige Erkennung liefert:
+
+| Ausdruck | Parser liefert |
+| --- | --- |
+| `status IN ('active','deleted')` | `[status]` |
+| `LENGTH(name) > 3` | `[name]` |
+| `CAST(x AS integer) > 0` | `[x]` |
+| `EXTRACT(YEAR FROM created_at) > 2000` | `[created_at]` |
+| `amount > 0::numeric` | `[amount]` |
+| `((operation)::text = ANY ((ARRAY['INSERT'::character varying, …])::text[]))` | `[operation]` |
+| `created_at < CURRENT_DATE` | `[created_at]` |
+| `name ~ '^[a-z]+$'` | `[name]` |
+| `t.status <> ''` | `[status]` |
+| `COALESCE(name,'') <> ''` | `[name]` |
+| `statsu > 0` (echter Tippfehler) | `[statsu]` |
+
+Also auch PostgreSQL-eigene Syntax: `::`-Cast, `ARRAY[…]`, der `~`-Operator.
+
+### 2. Lizenz und CVE-Fläche — beantwortet, mit einer Auflage
+
+**Lizenz: doppelt — LGPL-2.1 *oder* Apache-2.0.** Die Apache-Variante ist
+wählbar und damit unproblematisch; zu bestätigen bleibt, dass der POM sie als
+Wahl und nicht als Konjunktion meint.
+
+**Transitive Laufzeit-Abhängigkeit: genau eine, und sie gehört nicht dorthin.**
+`org.openjdk.jmh:jmh-core:1.37` steht im POM auf `compile` und nicht
+`optional` — eine Benchmark-Bibliothek im Laufzeitpfad, die ihrerseits
+`jopt-simple` und `commons-math3` nachzieht. Sie ist beim Einbinden
+auszuschließen; ohne Ausschluss wüchse das Auslieferungsartefakt um drei
+Bibliotheken, die niemand aufruft.
+
+(PMD, Checkstyle und ein JavaCC-Versionsbereich stehen ebenfalls im POM, aber
+als **Plugin**-Abhängigkeiten — reine Bauzeit, nicht transitiv. Ein erster
+Blick auf die Datei legt das Gegenteil nahe; nachgesehen wurde die tatsächliche
+Auflösung.)
+
+### 3. Native Image — starker Hinweis, kein Beweis
+
+Das Jar (1,3 MB, 527 Klassen) enthält **keinen** Reflection-Indikator
+(`java.lang.reflect`, `ServiceLoader`, `Class.forName`), kein
+`META-INF/services` und keine mitgelieferten Native-Image-Metadaten. Der Parser
+ist JavaCC-erzeugter Java-Code, der Besucher ist zur Übersetzungszeit gebunden.
+
+Das ist ein starker Hinweis, aber kein Beweis: GraalVM ist auf der
+Entwicklungsmaschine nicht installiert (`native-image.yml` baut ausdrücklich
+außerhalb des Docker-Bildes), der belastbare Nachweis ist ein Native-Bau in
+CI. Nach der Hausregel aus
+`adapters/driving/cli/src/main/resources/META-INF/native-image/dev.dmigrate/cli-manual/README.md`
+("Alle Eintraege hier sind empirisch belegt … Keiner steht auf Verdacht") wäre
+der Bau die Abnahme, nicht diese Analyse.
 
 ## Umfang, gemessen
 
@@ -57,6 +105,12 @@ in der CLI-Verdrahtung. Ein injizierter Port geht durch alle; der Umbau läuft
 
 Eine neue Laufzeit-Abhängigkeit im ausgelieferten Artefakt ist keine
 Werkzeugwahl, sondern eine Zusage. Sie gehört entschieden, bevor gebaut wird.
+
+Nach den Messungen steht die Frage schmal: der Parser leistet, was er soll
+(Punkt 1), die Lizenz trägt (Punkt 2, mit dem `jmh-core`-Ausschluss als
+Auflage), und der Native-Nachweis ist ein CI-Lauf (Punkt 3). Zu entscheiden
+bleibt, ob das Werkzeug eine Bibliothek mehr im Auslieferungsartefakt tragen
+soll, um eine Schätzung durch eine Entscheidung zu ersetzen.
 
 ## Berührte Stellen
 
