@@ -1455,6 +1455,17 @@ zurück.
   der neuen Version neu. Siehe [Fehlerbehebung](#5-fehlerbehebung).
 - Ist das Rücknahme-Skript bewusst unvollständig, benötigen Sie zusätzlich
   `--allow-partial-rollback`.
+- **Rohes SQL wird nach dem Anwenden nicht gegen Ihren Dateitext geprüft.**
+  Eine Sicht, ein CHECK-Ausdruck und der Schlüssel oder das Prädikat eines
+  Ausdrucks-Index sind Text, und Server geben ihn nicht wortgleich zurück:
+  PostgreSQL druckt ihn aus seinem Parsebaum, aus `age >= 18` wird
+  `((age >= 18))`, ein `--`-Kommentar verschwindet dabei ganz. Der Vergleich
+  nach `--execute` stellt deshalb zwei Formen **desselben Servers**
+  gegeneinander — wie er das Feld vor dem Lauf führte und wie danach — und nur
+  an Objekten, die der Lauf nicht angefasst hat. Weicht dort etwas ab, hat
+  jemand von Hand am Ziel geschrieben, und der Lauf meldet Drift. `schema
+  compare` bleibt davon unberührt: dort ist ein Textunterschied weiterhin ein
+  Unterschied.
 - Nicht jede Operation ist umkehrbar (z. B. das Ersetzen einer Routine, deren
   alter Inhalt unbekannt ist). In solchen Fällen meldet `--generate-rollback`
   das bereits beim Ausrollen, statt ein trügerisches Down-Skript zu erzeugen.

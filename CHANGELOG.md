@@ -228,6 +228,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`schema migrate --execute` meldete nach jedem Lauf Drift, sobald eine
+  Sicht, ein CHECK oder ein Ausdrucks-Index im Spiel war.** Der Post-Compare
+  verglich den Autorentext aus der Schemadatei gegen die Katalogform des
+  Servers — und die stimmen nie überein: PostgreSQL druckt den Ausdruck aus
+  seinem Parsebaum (`age >= 18` kommt als `((age >= 18))` zurück), ein
+  `--`-Kommentar ist dabei spurlos weg. Folge: Exit `5` und kein
+  Rücknahme-Artefakt, bei jedem Lauf. Die vier Textfelder fallen jetzt aus dem
+  Fingerabdruck des Post-Compare und werden getrennt geprüft, **Server-Form
+  gegen Server-Form**: wie der Server das Feld vor dem Lauf führte gegen wie
+  danach, und nur an Objekten, die der Plan nicht angefasst hat. Eine
+  Handänderung am Server fällt damit erstmals wirklich auf, statt in der
+  Dauer-Drift unterzugehen. `schema compare` bleibt streng.
+
 - **Ein benannter UNIQUE auf einer Oracle-LOB-Spalte brach das Anwenden ab.**
   Seit die Spalte ihren Constraint-Namen führt, rendert d-migrate einen
   benannten einspaltigen UNIQUE als Tabellen-Constraint. Oracle bekam diese

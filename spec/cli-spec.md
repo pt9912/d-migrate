@@ -925,6 +925,19 @@ Report-Felder für `--execute`:
   in keiner Transaktion, die sie zurücknehmen könnte. `NONE` heißt damit nicht
   „keine Transaktion vorhanden" — welcher Fall vorliegt, sagt das
   danebenstehende `transactionScope`.
+- **Der Post-Compare vergleicht rohen SQL-Text nicht gegen den Dateitext.**
+  Die vier Textfelder (`views[].query`, CHECK-`expression`, `where` und
+  Ausdruecks-Schluessel eines Index) stehen auf den beiden Seiten in
+  verschiedenen Schreibweisen: der Server druckt sie aus seinem Parsebaum, ein
+  `--`-Kommentar ist danach spurlos weg. Sie fallen deshalb aus dem
+  Fingerabdruck-Vergleich heraus und werden getrennt geprueft — **Server-Form
+  gegen Server-Form**: wie der Server das Feld vor dem Lauf fuehrte gegen wie
+  danach, und nur an Objekten, die der Plan nicht angefasst hat. Weicht dort
+  eines ab, hat jemand von Hand geschrieben, und das ist Drift (Exit `5`). Wo
+  der Plan etwas geaendert hat, ist die Abweichung seine Absicht; dass der
+  Server die Anweisung angenommen hat, ist die Bestaetigung. `schema compare`
+  bleibt davon unberuehrt und meldet einen Textunterschied weiterhin als
+  Unterschied.
 - Nach Execute-Fehlern enthaelt `execution.recoverability` eine konservative
   Einschaetzung: `FULL_ROLLBACK_CONFIRMED`, `ROLLBACK_ATTEMPTED`,
   `PARTIAL_STATE_POSSIBLE` oder `UNKNOWN`. Bei erfolgreichem Execute ist das

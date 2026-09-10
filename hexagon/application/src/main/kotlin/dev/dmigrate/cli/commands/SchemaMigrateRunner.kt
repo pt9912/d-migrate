@@ -386,16 +386,7 @@ class SchemaMigrateRunner(
         )
         val withExecution = executionStage.applyExecutionTrace(render.executableCombined, executionTrace)
         val postCompareOutcome = if (executionTrace != null && executionTrace.executionError == null) {
-            executionStage.runPostCompare(
-                request,
-                prepared.sourceNormalized.schema,
-                prepared.targetOp,
-                endpoints.canonicalizeIndex,
-                { schema -> registrySchemaAwareCanonicalizer(prepared.effectiveDialect, schema) },
-                endpoints.canonicalizeGeneration,
-                endpoints.canonicalizePartitioning,
-                endpoints.foldsAutoIncrementOntoIdentity,
-            )
+            postCompare(request, prepared, endpoints, effectivePlan)
         } else {
             null
         }
@@ -434,6 +425,31 @@ class SchemaMigrateRunner(
             executionTrace, postCompareOutcome, recoveryContext,
         )
     }
+
+    /**
+     * Der Post-Compare mit allen Projektionen des Ziels — und der Grundlinie,
+     * gegen die rohe SQL-Textfelder geprueft werden: was der Server vor dem
+     * Lauf fuehrte, und welche Objekte der Plan angefasst hat.
+     */
+    private fun postCompare(
+        request: SchemaMigrateRequest,
+        prepared: SchemaMigratePrepared,
+        endpoints: EndpointFingerprints,
+        plan: DiffResult,
+    ): PostCompareOutcome? = executionStage.runPostCompare(
+        request,
+        prepared.sourceNormalized.schema,
+        prepared.targetOp,
+        endpoints.canonicalizeIndex,
+        { schema -> registrySchemaAwareCanonicalizer(prepared.effectiveDialect, schema) },
+        endpoints.canonicalizeGeneration,
+        endpoints.canonicalizePartitioning,
+        endpoints.foldsAutoIncrementOntoIdentity,
+        RawSqlBaseline(
+            observedBeforeRun = prepared.targetNormalized.schema,
+            touchedObjects = plan.operations.map { it.objectRef.path.first() }.toSet(),
+        ),
+    )
 
     /**
      * Plan-2 §F.4 dependency-projection T1: validate overlays BEFORE

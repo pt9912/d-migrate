@@ -188,7 +188,18 @@ unterlaufen.
 3. **Vergleich aus der Herkunft** in allen **drei** Projektionen zugleich
    (Comparator, `MigrationFingerprint`, `CanonicalPayload`) — Punkt 5 oben.
    Fingerabdruck-Anhebung geht mit.
-4. **Post-Compare Server-Form gegen Server-Form** fuer die vier Felder.
+4. ~~**Post-Compare Server-Form gegen Server-Form** fuer die vier Felder.~~
+   — **gebaut.** Die vier Textfelder fallen ueber `RawSqlTextProjection` aus
+   dem Fingerabdruck des Post-Compare und werden getrennt geprueft: wie der
+   Server das Feld **vor** dem Lauf fuehrte gegen wie **danach**, und nur an
+   Objekten, die der Plan nicht angefasst hat. Damit meldet ein `--execute`
+   nicht mehr bei jedem Lauf Drift, und eine Handaenderung am Server faellt
+   dabei erstmals wirklich auf statt in der Dauer-Drift unterzugehen.
+
+   Die Grundlinie kommt aus dem Lauf selbst (`prepared.targetNormalized`) —
+   ohne Herkunfts-Overlay. Was damit **noch nicht** geht: eine Handaenderung
+   zwischen zwei Laeufen zu erkennen, denn dafuer muesste die Katalogform den
+   Lauf ueberdauern. Genau das leistet Punkt 2.
 5. **Sandkasten** (Option D), per Konfigurationsdatei einzuschalten, greift
    dort, wo Herkunft fehlt.
 

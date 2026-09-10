@@ -10,6 +10,7 @@ import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.RoutineBodyDisplay
+import dev.dmigrate.core.diff.migration.RawSqlTextProjection
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.UncompiledObject
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
@@ -26,6 +27,20 @@ import java.nio.file.Path
  */
 typealias PostApplyStatusProbeFn =
     (CompareOperand.Database, Path?, DiffResult, DatabaseDialect) -> List<UncompiledObject>
+
+/**
+ * Die Grundlinie, gegen die rohe SQL-Textfelder nach dem Anwenden geprueft
+ * werden: was der Server **vor** dem Lauf fuehrte, und welche Objekte der Plan
+ * angefasst hat.
+ *
+ * Beides zusammen macht aus zwei unvergleichbaren Formen (Autorentext gegen
+ * Katalogform) zwei vergleichbare (Katalogform gegen Katalogform) —
+ * [ADR 0053](../../../../../../../../docs/adr/0053-vergleich-rohen-sql-texts.md).
+ */
+internal data class RawSqlBaseline(
+    val observedBeforeRun: SchemaDefinition,
+    val touchedObjects: Set<String>,
+)
 
 /**
  * Pipeline stage for the `--execute` slice of `schema migrate`: invokes
@@ -64,6 +79,13 @@ internal class SchemaMigrateExecutionStage(
          * niemand mehr.
          */
         private const val MAX_LISTED_UNCOMPILED = 5
+
+        /**
+         * Der Fingerabdruck-Platz einer Drift, die nicht am Fingerabdruck
+         * haengt: rohes SQL faellt aus ihm heraus, ein Fund dort hat also
+         * keinen beobachteten Hash zu nennen.
+         */
+        private const val RAW_SQL_HAND_CHANGE = "raw-sql-hand-change"
     }
 
     /**
@@ -229,6 +251,7 @@ internal class SchemaMigrateExecutionStage(
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
         foldsAutoIncrementOntoIdentity: Boolean = false,
+        rawSqlBaseline: RawSqlBaseline? = null,
     ): PostCompareOutcome? {
         val loader = dbLoader ?: return null
         val dbOperand = target as? CompareOperand.Database ?: return null
@@ -247,19 +270,26 @@ internal class SchemaMigrateExecutionStage(
             printError("Post-execute reverse marker error: ${e.message}", request.target)
             return PostCompareOutcome.IntrospectionFailed
         }
+        // Rohes SQL steht auf beiden Seiten in verschiedenen Schreibweisen —
+        // Autorentext hier, Katalogform dort — und faellt deshalb aus dem
+        // Fingerabdruck heraus. Geprueft wird es getrennt, gegen die richtige
+        // Seite (siehe unten).
+        val observedSchema = RawSqlTextProjection.blank(postNormalized.schema)
+        val desiredSchema = RawSqlTextProjection.blank(desired)
         // Jede Seite loest ihre eigenen Custom Types auf.
         val observed = fingerprint(
-            postNormalized.schema,
-            canonicalizerFor(postNormalized.schema),
+            observedSchema,
+            canonicalizerFor(observedSchema),
             canonicalizeIndex,
             canonicalizeGeneration,
             canonicalizePartitioning,
             foldsAutoIncrementOntoIdentity,
         )
         val desiredFp = fingerprint(
-            desired, canonicalizerFor(desired), canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
-            foldsAutoIncrementOntoIdentity,
+            desiredSchema, canonicalizerFor(desiredSchema), canonicalizeIndex, canonicalizeGeneration,
+            canonicalizePartitioning, foldsAutoIncrementOntoIdentity,
         )
+        rawSqlHandChange(request, rawSqlBaseline, postNormalized.schema)?.let { return it }
         return if (observed == desiredFp) {
             PostCompareOutcome.Clean(observed)
         } else {
@@ -271,6 +301,38 @@ internal class SchemaMigrateExecutionStage(
             )
             PostCompareOutcome.Drift(observed)
         }
+    }
+
+    /**
+     * Hat jemand von Hand an einem rohen SQL-Feld geschrieben?
+     *
+     * Verglichen werden zwei Formen desselben Servers — vor und nach dem Lauf
+     * —, und nur an Objekten, die der Plan nicht angefasst hat. Wo er etwas
+     * geaendert hat, ist eine Abweichung die Absicht des Laufs.
+     *
+     * Ohne Grundlinie faellt die Pruefung aus: dann ist die Frage
+     * unbeantwortbar, und sie unbeantwortet zu lassen ist ehrlicher, als sie
+     * gegen den Dateitext zu beantworten.
+     */
+    private fun rawSqlHandChange(
+        request: SchemaMigrateRequest,
+        baseline: RawSqlBaseline?,
+        observed: SchemaDefinition,
+    ): PostCompareOutcome? {
+        if (baseline == null) return null
+        val changes = RawSqlServerFormCheck.handChanges(
+            before = baseline.observedBeforeRun,
+            after = observed,
+            untouched = { it !in baseline.touchedObjects },
+        )
+        if (changes.isEmpty()) return null
+        printError(
+            "Post-execute compare detected drift in raw SQL text that this run did not change: " +
+                changes.joinToString("; ") + ". No automatic recovery rollback artefact is emitted on drift — " +
+                "inspect the target manually before deciding on rollback.",
+            request.target,
+        )
+        return PostCompareOutcome.Drift(RAW_SQL_HAND_CHANGE)
     }
 
     /**

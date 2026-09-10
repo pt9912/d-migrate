@@ -268,7 +268,7 @@
 > endet das in `ORA-02443`. Das ist **dialektübergreifend und älter als
 > Oracle** (PostgreSQL und MSSQL rendern identisch, der Name geht schon beim
 > Reverse verloren); 5b ist nur der Slice, in dem Oracle es erbt. Ticket:
-> [`single-column-constraint-synthetic-name.md`](../open/single-column-constraint-synthetic-name.md).
+> [`single-column-constraint-synthetic-name.md`](../done/single-column-constraint-synthetic-name.md).
 >
 > Der zweite schmale Fall bleibt bestehen: ein **anonymer Index**
 > (`IndexDefinition.name == null`, entsteht nur bei handgeschriebenen
