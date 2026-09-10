@@ -259,6 +259,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Fortsetzungsregeln von SQL Server und Oracle liegen in ihren Treibermodulen,
   nicht mehr im Lesepfad-Port. Verhalten unverändert.
 
+- **Berechnete Spalten** (`GENERATED ALWAYS AS (…)`) haben jetzt eine Form im
+  neutralen Modell: `generation: {type: computed, expression: …, stored: …}`.
+  Bis dahin ging die Zusicherung „diese Spalte ist immer *dieser Ausdruck*"
+  beim Zurücklesen verloren — sie wurde nur gemeldet, nicht getragen.
+
+  **PostgreSQL** liest sie zurück und schreibt sie in beiden Pfaden
+  (`schema generate` und `schema migrate`). Dort ist `STORED` Pflicht, `VIRTUAL`
+  ein Syntaxfehler; die Angabe wird entsprechend eingerechnet, damit ein
+  Round-Trip nicht als Änderung erscheint. Die übrigen vier Dialekte melden den
+  Verlust weiterhin (`R343`/`R367`) und folgen.
+
+  Der Ausdruck ist roher SQL-Text und wird deshalb **nur verglichen**, wenn ein
+  `raw-text-provenance`-Overlay oder der Sandkasten zwei gleichartige Formen
+  gegeneinanderstellen kann. Sonst plant der Lauf nichts und meldet `W137` —
+  eine Änderung wäre nicht migriert worden. Steht eine Änderung fest, blockt der
+  Lauf mit `E137`: das Ändern eines Berechnungsausdrucks schreibt die Tabelle
+  unter exklusiver Sperre neu, und auf manchen Servern führt der einzige Weg
+  dorthin über das Lösen der Spalte samt ihren Indizes.
+
 ### Fixed
 
 - **Eine Spalte, die auf Oracle per ALTER zum Enum wurde, verlor ihren

@@ -78,14 +78,22 @@ internal class RawTextFolding(
     ): ColumnDefinition {
         val desiredComputed = desired.generation as? ColumnGeneration.Computed ?: return desired
         val currentComputed = current.generation as? ColumnGeneration.Computed ?: return desired
-        val path = listOf(tableName, columnName)
-        if (!unchanged(
-                "column", path, GENERATION_EXPRESSION, null,
-                desiredComputed.expression, currentComputed.expression,
-            )
-        ) {
-            return desired
-        }
+        val decision = decide(
+            "column", listOf(tableName, columnName), GENERATION_EXPRESSION, null,
+            desiredComputed.expression, currentComputed.expression,
+        )
+        // **Hier heisst "nicht entscheidbar" nicht "konservativ planen".** Bei
+        // den vier anderen Textfeldern kostet ein Fehlalarm ein
+        // `CREATE OR REPLACE`; bei einer berechneten Spalte kostet er eine
+        // Neuschreibung der Tabelle unter exklusiver Sperre, und je nach Server
+        // scheitert der Weg an einer abhaengigen Sicht oder verliert einen
+        // Index (gemessen, siehe
+        // `docs/planning/open/generated-column-expression-dropped.md`).
+        //
+        // Wo keine Quelle etwas sagen kann, wird deshalb nichts geplant. Dass
+        // die Frage offenblieb, meldet die Anwendungsschicht — verschwiegen
+        // wird sie nicht.
+        if (decision == false) return desired
         return desired.copy(generation = desiredComputed.copy(expression = currentComputed.expression))
     }
 
@@ -104,15 +112,31 @@ internal class RawTextFolding(
         keyPosition: Int?,
         authoredNow: String?,
         catalogNow: String?,
-    ): Boolean {
-        when (authorship?.authorChanged(objectType, path, field, keyPosition, authoredNow)) {
-            false -> return true
-            true -> return false
-            null -> Unit
+    ): Boolean = decide(objectType, path, field, keyPosition, authoredNow, catalogNow) == true
+
+    /**
+     * `true` = unveraendert, `false` = geaendert, `null` = **nicht
+     * entscheidbar**, weil weder Herkunft noch Sandkasten etwas sagen koennen.
+     *
+     * Die drei Faelle auseinanderzuhalten ist noetig, weil sie nicht ueberall
+     * dieselbe Folge haben: fuer die meisten Felder ist "nicht entscheidbar"
+     * wie "geaendert" zu behandeln (konservativ), fuer den Berechnungsausdruck
+     * einer Spalte nicht.
+     */
+    private fun decide(
+        objectType: String,
+        path: List<String>,
+        field: String,
+        keyPosition: Int?,
+        authoredNow: String?,
+        catalogNow: String?,
+    ): Boolean? {
+        authorship?.authorChanged(objectType, path, field, keyPosition, authoredNow)?.let { changed ->
+            return !changed
         }
         // Keine Herkunft: dann fragt der Sandkasten, was der Server aus dem
         // Autorentext machen wuerde. Zwei Serverformen sind vergleichbar.
-        val deparsed = serverForm?.deparsed(objectType, path, field, keyPosition) ?: return false
+        val deparsed = serverForm?.deparsed(objectType, path, field, keyPosition) ?: return null
         return deparsed == catalogNow.orEmpty()
     }
 

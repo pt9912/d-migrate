@@ -126,6 +126,21 @@ Dialekt kennt beide: **PostgreSQL kennt nur die gespeicherte** — dort wird der
 Wert unabhaengig von der Angabe gespeichert, und der Vergleich rechnet das ein,
 damit ein Round-Trip nicht als Aenderung erscheint.
 
+**Wie der Ausdruck verglichen wird.** Er wird **nur dann** verglichen, wenn zwei
+gleichartige Formen gegeneinanderstehen: ueber ein `raw-text-provenance`-Overlay
+(zwei Autorentexte) oder ueber den Sandkasten (`migrate.raw_sql_sandbox`, zwei
+Serverformen). Ohne das ist die Frage nicht entscheidbar — die Autorenform und
+die Form, die der Server fuehrt, stimmen nie woertlich ueberein — und
+`schema migrate` plant dann nichts, meldet aber `W137`: eine Aenderung waere
+nicht migriert worden. Steht eine Aenderung dagegen fest, blockt der Lauf mit
+`E137`; das Aendern eines Berechnungsausdrucks schreibt die Tabelle unter
+exklusiver Sperre neu, und auf manchen Servern fuehrt der einzige Weg dorthin
+ueber das Loesen der Spalte — samt ihren Indizes.
+
+Das ist die eine Ausnahme von der sonstigen Regel fuer rohen SQL-Text, wo ohne
+Herkunft konservativ **geplant** wird: dort kostet ein Fehlalarm ein
+`CREATE OR REPLACE`, hier eine Neuschreibung.
+
 ### Default-Werte
 
 ```yaml

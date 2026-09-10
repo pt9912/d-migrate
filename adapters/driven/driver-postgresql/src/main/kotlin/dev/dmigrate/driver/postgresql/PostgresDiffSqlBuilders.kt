@@ -13,6 +13,7 @@ import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
@@ -29,6 +30,15 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
     fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.POSTGRESQL)
 
     fun columnLine(name: String, col: ColumnDefinition): String {
+        // Dieselbe Form wie im generate-Pfad: eine berechnete Spalte traegt
+        // weder NOT NULL noch DEFAULT noch UNIQUE.
+        ComputedColumnClause.of(col)?.let { computed ->
+            return listOf(
+                quote(name),
+                typeMapper.toSql(col.type),
+                ComputedColumnClause.clause(computed, "STORED"),
+            ).joinToString(" ")
+        }
         // Enum-Degradations-Slice (AP2): a `refType` enum references its native
         // PostgreSQL type (created by the CreateCustomType op → `CREATE TYPE … AS
         // ENUM`) instead of degrading to bare TEXT — mirrors the generate path

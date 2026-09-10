@@ -201,9 +201,14 @@ Zwei Arbeitspunkte stehen:
    ausgeblendet, in der Herkunft gefuehrt, im Vergleich gefaltet, in der
    Pruefung auf Handaenderungen mit dabei.
 
-Der PostgreSQL-Lesepfad und beide Render-Pfade sind **gebaut und live
-gemessen** (anlegen, zweiter Lauf mit null Operationen, der Server rechnet
-wirklich: `3 × 7.00 → 21.00`), aber **nicht committet**. Der Grund steht unten.
+3. **Die Vergleichsregel (Weg C, Eigner bestaetigt 2026-09-10).** Der Ausdruck
+   wird nur verglichen, wo eine Quelle ihn entscheiden kann. Wo nicht, plant der
+   Lauf nichts und meldet `W137`. Steht eine Aenderung fest, blockt er mit
+   `E137` — ausfuehren kann er sie (noch) nicht.
+4. **Der PostgreSQL-Lesepfad und beide Render-Pfade**, live abgenommen
+   (`PostgresComputedColumnMigrateIntegrationTest`): anlegen, zurueckesen,
+   zweiter Lauf mit null Operationen, und der Server rechnet wirklich
+   (`3 × 7.00 → 21.00`).
 
 ## Der Befund, der den Schnitt anhaelt: eine geaenderte Generation wird gar nicht geplant
 
@@ -221,9 +226,11 @@ aendern kann.
 
 ## Die Gabelung, die daran haengt
 
-Der Lesepfad darf erst dazu, wenn das geschlossen ist — sonst tausche ich einen
-**gemeldeten** Verlust gegen einen **stillen**, und das ist ein Tausch nach
-unten.
+Geschlossen ist das jetzt an beiden Enden — nicht durch eine Operation, sondern
+durch eine Aussage: unentscheidbar meldet `W137`, entschieden-und-geaendert
+blockt mit `E137`. Still ist keiner der beiden Faelle mehr. Die **Ausfuehrung**
+einer belegten Aenderung steht weiterhin aus; sie braucht den
+`AlterColumnGeneration`-Operationstyp und je Dialekt den Weg dorthin.
 
 Die Schliessung ist aber keine reine Bauentscheidung, weil ohne Herkunft die
 Autorenform und die Katalogform **immer** verschieden aussehen

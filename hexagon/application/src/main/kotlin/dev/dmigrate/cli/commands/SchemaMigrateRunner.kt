@@ -542,6 +542,12 @@ class SchemaMigrateRunner(
                 DialectCapabilities.forDialect(prep.effectiveDialect).rendersAutoIncrementAsIdentity,
             constraintName = capabilityConstraintNameCanonicalizer(prep.effectiveDialect),
         )
+        val authorship = OverlayRawTextAuthorship.of(mergedOverlays)
+        val serverForm = (prep.targetOp as? CompareOperand.Database)?.let { db ->
+            rawTextSandboxProbe?.invoke(
+                db, request.cliConfigPath, prep.sourceNormalized.schema, prep.effectiveDialect,
+            )
+        }
         val diff = targetAwareComparator
             ?.invoke(
                 prep.targetNormalized.schema,
@@ -550,15 +556,11 @@ class SchemaMigrateRunner(
                 // Die Herkunft aus den mitgegebenen Overlays. Ohne sie
                 // entscheidet wie bisher der Textvergleich — und der plant
                 // konservativ.
-                OverlayRawTextAuthorship.of(mergedOverlays),
+                authorship,
                 // Und, falls eingeschaltet, der Sandkasten als zweite Quelle.
                 // Nur gegen eine Datenbank: ein Datei-Ziel hat keinen Server,
                 // auf dem sich etwas probeweise anwenden liesse.
-                (prep.targetOp as? CompareOperand.Database)?.let { db ->
-                    rawTextSandboxProbe?.invoke(
-                        db, request.cliConfigPath, prep.sourceNormalized.schema, prep.effectiveDialect,
-                    )
-                },
+                serverForm,
             )
             ?: comparator(prep.targetNormalized.schema, prep.sourceNormalized.schema)
         val overlayPreflight = MigrationOverlayPreflight.validateBeforePlan(
@@ -597,7 +599,16 @@ class SchemaMigrateRunner(
                     capabilityFoldsAutoIncrementOntoIdentity(prep.effectiveDialect),
             )
         }
-        return plan to overlayPreflight
+        // Wo der Berechnungsausdruck einer Spalte nicht entscheidbar war, plant
+        // der Vergleich nichts — gesagt wird es trotzdem.
+        val undecided = ComputedExpressionDecidability.diagnostics(
+            current = prep.targetNormalized.schema,
+            desired = prep.sourceNormalized.schema,
+            authorship = authorship,
+            serverForm = serverForm,
+        )
+        val planWithNotes = if (undecided.isEmpty()) plan else plan.copy(diagnostics = plan.diagnostics + undecided)
+        return planWithNotes to overlayPreflight
     }
 
     /**

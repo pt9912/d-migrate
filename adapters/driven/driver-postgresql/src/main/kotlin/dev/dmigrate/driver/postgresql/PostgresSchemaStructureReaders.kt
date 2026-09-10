@@ -4,7 +4,6 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
-import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 
 internal fun readPostgresTables(
     session: JdbcOperations,
@@ -52,11 +51,11 @@ private fun readPostgresTable(
         val columnName = row["column_name"] as String
         val isPrimaryKeyColumn = columnName in primaryKeyColumns
         val isIdentity = (row["is_identity"] as? String) == "YES"
-        if ((row["is_generated"] as? String) == "ALWAYS") {
-            notes += GeneratedColumnNotes.expressionDropped(
-                tableName, columnName, row["generation_expression"] as? String,
-            )
-        }
+        // PostgreSQL kennt nur die gespeicherte Form — `VIRTUAL` ist dort ein
+        // Syntaxfehler, `STORED` Pflicht (live gemessen).
+        val computed = (row["generation_expression"] as? String)
+            ?.takeIf { (row["is_generated"] as? String) == "ALWAYS" }
+            ?.let { ColumnGeneration.Computed(expression = it, stored = true) }
         val mapping = PostgresTypeMapping.mapColumn(
             PostgresTypeMapping.ColumnInput(
                 dataType = row["data_type"] as String,
@@ -95,7 +94,7 @@ private fun readPostgresTable(
             unique = unique,
             uniqueConstraintName = if (unique) singleColumnUniqueNames[columnName] else null,
             default = defaultValue,
-            generation = mapping.generation,
+            generation = computed ?: mapping.generation,
             // information_schema.columns.ordinal_position ist 1-basiert + dicht (Drop-Lücken
             // bereits aufgelöst) — die physische Spaltenreihenfolge der Quelle.
             ordinal = (row["ordinal_position"] as? Number)?.toInt(),

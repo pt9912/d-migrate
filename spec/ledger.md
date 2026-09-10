@@ -54,10 +54,12 @@ neuen Version.
 | E125 | Sequence-internal-Validierung (Inkrement/Bereich) |
 | E130 - E133 | Identity-Generation-Validierung (Typ, Default-Konflikt, `sequence_name`) |
 | E134 - E136 | Computed-Generation-Validierung: fehlender Ausdruck, Default-Konflikt, unbekannte oder selbstbezuegliche Spalte im Ausdruck |
+| E137 | Migrate: der Berechnungsausdruck einer Spalte hat sich belegt geändert — `schema migrate` führt diese Änderung nicht aus |
 | W001 | Float-fuer-Geldbetraege-Warnung |
 | W100 - W112 | Dialekt-Warnungen (Typ-Mapping, Index-Konvertierung) |
 | W113 | Circular-FK-Warnung |
 | W114 - W117 | Sequence-Emulation-Warnungen (MySQL, SQLite) |
+| W137 | Migrate: der Berechnungsausdruck einer Spalte wurde **nicht verglichen** (weder Herkunft noch Sandkasten konnten entscheiden); eine Änderung daran wäre nicht migriert worden |
 | W119 | SQLite-helper_table: NOT-NULL- und CHECK-`IS NOT NULL`-Suppression auf sequence-getragener Spalte |
 | W120 | Multi-Dialekt: MySQL SRID-Hinweis, SQLite-helper_table-Reverse Trigger-Body-modifiziert |
 | W121 | SQLite-helper_table: Conflict-Gap-INFO |

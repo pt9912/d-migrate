@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
@@ -19,6 +20,17 @@ internal class PostgresColumnConstraintHelper(
         tableName: String,
     ): String {
         val type = col.type
+
+        // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
+        // DEFAULT und UNIQUE sind dort keine Frage. PostgreSQL kennt nur die
+        // gespeicherte Form, `STORED` ist Pflicht.
+        ComputedColumnClause.of(col)?.let { computed ->
+            return listOf(
+                quoteIdentifier(colName),
+                typeMapper.toSql(type),
+                ComputedColumnClause.clause(computed, "STORED"),
+            ).joinToString(" ")
+        }
 
         val generation = col.generation
         if (generation is ColumnGeneration.Identity) {
