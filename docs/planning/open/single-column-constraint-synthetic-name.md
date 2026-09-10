@@ -188,3 +188,41 @@ Vergleich, der beide Seiten sieht, entscheidet ueber den Namen.
 Live abgenommen gegen PostgreSQL 16: der gelesene Katalogname landet im
 Modell, der erfundene Name scheitert am Server, der gelesene trifft, und ein
 erzeugtes `CONSTRAINT … UNIQUE (…)` kommt unter demselben Namen zurueck.
+
+## Nachtrag: was der Schnitt an Oracle vorbeigehen liess
+
+Der Bau gab **jeder** Tabelle die Klausel für benannte einspaltige
+UNIQUE-Constraints — auch Oracle, und dort ohne die zwei Wachen, die sein
+Spalten-Pfad längst trug. CI lief daraufhin acht Läufe lang rot
+(`OracleTransferE2ETest`, `ORA-02329`), behoben in `e07fdfc00`:
+
+- **Eindeutigkeit auf einer LOB-Spalte gibt es in Oracle nicht.** Gemessen:
+  Constraint → `ORA-02329`, eindeutiger Index → `ORA-02327`, also keine
+  Ausweichform. `VARCHAR2(4000)` trägt sie, `VARCHAR2(32767)` gibt es ohne
+  `MAX_STRING_SIZE=EXTENDED` nicht. Der Constraint wird jetzt übersprungen und
+  mit `E057` gemeldet, wie im ungenannten Fall auch.
+- **Zwei Constraints statt einem.** Der Oracle-Spalten-Pfad rendert das inline
+  `UNIQUE` jetzt nur noch für den ungenannten Fall
+  (`NamedUniqueConstraints.rendersInline`), wie die vier anderen Dialekte es
+  schon taten. Zuvor kam zum benannten Tabellen-Constraint ein zweiter,
+  synthetisch benannter dazu (`ORA-02261`). Die E2E deckte das nicht auf, weil
+  ihre Spalte ohnehin ein LOB ist.
+
+## Richtigstellung: SQL Server hat die Lücke nicht
+
+Die Commit-Nachricht von `e07fdfc00` führt als Nebenbefund, SQL Server
+vergebe weiterhin einen synthetischen Namen, auch wenn das Modell einen
+führt. **Das ist falsch.** Nachgesehen:
+
+| Dialekt | wie der geführte Name ankommt |
+| --- | --- |
+| PostgreSQL, MySQL, SQLite, Oracle | `NamedUniqueConstraints.clauses`/`named` → Tabellen-Constraint |
+| SQL Server | eigenes benanntes Objekt: `ctx.col.uniqueConstraintName ?: MssqlConstraintNames.unique(…)` |
+
+SQL Server rendert einen UNIQUE ohnehin als eigenes Objekt statt als
+Inline-Klausel und braucht den geteilten Helfer deshalb nicht; die LOB-Wache
+hat es dort ebenfalls. Alle fünf Dialekte führen den Namen.
+
+Der Fehlschluss kam daher, dass „benutzt `NamedUniqueConstraints` nicht" ohne
+Nachsehen als „vergibt keinen Namen" gelesen wurde — die Abwesenheit eines
+Helfers ist keine Aussage über das Verhalten.
