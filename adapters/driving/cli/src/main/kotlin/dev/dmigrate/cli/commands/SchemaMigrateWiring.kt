@@ -160,6 +160,7 @@ internal object SchemaMigrateWiring {
             sqliteCastPreflightProbe = SqliteCastPreflightProbeRunner::probe,
             checkPreflightProbe = CheckPreflightProbeRunner::probe,
             mysqlSequenceCanonicityProbe = MysqlSequenceCanonicityProbeRunner::probe,
+            postApplyStatusProbe = PostApplyStatusProbeRunner::probe,
             urlScrubber = LogScrubber::maskUrl,
             renderReport = SchemaMigrateReportRenderer::render,
             printError = { msg, src -> formatter.printError(msg, src) },

@@ -1,17 +1,31 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.migration.MigrationDdlResult
+import dev.dmigrate.driver.migration.UncompiledObject
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.segmentForExecute
 import java.nio.file.Path
+
+/**
+ * Die Nachfrage nach dem Anwenden: welche der angefassten Objekte fuehrt der
+ * Server, ohne sie uebersetzt zu haben?
+ *
+ * Gleiche Bauart wie [CheckPreflightProbeFn], nur einen Schritt spaeter im
+ * Ablauf. Die Verdrahtung waehlt die Sonde des Dialekts; Dialekte ohne einen
+ * solchen Zustand liefern eine leere Liste.
+ */
+typealias PostApplyStatusProbeFn =
+    (CompareOperand.Database, Path?, DiffResult, DatabaseDialect) -> List<UncompiledObject>
 
 /**
  * Pipeline stage for the `--execute` slice of `schema migrate`: invokes
@@ -32,6 +46,7 @@ internal class SchemaMigrateExecutionStage(
     private val fingerprint: FingerprintOfSchema,
     private val printError: (message: String, source: String) -> Unit,
     private val lockTimeoutMillis: Long = DEFAULT_LOCK_TIMEOUT_MILLIS,
+    private val postApplyStatusProbe: PostApplyStatusProbeFn? = null,
 ) {
 
     companion object {
@@ -42,6 +57,13 @@ internal class SchemaMigrateExecutionStage(
          * down into the executor.
          */
         const val DEFAULT_LOCK_TIMEOUT_MILLIS: Long = 5_000L
+
+        /**
+         * Wie viele nicht uebersetzte Objekte die Meldung nennt. Der Rest wird
+         * gezaehlt: eine Fehlermeldung, die hundert Eintraege ausrollt, liest
+         * niemand mehr.
+         */
+        private const val MAX_LISTED_UNCOMPILED = 5
     }
 
     /**
@@ -137,6 +159,56 @@ internal class SchemaMigrateExecutionStage(
                 executionError = RoutineBodyLogRedactor.redact(rawMessage, allowRaw = allowRaw),
             ).withG3Defaults(statementGroups)
         }
+    }
+
+    /**
+     * Fragt nach dem Anwenden nach, ob eines der angefassten Objekte
+     * uebersetzt werden konnte.
+     *
+     * Der Anlass ist Oracle: ein `CREATE OR REPLACE` mit einem Fehler im Rumpf
+     * meldet ueber JDBC Erfolg und laesst das Objekt unbenutzbar zurueck. Der
+     * Post-Compare faengt das nicht — der Katalog fuehrt den Text auch dann.
+     *
+     * Ein Fund ist ein **Fehlschlag des Laufs**, kein Hinweis: das DDL steht,
+     * aber das Ziel ist nicht, was geplant war. Er wandert deshalb in
+     * [ExecutionTrace.executionError] und traegt damit dieselbe Behandlung wie
+     * ein abgebrochenes Statement — Exit 5, kein Ruecknahme-Artefakt, kein
+     * Post-Compare, der die Lage gruen faerbte.
+     */
+    fun checkPostApplyStatus(
+        request: SchemaMigrateRequest,
+        target: CompareOperand,
+        dialect: DatabaseDialect,
+        plan: DiffResult,
+        trace: ExecutionTrace?,
+    ): ExecutionTrace? {
+        val probe = postApplyStatusProbe ?: return trace
+        if (trace == null || trace.executionError != null) return trace
+        val dbOperand = target as? CompareOperand.Database ?: return trace
+        val uncompiled = try {
+            probe(dbOperand, request.cliConfigPath, plan, dialect)
+        } catch (e: Exception) {
+            // Die Nachfrage selbst darf den Lauf nicht umdeuten: sie scheitert
+            // an fehlenden Katalogrechten, nicht am angewandten DDL. Gemeldet
+            // wird sie trotzdem — sonst gilt ungeprueft als geprueft.
+            printError(
+                "Post-apply object-status check failed: ${e.message} " +
+                    "(the DDL was applied; whether every object compiled is unverified).",
+                request.target,
+            )
+            return trace
+        }
+        if (uncompiled.isEmpty()) return trace
+        return trace.copy(executionError = uncompiledMessage(uncompiled))
+    }
+
+    private fun uncompiledMessage(uncompiled: List<UncompiledObject>): String {
+        val listed = uncompiled.take(MAX_LISTED_UNCOMPILED).joinToString("; ") { it.describe() }
+        val rest = uncompiled.size - MAX_LISTED_UNCOMPILED
+        val tail = if (rest > 0) " (und $rest weitere)" else ""
+        return "The DDL was applied, but the target could not compile " +
+            "${uncompiled.size} object error(s): $listed$tail. " +
+            "The objects exist and are not usable until the bodies compile."
     }
 
     /**

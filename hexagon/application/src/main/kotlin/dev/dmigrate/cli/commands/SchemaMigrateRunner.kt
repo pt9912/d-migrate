@@ -99,6 +99,7 @@ class SchemaMigrateRunner(
      * [MysqlSequenceCanonicityStage] for skip semantics.
      */
     private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
+    private val postApplyStatusProbe: PostApplyStatusProbeFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
     private val atomicWriter: (Path, String) -> Unit = ::defaultAtomicWriter,
@@ -171,6 +172,7 @@ class SchemaMigrateRunner(
         fingerprint = fingerprint,
         printError = userFacingPrintError,
         lockTimeoutMillis = lockTimeoutMillis,
+        postApplyStatusProbe = postApplyStatusProbe,
     )
 
     private val rollbackComposer = SchemaMigrateRollbackComposer(createdByVersion)
@@ -372,8 +374,15 @@ class SchemaMigrateRunner(
         // statements the runtime actually executes.
         val effectivePlan = render.augmentedPlan
 
-        val executionTrace = executionStage.maybeExecute(
+        val applied = executionStage.maybeExecute(
             request, prepared.targetOp, render.executableCombined, render.atomicBatch, cancellationToken,
+        )
+        // Erfolgreich gesendetes DDL heisst bei Oracle nicht, dass das Objekt
+        // uebersetzt ist. Die Nachfrage steht deshalb VOR dem Post-Compare:
+        // der vergleicht den Katalogtext und faende eine nicht uebersetzte
+        // Routine gruen.
+        val executionTrace = executionStage.checkPostApplyStatus(
+            request, prepared.targetOp, prepared.effectiveDialect, effectivePlan, applied,
         )
         val withExecution = executionStage.applyExecutionTrace(render.executableCombined, executionTrace)
         val postCompareOutcome = if (executionTrace != null && executionTrace.executionError == null) {

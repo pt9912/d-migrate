@@ -1740,9 +1740,21 @@ Die `UPDATE OF`-Spaltenliste steht in `ALL_TRIGGER_COLS` (`COLUMN_LIST = 'YES'`)
 Im **Migrations-Pfad** gelten dieselben Urteile. `CREATE OR REPLACE` macht das
 Ersetzen zu einem einzigen Statement. Ein **Umbenennen** freistehender Routinen
 gibt es in Oracle nicht (`RENAME` → ORA-03001, `ALTER FUNCTION … RENAME TO` →
-ORA-00922); nur `ALTER TRIGGER … RENAME TO` ist nativ. Nach dem Anwenden ist
-`ALL_OBJECTS.status` zu prüfen: ein Kompilierfehler lässt das DDL gelingen und
-das Objekt `INVALID`.
+ORA-00922); nur `ALTER TRIGGER … RENAME TO` ist nativ. Nach dem Anwenden ist nachzufragen, ob die
+angefassten Objekte übersetzt sind: ein Kompilierfehler lässt das DDL gelingen
+und das Objekt `INVALID`.
+
+Gefragt wird dabei `ALL_ERRORS`, **nicht** `ALL_OBJECTS.STATUS`. `INVALID`
+allein ist mehrdeutig — Oracle invalidiert Abhängige auch planmäßig (fällt eine
+benutzte Spalte weg) und übersetzt sie bei der nächsten Benutzung selbst neu.
+Ein Eintrag in `ALL_ERRORS` ist es nicht: er heißt, dass der Rumpf nicht
+übersetzbar ist, und nennt Zeile, Spalte und Meldung. Gefragt wird nur nach den
+Objekten, die der Lauf anfasst — ein Schema kann `INVALID`-Objekte tragen, die
+niemand in diesem Lauf berührt hat. Ein Fund ist ein Fehlschlag des Laufs
+(Exit `5`), kein Hinweis: das DDL steht, aber das Ziel ist nicht benutzbar.
+
+Die übrigen vier Dialekte kennen den Zustand „angelegt, aber nicht übersetzt"
+nicht und fragen deshalb nichts nach.
 
 Die Hülle (CREATE FUNCTION/PROCEDURE, Parameter, Return-Typ) wird regelbasiert generiert:
 

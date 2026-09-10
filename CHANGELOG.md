@@ -228,6 +228,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Eine Oracle-Routine, die der Server nicht übersetzen konnte, galt als
+  erfolgreich angewandt.** Ein `CREATE OR REPLACE` mit einem Fehler im Rumpf
+  gelingt über JDBC; das Objekt steht danach im Katalog und ist nicht
+  aufrufbar. Der Post-Compare fand es nicht — `ALL_SOURCE` führt den Text auch
+  einer ungültigen Routine. `schema migrate --execute` fragt jetzt nach dem
+  Anwenden nach und bricht mit Exit `5` ab, samt Objekt, Zeile, Spalte und
+  Oracle-Meldung. Gefragt wird `ALL_ERRORS` und nicht `ALL_OBJECTS.STATUS`:
+  `INVALID` allein ist mehrdeutig, weil Oracle Abhängige auch planmäßig
+  invalidiert und selbst neu übersetzt — ein Eintrag in `ALL_ERRORS` ist es
+  nicht. Nur die Objekte des Laufs werden gefragt; vorgefundene kaputte Objekte
+  bleiben außen vor.
 - **Oracle-Rücknahmeskripte brachen ab, sobald ein Objekt schon fehlte.** Der
   Generator ließ `IF EXISTS` bei jeder Rücknahme-Anweisung weg und begründete
   das damit, Oracle kenne die Klausel nicht — gegen ein echtes Oracle 23

@@ -2009,6 +2009,16 @@ Report als **E054** vermerkt:
   `WITH`-Optionsklausel wie `SCHEMABINDING` oder `EXECUTE AS`, mit einem
   tabellenwertigen Parameter und mehrteilige Tabellenfunktionen: für alle drei
   hat das neutrale Modell kein Feld, und ein Zurückschreiben verlöre sie still.
+- **Oracle:** Ein Rumpf, den der Server nicht übersetzen kann, lässt das
+  `CREATE OR REPLACE` **gelingen** — die Routine steht danach im Katalog und ist
+  nicht aufrufbar. `schema migrate --execute` fragt deshalb nach dem Anwenden
+  nach und bricht mit Exit `5` ab, wenn eines der angefassten Objekte nicht
+  übersetzt ist; die Meldung nennt Objekt, Zeile, Spalte und den Oracle-Fehler
+  (etwa `PLS-00201: identifier … must be declared`). Das DDL ist dann bereits
+  angewandt: Sie korrigieren den Rumpf in Ihrer Schemadatei und fahren den Lauf
+  erneut. Dass Oracle Abhängige nach einer Tabellenänderung vorübergehend auf
+  `INVALID` stellt, ist davon **nicht** betroffen — das übersetzt der Server bei
+  der nächsten Benutzung selbst neu und meldet d-migrate nicht.
 - Ein Routine-Replace ohne bekannten alten Rumpf kann beim Rollback blockieren
   (siehe [3.5](#35-eine-schemaänderung-ausrollen-und-zurücknehmen)).
 - Reverse erfasst diese Objekte nur mit `--include-triggers`/`--include-procedures`/
