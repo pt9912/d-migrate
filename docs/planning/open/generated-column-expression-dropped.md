@@ -187,6 +187,13 @@ benennen statt es zu uebergehen — und sollte pruefen, ob wenigstens der
 Schreibpfad sich schuetzen laesst (eine `INSERT`-Ablehnung des Servers benannt
 weiterreichen, statt sie als gewoehnlichen Fehler durchzulassen).
 
+## Die Vorbedingung ist erfuellt (2026-09-10)
+
+[`raw-sql-text-drift.md`](../done/raw-sql-text-drift.md) ist gebaut: der
+Post-Compare vergleicht rohen SQL-Text gegen die zurueckgelesene Form, und die
+Planung entscheidet aus der Herkunft. Der Grund, aus dem dieser Slice wartete,
+besteht damit nicht mehr — der Abschnitt unten sagt, worauf er wartete.
+
 ## Warum der Slice hinter `raw-sql-text-drift` gehoert (2026-09-08)
 
 Der Generierungsausdruck ist roher SQL-Text und waere das **fuenfte** Feld
@@ -199,8 +206,9 @@ Spaltenaenderung erneut.
 
 Der heutige Zustand ist ein **stiller Verlust**; ohne jenen Mechanismus wuerde
 daraus eine **nicht konvergierende Migration**. Das ist kein Fortschritt,
-sondern ein Tausch nach unten. Der Slice wartet deshalb auf
-[`raw-sql-text-drift.md`](../done/raw-sql-text-drift.md).
+sondern ein Tausch nach unten. Der Slice wartete deshalb auf
+[`raw-sql-text-drift.md`](../done/raw-sql-text-drift.md) — siehe oben, diese
+Vorbedingung ist erfuellt.
 
 ## Herkunft
 
