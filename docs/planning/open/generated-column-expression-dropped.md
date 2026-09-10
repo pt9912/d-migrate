@@ -233,9 +233,27 @@ Autorenform und die Katalogform **immer** verschieden aussehen
   ohne Herkunft konservativ, also die Aenderung planen. Bei einer Sicht heisst
   das `CREATE OR REPLACE`. Bei einer berechneten Spalte heisst es
   `DROP COLUMN` + `ADD COLUMN` — PostgreSQL 16 kann den Ausdruck nicht in
-  place aendern (`SET EXPRESSION` gibt es erst ab 17). Der Wert selbst ist
-  abgeleitet und geht nicht verloren, **Indizes und Constraints auf der Spalte
-  aber schon**. Und ohne Herkunft passierte das bei **jedem** Lauf.
+  place aendern (`SET EXPRESSION` gibt es erst ab 17).
+
+  **Was das kostet, ist gemessen** (PostgreSQL 16, 200 000 Zeilen):
+
+  | Schritt | Messung |
+  | --- | --- |
+  | `ADD COLUMN … GENERATED … STORED` | **volle Neuschreibung** (neuer `filenode`), 143–160 ms, Tabelle 10 MB → 12 MB |
+  | Sperre dabei | **`AccessExclusiveLock`** — blockiert Leser *und* Schreiber |
+  | `DROP COLUMN` | 0 ms, keine Neuschreibung — der Platz wird aber **nicht frei** |
+  | Index auf der Spalte | nach dem `DROP` **weg**, ohne Rueckfrage |
+  | abhaengige Sicht | `DROP` **scheitert**: `cannot drop column … because other objects depend on it` |
+  | drei Zyklen hintereinander | 12 MB → 12 MB → 14 MB, der Platz waechst |
+
+  Rein rechnerisch sind das ~0,7 µs je Zeile; hochgerechnet auf 100 Mio Zeilen
+  rund 70 Sekunden exklusiver Sperre (lineare Fortschreibung einer Messung, an
+  dieser Groesse nicht nachgemessen).
+
+  Das Kostenproblem ist dabei nicht das schwerste. Schwerer wiegen: der Lauf
+  **scheitert** an einer Tabelle, auf deren berechnete Spalte eine Sicht zeigt,
+  und er **verliert Indizes** auf der Spalte stillschweigend. Und ohne Herkunft
+  passiert das alles bei **jedem** Lauf, auch wenn sich nichts geaendert hat.
 - **B — blocken.** Eine Aenderung, die das Werkzeug nicht sicher ausfuehren
   kann, endet mit `MANUAL_ACTION_REQUIRED` (Exit 8) und einer benannten
   Meldung. Ehrlich und nicht destruktiv — aber ohne Herkunft blockiert auch der
