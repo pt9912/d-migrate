@@ -252,8 +252,29 @@ Zwei Dinge, die daraus folgen:
   `DROP` den Index stillschweigend mitnimmt. Das ist der einzige Fall, in dem
   ein automatischer Weg etwas verloere, ohne es zu sagen.
 
-Nicht isoliert gemessen: ob bei Oracle eine **Sicht allein** (ohne Index) den
-`MODIFY` ebenfalls blockt — der Index-Fehler kam zuerst.
+Nachgemessen (2026-09-10): bei Oracle blockt eine **Sicht allein nicht** — der
+`MODIFY` laeuft, die Sicht ueberlebt und wird `INVALID`. Der Blocker ist
+ausschliesslich der Index.
+
+## Nachtrag: dieselbe Messung gegen die jeweils aktuellste Version
+
+Die Reihe oben lief gegen die im Repo gepinnten Server. Gegenprobe gegen die
+aktuellen — weil eine Fähigkeitsaussage nur so alt ist wie ihre Messung:
+
+| Server | gepinnt | aktuell gemessen | Unterschied |
+| --- | --- | --- | --- |
+| PostgreSQL | `16-alpine` | **18.6** | **erheblich**: `VIRTUAL` gibt es ab 18, und ohne Angabe ist es die **Vorgabe**; `information_schema.is_generated` unterscheidet die Formen nicht, nur `pg_attribute.attgenerated` |
+| MySQL | `8.0` (8.0.46) | 9.7.2 | **keiner** — `MODIFY COLUMN` in place, Sicht und Index ueberleben, Vorgabe `VIRTUAL GENERATED`, in beiden gleich |
+| SQL Server | `2022-latest` | 2025 (17.0.4085.5) | **keiner** — `ALTER COLUMN … AS` bleibt ein Syntaxfehler, der `DROP` scheitert weiter am Index |
+| Oracle | `23-slim-faststart` | **ist bereits 23.26.3** („26ai") | keiner — der Tag folgt der neuesten Version |
+| SQLite | `sqliteJdbcVersion=3.51.3.0` | 3.53.4 waere ein Treiber-Bump | ungemessen |
+
+**Was daraus folgt, ist schmaler als „immer gegen das Neueste testen":** Von
+fuenf Dialekten war genau **einer** betroffen, und dort auch nicht wegen des
+Versionssprungs an sich, sondern weil ein Major-Release eine **neue Faehigkeit**
+eingefuehrt hat. MySQL und SQL Server verhalten sich ueber den Sprung hinweg
+identisch, Oracles Pin ist ohnehin aktuell. Das Risiko sitzt dort, wo ein Server
+etwas Neues kann — nicht in Versionsnummern allgemein.
 
 ## Die Gabelung, die daran haengt
 
