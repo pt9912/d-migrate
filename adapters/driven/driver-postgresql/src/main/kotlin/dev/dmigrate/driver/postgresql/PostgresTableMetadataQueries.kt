@@ -55,8 +55,20 @@ internal object PostgresTableMetadataQueries {
                    is_identity, identity_generation,
                    is_generated, generation_expression,
                    pg_get_serial_sequence(format('%I.%I', table_schema, table_name), column_name)
-                       AS generated_sequence_name
-            FROM information_schema.columns
+                       AS generated_sequence_name,
+                   -- `information_schema.is_generated` meldet fuer die
+                   -- gespeicherte UND die virtuelle Form `ALWAYS` (gegen 18.6
+                   -- gemessen) — sie unterscheidet die beiden also nicht. Nur
+                   -- `pg_attribute.attgenerated` tut es: `s` gespeichert,
+                   -- `v` virtuell (ab PostgreSQL 18), leer sonst.
+                   (SELECT a.attgenerated
+                      FROM pg_attribute a
+                      JOIN pg_class rel ON rel.oid = a.attrelid
+                      JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+                     WHERE ns.nspname = c.table_schema
+                       AND rel.relname = c.table_name
+                       AND a.attname = c.column_name) AS generated_kind
+            FROM information_schema.columns c
             WHERE table_schema = ? AND table_name = ?
             ORDER BY ordinal_position
             """.trimIndent(), schemaName, table,

@@ -51,11 +51,20 @@ private fun readPostgresTable(
         val columnName = row["column_name"] as String
         val isPrimaryKeyColumn = columnName in primaryKeyColumns
         val isIdentity = (row["is_identity"] as? String) == "YES"
-        // PostgreSQL kennt nur die gespeicherte Form — `VIRTUAL` ist dort ein
-        // Syntaxfehler, `STORED` Pflicht (live gemessen).
+        // Welche der beiden Formen es ist, sagt nur `pg_attribute.attgenerated`
+        // (`s` gespeichert, `v` virtuell): `information_schema.is_generated`
+        // meldet fuer beide `ALWAYS` (gegen 18.6 gemessen). Bis PostgreSQL 17
+        // gibt es nur die gespeicherte Form, ab 18 auch die virtuelle — und
+        // sie zur gespeicherten zu erklaeren machte aus einer berechneten
+        // Spalte still eine materialisierte.
         val computed = (row["generation_expression"] as? String)
             ?.takeIf { (row["is_generated"] as? String) == "ALWAYS" }
-            ?.let { ColumnGeneration.Computed(expression = it, stored = true) }
+            ?.let {
+                ColumnGeneration.Computed(
+                    expression = it,
+                    stored = (row["generated_kind"] as? String)?.trim() != "v",
+                )
+            }
         val mapping = PostgresTypeMapping.mapColumn(
             PostgresTypeMapping.ColumnInput(
                 dataType = row["data_type"] as String,
