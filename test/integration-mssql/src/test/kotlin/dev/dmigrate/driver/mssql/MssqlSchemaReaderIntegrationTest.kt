@@ -1,34 +1,34 @@
 package dev.dmigrate.driver.mssql
 
+import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.core.diff.migration.DiffPlanner
+import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IdentityMode
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionBound
+import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
+import dev.dmigrate.core.model.PartitionType
+import dev.dmigrate.core.model.ReferenceDefinition
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
-import dev.dmigrate.core.model.PartitionBound
-import dev.dmigrate.core.model.PartitionType
-import dev.dmigrate.core.model.PartitionConfig
-import dev.dmigrate.core.model.PartitionDefinition
-import dev.dmigrate.core.model.TableDefinition
-import dev.dmigrate.core.model.SchemaDefinition
-import dev.dmigrate.core.model.ColumnDefinition
-import dev.dmigrate.core.model.NeutralType
-import dev.dmigrate.core.diff.SchemaComparator
-import dev.dmigrate.core.diff.migration.DiffPlanner
-import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MssqlHashPartitionMode
 import dev.dmigrate.driver.SchemaReadSeverity
-import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.SslMode
 import dev.dmigrate.driver.connection.SslSettings
 import dev.dmigrate.driver.connection.asJdbc
-import dev.dmigrate.test.images.TestImages
+import dev.dmigrate.test.containers.newMssqlContainer
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -39,7 +39,6 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as strShouldContain
 import io.kotest.matchers.string.shouldNotContain as strShouldNotContain
-import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 
 // Reverse-Read gegen echtes SQL Server 2022. Identity, Defaults, gefilterte und
@@ -47,10 +46,7 @@ import java.sql.DriverManager
 // letzteres kennt sie gar nicht.
 class MssqlSchemaReaderIntegrationTest : FunSpec({
 
-    val container = MSSQLServerContainer(TestImages.MSSQL)
-        .acceptLicense()
-        .withUrlParam("encrypt", "false")
-        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
+    val container = newMssqlContainer()
 
     lateinit var config: ConnectionConfig
 

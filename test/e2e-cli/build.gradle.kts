@@ -9,6 +9,7 @@
 
 dependencies {
     testImplementation(project(":test:test-images"))
+    testImplementation(project(":test:test-containers"))
     testImplementation(project(":adapters:driving:cli"))
     testImplementation(project(":adapters:driving:mcp"))
     testImplementation(project(":hexagon:core"))

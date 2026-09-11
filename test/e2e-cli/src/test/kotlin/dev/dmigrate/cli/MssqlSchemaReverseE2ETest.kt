@@ -3,7 +3,7 @@ package dev.dmigrate.cli
 import dev.dmigrate.cli.integration.runRealCli
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.format.yaml.YamlSchemaCodec
-import dev.dmigrate.test.images.TestImages
+import dev.dmigrate.test.containers.newMssqlContainer
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainAll
@@ -11,13 +11,13 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
-import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.deleteRecursively
 import kotlin.io.path.readText
+import org.testcontainers.mssqlserver.MSSQLServerContainer
 
 /**
  * MSSQL Slice 1a (docs/planning/in-progress/mssql-dialect-scoping.md):
@@ -36,13 +36,8 @@ import kotlin.io.path.readText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlSchemaReverseE2ETest : FunSpec({
 
-    val container = MSSQLServerContainer(TestImages.MSSQL)
-        .acceptLicense()
+    val container = newMssqlContainer()
         .withPassword(PASSWORD)
-        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
-        // mssql-jdbc >= 10 setzt encrypt=true; der Container hat nur ein
-        // Self-Signed-Zertifikat.
-        .withUrlParam("encrypt", "false")
 
     lateinit var tmp: Path
 

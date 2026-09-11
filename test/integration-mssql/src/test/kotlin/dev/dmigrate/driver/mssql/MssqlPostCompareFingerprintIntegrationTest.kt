@@ -16,12 +16,11 @@ import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.SslMode
 import dev.dmigrate.driver.connection.SslSettings
 import dev.dmigrate.driver.connection.asJdbc
-import dev.dmigrate.test.images.TestImages
+import dev.dmigrate.test.containers.newMssqlContainer
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
-import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 
 /**
@@ -43,10 +42,7 @@ import java.sql.DriverManager
  */
 class MssqlPostCompareFingerprintIntegrationTest : FunSpec({
 
-    val container = MSSQLServerContainer(TestImages.MSSQL)
-        .acceptLicense()
-        .withUrlParam("encrypt", "false")
-        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
+    val container = newMssqlContainer()
 
     // Explizit typisiert: der Port hat seit dem Schema-Kontext zwei
     // Ueberladungen, und eine blanke Methodenreferenz waere mehrdeutig.

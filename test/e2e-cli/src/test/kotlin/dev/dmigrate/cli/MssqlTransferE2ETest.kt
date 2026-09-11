@@ -1,22 +1,23 @@
 package dev.dmigrate.cli
 
 import dev.dmigrate.cli.integration.runRealCli
+import dev.dmigrate.test.containers.newMssqlContainer
 import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
-import org.testcontainers.containers.Container
-import org.testcontainers.mssqlserver.MSSQLServerContainer
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.MountableFile
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.deleteRecursively
 import kotlin.io.path.readText
+import org.testcontainers.containers.Container
+import org.testcontainers.mssqlserver.MSSQLServerContainer
+import org.testcontainers.postgresql.PostgreSQLContainer
+import org.testcontainers.utility.MountableFile
 
 /**
  * MSSQL Slice 3: der vollständige Weg PostgreSQL → SQL Server über die ECHTE
@@ -38,11 +39,8 @@ class MssqlTransferE2ETest : FunSpec({
         .withUsername("dmigrate")
         .withPassword("dmigrate")
 
-    val target = MSSQLServerContainer(TestImages.MSSQL)
-        .acceptLicense()
+    val target = newMssqlContainer()
         .withPassword(MSSQL_PASSWORD)
-        .withUrlParam("encrypt", "false")
-        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
 
     lateinit var tmp: Path
 

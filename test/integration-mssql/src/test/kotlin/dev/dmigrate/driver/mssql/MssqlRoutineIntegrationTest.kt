@@ -7,14 +7,14 @@ import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.SslMode
 import dev.dmigrate.driver.connection.SslSettings
 import dev.dmigrate.driver.connection.asJdbc
-import dev.dmigrate.test.images.TestImages
+import dev.dmigrate.test.containers.newMssqlContainer
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -25,7 +25,6 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as strShouldContain
 import io.kotest.matchers.string.shouldNotContain as strShouldNotContain
-import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 
 // Routinen und Trigger gegen echtes SQL Server 2022: Rumpf-Schnitt (9a),
@@ -33,10 +32,7 @@ import java.sql.DriverManager
 // Modell kein Feld hat.
 class MssqlRoutineIntegrationTest : FunSpec({
 
-    val container = MSSQLServerContainer(TestImages.MSSQL)
-        .acceptLicense()
-        .withUrlParam("encrypt", "false")
-        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
+    val container = newMssqlContainer()
 
     lateinit var config: ConnectionConfig
 

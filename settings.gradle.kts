@@ -51,6 +51,9 @@ include("test:e2e-cli")
 // Container-Images der Integrationstests — eine Stelle je Dialekt.
 include("test:test-images")
 
+// Die Container selbst — dieselbe Regel, eine Stelle je Dialekt.
+include("test:test-containers")
+
 // Consumer integration probe (read-only surface verification)
 include("test:consumer-read-probe")
 

@@ -1,20 +1,21 @@
 package dev.dmigrate.cli
 
 import dev.dmigrate.cli.integration.runRealCli
+import dev.dmigrate.test.containers.newMssqlContainer
 import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
-import org.testcontainers.mssqlserver.MSSQLServerContainer
-import org.testcontainers.postgresql.PostgreSQLContainer
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.deleteRecursively
 import kotlin.io.path.readText
+import org.testcontainers.mssqlserver.MSSQLServerContainer
+import org.testcontainers.postgresql.PostgreSQLContainer
 
 /**
  * Der SRID-Weg SQL Server → PostGIS über die ECHTE CLI.
@@ -38,10 +39,7 @@ import kotlin.io.path.readText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlSpatialTransferE2ETest : FunSpec({
 
-    val source = MSSQLServerContainer(TestImages.MSSQL)
-        .acceptLicense()
-        .withUrlParam("encrypt", "false")
-        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
+    val source = newMssqlContainer()
 
     val target = PostgreSQLContainer(TestImages.POSTGIS)
         .withDatabaseName("dmigrate_geo_tgt")

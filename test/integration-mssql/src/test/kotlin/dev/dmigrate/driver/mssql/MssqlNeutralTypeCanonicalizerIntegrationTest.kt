@@ -1,24 +1,23 @@
 package dev.dmigrate.driver.mssql
 
-import dev.dmigrate.core.model.FloatPrecision
-import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
+import dev.dmigrate.core.model.FloatPrecision
+import dev.dmigrate.core.model.GeometryType
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
-import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.SslMode
 import dev.dmigrate.driver.connection.SslSettings
 import dev.dmigrate.driver.connection.asJdbc
-import dev.dmigrate.test.images.TestImages
+import dev.dmigrate.test.containers.newMssqlContainer
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 
 /**
@@ -34,10 +33,7 @@ import java.sql.DriverManager
  */
 class MssqlNeutralTypeCanonicalizerIntegrationTest : FunSpec({
 
-    val container = MSSQLServerContainer(TestImages.MSSQL)
-        .acceptLicense()
-        .withUrlParam("encrypt", "false")
-        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
+    val container = newMssqlContainer()
 
     val typeMapper = MssqlTypeMapper()
     val canon = MssqlDriver().typeCanonicalizer()

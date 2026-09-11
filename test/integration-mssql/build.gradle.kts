@@ -8,6 +8,7 @@
 
 dependencies {
     testImplementation(project(":test:test-images"))
+    testImplementation(project(":test:test-containers"))
     testImplementation(project(":adapters:driven:driver-mssql"))
     testImplementation(project(":adapters:driven:driver-mssql-profiling"))
     testImplementation(project(":hexagon:profiling"))

@@ -2,15 +2,12 @@ package dev.dmigrate.cli
 
 import dev.dmigrate.cli.integration.runRealCli
 import dev.dmigrate.format.yaml.YamlSchemaCodec
-import dev.dmigrate.test.images.TestImages
+import dev.dmigrate.test.containers.newMssqlContainer
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
-import org.testcontainers.containers.Container
-import org.testcontainers.mssqlserver.MSSQLServerContainer
-import org.testcontainers.utility.MountableFile
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
@@ -18,6 +15,9 @@ import kotlin.io.path.absolutePathString
 import kotlin.io.path.deleteRecursively
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
+import org.testcontainers.containers.Container
+import org.testcontainers.mssqlserver.MSSQLServerContainer
+import org.testcontainers.utility.MountableFile
 
 /**
  * MSSQL Slice 2a: das von `schema generate --target mssql` geschriebene Skript
@@ -32,11 +32,8 @@ import kotlin.io.path.writeText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlGenerateApplyE2ETest : FunSpec({
 
-    val container = MSSQLServerContainer(TestImages.MSSQL)
-        .acceptLicense()
+    val container = newMssqlContainer()
         .withPassword(PASSWORD)
-        .withUrlParam("encrypt", "false")
-        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
 
     lateinit var tmp: Path
 

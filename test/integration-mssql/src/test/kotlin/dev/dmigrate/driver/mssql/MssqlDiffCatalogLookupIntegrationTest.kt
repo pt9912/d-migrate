@@ -16,18 +16,17 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.SslMode
 import dev.dmigrate.driver.connection.SslSettings
-import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import dev.dmigrate.driver.connection.asJdbc
-import dev.dmigrate.test.images.TestImages
+import dev.dmigrate.test.containers.newMssqlContainer
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
-import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 
 /**
@@ -61,10 +60,7 @@ import java.sql.DriverManager
  */
 class MssqlDiffCatalogLookupIntegrationTest : FunSpec({
 
-    val container = MSSQLServerContainer(TestImages.MSSQL)
-        .acceptLicense()
-        .withUrlParam("encrypt", "false")
-        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
+    val container = newMssqlContainer()
 
     val planner = DiffPlanner()
     val gen = MssqlDiffDdlGenerator()
