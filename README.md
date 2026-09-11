@@ -18,21 +18,21 @@ d-migrate is a database-agnostic tool for schema migration and data
 management, usable as a CLI **and** as an MCP server
 (`mcp serve --transport stdio|http`, MCP 2025-11-25). You define your
 schema once in a neutral YAML format and then validate, compare,
-generate DDL, and execute live diff-based migrations against
-PostgreSQL, MySQL, SQLite, SQL Server, and Oracle. d-migrate also
+generate DDL and execute live diff-based migrations against
+PostgreSQL, MySQL, SQLite, SQL Server and Oracle. d-migrate also
 covers reverse engineering of existing databases, streaming-based
-data export/import/transfer between databases, and export to existing
+data export/import/transfer between databases and export to existing
 migration toolchains (Flyway, Liquibase, Django, Knex).
 
 ## Who is it for?
 
 d-migrate targets database administrators, platform engineers, data
-teams, and integrators who:
+teams and integrators who:
 
 - need a **dialect-agnostic** schema artefact (PostgreSQL / MySQL /
   SQLite / SQL Server / Oracle from the same YAML source)
 - want **reproducible, signed migration plans** with explicit rollback
-  contracts, drift checks, and per-statement metadata
+  contracts, drift checks and per-statement metadata
 - run schema and data operations against existing databases —
   including reverse engineering, comparison, transfer, and
   incremental export — **without locking into a single vendor's
@@ -41,7 +41,7 @@ teams, and integrators who:
   discovery (validate / compare / generate / reverse) plus
   policy-gated job workers for data import / transfer / profile
 
-It is not (yet) an ETL platform, a streaming-CDC pipeline, or a
+It is not (yet) an ETL platform, a streaming-CDC pipeline or a
 replacement for hand-tuned dialect-specific migrations — but it
 captures the schema and data work that's common across these
 stacks.
@@ -118,7 +118,7 @@ See [Quick start](#quick-start) below for more concrete recipes.
   (`minBound(90)` in every module's `build.gradle.kts`). The CI
   build fails if any module drops below.
 - **Doc-check gate**: Markdown link targets in [`docs/`](docs/),
-  [`spec/`](spec/), and root Markdown files (including both READMEs
+  [`spec/`](spec/) and root Markdown files (including both READMEs
   and [`CHANGELOG.md`](CHANGELOG.md)) are validated against the file
   system on every CI run via
   [d-check](https://github.com/pt9912/d-check) (digest-pinned
@@ -136,14 +136,14 @@ See [Quick start](#quick-start) below for more concrete recipes.
   rejected at load time.
 - **Live-DB integration tests** against Testcontainers PostgreSQL,
   MySQL, SQL Server, Oracle and file-backed SQLite — every diff,
-  rename, sequence, and atomic-preserve pipeline runs against real
+  rename, sequence and atomic-preserve pipeline runs against real
   engines via
   [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh).
 - **Reproducible builds**: `--deterministic` plus `SOURCE_DATE_EPOCH`
   emit byte-identical DDL across timestamps and OS environments.
 - **Signed migration plans**: `--plan-artefact` writes a canonical,
   signed `migration-plan.v1` JSON with stable fingerprints,
-  statement IDs, and rollback metadata; tampered artefacts are
+  statement IDs and rollback metadata; tampered artefacts are
   rejected by the `MigrationPlanArtifactValidator`.
 - **Hexagonal architecture**: pure-domain
   [`hexagon:core`](hexagon/core/) plus
@@ -190,7 +190,7 @@ Individual gates for fast feedback loops:
 ```bash
 make help              # list all available targets
 make ci                # Docker CI build + docs-check (full local gate)
-make gates             # Docker check, coverage, docs, and semgrep gates
+make gates             # Docker check, coverage, docs and semgrep gates
 make docker-build      # build the runtime image
 make docker-check      # Gradle check inside the Dockerfile build stage
 make docker-test       # Gradle test inside the Dockerfile build stage
@@ -499,7 +499,7 @@ export and profiling. The table says what is specific to each.
     └── user/                      ← user / operator facing (guide.md, releasing.md)
 ```
 
-**Note:** the linked ADRs, slice plans, and planning documents under
+**Note:** the linked ADRs, slice plans and planning documents under
 [`docs/`](docs/) and [`spec/`](spec/) are written in German. The
 English README mirrors the structure and key facts; for deep-dive
 content, consult [`README.de.md`](README.de.md) or the German source
