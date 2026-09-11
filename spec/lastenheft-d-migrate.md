@@ -82,6 +82,35 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - **Wartungsfenster**: Migrationen typischerweise in Wartungsfenstern
 - **Plattformen**: Windows, Linux, macOS
 
+**Unterstützte Datenbankversionen:**
+
+| Dialekt | Untergrenze | geprüft gegen |
+| --- | --- | --- |
+| PostgreSQL | 14 | 18 |
+| MySQL | 8.0.16 | 9.7 |
+| SQL Server | 2017 | 2025 |
+| Oracle | 23ai | 23.26 |
+| SQLite | Version der mitgelieferten Treiberbibliothek | 3.53.4 |
+
+Die Untergrenze sagt, welche Server-Fähigkeiten d-migrate voraussetzen darf.
+Sie ist eine **Zusage, keine Testaussage**: geprüft wird gegen die jeweils
+rechte Spalte, die Untergrenze selbst durchläuft keinen eigenen Testlauf. Wer
+sie belegen will, braucht je Dialekt einen zweiten Eintrag in der Testmatrix.
+
+Woran die einzelnen Grenzen hängen:
+
+- **PostgreSQL 14** ist die älteste Version, in der ein Trigger ersetzt werden
+  kann, ohne ihn zu löschen und neu anzulegen; 13 ist abgekündigt.
+- **MySQL 8.0.16** ist die Schwelle, ab der der Server `CHECK`-Klauseln
+  durchsetzt. Darunter nimmt er sie entgegen und verwirft sie stillschweigend —
+  eine Zusicherung, die das Schema führt und die Datenbank nicht einhält.
+- **SQL Server 2017** ist die älteste Version mit erstklassigen
+  Linux-Containern und `STRING_AGG`.
+- **Oracle 23ai**, weil der native `JSON`-Typ vorausgesetzt wird; den gibt es
+  erst ab 21c, und 23ai ist die aktuelle frei verfügbare Edition.
+- **SQLite** hat keine Serverversion, die ein Anwender wählt: es gilt die
+  Version der mitgelieferten Treiberbibliothek.
+
 ---
 
 ## 4. Funktionale Anforderungen
@@ -720,10 +749,11 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Performance-Regression-Tests (max. 10% Abweichung zwischen Versionen)
 
 **Test-Datenbanken:**
-- Docker-Container für PostgreSQL, MySQL, SQLite
+- Docker-Container für PostgreSQL, MySQL, SQL Server und Oracle; SQLite läuft
+  in-memory über die Treiberbibliothek und braucht keinen Container
 - Automatisches Setup/Teardown für Isolation
 - Test-Fixtures mit repräsentativen Daten
-- Separate Testsuites für jede Datenbankversion (PostgreSQL 12-16, MySQL 8.0-8.3)
+- Geprüft wird gegen die in 3.3 genannten Versionen der rechten Spalte
 
 Weiterfuehrung: Eine konkrete, priorisierte Kandidatenliste fuer reale
 Beispiel- und Testdatenbanken wird separat gepflegt.

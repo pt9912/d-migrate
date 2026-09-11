@@ -176,6 +176,28 @@ Verhalten von `pipeline.parallelism`:
 
 ## 4. Datenbank-Verbindungen
 
+### 4.0 Welche Serverversionen unterstützt werden
+
+| Dialekt | unterstützt ab | in jedem Lauf geprüft gegen |
+| --- | --- | --- |
+| PostgreSQL | 14 | 18 |
+| MySQL | 8.0.16 | 9.7 |
+| SQL Server | 2017 | 2025 |
+| Oracle | 23ai | 23.26 |
+| SQLite | Version der mitgelieferten Treiberbibliothek | 3.53.4 |
+
+Die linke Spalte ist die Zusage: darunter setzt d-migrate Server-Fähigkeiten
+voraus, die es nicht gibt. Die rechte Spalte ist das, wogegen jeder CI-Lauf
+tatsächlich läuft — **die Untergrenze selbst wird nicht eigens getestet**.
+Fahren Sie eine Version dazwischen und stoßen auf etwas, melden Sie es bitte;
+es ist dann kein erwarteter Zustand.
+
+Bei **SQLite** gibt es keine Serverversion, die Sie wählen: es zählt die
+Bibliothek, die mit d-migrate ausgeliefert wird.
+
+Die verbindliche Fassung steht im Lastenheft
+([`lastenheft-d-migrate.md`](../../spec/lastenheft-d-migrate.md), Abschnitt 3.3).
+
 ### 4.1 Connection-URL-Format und Aliase
 
 `dialect://user:password@host:port/db?params`. Unterstützte Dialekte/Aliase und

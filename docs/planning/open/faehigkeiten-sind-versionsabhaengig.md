@@ -68,9 +68,22 @@ abzuhängen.
   Zielserverversion, damit wer bewusst für einen alten Server erzeugt, das sagen
   kann — statt auf einen Default zu treffen.
 
+## Die Vorbedingung ist erfüllt (2026-09-11)
+
+Die Spanne steht normativ im Lastenheft (Abschnitt 3.3): PostgreSQL 14,
+MySQL 8.0.16, SQL Server 2017, Oracle 23ai, SQLite treibergebunden — geprüft
+jeweils gegen die aktuelle Version.
+
+Damit ist auch die Liste der Schwellen endlich, die `forTarget` kennen muss:
+alles zwischen Unter- und Obergrenze. Zwei sind schon gemessen und benannt —
+virtuelle berechnete Spalten ab PostgreSQL 18, `SET EXPRESSION` ab 17. Beim
+Festlegen der Spanne kam eine dritte dazu: der Oracle-Adapter rendert `json`
+und `array` als nativen `JSON`-Typ, den es erst ab 21c gibt. Das ist der
+Grund, warum Oracle nicht auf 19c zugesagt werden konnte — und zugleich ein
+Beispiel dafuer, dass eine Faehigkeit heute unsichtbar an einer Version haengt.
+
 ## Nicht-Scope
 
-- Die **unterstützte Versionsspanne** selbst. Das ist eine Zusage an Anwender
-  und gehört ins Lastenheft, nicht in diesen Slice — er setzt sie voraus.
+- Die **unterstützte Versionsspanne** selbst — sie steht jetzt fest (siehe oben).
 - Der Ausbau der Testmatrix. Er folgt aus der Spanne, nicht aus dieser
   Umstellung.
