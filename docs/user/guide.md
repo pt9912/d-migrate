@@ -686,6 +686,14 @@ unten:
   Sequenzen sind by-design lock-free). Der Lock schliesst hier nur
   die Race zwischen zwei Migrationen, nicht zwischen Migration und
   App — siehe Restrisiko unten.
+- **SQL Server**: `sys.sp_getapplock` mit
+  `@LockOwner = 'Transaction'` — das Gegenstueck zu PGs
+  `pg_advisory_xact_lock`. Die Sperre haengt an der Transaktion und
+  faellt mit Commit oder Rollback von selbst weg. SQL Server fuehrt
+  DDL transaktional, das Fenster ist also alles-oder-nichts.
+- **Oracle**: `DBMS_LOCK`, session- statt transaktionsgebunden. Das
+  Fenster ist hier **serialisiert, nicht atomar** — der wichtige
+  Unterschied steht als eigenes Restrisiko unten.
 
 **Per-Dialekt-Lock-Strategie:**
 
@@ -694,6 +702,13 @@ unten:
 - MySQL: `SELECT ... FOR UPDATE` auf der `dmg_sequences`-Helper-Row.
 - SQLite: `BEGIN IMMEDIATE` (DB-weiter Write-Lock; xerial-spezifischer
   Lock-Wait per `setQueryTimeout`).
+- SQL Server: `sys.sp_getapplock` je Sequenz, `@LockOwner = 'Transaction'`,
+  innerhalb der Transaktionsklammer.
+- Oracle: `DBMS_LOCK.request` je Sequenz mit `release_on_commit => FALSE`
+  und ausdruecklicher Freigabe am Ende. `TRUE` waere hier falsch: Oracle
+  committet jedes DDL implizit und gaebe die Sperre damit mitten im
+  Fenster frei. Das Paket gehoert SYS — fehlt das `EXECUTE`-Recht,
+  meldet der Lauf das benannt, statt ungeschuetzt weiterzumachen.
 
 Die maximale Lock-Wartezeit ist über `--lock-timeout-ms <ms>`
 einstellbar (gültig 10–60000 ms). Läuft der Lock-Erwerb in den Timeout,
@@ -723,6 +738,14 @@ PG-/MySQL-Pfad benoetigt keinen Opt-in — der atomare Pfad ist Default.
   Solche Apps muessen Schreibverkehr weiterhin vor `--execute`
   pausieren oder ueber Quota-Reserve-Logik den `nextval`-Aufruf
   blockieren.
+- Auf **Oracle** ist das Fenster serialisiert, nicht atomar. Jedes DDL
+  committet dort implizit, und sowohl die geschuetzten Operationen als
+  auch der Restore (`ALTER SEQUENCE … RESTART START WITH n`) sind DDL.
+  Die Sperre haelt durch — niemand sonst verbraucht im Fenster
+  Sequenzwerte —, aber ein Fehlschlag in der Mitte laesst stehen, was
+  bis dahin lief. Planen Sie fuer Oracle also einen Blick auf den
+  Ist-Zustand nach einem abgebrochenen Lauf ein; auf den vier anderen
+  Dialekten ist das nicht noetig.
 - Cross-Database-Locks (z.B. Multi-Process-Migrationen ueber dieselbe
   Sequenz) sind out-of-scope. Ein Single-Process-`schema migrate`
   fuehrt deterministisch sortierte Locks; Cross-Plan-Deadlock-

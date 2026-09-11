@@ -1312,6 +1312,14 @@ Hilfsobjekte, die dasselbe Verhalten nachbilden.
 `CREATE SEQUENCE`, ein `sequence_nextval`-Default zu `NEXT VALUE FOR …`.
 Eine `helper_table`-Option gibt es deshalb nicht.
 
+**Oracle** fehlt aus demselben Grund: `identifier` wird zu
+`GENERATED … AS IDENTITY`, benannte Sequenzen zu nativem `CREATE SEQUENCE`,
+ein `sequence_nextval`-Default zu `<sequenz>.NEXTVAL`, und `cache` ist dort
+echte Laufzeit-Vorwegnahme statt eines Metadatums. `preserve_current_value`
+laeuft ueber `ALTER SEQUENCE … RESTART START WITH`. Ein Vorbehalt gilt nur
+fuer das Schutzfenster beim Ausrollen: es ist auf Oracle serialisiert statt
+atomar — siehe [`guide.md`](guide.md), „preserveCurrentValue".
+
 Die vollständige Attributmatrix steht in der
 [Neutralmodell-Spezifikation](../../spec/neutral-model-spec.md#92-cross-dialect-capability-matrix).
 
@@ -3037,6 +3045,7 @@ Fortschritt/Warnungen nach stderr.
 | `--on-error` | `abort` (Standard), `skip`, `log` |
 | `--on-conflict` | `abort` (Standard), `skip`, `update` |
 | `--trigger-mode` | `fire` (Standard), `disable` (nur PostgreSQL), `strict` |
+| `--oracle-empty-string` | Oracle-Ziel: `error` (Standard) bricht ab, wenn ein leerer Quell-String in eine `NOT NULL`-Spalte soll; `literal:<text>` setzt diesen Text an seine Stelle. Oracle setzt `''` mit NULL gleich, deshalb gibt es hier keinen stillen Weg. |
 | `--truncate` | Zieltabelle vorher leeren |
 | `--atomic` | alles-oder-nichts: bei Fehler alle Tabellen auf leer zurück (setzt `--truncate` voraus) |
 | `--disable-fk-checks` | FK-Prüfung aussetzen (nur MySQL/SQLite) |
@@ -3057,6 +3066,7 @@ Fortschritt/Warnungen nach stderr.
 | `--since-column` / `--since` | inkrementeller Transfer |
 | `--on-conflict` | `abort` (Standard), `skip`, `update` |
 | `--trigger-mode` | `fire` (Standard), `disable`, `strict` |
+| `--oracle-empty-string` | Oracle-Ziel: `error` (Standard) bricht ab, wenn ein leerer Quell-String in eine `NOT NULL`-Spalte soll; `literal:<text>` setzt diesen Text an seine Stelle. Oracle setzt `''` mit NULL gleich, deshalb gibt es hier keinen stillen Weg. |
 | `--truncate` | Zieltabellen vorher leeren |
 | `--atomic` | alles-oder-nichts: bei Fehler alle Zieltabellen auf leer zurück (setzt `--truncate` voraus) |
 | `--verify` | nach dem Transfer Quelle↔Ziel per SHA-256 abgleichen (Divergenz → Exit 3) |
