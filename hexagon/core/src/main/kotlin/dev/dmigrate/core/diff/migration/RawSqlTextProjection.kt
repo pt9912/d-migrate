@@ -99,6 +99,16 @@ object RawSqlTextProjection {
         return null
     }
 
+    /**
+     * Bei einer Sicht faellt mit dem Rumpf auch [ViewDefinition.sourceDialect]
+     * weg.
+     *
+     * Es ist keine Aussage ueber die Form der Sicht, sondern darueber, woher
+     * ihr Text stammt — und genau deshalb steht es nur auf einer Seite: die
+     * Schemadatei traegt es nicht, der Rueckleser setzt es. Bliebe es stehen,
+     * unterschieden sich die Fingerabdruecke schon deswegen, und ein Lauf, der
+     * eine Sicht gerade erst angelegt hat, meldete Drift, wo keine ist.
+     */
     private fun blank(view: ViewDefinition): ViewDefinition =
-        view.copy(query = view.query?.let { PLACEHOLDER })
+        view.copy(query = view.query?.let { PLACEHOLDER }, sourceDialect = null)
 }
