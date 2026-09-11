@@ -278,6 +278,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unter exklusiver Sperre neu, und auf manchen Servern führt der einzige Weg
   dorthin über das Lösen der Spalte samt ihren Indizes.
 
+
+- **Fingerabdruck-Verfahren auf `schema-fingerprint-v16`** (von `v11`). Fünf
+  Schritte: `v12` blendet die Text-Search-Konfiguration eines Volltext-Index
+  bei MySQL, SQLite und SQL Server aus sowie den system-vergebenen
+  Sequenznamen einer PostgreSQL-IDENTITY-Spalte — keiner der Dialekte kann
+  diese Angaben zurückmelden. `v13` nimmt SQL Servers Partitionsnamen dazu
+  (der Server nummeriert, sein Reverse synthetisiert `p1…pn`) und ordnet die
+  Partitionen im Abdruck nach Inhalt statt nach Namen. `v14` blendet das
+  Prädikat eines partiellen Index bei Oracle aus, das dort keine
+  Index-Anweisung trägt. `v15` faltet die beiden Schreibweisen einer
+  Autowert-Spalte (`identifier` + `auto_increment` gegen den numerischen Typ
+  mit `generation: identity`) dort zusammen, wo der Dialekt beide zum selben
+  DDL rendert — der Vergleich tat das bereits, der Abdruck nicht, und der
+  Post-Compare meldete deshalb Drift auf einer Spalte, die genau wie
+  gewünscht angewendet worden war. `v16` liest PostgreSQLs Normalform einer
+  Werteaufzählung (`spalte = ANY (ARRAY['a'::text, …])`, dazu Typ-Casts an
+  Literalen und Spalte) als das, was sie ist — bis dahin erkannte die
+  Projektion nur die Formen von SQLite, Oracle und SQL Server.
+
+  **Bestehende Rollback-Artefakte und Overlays müssen neu erzeugt werden.**
+  `schema rollback` lehnt ein älteres Artefakt mit
+  `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` (Exit 8) ab und nennt beide
+  Versionen; erzeugen Sie es mit `migrate --generate-rollback` neu.
+
 ### Fixed
 
 - **Eine Spalte, die auf Oracle per ALTER zum Enum wurde, verlor ihren
@@ -448,32 +472,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `migrate --execute` Drift meldet und der nächste Lauf denselben Index
   erneut plant.
 
-### Changed
-
-- **Fingerabdruck-Verfahren auf `schema-fingerprint-v16`** (von `v11`). Fünf
-  Schritte: `v12` blendet die Text-Search-Konfiguration eines Volltext-Index
-  bei MySQL, SQLite und SQL Server aus sowie den system-vergebenen
-  Sequenznamen einer PostgreSQL-IDENTITY-Spalte — keiner der Dialekte kann
-  diese Angaben zurückmelden. `v13` nimmt SQL Servers Partitionsnamen dazu
-  (der Server nummeriert, sein Reverse synthetisiert `p1…pn`) und ordnet die
-  Partitionen im Abdruck nach Inhalt statt nach Namen. `v14` blendet das
-  Prädikat eines partiellen Index bei Oracle aus, das dort keine
-  Index-Anweisung trägt. `v15` faltet die beiden Schreibweisen einer
-  Autowert-Spalte (`identifier` + `auto_increment` gegen den numerischen Typ
-  mit `generation: identity`) dort zusammen, wo der Dialekt beide zum selben
-  DDL rendert — der Vergleich tat das bereits, der Abdruck nicht, und der
-  Post-Compare meldete deshalb Drift auf einer Spalte, die genau wie
-  gewünscht angewendet worden war. `v16` liest PostgreSQLs Normalform einer
-  Werteaufzählung (`spalte = ANY (ARRAY['a'::text, …])`, dazu Typ-Casts an
-  Literalen und Spalte) als das, was sie ist — bis dahin erkannte die
-  Projektion nur die Formen von SQLite, Oracle und SQL Server.
-
-  **Bestehende Rollback-Artefakte und Overlays müssen neu erzeugt werden.**
-  `schema rollback` lehnt ein älteres Artefakt mit
-  `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` (Exit 8) ab und nennt beide
-  Versionen; erzeugen Sie es mit `migrate --generate-rollback` neu.
-
-### Fixed
 
 - **`schema migrate` konvergiert.** Die dialekt-abhängige Projektion wirkte
   bisher nur auf den Fingerabdruck, nicht auf den Vergleich: wo ein Dialekt

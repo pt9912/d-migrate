@@ -116,12 +116,20 @@ daher **alle Tests aller Module** *und* erzeugt das Smoke-Image
 `d-migrate:pre-release`, gegen das die Smokes in §3.3 laufen. Erwartetes
 Ergebnis: `BUILD SUCCESSFUL`.
 
-> **Wichtig:** **nicht** `make docker-build` benutzen — das baut ohne
-> `--target` die **letzte** Dockerfile-Stage (`ast-grep`, eigene
-> Node-Base), nicht das Runtime-Image; die Modul-Tests laufen dann nicht
-> zwingend und `d-migrate:pre-release` entsteht nicht. Nach einer
-> Quelländerung zusätzlich `--no-cache-filter compile,build` anhängen,
-> sonst liefert der gecachte `compile`-Layer alten Code.
+> **Wichtig:** **nicht** `make docker-build` benutzen. Es baut zwar dieselbe
+> `runtime`-Stage, aber mit einer Task-Liste, die nur **packt**
+> (`assemble` + `installDist`): die Modul-Tests laufen dort nicht, und das
+> Ergebnis heißt `$(IMAGE):$(IMAGE_TAG)`, nicht `d-migrate:pre-release`.
+> Geprüft wird an anderer Stelle — `build.yml` fährt `make ci-build`, und für
+> diesen Vorab-Check ist genau der obige direkte Aufruf gedacht, der die
+> Default-Tasks der `build`-Stage nimmt.
+>
+> Ein blankes `docker build .` **ohne** `--target` baut wiederum die **letzte**
+> Dockerfile-Stage (`ast-grep`, eigene Node-Base) und liefert überhaupt kein
+> Runtime-Image.
+>
+> Nach einer Quelländerung zusätzlich `--no-cache-filter compile,build`
+> anhängen, sonst liefert der gecachte `compile`-Layer alten Code.
 
 Das separate Coverage-Gate (`koverVerify`) läuft in der CI über
 `make ci-build`; lokal kann es mit
