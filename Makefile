@@ -241,8 +241,20 @@ docker-resolve-deps:
 # publizierte Image aus Jib und lief deshalb als root und ohne mod_spatialite, waehrend
 # `runtime` (USER dmigrate, /work gechownt, SpatiaLite) nur lokal verwendet wurde
 # (ADR 0041). Ein Image-Bauweg statt zwei.
+# Das OCI-Image wird gepackt, nicht noch einmal geprueft.
+#
+# Die Vorgabe der `build`-Stage ist `build …`, und `build` zieht `check` und
+# damit `koverVerify` nach sich. Der Job haengt aber per `needs: build` an dem
+# Job, der genau das schon gefahren hat — auf dem ehrlichen Pfad
+# (`make ci-build`, `--no-build-cache`). Hier lief dieselbe Pruefung ein
+# zweites Mal, nur MIT Gradle-Build-Cache: gecachte Test-Tasks liefern keine
+# Coverage-Daten, und `persistence-jdbc` fiel so auf 57 % statt der lokal
+# gemessenen >90 %. Eine Pruefung, die nichts Neues prueft und dabei den
+# Veroeffentlichungs-Job rot faerbt, gehoert hier nicht hin.
 docker-oci-build:
-	$(DOCKER) build --target runtime -t $(DOCKER_OCI_IMAGE) .
+	$(DOCKER) build --target runtime \
+	  --build-arg GRADLE_TASKS="assemble $(CLI_PROJECT):installDist" \
+	  -t $(DOCKER_OCI_IMAGE) .
 
 docker-build:
 	$(DOCKER) build --target runtime -t $(IMAGE):$(IMAGE_TAG) .
