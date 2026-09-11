@@ -256,8 +256,17 @@ docker-oci-build:
 	  --build-arg GRADLE_TASKS="assemble $(CLI_PROJECT):installDist" \
 	  -t $(DOCKER_OCI_IMAGE) .
 
+# Gleiche Begruendung wie bei docker-oci-build: ein Laufzeit-Image wird
+# gepackt. Die neun Smoke-Workflows, die hierueber ihr Image holen, pruefen das
+# Artefakt — die Testlaeufe kamen nur als Nebenwirkung der `build`-Vorgabe mit,
+# auf dem cache-behafteten Pfad, auf dem Coverage-Daten fehlen koennen.
+# Abgesichert ist das anderswo: `build.yml` faehrt `make ci-build` auf
+# denselben Commits, und `docker-gates` prueft Coverage ueber die eigene
+# Stage `coverage-verify`.
 docker-build:
-	$(DOCKER) build --target runtime -t $(IMAGE):$(IMAGE_TAG) .
+	$(DOCKER) build --target runtime \
+	  --build-arg GRADLE_TASKS="assemble $(CLI_PROJECT):installDist" \
+	  -t $(IMAGE):$(IMAGE_TAG) .
 
 # Targeted module check inside the Dockerfile `build` stage.
 #   make docker-check                            # whole repo (slower than docker-build)
