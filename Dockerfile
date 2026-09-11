@@ -233,9 +233,16 @@ RUN tar cf /src/release-assets.tar -C /src adapters/driving/cli/build/release
 # nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/src/release-assets.tar"]
 
-# ---- Stage 2: integration-test (JDK + Python + Django + Node.js) -----------
-# Used by scripts/test-integration-docker.sh for the full runtime matrix.
-FROM gradle:8.14-jdk21 AS integration-test
+# ---- Stage: tooling (JDK + Python + Django + Node.js + SpatiaLite) --------
+# Die Laufzeit-Werkzeuge der Integrationstests, getrennt von allem anderen.
+#
+# Eigene Stage, weil sich diese Schicht fast nie aendert, die Build-Dateien
+# darunter aber schon: laege sie hinter der Abhaengigkeitsaufloesung, wuerde
+# jede geaenderte `build.gradle.kts` die ganze apt-Installation erneut
+# ausloesen. So bleibt sie ueber Build-Datei-Aenderungen hinweg gueltig — und
+# sie ist der natuerliche Schnitt, falls dieses Werkzeug-Image spaeter einmal
+# veroeffentlicht und per Digest gepinnt werden soll.
+FROM gradle:8.14-jdk21 AS tooling
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -268,6 +275,18 @@ RUN apt-get update && \
     npm install -g pnpm@10.34.5 node-gyp && \
     rm -rf /var/lib/apt/lists/*
 
+# ---- Stage 2: integration-test (Werkzeuge + gewaermter Gradle-Cache) -------
+# Used by scripts/test-integration-docker.sh for the full runtime matrix.
+#
+# Der Cache kommt als COPY aus `deps`, nicht ueber `FROM deps`: so haengt die
+# teure apt-Schicht nicht an den Build-Dateien. Ohne den Cache loeste jeder
+# Integrationslauf alle Abhaengigkeiten neu auf — das kostet nicht nur Zeit,
+# es macht den Lauf von einem erreichbaren Maven Central abhaengig, und ein
+# DNS-Aussetzer beendet ihn, bevor der erste Container startet.
+FROM tooling AS integration-test
+
+COPY --from=deps /home/gradle/.gradle /home/gradle/.gradle
+
 WORKDIR /src
 
 COPY --chown=gradle:gradle . .
@@ -291,7 +310,9 @@ COPY --from=d-migrate:native-build \
      /src/adapters/driving/cli/build/native/nativeCompile/d-migrate /native/d-migrate
 ENV DMIGRATE_CLI_BIN=/native/d-migrate
 
-FROM gradle:8.14-jdk21 AS coverage-build
+# Ebenfalls auf `deps`, aus demselben Grund wie bei `integration-test`: sonst
+# loest dieser Lauf alle Abhaengigkeiten neu auf.
+FROM deps AS coverage-build
 
 ARG COVERAGE_TASKS="test koverHtmlReport koverXmlReport"
 

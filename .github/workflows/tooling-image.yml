@@ -1,0 +1,64 @@
+# Baut und veroeffentlicht das Werkzeug-Basisimage der Integrationstests.
+#
+# Bewusst NUR von Hand ausloesbar: das Image aendert sich selten, und wann es
+# sich aendert, soll eine Entscheidung sein und kein Nebeneffekt eines Pushes.
+# Der Lauf gibt am Ende den Digest aus — der gehoert ins Haupt-`Dockerfile`,
+# sonst zieht der Bau weiterhin den alten Stand.
+name: Tooling Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Nur bauen, nicht pushen"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build tooling image
+        run: |
+          docker build -f docker/tooling.Dockerfile -t d-migrate-tooling:build .
+
+      - name: Login to GitHub Container Registry
+        if: inputs.dry_run != true
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push and report digest
+        if: inputs.dry_run != true
+        run: |
+          REF="ghcr.io/${{ github.repository }}-tooling"
+          STAMP="$(date -u +%Y%m%d)"
+          docker tag d-migrate-tooling:build "${REF}:${STAMP}"
+          docker tag d-migrate-tooling:build "${REF}:latest"
+          docker push "${REF}:${STAMP}"
+          docker push "${REF}:latest"
+          DIGEST="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${REF}:${STAMP}")"
+          echo "::notice::Digest: ${REF}:${STAMP}@${DIGEST}"
+          {
+            echo "### Werkzeug-Image veroeffentlicht"
+            echo
+            echo 'Im Haupt-`Dockerfile` eintragen:'
+            echo
+            echo '```'
+            echo "FROM ${REF}:${STAMP}@${DIGEST} AS tooling"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dry run — nichts gepusht
+        if: inputs.dry_run == true
+        run: |
+          echo "::notice::Probelauf - gebaut, nicht gepusht."
