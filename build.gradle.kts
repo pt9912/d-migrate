@@ -22,6 +22,27 @@ val resolvedProjectVersion =
         ?: normalizedReleaseVersion(System.getenv("DMIGRATE_VERSION"))
         ?: defaultProjectVersion
 
+/**
+ * Genau ein Datenbank-Container zur Zeit.
+ *
+ * Die Integrationsmodule starten ihre Server ueber Testcontainers. Liefen ihre
+ * Test-Tasks nebeneinander (`org.gradle.parallel=true`), standen mehrere
+ * Datenbanken gleichzeitig — und gemessen kam dabei einer nicht rechtzeitig
+ * hoch: `ContainerLaunchException` + `Connection refused`, an einer Spec, die
+ * von Lauf zu Lauf wechselte. Kein Spec-Defekt, sondern Gedraenge.
+ *
+ * Der Dienst begrenzt **nur** diese Test-Tasks. Das Uebersetzen der ueber
+ * vierzig Module laeuft weiter parallel — ein pauschales
+ * `org.gradle.parallel=false` kostete das mit und verdoppelte die Laufzeit,
+ * ohne dem Speicher mehr zu helfen.
+ */
+abstract class DatabaseContainerLock : BuildService<BuildServiceParameters.None>
+
+val databaseContainerLock: Provider<DatabaseContainerLock> =
+    gradle.sharedServices.registerIfAbsent("databaseContainerLock", DatabaseContainerLock::class) {
+        maxParallelUsages.set(1)
+    }
+
 allprojects {
     group = "dev.dmigrate"
     version = resolvedProjectVersion
@@ -94,6 +115,8 @@ subprojects {
     tasks.withType<Test> {
         if (isIntegrationProject) {
             onlyIf("requires -PintegrationTests") { project.hasProperty("integrationTests") }
+            // Reiht die Datenbank-Container auf (siehe [DatabaseContainerLock]).
+            usesService(databaseContainerLock)
         }
         useJUnitPlatform()
         val explicitKotestTags = System.getProperty("kotest.tags")
