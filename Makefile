@@ -227,10 +227,20 @@ ci-build:
 	  --build-arg GRADLE_TASKS="$(strip $(CI_BUILD_TASKS))" \
 	  -t $(IMAGE):ci-build .
 
+# Der Zielordner wird geleert, bevor die neuen Artefakte hineinwandern.
+#
+# Sonst bleiben die eines frueheren Preflights liegen, und `ls` zeigt zwei
+# Versionen nebeneinander — beim 1.3.0-Preflight lagen die vom 1.2.0-Schnitt
+# noch da. Fuer den GitHub-Release zaehlt ohnehin nur das gruene
+# Workflow-Artefakt (releasing.md 3.2), aber ein Ordner, in dem die falsche
+# Version griffbereit liegt, ist eine Falle ohne Nutzen.
+RELEASE_ASSETS_DIR = adapters/driving/cli/build/release
+
 release-assets:
 	$(DOCKER) build --target release-assets \
 	  $(if $(strip $(RELEASE_VERSION)),--build-arg RELEASE_VERSION="$(RELEASE_VERSION)",) \
 	  -t $(RELEASE_ASSETS_IMAGE) .
+	rm -rf "$(RELEASE_ASSETS_DIR)"
 	$(DOCKER) run --rm $(RELEASE_ASSETS_IMAGE) | tar xf -
 
 docker-resolve-deps:
