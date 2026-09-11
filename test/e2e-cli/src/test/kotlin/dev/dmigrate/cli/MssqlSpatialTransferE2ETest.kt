@@ -41,6 +41,7 @@ class MssqlSpatialTransferE2ETest : FunSpec({
     val source = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2022-latest")
         .acceptLicense()
         .withUrlParam("encrypt", "false")
+        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
 
     val target = PostgreSQLContainer(
         DockerImageName.parse("postgis/postgis:16-3.4").asCompatibleSubstituteFor("postgres"),

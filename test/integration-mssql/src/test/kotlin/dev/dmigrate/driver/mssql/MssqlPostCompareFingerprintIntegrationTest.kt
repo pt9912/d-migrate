@@ -45,6 +45,7 @@ class MssqlPostCompareFingerprintIntegrationTest : FunSpec({
     val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
         .acceptLicense()
         .withUrlParam("encrypt", "false")
+        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
 
     // Explizit typisiert: der Port hat seit dem Schema-Kontext zwei
     // Ueberladungen, und eine blanke Methodenreferenz waere mehrdeutig.

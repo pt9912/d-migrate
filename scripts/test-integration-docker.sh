@@ -44,6 +44,23 @@ if [[ "${GRADLE_TASKS}" != *"-PintegrationTests"* ]]; then
     GRADLE_TASKS="-PintegrationTests ${GRADLE_TASKS}"
 fi
 
+# Integrationsmodule laufen NACHEINANDER, nicht nebeneinander.
+#
+# `org.gradle.parallel=true` (gradle.properties) laesst die Test-Tasks mehrerer
+# Module gleichzeitig laufen — und damit mehrere Datenbank-Container. Gemessen:
+# die MSSQL-Suite allein ist gruen, im Volllauf aller Module faellt sie um, und
+# zwar mit `ContainerLaunchException` + `Connection refused` an einer Spec, die
+# von Lauf zu Lauf wechselt (lokal eine andere als in CI). Kein Spec-Defekt,
+# sondern Gedraenge: der Container startet, nimmt aber nicht rechtzeitig
+# Verbindungen an.
+#
+# Erzwungen statt dem Aufrufer ueberlassen — aus demselben Grund wie
+# `-PintegrationTests` oben: eigene Tasks ersetzen den Default, und die Angabe
+# ginge still verloren.
+if [[ "${GRADLE_TASKS}" != *"org.gradle.parallel"* ]]; then
+    GRADLE_TASKS="${GRADLE_TASKS} -Dorg.gradle.parallel=false"
+fi
+
 if [[ ! -S /var/run/docker.sock ]]; then
     echo "Docker socket /var/run/docker.sock not found." >&2
     echo "This script expects a local Docker daemon and mounts the host socket into the test container." >&2

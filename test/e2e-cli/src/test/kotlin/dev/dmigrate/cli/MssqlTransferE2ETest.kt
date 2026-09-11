@@ -41,6 +41,7 @@ class MssqlTransferE2ETest : FunSpec({
         .acceptLicense()
         .withPassword(MSSQL_PASSWORD)
         .withUrlParam("encrypt", "false")
+        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
 
     lateinit var tmp: Path
 

@@ -35,6 +35,7 @@ class MssqlGenerateApplyE2ETest : FunSpec({
         .acceptLicense()
         .withPassword(PASSWORD)
         .withUrlParam("encrypt", "false")
+        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
 
     lateinit var tmp: Path
 

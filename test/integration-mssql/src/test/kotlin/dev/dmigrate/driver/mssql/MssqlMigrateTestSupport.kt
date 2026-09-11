@@ -13,6 +13,7 @@ import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
+import java.time.Duration
 
 /**
  * Was die Migrate-Specs dieses Moduls gemeinsam brauchen: einen Container mit
@@ -23,10 +24,23 @@ import java.sql.DriverManager
  * dieselbe Art ansprechen — und weil ein zweiter Satz Kopien beim naechsten
  * Spec wieder waechst.
  */
+/**
+ * Wie lange ein SQL-Server-Container zum Hochfahren bekommt.
+ *
+ * Gebraucht, seit die Suiten gegen 2025 laufen: der Container startete in CI,
+ * nahm aber innerhalb der Testcontainers-Vorgabe noch keine Verbindungen an
+ * (`Connection refused`), waehrend vier weitere Container desselben Laufs
+ * durchkamen. Es ist also keine Eigenschaft des Images, sondern der Last —
+ * und dagegen hilft Zeit, nicht Raten. Oracle bekommt hier aus demselben
+ * Grund schon laenger fuenf Minuten.
+ */
+internal val MSSQL_STARTUP_TIMEOUT: Duration = Duration.ofMinutes(5)
+
 internal fun startMssqlContainer(): MSSQLServerContainer =
     MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
         .acceptLicense()
         .withUrlParam("encrypt", "false")
+        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
 
 /** Legt [database] auf dem laufenden Container an und oeffnet einen Pool darauf. */
 internal fun poolFor(container: MSSQLServerContainer, database: String): ConnectionPool {

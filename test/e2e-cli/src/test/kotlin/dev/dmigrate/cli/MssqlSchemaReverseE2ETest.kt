@@ -38,6 +38,7 @@ class MssqlSchemaReverseE2ETest : FunSpec({
     val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2022-latest")
         .acceptLicense()
         .withPassword(PASSWORD)
+        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
         // mssql-jdbc >= 10 setzt encrypt=true; der Container hat nur ein
         // Self-Signed-Zertifikat.
         .withUrlParam("encrypt", "false")

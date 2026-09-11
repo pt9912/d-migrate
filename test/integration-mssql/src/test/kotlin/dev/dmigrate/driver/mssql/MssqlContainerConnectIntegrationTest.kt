@@ -11,6 +11,7 @@ import java.sql.DriverManager
 class MssqlContainerConnectIntegrationTest : FunSpec({
 
     val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
+        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
         // Das Image startet nur mit akzeptierter Microsoft-EULA
         // (ACCEPT_EULA=Y, siehe docs/user/quality.md).
         .acceptLicense()

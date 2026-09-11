@@ -35,6 +35,7 @@ class MssqlRoutineIntegrationTest : FunSpec({
     val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
         .acceptLicense()
         .withUrlParam("encrypt", "false")
+        .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
 
     lateinit var config: ConnectionConfig
 
