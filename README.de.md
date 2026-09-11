@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.2.0** (stabil, [veröffentlicht 2026-09-05](https://github.com/pt9912/d-migrate/releases/tag/v1.2.0)).
+**1.3.0** (stabil, [veröffentlicht 2026-09-11](https://github.com/pt9912/d-migrate/releases/tag/v1.3.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -173,16 +173,17 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.2.0** (2026-09-05) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. `data seed` erzeugt
-  deterministische Testdaten, `mcp serve` bekommt ein konfigurierbares
-  `--policy-file` und eine `connections/list`-Methode, und `--server-state`
-  persistiert jetzt auch reverse-engineerte Schemas und Artefakte. MS SQL
-  Server ist der vierte Dialekt (Reverse, Generate, Migrate, Datenpfad,
-  Profiling); das Container-Image läuft als **non-root** (`uid 10001`);
-  Schreiben in einen Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`.
-  Native Binaries gibt es für `linux-x64` und `windows-x64`; unter macOS
-  führen Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel.
+- **Aktuelles Stable** · **1.3.0** (2026-09-11) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Oracle ist der fünfte
+  Dialekt** und vollständig: Reverse, Generate, Migrate, Datenpfad und
+  Profiling, dazu Bitmap- und Ausdrucks-Indizes, Partitionierung, Oracle Text,
+  Routinen und Trigger, Materialized Views und `SDO_GEOMETRY`. PostgreSQL
+  trägt berechnete Spalten durch eine Migration, und ein Lauf konvergiert dort,
+  wo roher SQL-Text im Spiel ist, statt dieselbe Änderung erneut zu planen. Das
+  Container-Image läuft als **non-root** (`uid 10001`); Schreiben in einen
+  Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`. Native Binaries gibt
+  es für `linux-x64` und `windows-x64`; unter macOS führen Homebrew, die
+  JVM-Artefakte oder das Container-Image zum Ziel.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter

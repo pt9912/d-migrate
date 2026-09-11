@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.2.0**
-(stable, [released 2026-09-05](https://github.com/pt9912/d-migrate/releases/tag/v1.2.0)).
+d-migrate is a working production tool at version **1.3.0**
+(stable, [released 2026-09-11](https://github.com/pt9912/d-migrate/releases/tag/v1.3.0)).
 
 The current capabilities:
 
@@ -159,16 +159,17 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.2.0** (2026-09-05) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. `data seed` generates
-  deterministic test data, `mcp serve` gains a configurable `--policy-file`
-  and a `connections/list` method, and `--server-state` now persists
-  reverse-engineered schemas and artefacts too. MS SQL Server is the fourth
-  dialect (reverse, generate, migrate, data path, profiling); the container
-  image runs as **non-root** (`uid 10001`), so writing into a bind mount
-  needs `--user "$(id -u):$(id -g)"`. Native binaries ship for `linux-x64`
-  and `windows-x64`; on macOS use Homebrew, the JVM artefacts or the
-  container image.
+- **Current stable** · **1.3.0** (2026-09-11) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **Oracle is the fifth
+  dialect** and complete: reverse, generate, migrate, the data path and
+  profiling, plus bitmap and expression indexes, partitioning, Oracle Text,
+  routines and triggers, materialized views and `SDO_GEOMETRY`. PostgreSQL
+  carries computed columns through a migration, and a migration run converges
+  where raw SQL text is involved instead of replanning the same change every
+  time. The container image runs as **non-root** (`uid 10001`), so writing
+  into a bind mount needs `--user "$(id -u):$(id -g)"`. Native binaries ship
+  for `linux-x64` and `windows-x64`; on macOS use Homebrew, the JVM artefacts
+  or the container image.
 
 For per-milestone task tables and ADR pointers see the canonical
 roadmap at
