@@ -1,1 +1,1 @@
-Database-agnostic CLI for schema migration and data management across PostgreSQL, MySQL, SQLite
+DB-agnostic CLI for schema migration and data management - PostgreSQL, MySQL, MSSQL, Oracle, SQLite

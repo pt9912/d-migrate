@@ -2,9 +2,10 @@
 
 **Database-agnostic tool for schema migration and data management** — usable as a
 CLI **and** as an MCP server. Define your schema once in a neutral YAML format,
-then validate, compare, generate DDL, and run live diff-based migrations against
-**PostgreSQL, MySQL, and SQLite**. Also covers reverse engineering, streaming
-data export/import/transfer, and export to Flyway, Liquibase, Django, and Knex.
+then validate, compare, generate DDL and run live diff-based migrations against
+**PostgreSQL, MySQL, SQLite, SQL Server and Oracle**. Also covers reverse
+engineering, streaming data export/import/transfer and export to Flyway,
+Liquibase, Django and Knex.
 
 - **Source & docs:** https://github.com/pt9912/d-migrate
 - **User guide** (task-oriented: "I need X → do Y"): https://github.com/pt9912/d-migrate/blob/main/docs/user/anwenderhandbuch.md
