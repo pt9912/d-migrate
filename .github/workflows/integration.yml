@@ -36,6 +36,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Volltext-Testimage bauen
+        # Ohne diesen Schritt fehlt `d-migrate-mssql-fts:local`, und
+        # MssqlFullTextEnvironmentIntegrationTest ueberspringt sich — fuenf
+        # Tests, darunter ein `migrate`-Pfad, der einen Volltext-Index
+        # ausserhalb der Transaktion anlegt. Ein uebersprungener Test ist gruen,
+        # der Lauf sah deshalb vollstaendig aus und war es nie.
+        #
+        # Der Bau braucht Netz (Microsoft-Paketquelle) und laeuft deshalb hier,
+        # nicht in den netzlosen Gates. Schlaegt er fehl, ist der Lauf rot:
+        # stillschweigend auf das Ueberspringen zurueckzufallen waere genau der
+        # Zustand, den dieser Schritt beendet.
+        run: make mssql-fts-image
+
       - name: Run integration tests (all modules with @integration tag)
         # Plan §6.16: generischer Aufruf, sodass neue integration-Tests in
         # beliebigen Modulen automatisch mitlaufen, ohne dass dieser Workflow

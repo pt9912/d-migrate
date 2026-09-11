@@ -13,23 +13,31 @@
 # 2. Ein selbst gebautes Image hat **keinen Upstream-Digest**. Gepinnt bleibt der
 #    Basis-Digest; die Reproduzierbarkeit kommt aus diesem Dockerfile.
 #
-# Das Paket zieht eine passende `mssql-server`-Version mit — die Engine wird also
-# mitgehoben, das Image ist keine reine Ergaenzung des Basis-Images.
-FROM mcr.microsoft.com/mssql/server@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
+# **Basis und Paket gehoeren zusammen.** Der Digest unten ist derselbe, den
+# `TestImages.MSSQL` traegt — sonst prueft der Volltext-Slice gegen eine andere
+# Engine als der Rest der Suiten, und genau das war lange der Fall (2022 hier,
+# 2025 ueberall sonst). Die gepinnte Paketversion entspricht der Engine des
+# Basis-Images; wer eine hebt, hebt beide. `scripts/test-images-gate.sh` haelt
+# den Digest-Gleichstand fest.
+FROM mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a
 
 USER root
 
+# Der Schluessel bleibt ASCII-armiert unter `signed-by=` liegen, statt ihn per
+# `gpg --dearmor` umzuwandeln: apt liest armierte Schluessel seit 2.4 direkt,
+# und gnupg 2.4 greift beim Umwandeln nach `/dev/tty`, das es im Build nicht
+# gibt. Das spart dem Image zugleich gnupg samt Anhang.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && install -d -m 0755 /etc/apt/keyrings \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
-       | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] \
-https://packages.microsoft.com/ubuntu/22.04/mssql-server-2022 jammy main" \
-       > /etc/apt/sources.list.d/mssql-server-2022.list \
+       -o /etc/apt/keyrings/microsoft.asc \
+    && chmod 0644 /etc/apt/keyrings/microsoft.asc \
+    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.asc] \
+https://packages.microsoft.com/ubuntu/24.04/mssql-server-2025 noble main" \
+       > /etc/apt/sources.list.d/mssql-server-2025.list \
     && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y mssql-server-fts \
-    && apt-get purge -y gnupg \
-    && apt-get autoremove -y \
+    && ACCEPT_EULA=Y apt-get install -y mssql-server-fts=17.0.4085.5-1 \
     && rm -rf /var/lib/apt/lists/*
 
 USER mssql

@@ -47,4 +47,29 @@ if [ -n "$undigested" ]; then
   exit 1
 fi
 
+# Das abgeleitete Volltext-Image (`test/integration-mssql/fts/Dockerfile`) kann
+# nicht auf die Konstante zeigen — es ist ein Dockerfile. Sein Basis-Digest muss
+# deshalb hier mit dem von `MSSQL` uebereinstimmen, sonst prueft der
+# Volltext-Slice gegen eine andere Engine als der Rest der Suiten.
+FTS_DOCKERFILE="test/integration-mssql/fts/Dockerfile"
+
+fts_base="$(grep -E '^FROM ' "$FTS_DOCKERFILE" | grep -oE 'sha256:[0-9a-f]{64}' | head -1)"
+mssql_pin="$(awk '/val MSSQL: DockerImageName/,/asCompatibleSubstituteFor/' "$CENTRAL" \
+               | grep -oE 'sha256:[0-9a-f]{64}' | head -1)"
+
+if [ -z "$fts_base" ] || [ -z "$mssql_pin" ]; then
+  echo "FAIL: Basis-Digest nicht auffindbar (FTS='$fts_base', TestImages='$mssql_pin')."
+  exit 1
+fi
+
+if [ "$fts_base" != "$mssql_pin" ]; then
+  echo "FAIL: das Volltext-Image steht auf einer anderen SQL-Server-Version:"
+  echo "  $FTS_DOCKERFILE: $fts_base"
+  echo "  TestImages.MSSQL:  $mssql_pin"
+  echo ""
+  echo "Fix: beide auf denselben Digest ziehen; die gepinnte mssql-server-fts-"
+  echo "Version im Dockerfile gehoert zur Engine des Basis-Images."
+  exit 1
+fi
+
 echo "OK: Container-Images zentral in test/test-images, jede Angabe mit Digest."
