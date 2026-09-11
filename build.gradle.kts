@@ -1,4 +1,5 @@
 import io.gitlab.arturbosch.detekt.Detekt
+import java.io.File
 import io.gitlab.arturbosch.detekt.extensions.DetektExtension
 import org.gradle.api.tasks.testing.Test
 
@@ -38,10 +39,80 @@ val resolvedProjectVersion =
  */
 abstract class DatabaseContainerLock : BuildService<BuildServiceParameters.None>
 
+/** `"4g"`, `"512m"`, `"2048k"` oder eine blanke Byte-Zahl in Bytes. */
+fun parseMemorySize(raw: String): Long? {
+    val value = raw.trim().lowercase()
+    val digits = value.takeWhile { it.isDigit() }
+    if (digits.isEmpty()) return null
+    val factor = when (value.removePrefix(digits)) {
+        "", "b" -> 1L
+        "k", "kb" -> 1024L
+        "m", "mb" -> 1024L * 1024
+        "g", "gb" -> 1024L * 1024 * 1024
+        else -> return null
+    }
+    return digits.toLongOrNull()?.times(factor)
+}
+
+/**
+ * Der Speicher, der **diesem Bau** zur Verfuegung steht — nicht der der
+ * Maschine, auf der jemand tippt.
+ *
+ * Die Integrationslaeufe laufen in einem Container (`docker run` in
+ * `scripts/test-integration-docker.sh`). Gilt dort eine cgroup-Grenze, ist sie
+ * die Wahrheit; ohne `--memory` steht dort `max`, und dann zaehlt der
+ * Hauptspeicher. Beides gemessen, nicht angenommen.
+ */
+fun availableMemoryBytes(): Long? {
+    val cgroupV2 = File("/sys/fs/cgroup/memory.max").takeIf { it.canRead() }?.readText()?.trim()
+    if (cgroupV2 != null && cgroupV2 != "max") parseMemorySize(cgroupV2)?.let { return it }
+    val cgroupV1 = File("/sys/fs/cgroup/memory/memory.limit_in_bytes").takeIf { it.canRead() }?.readText()?.trim()
+    // cgroup v1 meldet "unbegrenzt" als absurd grosse Zahl statt als Wort.
+    cgroupV1?.toLongOrNull()?.takeIf { it in 1..(1L shl 50) }?.let { return it }
+    return File("/proc/meminfo").takeIf { it.canRead() }?.useLines { lines ->
+        lines.firstOrNull { it.startsWith("MemTotal:") }
+            ?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull()?.times(1024)
+    }
+}
+
+/**
+ * Wie viele Integrations-Test-Tasks nebeneinander laufen duerfen.
+ *
+ * Der Engpass ist gemessen und **nicht** die Datenbank: ein SQL Server 2025
+ * nimmt real 0,7–0,8 GiB. Der Brocken ist die geforkte Test-JVM mit ihren
+ * `maxHeapSize = 4g`, und davon laeuft je gleichzeitigem Modul eine. Der
+ * Build-Container stand bei einem einzigen Slot bei 7,5 GiB — rund 3,5 GiB
+ * davon sind Gradle- und Kotlin-Daemon.
+ *
+ * Daraus die Rechnung: vom verfuegbaren Speicher die Daemon-Reserve abziehen
+ * und durch die Kosten eines Slots teilen (Heap plus Nicht-Heap plus ein
+ * Server). Auf einer 31-GiB-Maschine ergibt das drei, auf einem 8-GiB-Runner
+ * einen — dieselbe Build-Datei, ohne Schalter.
+ *
+ * Die Obergrenze ist bewusst niedrig: jenseits davon bestimmen Docker-I/O und
+ * Container-Start die Laufzeit, nicht mehr die Parallelitaet.
+ * `-PintegrationParallelism=N` sticht die Rechnung, wenn jemand es besser weiss.
+ */
+val integrationParallelism: Int = run {
+    (findProperty("integrationParallelism") as String?)?.toIntOrNull()?.coerceAtLeast(1)?.let { return@run it }
+    val heapPerSlot = parseMemorySize((findProperty("testMaxHeapSize") as String?) ?: "4g")
+        ?: (4L * 1024 * 1024 * 1024)
+    val gib = 1024L * 1024 * 1024
+    val daemonReserve = 4 * gib
+    val perSlot = heapPerSlot + 2 * gib
+    val available = availableMemoryBytes() ?: return@run 1
+    (((available - daemonReserve) / perSlot).toInt()).coerceIn(1, 3)
+}
+
 val databaseContainerLock: Provider<DatabaseContainerLock> =
     gradle.sharedServices.registerIfAbsent("databaseContainerLock", DatabaseContainerLock::class) {
-        maxParallelUsages.set(1)
+        maxParallelUsages.set(integrationParallelism)
     }
+
+if (hasProperty("integrationTests")) {
+    val budget = availableMemoryBytes()?.let { "${it / (1024 * 1024 * 1024)} GiB" } ?: "unbekannt"
+    logger.lifecycle("Integrationslaeufe: $integrationParallelism gleichzeitig (Speicher: $budget)")
+}
 
 allprojects {
     group = "dev.dmigrate"
@@ -115,8 +186,12 @@ subprojects {
     tasks.withType<Test> {
         if (isIntegrationProject) {
             onlyIf("requires -PintegrationTests") { project.hasProperty("integrationTests") }
-            // Reiht die Datenbank-Container auf (siehe [DatabaseContainerLock]).
-            usesService(databaseContainerLock)
+            // Reiht die Server auf (siehe [DatabaseContainerLock]). `:test:integration-sqlite`
+            // ist ausgenommen: SQLite laeuft dort in-memory ueber den JDBC-Treiber und startet
+            // keinen einzigen Container — es gibt nichts aufzureihen.
+            if (path != ":test:integration-sqlite") {
+                usesService(databaseContainerLock)
+            }
         }
         useJUnitPlatform()
         val explicitKotestTags = System.getProperty("kotest.tags")
