@@ -228,24 +228,32 @@ YAML
 
 docker network inspect d-migrate-smoke >/dev/null 2>&1 || \
   docker network create d-migrate-smoke
+```
+
+> Die Versionen entsprechen der Matrix, gegen die auch die Suiten laufen. Die
+> verbindliche, per Digest gepinnte Liste steht an einer Stelle:
+> [`test/test-images`](../../test/test-images/src/main/kotlin/dev/dmigrate/test/images/TestImages.kt).
+> Wer sie hebt, hebt sie dort — und zieht diesen Abschnitt mit.
+
+```bash
 
 docker run -d --rm --name d-migrate-smoke-pg --network d-migrate-smoke \
   -e POSTGRES_USER=dmigrate \
   -e POSTGRES_PASSWORD=dmigrate \
   -e POSTGRES_DB=dmigrate \
-  postgres:16
+  postgres:18-alpine
 
 docker run -d --rm --name d-migrate-smoke-mysql --network d-migrate-smoke \
   -e MYSQL_DATABASE=dmigrate \
   -e MYSQL_USER=dmigrate \
   -e MYSQL_PASSWORD=dmigrate \
   -e MYSQL_ROOT_PASSWORD=dmigrate \
-  mysql:8
+  mysql:9.7.2
 
 docker run --rm --network d-migrate-smoke \
   -e PGPASSWORD=dmigrate \
   -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/ddl:/fixtures:ro" \
-  postgres:16 sh -lc '
+  postgres:18-alpine sh -lc '
     until pg_isready -h d-migrate-smoke-pg -U dmigrate >/dev/null 2>&1; do sleep 1; done
     psql -h d-migrate-smoke-pg -U dmigrate -d dmigrate -f /fixtures/minimal.postgresql.sql
     psql -h d-migrate-smoke-pg -U dmigrate -d dmigrate -c "INSERT INTO users(name) VALUES (\$\$smoke user\$\$);"
@@ -253,7 +261,7 @@ docker run --rm --network d-migrate-smoke \
 
 docker run --rm --network d-migrate-smoke \
   -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/ddl:/fixtures:ro" \
-  mysql:8 sh -lc '
+  mysql:9.7.2 sh -lc '
     until mysqladmin ping -h d-migrate-smoke-mysql -u dmigrate -pdmigrate --silent; do sleep 1; done
     mysql -h d-migrate-smoke-mysql -u dmigrate -pdmigrate dmigrate < /fixtures/minimal.mysql.sql
   '
