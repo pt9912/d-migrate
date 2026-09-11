@@ -51,36 +51,14 @@ stacks.
 d-migrate is a working production tool at version **1.2.0**
 (stable, [released 2026-09-05](https://github.com/pt9912/d-migrate/releases/tag/v1.2.0)).
 
-> **New in 1.2.0:** `data seed` generates deterministic, FK-safe test data
-> straight from the neutral schema (an optional `--rules` file steers values
-> per column); `mcp serve` gains a configurable `--policy-file` for `*_start`
-> job policy and a `connections/list` method with an optional live-status
-> check; `--server-state` now persists reverse-engineered schemas and
-> generated artifacts too, not just jobs/quota. See
-> [`CHANGELOG.md`](CHANGELOG.md) for the full list.
->
-> **New in 1.1.0:** MS SQL Server as the fourth dialect (reverse, generate,
-> migrate, data path, profiling), `schema migrate` can now run statements a
-> database refuses inside an open transaction (SQL Server full-text indexes),
-> and partition-set changes (add/drop a rolling partition) are applied instead
-> of only reported. See [`CHANGELOG.md`](CHANGELOG.md) for the full list.
->
-> **New in 1.0.3:** restores the native binaries (the 1.0.1 tag could not
-> build them) and makes Parquet **import** work in the native binary for the
-> first time — it had failed in every native binary released so far; both
-> native build legs now verify a full Parquet round trip. Also carries all of
-> 1.0.1: the shipped artefact contains no known-vulnerable dependency version
-> (down from one critical and 43 high findings), the PostgreSQL driver moves
-> to 42.7.12, and single members of `--split-files` Parquet bundles import
-> correctly. **The CLI contract is unchanged.** See `CHANGELOG.md`.
-
 The current capabilities:
 
 - **Schema model**: neutral YAML schema with 19 types + Spatial
   Geometry; validator with 35+ error codes.
 - **Schema operations**: `validate`, `generate`, `compare`,
-  `reverse`, `migrate`, `rollback` for PostgreSQL, MySQL, SQLite —
-  file/file, file/db, db/db.
+  `reverse`, `migrate`, `rollback` for every dialect listed under
+  [Supported databases](#supported-databases) — file/file, file/db,
+  db/db.
 - **Diff migrations**: tables, columns, indexes, constraints incl.
   CHECK/EXCLUDE with live-data preflight, foreign keys, sequences,
   views, materialized views (PG), triggers, functions/procedures;
@@ -92,8 +70,8 @@ The current capabilities:
 - **Sequence pipeline**: MySQL helper-table emulation
   (`dmg_sequences`) with live drift check; opt-in
   `preserveCurrentValue` for PG / MySQL / SQLite — probe + restore
-  folded into a single transaction under per-dialect lock since
-  0.9.7 (`pg_advisory_xact_lock` / `SELECT FOR UPDATE` /
+  folded into a single transaction under a per-dialect lock
+  (`pg_advisory_xact_lock` / `SELECT FOR UPDATE` /
   `BEGIN IMMEDIATE`); SQLite sequence emulation via
   `--sqlite-named-sequences helper_table`.
 - **Spatial DDL**: PostGIS, MySQL native, SpatiaLite
@@ -103,7 +81,7 @@ The current capabilities:
   UPSERT, truncate, trigger handling, reseeding, incremental export
   (`--since-column` / `--since`); `data profile` for data
   statistics.
-- **Parquet & object storage** (0.9.8): `data export` / `import
+- **Parquet & object storage**: `data export` / `import
   --format parquet` for bundle (multi-table + `manifest.yaml`) and
   single-file (footer-KV) layouts with checkpoint/resume and
   `--table-order`; S3-compatible `ArtifactStore`
@@ -156,10 +134,10 @@ See [Quick start](#quick-start) below for more concrete recipes.
   registry (`carve-outs.yaml`) that requires every non-pinned cell
   to declare reason + plan-doc reference; silent carve-outs are
   rejected at load time.
-- **Live-DB integration tests** against Testcontainers PostgreSQL
-  16, MySQL 8, and file-backed SQLite — every diff, rename,
-  sequence, and atomic-preserve pipeline runs against real engines
-  via
+- **Live-DB integration tests** against Testcontainers PostgreSQL,
+  MySQL, SQL Server, Oracle and file-backed SQLite — every diff,
+  rename, sequence, and atomic-preserve pipeline runs against real
+  engines via
   [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh).
 - **Reproducible builds**: `--deterministic` plus `SOURCE_DATE_EPOCH`
   emit byte-identical DDL across timestamps and OS environments.
@@ -280,8 +258,8 @@ docker run --rm --user "$(id -u):$(id -g)" -v $(pwd):/work \
 
 ### GitHub Release assets
 
-Published releases ship ZIP, TAR, a fat JAR, and — from 1.0.0-RC2 on —
-**native binaries** that need no Java, on the
+Published releases ship ZIP, TAR, a fat JAR and **native binaries**
+that need no Java, on the
 [Releases page](https://github.com/pt9912/d-migrate/releases).
 
 ```bash
@@ -324,8 +302,8 @@ releases only — release candidates never move it.
 On macOS this is the recommended path, because there is no native macOS
 binary ([ADR 0044](docs/adr/0044-kein-macos-native-binary.md)).
 
-The formula is maintained in this repository from 0.5.0 on and verified
-per release via
+The formula is maintained in this repository and verified per release
+via
 [`.github/workflows/verify-homebrew-formula.yml`](.github/workflows/verify-homebrew-formula.yml).
 
 ### Build from source
@@ -485,12 +463,16 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 │   ├── integration-postgresql/    ← Testcontainers PG live-DB tests
 │   ├── integration-mysql/         ← Testcontainers MySQL live-DB tests
 │   ├── integration-sqlite/        ← file-backed SQLite live-DB tests
+│   ├── integration-mssql/         ← Testcontainers SQL Server live-DB tests
+│   ├── integration-oracle/        ← Testcontainers Oracle live-DB tests
 │   ├── integration-concurrency/   ← race-condition reproducers (sequence preserve, atomic locks)
 │   ├── integration-integrations/  ← export integration contract tests
 │   ├── integration-persistence-jdbc/ ← JDBC store + migration runner ITs
 │   ├── integration-server-state/  ← MCP server state machine ITs
 │   ├── integration-storage-s3/    ← S3-compatible artifact store ITs
 │   ├── e2e-cli/                   ← end-to-end CLI + MCP harness scenarios
+│   ├── test-images/               ← the container images, one place per dialect
+│   ├── perf-data-path/            ← data-path throughput scales
 │   └── perf-large-schema/         ← N = 100 / 1000 / 10000 perf scales
 ├── scripts/                       ← verify-doc-refs.sh, solid-suppression-gate.sh,
 │                                    test-integration-docker.sh, kover utilities
