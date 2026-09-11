@@ -9,7 +9,6 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.testcontainers.mssqlserver.MSSQLServerContainer
 import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
@@ -44,9 +43,7 @@ class MssqlSpatialTransferE2ETest : FunSpec({
         .withUrlParam("encrypt", "false")
         .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
 
-    val target = PostgreSQLContainer(
-        DockerImageName.parse("postgis/postgis:16-3.4").asCompatibleSubstituteFor("postgres"),
-    )
+    val target = PostgreSQLContainer(TestImages.POSTGIS)
         .withDatabaseName("dmigrate_geo_tgt")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

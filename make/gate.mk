@@ -7,7 +7,7 @@
 # -smoke + integration aus dem Haupt-Makefile. Reihenfolge egal: make liest alle
 # includes vor dem ersten Build, Prerequisites werden erst dann aufgelöst.
 
-.PHONY: docs-check coverage-excludes-check semgrep-rules-fetch semgrep solid-suppression-gate mssql-fts-image ports-jdbc-free-gate readme-parity-gate gates docker-gates docker-full-gates
+.PHONY: docs-check coverage-excludes-check semgrep-rules-fetch semgrep solid-suppression-gate mssql-fts-image ports-jdbc-free-gate readme-parity-gate test-images-gate gates docker-gates docker-full-gates
 
 # docs-check bleibt die Schirm-ID (gates/ci hängen daran): aggregiert d-checks
 # doc-check (Docker-Befund-Gate) plus das projekt-lokale Kover-Excludes-Ledger.
@@ -55,6 +55,12 @@ mssql-fts-image: ## SQL-Server-Testimage mit Full-Text Search bauen (braucht Net
 ports-jdbc-free-gate:
 	./scripts/ports-jdbc-free-gate.sh
 
+# Container-Images der Integrationstests: eine Stelle je Dialekt, jede Angabe
+# mit Digest. Ohne das Gate zerfaellt beides lautlos — genau so lief ein Teil
+# der Suiten gegen PostgreSQL 16, waehrend der Rest schon auf 18 stand.
+test-images-gate:
+	./scripts/test-images-gate.sh
+
 # Sprachparitaet der beiden Root-READMEs. `docs-check` prueft Links, nicht Gleichstand —
 # beim 1.0.0-RC2-Cut blieb README.de.md dadurch sechs Releases zurueck (releasing.md 3.6).
 readme-parity-gate:
@@ -73,7 +79,7 @@ image-scan:
 # `image-scan` steht bewusst NICHT in `gates`: es prueft das publizierte Image,
 # nicht den Arbeitsbaum, und braucht Netz fuer die Vuln-DB. Sein Ort ist der
 # Nightly (.github/workflows/image-scan.yml).
-gates: docker-check docker-coverage-gate docs-check semgrep ports-jdbc-free-gate readme-parity-gate a-check
+gates: docker-check docker-coverage-gate docs-check semgrep ports-jdbc-free-gate readme-parity-gate test-images-gate a-check
 
 docker-gates: solid-suppression-gate docker-build docker-coverage-gate docker-smoke semgrep a-check
 

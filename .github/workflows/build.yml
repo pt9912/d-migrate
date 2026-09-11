@@ -163,6 +163,13 @@ jobs:
         # (`solid_rules`) und ist die Quelle, auf die CLAUDE.md verweist.
         run: make solid-suppression-gate
 
+      - name: test-images-gate — Container-Images zentral und mit Digest
+        # Ebenfalls netz- und containerlos. Prueft, dass kein Bildname an einer
+        # Spec klebt und keine Angabe in `test:test-images` ohne Digest steht.
+        # Beides zerfaellt sonst lautlos: ein Teil der Suiten lief gegen
+        # PostgreSQL 16, waehrend der Rest schon auf 18 stand.
+        run: make test-images-gate
+
   docker:
     needs: build
     runs-on: ubuntu-latest

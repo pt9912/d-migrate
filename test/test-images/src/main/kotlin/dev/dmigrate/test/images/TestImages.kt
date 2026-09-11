@@ -30,6 +30,17 @@ object TestImages {
             "postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2",
         ).asCompatibleSubstituteFor("postgres")
 
+    /**
+     * PostgreSQL mit PostGIS, fuer die Geometrie-Suiten. Gleicher Serverstand
+     * wie [POSTGRESQL] — ein Geometriepfad, der gegen eine aeltere Engine
+     * prueft, sagt nichts ueber die, gegen die alles andere laeuft.
+     */
+    val POSTGIS: DockerImageName =
+        DockerImageName.parse(
+            "postgis/postgis:18-3.6@" +
+                "sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677",
+        ).asCompatibleSubstituteFor("postgres")
+
     /** MySQL — Obergrenze der unterstuetzten Spanne. */
     val MYSQL: DockerImageName =
         DockerImageName.parse(

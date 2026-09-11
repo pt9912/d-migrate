@@ -9,7 +9,6 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.testcontainers.oracle.OracleContainer
 import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
@@ -40,9 +39,7 @@ import kotlin.io.path.readText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class OracleSpatialTransferE2ETest : FunSpec({
 
-    val source = PostgreSQLContainer(
-        DockerImageName.parse("postgis/postgis:16-3.4").asCompatibleSubstituteFor("postgres"),
-    )
+    val source = PostgreSQLContainer(TestImages.POSTGIS)
         .withDatabaseName("dmigrate_geo_src")
         .withUsername("dmigrate")
         .withPassword("dmigrate")
