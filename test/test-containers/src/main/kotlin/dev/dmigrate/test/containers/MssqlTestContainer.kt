@@ -1,5 +1,6 @@
 package dev.dmigrate.test.containers
 
+import com.github.dockerjava.api.command.InspectContainerResponse
 import dev.dmigrate.test.images.TestImages
 import org.testcontainers.containers.output.OutputFrame
 import org.testcontainers.mssqlserver.MSSQLServerContainer
@@ -50,6 +51,9 @@ class MssqlTestContainer : MSSQLServerContainer(TestImages.MSSQL) {
 
     private val output = TailBuffer()
 
+    /** Was der Container beim Start an Budget vorfand — fuer den Fehlerfall. */
+    private var budget: String? = null
+
     init {
         // Das Image startet ueberhaupt nur mit akzeptierter Microsoft-EULA
         // (`ACCEPT_EULA=Y`, siehe docs/user/quality.md).
@@ -59,6 +63,15 @@ class MssqlTestContainer : MSSQLServerContainer(TestImages.MSSQL) {
         withUrlParam("encrypt", "false")
         withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
         withLogConsumer(output)
+        // SQL Server bemisst seine Thread-Pools an dem, was er sieht — nicht
+        // an dem, was der Container bekommt. Auf einem 20-Thread-Wirt belegt
+        // er gemessen 107 Tasks, mit dieser Angabe 88. Reicht das
+        // Task-Budget nicht, haengt er **vor** seiner ersten Protokollzeile:
+        // drei Bannerzeilen, dann Stille, Container lebt. Reproduziert mit
+        // `--pids-limit=80` — ohne die Angabe stumm, mit ihr gestartet.
+        //
+        // 2048 ist Microsofts Untergrenze; weniger nimmt der Server nicht an.
+        withEnv("MSSQL_MEMORY_LIMIT_MB", "2048")
         // Ein zweiter Versuch, und zwar als Milderung, nicht als Behebung.
         //
         // Gemessen: in CI bleibt etwa jeder dritte Container nach den drei
@@ -83,10 +96,40 @@ class MssqlTestContainer : MSSQLServerContainer(TestImages.MSSQL) {
         } catch (failure: RuntimeException) {
             throw IllegalStateException(
                 "SQL Server wurde binnen ${MSSQL_STARTUP_TIMEOUT.toMinutes()} Minuten nicht " +
-                    "erreichbar. " + output.describe(),
+                    "erreichbar. " + output.describe() + "\n" + pidBudget(),
                 failure,
             )
         }
+    }
+
+    /**
+     * Das Task-Budget des Containers, soweit er noch antwortet.
+     *
+     * Die einzige Zahl, die den stummen Start erklaert: bleibt `pids.current`
+     * an `pids.max` stehen, konnte der Server keine Threads mehr anlegen. Ohne
+     * sie bleibt nur die Vermutung.
+     */
+    private fun pidBudget(): String =
+        budget ?: "Task-Budget nicht ablesbar — der Container lief nicht lange genug."
+
+    /**
+     * Liest das Budget, **solange der Container laeuft**.
+     *
+     * Nicht erst im Fehlerfall: Testcontainers raeumt einen Container, der
+     * nicht hochkommt, ab, bevor die Ausnahme oben ankommt — dann antwortet
+     * niemand mehr auf die Frage.
+     */
+    override fun containerIsStarting(containerInfo: InspectContainerResponse) {
+        super.containerIsStarting(containerInfo)
+        budget = runCatching {
+            val result = execInContainer(
+                "sh",
+                "-c",
+                "echo \"pids.max=$(cat /sys/fs/cgroup/pids.max) " +
+                    "cpus=$(nproc) memMiB=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)\"",
+            )
+            "Task-Budget beim Start: " + result.stdout.trim()
+        }.getOrNull()
     }
 }
 
