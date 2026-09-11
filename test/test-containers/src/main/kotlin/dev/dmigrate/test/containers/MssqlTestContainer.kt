@@ -59,6 +59,22 @@ class MssqlTestContainer : MSSQLServerContainer(TestImages.MSSQL) {
         withUrlParam("encrypt", "false")
         withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
         withLogConsumer(output)
+        // Ein zweiter Versuch, und zwar als Milderung, nicht als Behebung.
+        //
+        // Gemessen: in CI bleibt etwa jeder dritte Container nach den drei
+        // Bannerzeilen des Einstiegsskripts stumm — `sqlservr` kommt nicht bis
+        // zu seiner ersten Protokollzeile, der Container lebt, und nach Ablauf
+        // der Frist steht nur `Connection refused`. Speicher- und CPU-Mangel
+        // scheiden als Ursache aus: unter Speichermangel stirbt der Server mit
+        // hunderten Zeilen Diagnose, unter CPU-Mangel wird er langsam, schreibt
+        // aber durchgehend mit. Was bleibt, ist der Plattenzugriff des Runners
+        // — nichts, was sich hier nachstellen laesst.
+        //
+        // Testcontainers verwirft den haengenden Container und startet neu.
+        // Das macht aus einem Ausfall in drei Laeufen einen in neun; die
+        // Ursache bleibt offen, und die Mitschrift oben bleibt der Weg, sie zu
+        // finden.
+        withStartupAttempts(2)
     }
 
     override fun start() {
