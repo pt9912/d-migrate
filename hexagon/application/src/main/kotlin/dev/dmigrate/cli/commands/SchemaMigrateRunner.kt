@@ -666,13 +666,19 @@ class SchemaMigrateRunner(
                 postUpVerified = false,
             )
             val exit = if (recoveryWrite == RecoveryWriteOutcome.Failed) 7 else 5
-            return artefactSink.emitReportAndExit(request, report, rollbackFinalized = false, baseExit = exit)
+            return artefactSink.emitReportAndExit(
+                request, report, rollbackFinalized = false, baseExit = exit,
+                outcomeDiagnostic = postCompareOutcome.asDiagnostic(),
+            )
         }
 
         // Post-compare drift case: per Plan §F.5.g NO auto-recovery artefact.
         val driftCode = postCompareOutcome?.toDriftCode()
         if (driftCode != null) {
-            return artefactSink.emitReportAndExit(request, report, rollbackFinalized = false, baseExit = driftCode)
+            return artefactSink.emitReportAndExit(
+                request, report, rollbackFinalized = false, baseExit = driftCode,
+                outcomeDiagnostic = postCompareOutcome.asDiagnostic(),
+            )
         }
 
         // Down-SQL artefact emission — only after a clean execute (or no execute at all).
@@ -1331,6 +1337,31 @@ internal sealed class PostCompareOutcome {
     fun toDriftCode(): Int? = when (this) {
         is Clean -> null
         is Drift, IntrospectionFailed -> 5
+    }
+
+    /**
+     * Der Grund fuer den Report — damit er nicht nur auf `stderr` steht.
+     *
+     * Ein Lauf, der an dieser Stelle endet, hat sein DDL angewandt; was ihn
+     * scheitern laesst, ist die Nachschau. Wer den Report auswertet, muss das
+     * dort finden koennen.
+     */
+    fun asDiagnostic(): SchemaMigrateDiagnosticView? = when (this) {
+        is Clean -> null
+        is Drift -> SchemaMigrateDiagnosticView(
+            code = "POST_EXECUTE_DRIFT",
+            severity = "BLOCKER",
+            message = "Post-execute compare detected drift: the target does not match the desired " +
+                "schema. The DDL was applied; no automatic recovery rollback artefact is emitted.",
+            operationId = null,
+        )
+        IntrospectionFailed -> SchemaMigrateDiagnosticView(
+            code = "POST_EXECUTE_INTROSPECTION_FAILED",
+            severity = "BLOCKER",
+            message = "Post-execute compare could not read the target back. The DDL was applied, " +
+                "but the resulting state could not be observed.",
+            operationId = null,
+        )
     }
 }
 

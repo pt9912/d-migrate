@@ -123,17 +123,32 @@ internal class SchemaMigrateArtefactSink(
      * for the blocker- and plan-only branches that were the only ones
      * doing stdout-echo before the F.5.c restructuring.
      */
+    /**
+     * Schreibt den Report und beendet den Lauf — mit **einem** Ausgang.
+     *
+     * Der Report entsteht aus dem Plan, der Post-Compare laeuft danach. Sein
+     * Ergebnis kam bisher nur als Rueckgabewert heraus, waehrend die
+     * geschriebene Datei weiter `status: ok, exitCode: 0` sagte. Wer den
+     * Report auswertet — und `--execute` verlangt ihn — las, alles sei in
+     * Ordnung, obwohl der Lauf an Drift gescheitert war.
+     *
+     * Deshalb wird hier abgeglichen, und zwar unbedingt: was der Prozess
+     * zurueckgibt, steht auch im Report. Die Stelle ist die richtige, weil sie
+     * als einzige beides in der Hand hat.
+     */
     fun emitReportAndExit(
         request: SchemaMigrateRequest,
         report: SchemaMigrateReport,
         rollbackFinalized: Boolean?,
         baseExit: Int,
+        outcomeDiagnostic: SchemaMigrateDiagnosticView? = null,
     ): Int {
-        val finalReport = if (report.execution == null) {
+        val withRollback = if (report.execution == null) {
             report
         } else {
             report.copy(execution = report.execution.copy(rollbackFinalized = rollbackFinalized))
         }
+        val finalReport = reconcile(withRollback, baseExit, outcomeDiagnostic)
         request.report?.let { reportPath ->
             if (writeReport(reportPath, finalReport, request.reportFormat) == null) return 7
         }
@@ -141,6 +156,27 @@ internal class SchemaMigrateArtefactSink(
             stdout(renderReport(finalReport, request.reportFormat))
         }
         return baseExit
+    }
+
+    /**
+     * Bringt Statuswort, Ausgangscode und Begruendung des Reports auf den
+     * Ausgang, mit dem der Lauf wirklich endet.
+     *
+     * `failed` ist das Statuswort fuer einen Ausgang, den erst der
+     * Post-Compare bestimmt hat — `ok` waere falsch, `blocked` auch, denn der
+     * Plan war ja nicht blockiert, er lief durch.
+     */
+    private fun reconcile(
+        report: SchemaMigrateReport,
+        baseExit: Int,
+        outcomeDiagnostic: SchemaMigrateDiagnosticView?,
+    ): SchemaMigrateReport {
+        if (baseExit == report.exitCode && outcomeDiagnostic == null) return report
+        return report.copy(
+            status = if (baseExit == 0) report.status else "failed",
+            exitCode = baseExit,
+            diagnostics = report.diagnostics + listOfNotNull(outcomeDiagnostic),
+        )
     }
 
     fun writeReport(path: Path, report: SchemaMigrateReport, format: String): Unit? = try {

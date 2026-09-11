@@ -909,6 +909,14 @@ Report-Felder für Materialized Views:
 
 Report-Felder für `--execute`:
 
+- **`status` und `exitCode` im Report sind der Ausgang des Laufs**, nicht der
+  des Plans. Bestimmt erst der Post-Compare den Ausgang — Drift oder eine
+  fehlgeschlagene Nachschau —, traegt der Report `status: failed` und denselben
+  `exitCode`, mit dem der Prozess endet. Der Grund steht als Diagnose dabei
+  (`POST_EXECUTE_DRIFT`, `POST_EXECUTE_INTROSPECTION_FAILED`), nicht nur auf
+  `stderr`: `--execute` verlangt den Report als Audit-Spur, und eine Spur, die
+  einen gescheiterten Lauf als `ok` fuehrt, ist keine.
+
 - Bestehende Felder `execution.started`, `execution.completed`,
   `execution.statementsAttempted`, `execution.lastStatementOperationIds`,
   `execution.transactionRolledBack`, `execution.sideEffectsPossible` und
