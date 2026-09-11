@@ -9,6 +9,7 @@ import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -38,7 +39,7 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class OracleSequencePreserveWindowIntegrationTest : FunSpec({
 
-    val container = OracleContainer("gvenzl/oracle-free:23-slim-faststart")
+    val container = OracleContainer(TestImages.ORACLE)
         .withStartupTimeout(Duration.ofMinutes(5))
 
     beforeSpec { container.start() }

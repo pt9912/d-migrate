@@ -48,6 +48,9 @@ include("test:integration-persistence-jdbc")
 include("test:integration-storage-s3")
 include("test:e2e-cli")
 
+// Container-Images der Integrationstests — eine Stelle je Dialekt.
+include("test:test-images")
+
 // Consumer integration probe (read-only surface verification)
 include("test:consumer-read-probe")
 

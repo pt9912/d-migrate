@@ -3,6 +3,7 @@
 // are excluded from the default unit-test run. Activate with -PintegrationTests.
 
 dependencies {
+    testImplementation(project(":test:test-images"))
     testImplementation(project(":adapters:driven:driver-mysql"))
     testImplementation(project(":adapters:driven:driver-mysql-profiling"))
     testImplementation(project(":adapters:driven:driver-common"))

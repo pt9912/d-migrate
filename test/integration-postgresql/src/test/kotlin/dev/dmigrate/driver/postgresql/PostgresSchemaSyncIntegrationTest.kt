@@ -11,6 +11,7 @@ import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -24,7 +25,7 @@ private fun qi(name: String): String = SqlIdentifiers.quoteIdentifier(name, Data
 class PostgresSchemaSyncIntegrationTest : FunSpec({
 
 
-    val container = PostgreSQLContainer("postgres:18-alpine")
+    val container = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("dmigrate_test")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

@@ -9,6 +9,7 @@ import dev.dmigrate.cli.commands.capabilityGenerationCanonicalizer
 import dev.dmigrate.cli.commands.testing.executeAgainstPool
 import dev.dmigrate.core.diff.TargetProjection
 import dev.dmigrate.driver.DialectCapabilities
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
@@ -64,7 +65,7 @@ import kotlin.io.path.createTempDirectory
  */
 class OracleMigrateRoundTripIntegrationTest : FunSpec({
 
-    val container = OracleContainer("gvenzl/oracle-free:23-slim-faststart")
+    val container = OracleContainer(TestImages.ORACLE)
         .withStartupTimeout(Duration.ofMinutes(5))
 
     lateinit var pool: ConnectionPool

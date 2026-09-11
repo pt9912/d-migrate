@@ -1,6 +1,7 @@
 package dev.dmigrate.cli
 
 import dev.dmigrate.cli.integration.runRealCli
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -38,7 +39,7 @@ import kotlin.io.path.readText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlSpatialTransferE2ETest : FunSpec({
 
-    val source = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
+    val source = MSSQLServerContainer(TestImages.MSSQL)
         .acceptLicense()
         .withUrlParam("encrypt", "false")
         .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)

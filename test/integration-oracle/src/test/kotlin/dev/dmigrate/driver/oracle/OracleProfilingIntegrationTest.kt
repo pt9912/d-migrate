@@ -11,6 +11,7 @@ import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.service.ProfileDatabaseService
 import dev.dmigrate.profiling.service.ProfileTableService
 import dev.dmigrate.profiling.types.TargetLogicalType
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -33,7 +34,7 @@ import java.time.Duration
  */
 class OracleProfilingIntegrationTest : FunSpec({
 
-    val container = OracleContainer("gvenzl/oracle-free:23-slim-faststart")
+    val container = OracleContainer(TestImages.ORACLE)
         .withStartupTimeout(Duration.ofMinutes(5))
 
     lateinit var config: ConnectionConfig

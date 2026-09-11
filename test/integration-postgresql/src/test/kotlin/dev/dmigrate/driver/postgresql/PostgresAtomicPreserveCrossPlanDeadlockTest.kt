@@ -9,6 +9,7 @@ import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -46,7 +47,7 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class PostgresAtomicPreserveCrossPlanDeadlockTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:18-alpine")
+    val container = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("atomic_xplan_it")
         .withUsername("test")
         .withPassword("test")

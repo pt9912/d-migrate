@@ -13,6 +13,7 @@ import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
 import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -23,7 +24,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicReference
 
 
-private val sweeperTestContainer = PostgreSQLContainer("postgres:18-alpine")
+private val sweeperTestContainer = PostgreSQLContainer(TestImages.POSTGRESQL)
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

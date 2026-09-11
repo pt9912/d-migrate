@@ -3,6 +3,7 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -32,7 +33,7 @@ import java.sql.DriverManager
  */
 class PostgresSequenceCurrentValueProbeIntegrationTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:18-alpine")
+    val container = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("preserve_it")
         .withUsername("test")
         .withPassword("test")

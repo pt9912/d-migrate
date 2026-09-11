@@ -6,6 +6,7 @@
 // programmatische EULA-Akzeptanz (siehe docs/user/quality.md).
 
 dependencies {
+    testImplementation(project(":test:test-images"))
     testImplementation(project(":adapters:driven:driver-oracle"))
     testImplementation(project(":adapters:driven:driver-oracle-profiling"))
     testImplementation(project(":hexagon:profiling"))

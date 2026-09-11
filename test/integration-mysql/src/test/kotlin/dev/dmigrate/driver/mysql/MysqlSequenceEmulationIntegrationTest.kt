@@ -12,6 +12,7 @@ import dev.dmigrate.cli.commands.SchemaCompareRunner
 import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.testcontainers.mysql.MySQLContainer
@@ -32,7 +33,7 @@ import java.sql.DriverManager
 class MysqlSequenceEmulationIntegrationTest : FunSpec({
 
 
-    val container = MySQLContainer("mysql:9.7.2")
+    val container = MySQLContainer(TestImages.MYSQL)
         .withDatabaseName("seqtest")
         .withUsername("test")
         .withPassword("test")

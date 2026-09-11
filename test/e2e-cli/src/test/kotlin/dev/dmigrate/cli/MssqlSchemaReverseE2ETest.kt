@@ -3,6 +3,7 @@ package dev.dmigrate.cli
 import dev.dmigrate.cli.integration.runRealCli
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.format.yaml.YamlSchemaCodec
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainAll
@@ -35,7 +36,7 @@ import kotlin.io.path.readText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlSchemaReverseE2ETest : FunSpec({
 
-    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
+    val container = MSSQLServerContainer(TestImages.MSSQL)
         .acceptLicense()
         .withPassword(PASSWORD)
         .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)

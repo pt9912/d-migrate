@@ -7,6 +7,7 @@ import dev.dmigrate.server.application.approval.ApprovalGrantValidator
 import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.fingerprint.JsonValue
+import dev.dmigrate.test.images.TestImages
 import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.job.ApprovedRetryService
 import dev.dmigrate.server.application.job.JobCancelOutcome
@@ -52,7 +53,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 
-private val pipelineTestContainer = PostgreSQLContainer("postgres:18-alpine")
+private val pipelineTestContainer = PostgreSQLContainer(TestImages.POSTGRESQL)
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

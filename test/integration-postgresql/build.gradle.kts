@@ -3,6 +3,7 @@
 // are excluded from the default unit-test run. Activate with -PintegrationTests.
 
 dependencies {
+    testImplementation(project(":test:test-images"))
     testImplementation(project(":adapters:driven:driver-postgresql"))
     testImplementation(project(":adapters:driven:driver-postgresql-profiling"))
     testImplementation(project(":adapters:driven:driver-common"))

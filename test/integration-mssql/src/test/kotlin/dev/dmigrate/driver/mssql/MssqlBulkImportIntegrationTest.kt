@@ -12,6 +12,7 @@ import dev.dmigrate.driver.connection.SslSettings
 import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -33,7 +34,7 @@ import java.sql.DriverManager
  */
 class MssqlBulkImportIntegrationTest : FunSpec({
 
-    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
+    val container = MSSQLServerContainer(TestImages.MSSQL)
         .acceptLicense()
         .withUrlParam("encrypt", "false")
         .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)

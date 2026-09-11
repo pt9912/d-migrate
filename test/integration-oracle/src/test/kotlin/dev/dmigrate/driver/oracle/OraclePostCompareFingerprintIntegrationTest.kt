@@ -13,6 +13,7 @@ import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -39,7 +40,7 @@ import java.time.Duration
  */
 class OraclePostCompareFingerprintIntegrationTest : FunSpec({
 
-    val container = OracleContainer("gvenzl/oracle-free:23-slim-faststart")
+    val container = OracleContainer(TestImages.ORACLE)
         .withStartupTimeout(Duration.ofMinutes(5))
 
     val canonicalize: (NeutralType) -> NeutralType = OracleDriver().typeCanonicalizer()::canonicalize

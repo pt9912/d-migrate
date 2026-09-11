@@ -17,6 +17,7 @@
 //   make integration INTEGRATION_TASKS="-PintegrationTests -PconcurrencyTests :test:integration-concurrency:test"
 
 dependencies {
+    testImplementation(project(":test:test-images"))
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":adapters:driven:driver-common"))
     testImplementation(project(":adapters:driven:driver-postgresql"))

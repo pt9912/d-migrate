@@ -3,6 +3,7 @@ package dev.dmigrate.integration
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.postgresql.PostgresDriver
 import dev.dmigrate.migration.MigrationTool
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import liquibase.Liquibase
@@ -24,7 +25,7 @@ import java.sql.DriverManager
 class LiquibaseRuntimeTest : FunSpec({
 
 
-    val container = PostgreSQLContainer("postgres:18-alpine")
+    val container = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("liquibase_test")
         .withUsername("test")
         .withPassword("test")

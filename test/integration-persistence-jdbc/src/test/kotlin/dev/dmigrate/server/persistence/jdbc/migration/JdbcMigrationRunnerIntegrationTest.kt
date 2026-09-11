@@ -2,6 +2,7 @@ package dev.dmigrate.server.persistence.jdbc.migration
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
@@ -30,7 +31,7 @@ import javax.sql.DataSource
 class JdbcMigrationRunnerIntegrationTest : FunSpec({
 
 
-    val container = PostgreSQLContainer("postgres:18-alpine")
+    val container = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("dmigrate_state")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

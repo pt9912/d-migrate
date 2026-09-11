@@ -23,6 +23,7 @@ import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.testcontainers.mysql.MySQLContainer
@@ -47,7 +48,7 @@ import kotlin.io.path.createTempDirectory
  */
 class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
 
-    val container = MySQLContainer("mysql:9.7.2")
+    val container = MySQLContainer(TestImages.MYSQL)
         .withDatabaseName("atomic_preserve_e2e")
         .withUsername("test")
         .withPassword("test")

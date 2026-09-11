@@ -11,6 +11,7 @@
 // - QuotaReservationSweeper → exactly-once-Refund
 
 dependencies {
+    testImplementation(project(":test:test-images"))
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":hexagon:ports"))
     testImplementation(project(":hexagon:ports-common"))

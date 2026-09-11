@@ -10,6 +10,7 @@
 // tag (siehe Root build.gradle.kts). Activate with -PintegrationTests.
 
 dependencies {
+    testImplementation(project(":test:test-images"))
     testImplementation(project(":adapters:driven:persistence-jdbc"))
     testImplementation(project(":hexagon:application"))
     testImplementation(project(":hexagon:ports-common"))

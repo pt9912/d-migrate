@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.mssql
 
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -10,7 +11,7 @@ import java.sql.DriverManager
 // Slice 1 echte Port-Implementierungen dagegen getestet werden.
 class MssqlContainerConnectIntegrationTest : FunSpec({
 
-    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
+    val container = MSSQLServerContainer(TestImages.MSSQL)
         .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
         // Das Image startet nur mit akzeptierter Microsoft-EULA
         // (ACCEPT_EULA=Y, siehe docs/user/quality.md).

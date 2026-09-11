@@ -11,6 +11,7 @@ import dev.dmigrate.driver.connection.SslMode
 import dev.dmigrate.driver.connection.SslSettings
 import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.migration.DiffDdlGenerator
+import dev.dmigrate.test.images.TestImages
 import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 import java.time.Duration
@@ -37,7 +38,7 @@ import java.time.Duration
 internal val MSSQL_STARTUP_TIMEOUT: Duration = Duration.ofMinutes(5)
 
 internal fun startMssqlContainer(): MSSQLServerContainer =
-    MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
+    MSSQLServerContainer(TestImages.MSSQL)
         .acceptLicense()
         .withUrlParam("encrypt", "false")
         .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)

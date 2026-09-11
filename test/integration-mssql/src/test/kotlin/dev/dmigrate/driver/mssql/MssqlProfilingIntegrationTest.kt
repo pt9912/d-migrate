@@ -14,6 +14,7 @@ import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.service.ProfileDatabaseService
 import dev.dmigrate.profiling.service.ProfileTableService
 import dev.dmigrate.profiling.types.LogicalType
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -31,7 +32,7 @@ import java.sql.DriverManager
  */
 class MssqlProfilingIntegrationTest : FunSpec({
 
-    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
+    val container = MSSQLServerContainer(TestImages.MSSQL)
         .acceptLicense()
         .withUrlParam("encrypt", "false")
         .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)

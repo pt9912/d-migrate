@@ -16,6 +16,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import org.testcontainers.mysql.MySQLContainer
 
@@ -29,7 +30,7 @@ import org.testcontainers.mysql.MySQLContainer
  */
 class MysqlPartitionPkDdlIntegrationTest : FunSpec({
 
-    val container = MySQLContainer("mysql:9.7.2")
+    val container = MySQLContainer(TestImages.MYSQL)
         .withDatabaseName("dmigrate_test")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

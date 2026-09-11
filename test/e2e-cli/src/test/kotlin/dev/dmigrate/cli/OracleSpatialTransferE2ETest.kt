@@ -1,6 +1,7 @@
 package dev.dmigrate.cli
 
 import dev.dmigrate.cli.integration.runRealCli
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -46,7 +47,7 @@ class OracleSpatialTransferE2ETest : FunSpec({
         .withUsername("dmigrate")
         .withPassword("dmigrate")
 
-    val target = OracleContainer("gvenzl/oracle-free:23-faststart")
+    val target = OracleContainer(TestImages.ORACLE_FULL)
         .withStartupTimeout(Duration.ofMinutes(8))
 
     lateinit var tmp: Path

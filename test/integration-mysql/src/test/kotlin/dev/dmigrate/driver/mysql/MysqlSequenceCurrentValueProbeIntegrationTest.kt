@@ -8,6 +8,7 @@ import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -30,7 +31,7 @@ import java.sql.DriverManager
  */
 class MysqlSequenceCurrentValueProbeIntegrationTest : FunSpec({
 
-    val container = MySQLContainer("mysql:9.7.2")
+    val container = MySQLContainer(TestImages.MYSQL)
         .withDatabaseName("preserve_it")
         .withUsername("test")
         .withPassword("test")

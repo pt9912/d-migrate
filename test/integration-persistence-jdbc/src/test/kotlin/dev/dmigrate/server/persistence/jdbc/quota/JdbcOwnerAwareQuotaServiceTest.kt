@@ -10,6 +10,7 @@ import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
 import dev.dmigrate.server.ports.quota.QuotaOutcome
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldBeNull
@@ -21,7 +22,7 @@ import java.sql.Connection
 import java.time.Instant
 
 
-private val ownerAwareTestContainer = PostgreSQLContainer("postgres:18-alpine")
+private val ownerAwareTestContainer = PostgreSQLContainer(TestImages.POSTGRESQL)
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

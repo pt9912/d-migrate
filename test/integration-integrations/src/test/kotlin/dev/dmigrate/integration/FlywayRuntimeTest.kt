@@ -3,6 +3,7 @@ package dev.dmigrate.integration
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.postgresql.PostgresDriver
 import dev.dmigrate.migration.MigrationTool
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.flywaydb.core.Flyway
@@ -20,7 +21,7 @@ import java.nio.file.Files
 class FlywayRuntimeTest : FunSpec({
 
 
-    val container = PostgreSQLContainer("postgres:18-alpine")
+    val container = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("flyway_test")
         .withUsername("test")
         .withPassword("test")

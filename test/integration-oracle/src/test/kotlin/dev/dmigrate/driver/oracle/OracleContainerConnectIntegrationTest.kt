@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.oracle
 
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -23,7 +24,7 @@ class OracleContainerConnectIntegrationTest : FunSpec({
     // fuer einen kalten Pull + Kaltstart auf dem GitHub-Actions-Runner
     // (real gemessen: Timeout nach 60s, obwohl der Container laut lokalem
     // Test ~2-3 min bis "DATABASE IS READY TO USE!" braucht).
-    val container = OracleContainer("gvenzl/oracle-free:23-slim-faststart")
+    val container = OracleContainer(TestImages.ORACLE)
         .withStartupTimeout(Duration.ofMinutes(5))
 
     beforeSpec {

@@ -7,10 +7,11 @@ import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
 import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.contract.JobStartTransactionContractTests
 import dev.dmigrate.server.ports.contract.JobStartTransactionFixture
+import dev.dmigrate.test.images.TestImages
 import org.testcontainers.postgresql.PostgreSQLContainer
 
 
-private val txTestContainer = PostgreSQLContainer("postgres:18-alpine")
+private val txTestContainer = PostgreSQLContainer(TestImages.POSTGRESQL)
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

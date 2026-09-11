@@ -5,6 +5,7 @@ import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
@@ -42,12 +43,12 @@ import java.sql.DriverManager
  */
 class DataParquetRoundTripE2EPostgresTest : FunSpec({
 
-    val source = PostgreSQLContainer("postgres:18-alpine")
+    val source = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("dmigrate_parquet_src")
         .withUsername("dmigrate")
         .withPassword("dmigrate")
 
-    val target = PostgreSQLContainer("postgres:18-alpine")
+    val target = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("dmigrate_parquet_tgt")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

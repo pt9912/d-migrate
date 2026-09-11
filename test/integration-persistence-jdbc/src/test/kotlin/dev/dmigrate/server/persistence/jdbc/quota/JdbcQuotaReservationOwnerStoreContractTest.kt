@@ -5,10 +5,11 @@ import com.zaxxer.hikari.HikariDataSource
 import dev.dmigrate.server.application.quota.QuotaReservationOwnerStoreContractTests
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
 import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
+import dev.dmigrate.test.images.TestImages
 import org.testcontainers.postgresql.PostgreSQLContainer
 
 
-private val ownerStoreTestContainer = PostgreSQLContainer("postgres:18-alpine")
+private val ownerStoreTestContainer = PostgreSQLContainer(TestImages.POSTGRESQL)
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

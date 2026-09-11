@@ -7,6 +7,7 @@
 // (siehe docs/user/quality.md, Abschnitt Integrations-Tests).
 
 dependencies {
+    testImplementation(project(":test:test-images"))
     testImplementation(project(":adapters:driven:driver-mssql"))
     testImplementation(project(":adapters:driven:driver-mssql-profiling"))
     testImplementation(project(":hexagon:profiling"))

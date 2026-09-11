@@ -23,6 +23,7 @@ import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -39,7 +40,7 @@ import kotlin.io.path.createTempDirectory
  * first reversible operation matrix per Plan §6.3 (AddColumn /
  * DropColumn). The MySQL-specific deltas vs the PG smoke are:
  *
- * - `MySQLContainer("mysql:9.7.2")` with `--log-bin-trust-function-creators=1`
+ * - `MySQLContainer(TestImages.MYSQL)` with `--log-bin-trust-function-creators=1`
  *   and the `allowPublicKeyRetrieval=true` JDBC param (Connector-J
  *   default-auth quirk in container envs).
  * - Reverse-reader sets `required = false` on PK columns (`MysqlSchemaReader.kt:151`)
@@ -61,7 +62,7 @@ import kotlin.io.path.createTempDirectory
 class MysqlMigrateRoundTripIntegrationTest : FunSpec({
 
 
-    val container = MySQLContainer("mysql:9.7.2")
+    val container = MySQLContainer(TestImages.MYSQL)
         .withDatabaseName("dmigrate_test")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

@@ -10,6 +10,7 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
 import dev.dmigrate.driver.postgresql.PostgresAtomicSequencePreserveExecutor
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
@@ -68,7 +69,7 @@ class PostgresSequencePreserveRaceTest : FunSpec({
 
     tags(ConcurrencyTag)
 
-    val container = PostgreSQLContainer("postgres:18-alpine")
+    val container = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("concurrency_test")
         .withUsername("concurrency")
         .withPassword("concurrency")

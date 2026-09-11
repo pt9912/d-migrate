@@ -6,6 +6,7 @@ import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -30,7 +31,7 @@ import kotlin.io.path.deleteIfExists
 class DataImportE2EMysqlTest : FunSpec({
 
 
-    val container = MySQLContainer("mysql:9.7.2")
+    val container = MySQLContainer(TestImages.MYSQL)
         .withDatabaseName("dmigrate_e2e")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

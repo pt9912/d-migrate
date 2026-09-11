@@ -12,6 +12,7 @@ import dev.dmigrate.profiling.model.DeterminationStatus
 import dev.dmigrate.profiling.types.LogicalType
 import dev.dmigrate.profiling.types.TargetLogicalType
 import dev.dmigrate.profiling.service.ProfileDatabaseService
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldContainExactly
@@ -27,7 +28,7 @@ class MysqlProfilingIntegrationTest : FunSpec({
     val primaryDb = "profiling_test"
     val tenantDb = "profiling_tenant"
 
-    val container = MySQLContainer("mysql:9.7.2")
+    val container = MySQLContainer(TestImages.MYSQL)
         .withDatabaseName(primaryDb)
         .withUsername("test")
         .withPassword("test")

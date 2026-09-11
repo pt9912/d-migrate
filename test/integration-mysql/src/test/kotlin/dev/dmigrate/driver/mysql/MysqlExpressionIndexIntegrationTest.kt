@@ -11,6 +11,7 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -28,7 +29,7 @@ import org.testcontainers.containers.MySQLContainer
  */
 class MysqlExpressionIndexIntegrationTest : FunSpec({
 
-    val container = MySQLContainer("mysql:9.7.2")
+    val container = MySQLContainer(TestImages.MYSQL)
         .withDatabaseName("dmigrate_expr")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

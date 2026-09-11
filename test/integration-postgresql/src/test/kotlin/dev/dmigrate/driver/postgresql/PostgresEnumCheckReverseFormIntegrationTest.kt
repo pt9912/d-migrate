@@ -13,6 +13,7 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -36,7 +37,7 @@ import io.kotest.matchers.shouldBe
  */
 class PostgresEnumCheckReverseFormIntegrationTest : FunSpec({
 
-    val container = org.testcontainers.containers.PostgreSQLContainer("postgres:18-alpine")
+    val container = org.testcontainers.containers.PostgreSQLContainer(TestImages.POSTGRESQL)
     lateinit var pool: ConnectionPool
 
     beforeSpec {

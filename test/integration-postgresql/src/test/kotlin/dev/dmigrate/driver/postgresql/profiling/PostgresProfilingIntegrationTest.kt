@@ -10,6 +10,7 @@ import dev.dmigrate.driver.postgresql.PostgresDriver
 import dev.dmigrate.profiling.model.DeterminationStatus
 import dev.dmigrate.profiling.types.LogicalType
 import dev.dmigrate.profiling.types.TargetLogicalType
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
@@ -20,7 +21,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 class PostgresProfilingIntegrationTest : FunSpec({
 
 
-    val container = PostgreSQLContainer("postgres:18-alpine")
+    val container = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("profiling_test")
         .withUsername("test")
         .withPassword("test")

@@ -6,6 +6,7 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.metadata.GeneratedColumnNotes
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -26,7 +27,7 @@ import org.testcontainers.containers.MySQLContainer
  */
 class MysqlGeneratedColumnReverseIntegrationTest : FunSpec({
 
-    val container = MySQLContainer("mysql:9.7.2")
+    val container = MySQLContainer(TestImages.MYSQL)
         .withDatabaseName("dmigrate_generated")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

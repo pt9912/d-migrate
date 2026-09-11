@@ -1,6 +1,7 @@
 package dev.dmigrate.cli
 
 import dev.dmigrate.cli.integration.runRealCli
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -31,12 +32,12 @@ import kotlin.io.path.readText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class OracleTransferE2ETest : FunSpec({
 
-    val source = PostgreSQLContainer("postgres:18-alpine")
+    val source = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("dmigrate_src")
         .withUsername("dmigrate")
         .withPassword("dmigrate")
 
-    val target = OracleContainer("gvenzl/oracle-free:23-slim-faststart")
+    val target = OracleContainer(TestImages.ORACLE)
         .withStartupTimeout(Duration.ofMinutes(5))
 
     lateinit var tmp: Path

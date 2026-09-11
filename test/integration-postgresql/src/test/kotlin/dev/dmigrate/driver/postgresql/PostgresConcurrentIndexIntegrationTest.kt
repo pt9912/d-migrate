@@ -20,6 +20,7 @@ import dev.dmigrate.driver.connection.SslSettings
 import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.migration.JdbcMigrationStatementExecutor
 import dev.dmigrate.driver.migration.TransactionScope
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -45,7 +46,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
  */
 class PostgresConcurrentIndexIntegrationTest : FunSpec({
 
-    val container = PostgreSQLContainer("postgres:18-alpine")
+    val container = PostgreSQLContainer(TestImages.POSTGRESQL)
         .withDatabaseName("dmigrate_cc")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

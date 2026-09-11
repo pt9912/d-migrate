@@ -3,6 +3,7 @@ package dev.dmigrate.cli
 import dev.dmigrate.cli.integration.runRealCli
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.format.yaml.YamlSchemaCodec
+import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainAll
@@ -37,7 +38,7 @@ import kotlin.io.path.readText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class OracleSchemaReverseE2ETest : FunSpec({
 
-    val container = OracleContainer("gvenzl/oracle-free:23-slim-faststart")
+    val container = OracleContainer(TestImages.ORACLE)
         .withUsername(APP_USER)
         .withPassword(APP_PASSWORD)
         .withStartupTimeout(Duration.ofMinutes(5))

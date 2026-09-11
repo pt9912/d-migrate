@@ -8,6 +8,7 @@
 // mirrors the production runtime classpath of :adapters:driving:cli.
 
 dependencies {
+    testImplementation(project(":test:test-images"))
     testImplementation(project(":adapters:driving:cli"))
     testImplementation(project(":adapters:driving:mcp"))
     testImplementation(project(":hexagon:core"))

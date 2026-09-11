@@ -10,6 +10,7 @@ import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.SchemaIndexEntry
 import dev.dmigrate.server.ports.SchemaRegisterOutcome
 import dev.dmigrate.server.ports.contract.SchemaStoreContractTests
+import dev.dmigrate.test.images.TestImages
 import io.kotest.matchers.collections.shouldHaveSize
 import org.testcontainers.postgresql.PostgreSQLContainer
 import java.time.Instant
@@ -17,7 +18,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-private val schemaStoreTestContainer = PostgreSQLContainer("postgres:18-alpine")
+private val schemaStoreTestContainer = PostgreSQLContainer(TestImages.POSTGRESQL)
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

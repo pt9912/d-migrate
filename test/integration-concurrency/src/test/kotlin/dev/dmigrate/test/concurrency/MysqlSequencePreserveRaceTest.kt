@@ -11,6 +11,7 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
 import dev.dmigrate.driver.mysql.MysqlAtomicSequencePreserveExecutor
+import dev.dmigrate.test.images.TestImages
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
@@ -58,7 +59,7 @@ class MysqlSequencePreserveRaceTest : FunSpec({
 
     tags(ConcurrencyTag)
 
-    val container = MySQLContainer("mysql:9.7.2")
+    val container = MySQLContainer(TestImages.MYSQL)
         .withDatabaseName("concurrency_test")
         .withUsername("concurrency")
         .withPassword("concurrency")

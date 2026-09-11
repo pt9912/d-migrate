@@ -7,6 +7,7 @@
 // tag (siehe Root build.gradle.kts). Activate with -PintegrationTests.
 
 dependencies {
+    testImplementation(project(":test:test-images"))
     testImplementation(project(":adapters:driven:integrations"))
     testImplementation(project(":adapters:driving:cli"))
     testImplementation(project(":adapters:driven:driver-common"))
