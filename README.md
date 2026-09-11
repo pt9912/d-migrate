@@ -19,9 +19,9 @@ management, usable as a CLI **and** as an MCP server
 (`mcp serve --transport stdio|http`, MCP 2025-11-25). You define your
 schema once in a neutral YAML format and then validate, compare,
 generate DDL, and execute live diff-based migrations against
-PostgreSQL, MySQL, and SQLite. d-migrate also covers reverse
-engineering of existing databases, streaming-based data
-export/import/transfer between databases, and export to existing
+PostgreSQL, MySQL, SQLite, SQL Server, and Oracle. d-migrate also
+covers reverse engineering of existing databases, streaming-based
+data export/import/transfer between databases, and export to existing
 migration toolchains (Flyway, Liquibase, Django, Knex).
 
 ## Who is it for?
@@ -30,7 +30,7 @@ d-migrate targets database administrators, platform engineers, data
 teams, and integrators who:
 
 - need a **dialect-agnostic** schema artefact (PostgreSQL / MySQL /
-  SQLite from the same YAML source)
+  SQLite / SQL Server / Oracle from the same YAML source)
 - want **reproducible, signed migration plans** with explicit rollback
   contracts, drift checks, and per-statement metadata
 - run schema and data operations against existing databases —

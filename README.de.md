@@ -19,12 +19,12 @@ d-migrate ist ein datenbankunabhängiges Werkzeug für Schema-Migration
 und Datenmanagement — bedienbar als CLI **und** als MCP-Server
 (`mcp serve --transport stdio|http`, MCP 2025-11-25). Du definierst
 dein Schema einmalig in einem neutralen YAML-Format und kannst es
-gegen PostgreSQL, MySQL und SQLite validieren, vergleichen, als DDL
-generieren und als Live-Diff-Migration ausführen. Darüber hinaus
-unterstützt d-migrate Reverse-Engineering bestehender Datenbanken,
-streaming-basierten Daten-Export/-Import/-Transfer zwischen Datenbanken
-und den Export in bestehende Migrations-Toolchains (Flyway,
-Liquibase, Django, Knex).
+gegen PostgreSQL, MySQL, SQLite, SQL Server und Oracle validieren,
+vergleichen, als DDL generieren und als Live-Diff-Migration
+ausführen. Darüber hinaus unterstützt d-migrate Reverse-Engineering
+bestehender Datenbanken, streaming-basierten
+Daten-Export/-Import/-Transfer zwischen Datenbanken und den Export in
+bestehende Migrations-Toolchains (Flyway, Liquibase, Django, Knex).
 
 ## Für wen ist es?
 
@@ -32,7 +32,8 @@ d-migrate adressiert Datenbankadministratoren, Plattform-Engineers,
 Datenteams und Integratoren, die:
 
 - ein **dialekt-agnostisches** Schema-Artefakt brauchen
-  (PostgreSQL / MySQL / SQLite aus derselben YAML-Quelle)
+  (PostgreSQL / MySQL / SQLite / SQL Server / Oracle aus derselben
+  YAML-Quelle)
 - **reproduzierbare, signierte Migrationspläne** mit expliziten
   Rollback-Verträgen, Drift-Checks und Per-Statement-Metadaten
   wollen
