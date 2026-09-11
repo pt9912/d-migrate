@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.3.0**
-(stable, [released 2026-09-11](https://github.com/pt9912/d-migrate/releases/tag/v1.3.0)).
+d-migrate is a working production tool at version **1.3.1**
+(stable, [released 2026-09-11](https://github.com/pt9912/d-migrate/releases/tag/v1.3.1)).
 
 The current capabilities:
 
@@ -159,7 +159,7 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.3.0** (2026-09-11) — what `:latest`,
+- **Current stable** · **1.3.1** (2026-09-11) — what `:latest`,
   Homebrew and an unpinned `docker pull` give you. **Oracle is the fifth
   dialect** and complete: reverse, generate, migrate, the data path and
   profiling, plus bitmap and expression indexes, partitioning, Oracle Text,
@@ -169,7 +169,9 @@ The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
   time. The container image runs as **non-root** (`uid 10001`), so writing
   into a bind mount needs `--user "$(id -u):$(id -g)"`. Native binaries ship
   for `linux-x64` and `windows-x64`; on macOS use Homebrew, the JVM artefacts
-  or the container image.
+  or the container image. 1.3.1 fixes two defects a consumer project found in
+  1.3.0: a run creating a view reported drift that was none, and an
+  `--execute` report could say `ok` for a run that ended in failure.
 
 For per-milestone task tables and ADR pointers see the canonical
 roadmap at

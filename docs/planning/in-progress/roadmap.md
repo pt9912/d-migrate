@@ -1128,7 +1128,7 @@ DB-Kombinationen, Cutover-Readiness, Betriebs-/Failure-Recovery-Doku.
 ---
 
 **Version**: 3.67
-**Stand**: 2026-09-11 (**1.3.0 veröffentlicht** (`v1.3.0`) — Oracle als fünfter Dialekt vollständig (Milestone 1.8.0), berechnete Spalten auf PostgreSQL, Atomic-Preserve für SQL Server, und ein Migrationslauf, der bei rohem SQL-Text konvergiert. Zuvor **1.2.0 veröffentlicht** (`v1.2.0`) — kein einzelner
+**Stand**: 2026-09-11 (**1.3.1 veröffentlicht** (`v1.3.1`) — Fehlerbehebung aus einem Konsumentenbefund: eine frisch angelegte Sicht meldete Scheindrift, und der `--execute`-Report widersprach dem Prozess-Ausgang. Zuvor **1.3.0 veröffentlicht** (`v1.3.0`) — Oracle als fünfter Dialekt vollständig (Milestone 1.8.0), berechnete Spalten auf PostgreSQL, Atomic-Preserve für SQL Server, und ein Migrationslauf, der bei rohem SQL-Text konvergiert. Zuvor **1.2.0 veröffentlicht** (`v1.2.0`) — kein einzelner
 Milestone, sondern gebündelte Fortsetzungsarbeit: die Core/CLI-Zeilen aus
 **Milestone 1.3.0 — Testdaten-Generierung** (`d-migrate data seed`,
 seed-basiert reproduzierbar, `--rules`-Regeldatei; die KI-Zeile bleibt

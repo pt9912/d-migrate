@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-09-11
+
+### Fixed
+
+- **Ein Lauf, der eine Sicht anlegt, endet nicht mehr mit Drift.** Der
+  Post-Compare blendet rohen SQL-Text auf beiden Seiten aus, bevor er
+  Fingerabdrücke bildet — den Rumpf der Sicht also. Nicht ausgeblendet war
+  `sourceDialect`: keine Aussage über die Form einer Sicht, sondern darüber,
+  woher ihr Text stammt, und deshalb nur auf einer Seite vorhanden — die
+  Schemadatei trägt es nicht, der Rückleser setzt es. Damit unterschieden sich
+  die Fingerabdrücke, und der erste `schema migrate --execute` meldete Exit 5,
+  obwohl alle Anweisungen sauber gelaufen waren. Die Folge war dauerhaft:
+  Herkunft entsteht nur bei sauberem Post-Compare, für Sichten also nie, und
+  jeder weitere Lauf plante dieselbe Ersetzung erneut.
+
+- **Der Report trägt den Ausgang, mit dem der Lauf endet.** Er entsteht aus dem
+  Plan, der Post-Compare läuft danach — dessen Ergebnis kam bisher nur als
+  Rückgabewert heraus. Ein mit Exit 5 beendeter `--execute` schrieb deshalb
+  `status: ok`, `exitCode: 0` und leere `diagnostics`; der Grund stand nur auf
+  `stderr`. Betroffen war jeder Ausgang, den erst die Nachschau bestimmt.
+  Jetzt trägt der Report `status: failed`, denselben `exitCode` wie der Prozess
+  und eine Diagnose mit dem Grund (`POST_EXECUTE_DRIFT`,
+  `POST_EXECUTE_INTROSPECTION_FAILED`).
+
 ## [1.3.0] - 2026-09-11
 
 ### Added

@@ -1,7 +1,7 @@
 ---
 id: report-widerspricht-prozess-exit
 title: "Der Report sagt `ok`, der Prozess endet mit 5"
-status: open
+status: done
 ---
 
 # Der Report sagt `ok`, der Prozess endet mit 5
@@ -63,6 +63,19 @@ Scheindrift (behoben). **Funktionen, Prozeduren und Trigger tragen dasselbe
 Feld**, und auch dort setzt es der Rueckleser, waehrend die Schemadatei es
 nicht traegt. Ob ihr Pfad dieselbe Schieflage hat, ist nicht gemessen — es
 gehoert vor die naechste Aenderung an dieser Stelle.
+
+## Umgesetzt (2026-09-11)
+
+Abgeglichen wird in `SchemaMigrateArtefactSink.emitReportAndExit` — der einen
+Stelle, die Report und Ausgang in der Hand hat. Ein Lauf, dessen Ausgang erst
+der Post-Compare bestimmt, traegt `status: failed`, denselben `exitCode` wie
+der Prozess und eine Diagnose mit dem Grund (`POST_EXECUTE_DRIFT`,
+`POST_EXECUTE_INTROSPECTION_FAILED`). Der Vertrag steht in `cli-spec.md` bei
+den `--execute`-Report-Feldern; `SchemaMigrateReportMatchesExitTest` haelt ihn
+fest und faellt, wenn man den Abgleich zur Leeroperation macht.
+
+Die Nachbarfrage zu Funktionen, Prozeduren und Triggern bleibt offen — sie ist
+unten beschrieben und wurde bewusst nicht mitgenommen.
 
 ## Herkunft
 
