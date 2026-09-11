@@ -438,13 +438,17 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 
 ## Unterstützte Datenbanken
 
-| Datenbank  | Status                                                              |
-| ---------- | ------------------------------------------------------------------- |
-| PostgreSQL | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
-| MySQL      | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
-| SQLite     | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
-| Oracle     | Reverse Engineering, DDL-Generierung, Schema-Migration, Tool-Export, Datentransfer (Ausbau, ADR 0052) |
-| MSSQL      | Reverse Engineering, DDL-Generierung, Schema-Migration, Tool-Export, Datentransfer (Ausbau, ADR 0047) |
+Alle fünf tragen denselben Kern: Reverse-Engineering, DDL-Generierung,
+Vergleich, Schema-Migration, den Datenpfad (Export/Import/Transfer),
+Tool-Export und Profiling. Die Tabelle sagt, was je Dialekt eigen ist.
+
+| Datenbank  | Dialekt-Eigenheiten                                                  |
+| ---------- | -------------------------------------------------------------------- |
+| PostgreSQL | PostGIS, Materialized Views, Partitionierung, Ausdrucks-Indizes, berechnete Spalten, `CREATE INDEX CONCURRENTLY` |
+| MySQL      | Sequenz-Emulation über `dmg_sequences`, native Geometrie-Typen        |
+| SQLite     | Sequenz-Emulation, SpatiaLite, FTS5                                   |
+| SQL Server | Volltextsuche, Partitionierung, Import über `SQLServerBulkCopy` ([ADR 0047](docs/adr/0047-mssql-vierter-dialekt-scoping.md)) |
+| Oracle     | `SDO_GEOMETRY`, Oracle Text, Bitmap-Indizes, Partitionierung, Materialized Views ([ADR 0052](docs/adr/0052-oracle-fuenfter-dialekt-scoping.md)) |
 
 ## Projektstruktur
 

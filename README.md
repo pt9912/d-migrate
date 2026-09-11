@@ -419,13 +419,17 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 
 ## Supported databases
 
-| Database   | Status                                                              |
-| ---------- | ------------------------------------------------------------------- |
-| PostgreSQL | DDL generation, reverse engineering, data export/import/transfer    |
-| MySQL      | DDL generation, reverse engineering, data export/import/transfer    |
-| SQLite     | DDL generation, reverse engineering, data export/import/transfer    |
-| Oracle     | Reverse engineering, DDL generation, schema migration, tool export, data export/import/transfer (rollout, ADR 0052) |
-| MSSQL      | Reverse engineering, DDL generation, schema migration, tool export, data export/import/transfer (rollout, ADR 0047) |
+All five carry the same core: reverse engineering, DDL generation,
+comparison, schema migration, the data path (export/import/transfer), tool
+export and profiling. The table says what is specific to each.
+
+| Database   | Dialect specifics                                                    |
+| ---------- | -------------------------------------------------------------------- |
+| PostgreSQL | PostGIS, materialized views, partitioning, expression indexes, computed columns, `CREATE INDEX CONCURRENTLY` |
+| MySQL      | sequence emulation via `dmg_sequences`, native spatial types          |
+| SQLite     | sequence emulation, SpatiaLite, FTS5                                  |
+| SQL Server | full-text search, partitioning, import via `SQLServerBulkCopy` ([ADR 0047](docs/adr/0047-mssql-vierter-dialekt-scoping.md)) |
+| Oracle     | `SDO_GEOMETRY`, Oracle Text, bitmap indexes, partitioning, materialized views ([ADR 0052](docs/adr/0052-oracle-fuenfter-dialekt-scoping.md)) |
 
 ## Project Structure
 
