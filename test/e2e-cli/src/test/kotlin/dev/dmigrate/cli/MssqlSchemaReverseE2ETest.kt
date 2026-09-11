@@ -35,7 +35,7 @@ import kotlin.io.path.readText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlSchemaReverseE2ETest : FunSpec({
 
-    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2022-latest")
+    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
         .acceptLicense()
         .withPassword(PASSWORD)
         .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)

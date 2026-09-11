@@ -8,7 +8,7 @@ import dev.dmigrate.server.ports.contract.ReadOnlyInitResumeContractTests
 import org.testcontainers.postgresql.PostgreSQLContainer
 
 
-private val initResumeTestContainer = PostgreSQLContainer("postgres:16-alpine")
+private val initResumeTestContainer = PostgreSQLContainer("postgres:18-alpine")
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

@@ -24,7 +24,7 @@ import java.sql.DriverManager
 class LiquibaseRuntimeTest : FunSpec({
 
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("liquibase_test")
         .withUsername("test")
         .withPassword("test")

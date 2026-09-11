@@ -17,7 +17,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-private val schemaStoreTestContainer = PostgreSQLContainer("postgres:16-alpine")
+private val schemaStoreTestContainer = PostgreSQLContainer("postgres:18-alpine")
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

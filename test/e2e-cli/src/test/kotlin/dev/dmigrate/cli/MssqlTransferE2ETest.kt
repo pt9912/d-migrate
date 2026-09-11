@@ -32,12 +32,12 @@ import kotlin.io.path.readText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlTransferE2ETest : FunSpec({
 
-    val source = PostgreSQLContainer("postgres:16-alpine")
+    val source = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_src")
         .withUsername("dmigrate")
         .withPassword("dmigrate")
 
-    val target = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2022-latest")
+    val target = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
         .acceptLicense()
         .withPassword(MSSQL_PASSWORD)
         .withUrlParam("encrypt", "false")

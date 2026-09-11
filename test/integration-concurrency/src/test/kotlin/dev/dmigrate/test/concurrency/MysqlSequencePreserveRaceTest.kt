@@ -58,7 +58,7 @@ class MysqlSequencePreserveRaceTest : FunSpec({
 
     tags(ConcurrencyTag)
 
-    val container = MySQLContainer("mysql:8.0")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName("concurrency_test")
         .withUsername("concurrency")
         .withPassword("concurrency")

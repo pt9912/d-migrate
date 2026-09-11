@@ -43,7 +43,7 @@ import java.sql.DriverManager
 class DataExportE2EPostgresTest : FunSpec({
 
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_e2e")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

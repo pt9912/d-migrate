@@ -23,7 +23,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicReference
 
 
-private val sweeperTestContainer = PostgreSQLContainer("postgres:16-alpine")
+private val sweeperTestContainer = PostgreSQLContainer("postgres:18-alpine")
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

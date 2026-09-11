@@ -68,7 +68,7 @@ class PostgresSequencePreserveRaceTest : FunSpec({
 
     tags(ConcurrencyTag)
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("concurrency_test")
         .withUsername("concurrency")
         .withPassword("concurrency")

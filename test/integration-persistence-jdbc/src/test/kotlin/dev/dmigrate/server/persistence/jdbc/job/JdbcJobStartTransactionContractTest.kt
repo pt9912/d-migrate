@@ -10,7 +10,7 @@ import dev.dmigrate.server.ports.contract.JobStartTransactionFixture
 import org.testcontainers.postgresql.PostgreSQLContainer
 
 
-private val txTestContainer = PostgreSQLContainer("postgres:16-alpine")
+private val txTestContainer = PostgreSQLContainer("postgres:18-alpine")
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

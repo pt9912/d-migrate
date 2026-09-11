@@ -8,7 +8,7 @@ import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import org.testcontainers.postgresql.PostgreSQLContainer
 
 
-private val ownerStoreTestContainer = PostgreSQLContainer("postgres:16-alpine")
+private val ownerStoreTestContainer = PostgreSQLContainer("postgres:18-alpine")
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

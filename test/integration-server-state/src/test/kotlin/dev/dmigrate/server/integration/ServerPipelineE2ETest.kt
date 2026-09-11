@@ -52,7 +52,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 
-private val pipelineTestContainer = PostgreSQLContainer("postgres:16-alpine")
+private val pipelineTestContainer = PostgreSQLContainer("postgres:18-alpine")
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

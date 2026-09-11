@@ -20,7 +20,7 @@ import java.nio.file.Files
 class FlywayRuntimeTest : FunSpec({
 
 
-    val container = PostgreSQLContainer("postgres:16-alpine")
+    val container = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("flyway_test")
         .withUsername("test")
         .withPassword("test")

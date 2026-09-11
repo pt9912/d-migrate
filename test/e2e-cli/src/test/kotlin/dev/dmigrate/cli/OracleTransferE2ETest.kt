@@ -31,7 +31,7 @@ import kotlin.io.path.readText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class OracleTransferE2ETest : FunSpec({
 
-    val source = PostgreSQLContainer("postgres:16-alpine")
+    val source = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_src")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

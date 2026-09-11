@@ -42,12 +42,12 @@ import java.sql.DriverManager
  */
 class DataParquetRoundTripE2EPostgresTest : FunSpec({
 
-    val source = PostgreSQLContainer("postgres:16-alpine")
+    val source = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_parquet_src")
         .withUsername("dmigrate")
         .withPassword("dmigrate")
 
-    val target = PostgreSQLContainer("postgres:16-alpine")
+    val target = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_parquet_tgt")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

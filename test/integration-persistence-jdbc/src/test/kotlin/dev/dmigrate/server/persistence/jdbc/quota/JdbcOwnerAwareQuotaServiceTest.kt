@@ -21,7 +21,7 @@ import java.sql.Connection
 import java.time.Instant
 
 
-private val ownerAwareTestContainer = PostgreSQLContainer("postgres:16-alpine")
+private val ownerAwareTestContainer = PostgreSQLContainer("postgres:18-alpine")
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

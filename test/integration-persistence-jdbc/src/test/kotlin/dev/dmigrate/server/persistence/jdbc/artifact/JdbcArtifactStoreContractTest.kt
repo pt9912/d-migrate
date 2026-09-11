@@ -7,7 +7,7 @@ import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.contract.ArtifactStoreContractTests
 import org.testcontainers.postgresql.PostgreSQLContainer
 
-private val artifactStoreTestContainer = PostgreSQLContainer("postgres:16-alpine")
+private val artifactStoreTestContainer = PostgreSQLContainer("postgres:18-alpine")
     .withDatabaseName("dmigrate_state")
     .withUsername("dmigrate")
     .withPassword("dmigrate")

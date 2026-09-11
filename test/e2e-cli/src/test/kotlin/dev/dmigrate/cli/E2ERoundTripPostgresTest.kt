@@ -35,12 +35,12 @@ import java.sql.DriverManager
 class E2ERoundTripPostgresTest : FunSpec({
 
 
-    val source = PostgreSQLContainer("postgres:16-alpine")
+    val source = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_src")
         .withUsername("dmigrate")
         .withPassword("dmigrate")
 
-    val target = PostgreSQLContainer("postgres:16-alpine")
+    val target = PostgreSQLContainer("postgres:18-alpine")
         .withDatabaseName("dmigrate_tgt")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

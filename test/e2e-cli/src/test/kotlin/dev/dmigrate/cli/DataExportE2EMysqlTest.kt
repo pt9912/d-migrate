@@ -39,7 +39,7 @@ import java.sql.DriverManager
 class DataExportE2EMysqlTest : FunSpec({
 
 
-    val container = MySQLContainer("mysql:8.0")
+    val container = MySQLContainer("mysql:9.7.2")
         .withDatabaseName("dmigrate_e2e")
         .withUsername("dmigrate")
         .withPassword("dmigrate")

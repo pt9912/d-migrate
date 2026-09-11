@@ -31,7 +31,7 @@ import kotlin.io.path.writeText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlGenerateApplyE2ETest : FunSpec({
 
-    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2022-latest")
+    val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
         .acceptLicense()
         .withPassword(PASSWORD)
         .withUrlParam("encrypt", "false")

@@ -38,7 +38,7 @@ import kotlin.io.path.readText
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlSpatialTransferE2ETest : FunSpec({
 
-    val source = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2022-latest")
+    val source = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2025-latest")
         .acceptLicense()
         .withUrlParam("encrypt", "false")
         .withStartupTimeout(MSSQL_STARTUP_TIMEOUT)
