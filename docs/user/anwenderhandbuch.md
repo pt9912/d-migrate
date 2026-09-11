@@ -1463,23 +1463,17 @@ zurück.
   der neuen Version neu. Siehe [Fehlerbehebung](#5-fehlerbehebung).
 - Ist das Rücknahme-Skript bewusst unvollständig, benötigen Sie zusätzlich
   `--allow-partial-rollback`.
-- **Ohne Herkunft geht auch ein Wegwerf-Schema** — wenn Ihr Ziel PostgreSQL
-  ist und Sie es einschalten (`migrate.raw_sql_sandbox: true` in
-  `.d-migrate.yaml`). d-migrate wendet Ihr Soll dann probeweise in einem
-  eigenen Schema auf demselben Server an, liest dort die Katalogform und rollt
-  alles zurück — das Ziel wird nicht berührt, und es bleibt nichts stehen.
-  Damit entfällt auch der eine überflüssige erste Lauf. Der Schalter steht
-  bewusst auf `false`: es braucht das Recht, ein Schema anzulegen. Bei Oracle
-  geht es nicht, dort **ist** ein Schema ein Benutzer.
-- **Damit ein Lauf konvergiert, geben Sie die Herkunft mit.** Schreiben Sie sie
-  beim Anwenden (`--provenance-output herkunft.json`) und geben Sie die Datei
-  beim nächsten Lauf über `--migration-overlay herkunft.json` zurück. Dann
-  fragt d-migrate nicht mehr „unterscheidet sich mein Dateitext von dem, was
-  der Server führt?" — das tut er immer —, sondern „habe **ich** den Text seit
-  dem letzten Anwenden geändert?". Ohne die Datei wird konservativ geplant: die
-  Änderung läuft erneut, auch wenn sie unnötig ist. Bei einer Sicht ist das ein
-  `CREATE OR REPLACE`, bei einem CHECK ein Abbau und Aufbau — kurz ohne
-  Prüfung, aber ohne Datenverlust.
+- **Damit ein Lauf konvergiert, geben Sie die Herkunft mit.** Beim Anwenden
+  `--provenance-output herkunft.json`, beim nächsten Lauf dieselbe Datei über
+  `--migration-overlay herkunft.json` zurück. Ohne sie plant d-migrate
+  konservativ und führt die Änderung erneut aus — harmlos, aber endlos. Warum
+  das so ist und welcher Weg auf PostgreSQL ohne Herkunft auskommt, steht unter
+  [Fehlerbehebung](#5-fehlerbehebung), „Jeder Lauf plant dieselbe Sicht — oder
+  denselben CHECK — erneut".
+- **Ohne Herkunft geht auf PostgreSQL auch ein Wegwerf-Schema:**
+  `migrate.raw_sql_sandbox: true` in der `.d-migrate.yaml`. Der Schalter steht
+  bewusst auf `false`, weil er das Recht braucht, ein Schema anzulegen; bei
+  Oracle gibt es diesen Weg nicht. Einzelheiten am selben Ort wie oben.
 - **Rohes SQL wird nach dem Anwenden nicht gegen Ihren Dateitext geprüft.**
   Eine Sicht, ein CHECK-Ausdruck und der Schlüssel oder das Prädikat eines
   Ausdrucks-Index sind Text, und Server geben ihn nicht wortgleich zurück:
@@ -2564,6 +2558,46 @@ sie nicht erzeugt.
 **Lösung:** Erzeugen Sie mit `--mysql-named-sequences helper_table` bzw.
 `--sqlite-named-sequences helper_table`. Siehe
 [3.12](#312-sequenzenautowerte-korrekt-mitnehmen).
+
+### Jeder Lauf plant dieselbe Sicht — oder denselben CHECK — erneut
+
+**Ursache:** Rohen SQL-Text gibt kein Server wortgleich zurück. Das betrifft
+den Rumpf einer Sicht, einen CHECK-Ausdruck sowie Schlüssel und Prädikat eines
+Ausdrucks-Index. PostgreSQL etwa druckt sie aus seinem Parsebaum: aus
+`age >= 18` wird `((age >= 18))`, ein `--`-Kommentar verschwindet ganz. Ohne
+weitere Angabe vergleicht d-migrate Ihren Dateitext gegen diese Katalogform —
+der Unterschied besteht **immer**, und jeder Lauf plant die Änderung erneut.
+Schaden richtet das nicht an (bei einer Sicht ist es ein `CREATE OR REPLACE`),
+aber es hört nie von selbst auf.
+
+**Lösung:** Geben Sie dem nächsten Lauf mit, was Sie zuletzt angewandt haben:
+
+```bash
+# Erster Lauf: Herkunft mitschreiben
+d-migrate schema migrate --source schema.yaml --target db:prod --execute \
+  --provenance-output herkunft.json
+
+# Jeder weitere Lauf: Herkunft zurückgeben und neu schreiben
+d-migrate schema migrate --source schema.yaml --target db:prod --execute \
+  --migration-overlay herkunft.json --provenance-output herkunft.json
+```
+
+Dann lautet die Frage nicht mehr „unterscheidet sich mein Dateitext von dem,
+was der Server führt?", sondern „habe **ich** den Text seit dem letzten
+Anwenden geändert?" — zwei Autorentexte, wortgleich vergleichbar. Bewahren Sie
+`herkunft.json` neben dem Schema auf; ohne die Datei plant der nächste Lauf
+wieder konservativ.
+
+**Auf PostgreSQL geht es auch ohne Herkunft.** Setzen Sie
+`migrate.raw_sql_sandbox: true` in der `.d-migrate.yaml`. d-migrate wendet Ihr
+Soll dann probeweise in einem eigenen Wegwerf-Schema auf demselben Server an,
+liest dort die Katalogform und rollt alles zurück — Ihr Ziel wird nicht
+berührt. Der Schalter steht bewusst auf `false`: es braucht das Recht, ein
+Schema anzulegen. Bei Oracle geht dieser Weg nicht, dort **ist** ein Schema ein
+Benutzer.
+
+`schema compare` bleibt von beidem unberührt: dort ist ein Textunterschied
+weiterhin ein Unterschied.
 
 ### Migration wird blockiert (Exit 8)
 
