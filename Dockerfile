@@ -234,46 +234,19 @@ RUN tar cf /src/release-assets.tar -C /src adapters/driving/cli/build/release
 ENTRYPOINT ["cat", "/src/release-assets.tar"]
 
 # ---- Stage: tooling (JDK + Python + Django + Node.js + SpatiaLite) --------
-# Die Laufzeit-Werkzeuge der Integrationstests, getrennt von allem anderen.
+# Die Laufzeit-Werkzeuge der Integrationstests, als veroeffentlichtes Image per
+# Digest gepinnt. Gebaut wird es aus `docker/tooling.Dockerfile` ueber den
+# Workflow `tooling-image.yml` — von Hand, nicht bei jedem Push.
 #
-# Eigene Stage, weil sich diese Schicht fast nie aendert, die Build-Dateien
-# darunter aber schon: laege sie hinter der Abhaengigkeitsaufloesung, wuerde
-# jede geaenderte `build.gradle.kts` die ganze apt-Installation erneut
-# ausloesen. So bleibt sie ueber Build-Datei-Aenderungen hinweg gueltig — und
-# sie ist der natuerliche Schnitt, falls dieses Werkzeug-Image spaeter einmal
-# veroeffentlicht und per Digest gepinnt werden soll.
-FROM gradle:8.14-jdk21 AS tooling
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv \
-    curl ca-certificates gnupg \
-    build-essential \
-    # SpatiaLite-Extension fuer die SQLite-Integrationstests. Sie laeuft ohne
-    # Testcontainers gegen eine Datei, braucht die Bibliothek aber im Image:
-    # `load_extension('mod_spatialite')` sucht sie im Standard-Library-Pfad.
-    libsqlite3-mod-spatialite && \
-    python3 -m pip install --break-system-packages --quiet django && \
-    # Node 20 aus dem NodeSource-Repo (CWE-494): kein `curl | bash`. Der GPG-Key
-    # wird ueber HTTPS geholt, per SHA256 gepinnt und als signed-by-Keyring
-    # hinterlegt; danach installiert apt `nodejs` signaturverifiziert.
-    mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o /tmp/nodesource.key && \
-    echo "b42e0321dabdc24e892115da705cf061167eac12a317f23d329862d0aa0a271d  /tmp/nodesource.key" | sha256sum -c - && \
-    gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg /tmp/nodesource.key && \
-    rm /tmp/nodesource.key && \
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
-    > /etc/apt/sources.list.d/nodesource.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends nodejs && \
-    # pnpm gepinnt wie der Node-Zweig darueber. Ungepinnt zog `npm install -g`
-    # die jeweils neueste Version, und die kippte den Build gleich zweifach:
-    # sie liest die Einstellung onlyBuiltDependencies nicht mehr aus der
-    # package.json, und ab Hauptversion 11 verlangt sie Node >= 22.13.
-    # Die beiden Pins gehoeren deshalb zusammen -- wer die Node-Zeile hebt,
-    # darf pnpm mitheben, aber nicht umgekehrt.
-    npm install -g pnpm@10.34.5 node-gyp && \
-    rm -rf /var/lib/apt/lists/*
+# Der Grund fuer das eigene Image ist gemessen: kalt gebaut braucht die
+# apt-Schicht ueber eine halbe Stunde und haengt an `archive.ubuntu.com`. Im
+# Layer-Cache verborgen sah das nie jemand, bis der Cache einmal fehlte. Ein
+# Digest macht daraus eine Zahl im Repo statt einer Wette auf die Paketquellen.
+#
+# Wer die Werkzeuge aendert, aendert `docker/tooling.Dockerfile`, laesst den
+# Workflow laufen und traegt den neuen Digest hier ein. Eine Aenderung dort
+# allein wirkt nicht — das ist Absicht.
+FROM ghcr.io/pt9912/d-migrate-tooling:20260911@sha256:3e7fb4d38e7f6c2d0fce9be5a2897ae39cf7977f0f852e482d774ae081ea3155 AS tooling
 
 # ---- Stage 2: integration-test (Werkzeuge + gewaermter Gradle-Cache) -------
 # Used by scripts/test-integration-docker.sh for the full runtime matrix.
