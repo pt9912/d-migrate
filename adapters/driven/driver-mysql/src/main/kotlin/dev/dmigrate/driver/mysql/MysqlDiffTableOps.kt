@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.core.model.ColumnGenerationTransition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexType
@@ -10,7 +11,6 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.model.isSpatialGeometryIndex
-import dev.dmigrate.driver.ColumnGenerationTransition
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -30,7 +30,11 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  */
 internal object MysqlDiffTableOps {
 
-    private const val IDENTITY_CHANGE_NOT_SUPPORTED = "MYSQL_IDENTITY_CHANGE_NOT_SUPPORTED"
+    private const val IDENTITY_NEEDS_KEY = "MYSQL_IDENTITY_NEEDS_KEY"
+
+    private const val IDENTITY_COMPUTED_SWAP_NOT_SUPPORTED = "MYSQL_IDENTITY_COMPUTED_SWAP_NOT_SUPPORTED"
+
+    private const val IDENTITY_NEEDS_TYPE = "MYSQL_IDENTITY_NEEDS_TYPE"
 
     private const val COMPUTED_KIND_CHANGE_NOT_SUPPORTED = "MYSQL_COMPUTED_KIND_CHANGE_NOT_SUPPORTED"
 
@@ -299,16 +303,7 @@ internal object MysqlDiffTableOps {
         val target = if (up) op.after else op.before
         when (ColumnGenerationTransition.of(from, target)) {
             ColumnGenerationTransition.IDENTITY -> {
-                ctx.skip(
-                    op,
-                    "Operation ${op.id} changes the identity of `$table`.`$column` — not a computed " +
-                        "expression. MySQL does that in place with `MODIFY COLUMN … AUTO_INCREMENT` as long " +
-                        "as the column is a key (measured against 9.7.2, both directions), but d-migrate does " +
-                        "not render identity changes: express the transition through the column type " +
-                        "(`identifier`) or run the statement yourself.",
-                    code = IDENTITY_CHANGE_NOT_SUPPORTED,
-                )
-                ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+                renderIdentityTransition(op, ctx, table, column, from, target)
                 return
             }
             ColumnGenerationTransition.COMPUTED_ADDED, ColumnGenerationTransition.COMPUTED_DROPPED -> {
@@ -463,4 +458,73 @@ internal object MysqlDiffTableOps {
     private fun dev.dmigrate.core.model.IndexDefinition.referencesGeometry(table: TableDefinition): Boolean =
         // ADR 0025: shared predicate (excludes FULLTEXT — createIndexSql has the native branch).
         isSpatialGeometryIndex { table.columns[it]?.type }
+
+    /**
+     * Die Identity einer MySQL-Spalte -- `AUTO_INCREMENT`, an- oder abgeschaltet.
+     *
+     * Gemessen gegen 9.7.2, und die erste Zeile ist der angenehme Unterschied
+     * zu PostgreSQL:
+     *
+     * | Uebergang | Ergebnis |
+     * | --- | --- |
+     * | Schluesselspalte (gefuellt) → `AUTO_INCREMENT` | laeuft; der Zaehler setzt **ueber** dem Bestand auf (max 7 → naechste id 8), es kollidiert nichts |
+     * | `AUTO_INCREMENT` → gewoehnlich | laeuft; Werte bleiben, ein `INSERT` ohne Wert scheitert danach zu Recht |
+     * | ohne Schluessel → `AUTO_INCREMENT` | „there can be only one auto column and it must be defined as a key" |
+     *
+     * `MODIFY COLUMN` ersetzt die **ganze** Deklaration: Typ und Nullbarkeit
+     * muessen mit, sonst verlieren sie sich still. Die Nullbarkeit folgt der
+     * Regel des Modells -- `required` ODER Teil des Primaerschluessels.
+     */
+    private fun renderIdentityTransition(
+        op: DiffOperation.AlterColumnGeneration,
+        ctx: MysqlDiffRenderContext,
+        table: String,
+        column: String,
+        from: ColumnGeneration?,
+        target: ColumnGeneration?,
+    ) {
+        if (from is ColumnGeneration.Computed || target is ColumnGeneration.Computed) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} swaps identity and computation on `$table`.`$column`. MySQL refuses to " +
+                    "switch a column between generated and ordinary at all (`'Changing the STORED status' " +
+                    "is not supported for generated columns`, measured against 9.7.2); recreate the column " +
+                    "manually.",
+                code = IDENTITY_COMPUTED_SWAP_NOT_SUPPORTED,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        val definition = ctx.columnsOf(table)[column]
+        if (definition == null) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} changes the identity of `$table`.`$column`, but the column is not in " +
+                    "the schema this direction reads — MODIFY COLUMN needs its type.",
+                code = IDENTITY_NEEDS_TYPE,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        val inPrimaryKey = column in ctx.primaryKeyOf(table)
+        if (target is ColumnGeneration.Identity && !inPrimaryKey) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} would make `$table`.`$column` AUTO_INCREMENT, but the column is not part " +
+                    "of the primary key. MySQL refuses that: `there can be only one auto column and it must " +
+                    "be defined as a key` (measured against 9.7.2).",
+                code = IDENTITY_NEEDS_KEY,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        val nullability = if (definition.required || inPrimaryKey) " NOT NULL" else ""
+        val autoIncrement = if (target is ColumnGeneration.Identity) " AUTO_INCREMENT" else ""
+        ctx.emit(
+            op,
+            "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN ${ctx.sql.quote(column)} " +
+                "${ctx.sql.toSql(definition.type)}$nullability$autoIncrement;",
+        )
+    }
+
 }

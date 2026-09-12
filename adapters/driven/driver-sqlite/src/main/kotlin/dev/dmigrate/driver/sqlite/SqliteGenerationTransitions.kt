@@ -1,7 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.migration.DiffOperation
-import dev.dmigrate.driver.ColumnGenerationTransition
+import dev.dmigrate.core.model.ColumnGenerationTransition
 
 /**
  * Welche `AlterColumnGeneration` auf SQLite ueber den Tabellen-Neubau laeuft --

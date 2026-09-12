@@ -1,7 +1,5 @@
-package dev.dmigrate.driver
+package dev.dmigrate.core.model
 
-import dev.dmigrate.core.model.ColumnGeneration
-import dev.dmigrate.core.model.IdentityMode
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 

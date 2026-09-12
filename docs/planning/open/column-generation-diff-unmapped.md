@@ -60,26 +60,69 @@ herstellen kann.
   wird vor dem ersten Statement benannt abgelehnt, die Tabelle bleibt
   unberuehrt.
 
+## Gebaut (2026-09-12): die Uebergaenge, die die Server wirklich koennen
+
+Vor dem Bau wurde jeder Uebergang einzeln gemessen — und zwar **durch den
+vollen Pfad**, nicht nur als Anweisung. Das war noetig: Oracles
+`MODIFY (c <typ>)` auf einer virtuellen Spalte ist gueltiges SQL, wird
+angenommen und **aendert nichts**. Eine Sonde, die nur den Spaltenwert liest,
+sieht keinen Unterschied (der Wert ist ja der gerechnete); erst der
+Post-Compare zeigte, dass die Spalte weiterhin virtuell war. Eine angenommene
+Anweisung ist noch keine wirksame.
+
+| Uebergang | PostgreSQL | MySQL | SQLite | Oracle | SQL Server |
+| --- | --- | --- | --- | --- | --- |
+| berechnet → gewoehnlich | **`DROP EXPRESSION`** (Wert bleibt) | blockt | **Neubau** (Wert bleibt) | blockt (`MODIFY` wirkt nicht) | blockt |
+| gewoehnlich → berechnet | blockt | blockt | **Neubau** (wird gerechnet) | blockt (`ORA-54026`) | blockt |
+| Identity-Modus | **`SET GENERATED …`** | — | — | **`MODIFY … AS IDENTITY`** | blockt |
+| Identity entfernen | **`DROP IDENTITY`** | **`MODIFY COLUMN`** (Schluessel) | — | **`MODIFY … DROP IDENTITY`** + `NOT NULL` | blockt |
+| Identity hinzufuegen | blockt (Sequenz kollidiert) | **`MODIFY … AUTO_INCREMENT`** (Schluessel) | — | blockt (`ORA-30673`) | blockt |
+
+Drei Dinge, die die Messung erzwungen hat:
+
+- **PostgreSQL blockt das Hinzufuegen einer Identity**, obwohl der Server die
+  Anweisung annimmt: die neue Sequenz beginnt bei 1, und der naechste `INSERT`
+  scheitert an `duplicate key value violates unique constraint`. Eine
+  Migration, die die Tabelle still unbrauchbar zuruecklaesst, wird nicht
+  gerendert. MySQL macht es von selbst richtig (der Zaehler setzt ueber dem
+  Bestand auf).
+- **Oracle nimmt der Spalte mit der Identity ihr implizites `NOT NULL`.** Ohne
+  eine zweite Anweisung endete der Lauf in Drift; der Renderer zieht den Zwang
+  nach, wenn das Soll die Spalte weiter als Pflichtfeld fuehrt.
+- **Die Umkehrbarkeit haengt am Uebergang**, nicht am Operationstyp: ein
+  Ausdruckswechsel ist umkehrbar, das Entfernen einer Identity oder einer
+  Berechnung nicht (die Gegenrichtung kann kein Server sicher). Der Mapper
+  setzt `reversibility` deshalb je Fall.
+
+**Und wo die Identity ueberhaupt steht.** PostgreSQL, MySQL und SQLite falten
+`identifier` + `auto_increment` und `generation: identity` auf dieselbe Spalte;
+ihr Reverse liefert die Typ-Schreibweise. Oracle ist der einzige, dessen
+Reverse die Identity mit ihrem Modus in `generation` zurueckgibt — dort sind
+die Identity-Uebergaenge aus einem zurueckgelesenen Schema erreichbar, anderswo
+nur aus einem handgeschriebenen Soll.
+
+**Nebenbefund, mitbehoben:** eine PostgreSQL-Identity-Spalte, die **nicht** im
+Primaerschluessel liegt und kein `bigint` ist, verlor ihre Identity im Reverse
+vollstaendig (`type=Integer, generation=null, default=null`) — ein
+`schema generate` daraus erzeugte eine Spalte ohne Generator. Zwei Zweige des
+Typ-Mappers fingen sie nicht: der eine nur `bigint`, der andere nur den
+Primaerschluessel.
+
 ## Was offen bleibt
 
-**Die Uebergaenge ausfuehren, die die Server annehmen** — je Dialekt und je
-Richtung, nach der Tabelle oben. Zu klaeren wie beim Ausdrucksfall:
-
-- **Umkehrung und Risikoprofil je Richtung.** Identity zu entfernen ist
-  ueberall leichter als sie hinzuzufuegen; `DROP EXPRESSION` behaelt die
-  gespeicherten Werte als gewoehnliche Daten (PostgreSQL, gemessen) — ob das die
-  gewuenschte Semantik ist, ist eine Zusage, keine Mechanik.
+- **PostgreSQLs `ADD GENERATED … AS IDENTITY` sauber fahren.** Es braeuchte ein
+  Nachziehen der Sequenz auf `max(spalte)` — eine **Daten**anweisung im
+  DDL-Plan, und damit eine eigene Entscheidung (sie beruehrt denselben
+  Sequenzstand, um den sich das Preserve-Fenster kuemmert).
+- **Der Kind-Wechsel auf MySQL, Oracle und SQL Server.** Alle drei lehnen ihn in
+  place ab; der Weg waere ein Spaltentausch mit Datenkopie, also ein eigener
+  Operationstyp mit eigenem Risikoprofil.
 - **Das Verhaeltnis zu `AlterColumnType`.** Der Weg ueber den Typ
-  (`integer` → `identifier`) funktioniert heute und ist der dokumentierte;
-  beide Schreibweisen wuerden denselben Uebergang ausdruecken.
-- **Die Vorbedingung auf PostgreSQL.** `ADD GENERATED … AS IDENTITY` verlangt
-  `NOT NULL` vorher — also eine zweite Operation in derselben Anweisungsfolge,
-  mit allem, was Reihenfolge und Umkehrung daran kostet.
-- **SQL Server bleibt ungemessen** fuer die beiden Identity-Richtungen; dort ist
-  ohnehin ein Neubau der einzige Weg.
+  (`integer` → `identifier`) funktioniert und ist dokumentiert; auf drei
+  Dialekten ist er der einzige, der aus einem zurueckgelesenen Schema
+  entsteht.
 
 ## Aktivierungsbedingung
 
-Unveraendert: ein belegter Bedarf, die Erzeugungsart **ohne** Typwechsel
-umzustellen. Neu ist, dass der Fall nicht mehr still ist — er endet mit einer
-benannten Meldung, die den Weg nennt, den der Server kann.
+Fuer die Restfläche: ein belegter Bedarf. Was gebaut ist, laeuft; was blockt,
+sagt den gemessenen Grund und nennt den Weg, den der Server kann.

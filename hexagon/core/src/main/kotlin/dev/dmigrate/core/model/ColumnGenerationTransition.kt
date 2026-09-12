@@ -1,6 +1,4 @@
-package dev.dmigrate.driver
-
-import dev.dmigrate.core.model.ColumnGeneration
+package dev.dmigrate.core.model
 
 /**
  * Was eine `AlterColumnGeneration` eigentlich aendert.

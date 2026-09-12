@@ -218,8 +218,29 @@ am Server — gemessen, nicht der Doku entnommen:
 | Oracle | `MODIFY (… GENERATED ALWAYS AS (…) VIRTUAL)` | nur virtuell **und** ohne Index (`ORA-54022`); materialisiert nie (`ORA-54060`) |
 | SQL Server | — | blockt; T-SQL kennt kein `ALTER COLUMN … AS (…)`, und `DROP`+`ADD` lässt eine Sicht darüber still zerbrechen |
 
-Eine Spalte **von** berechnet auf gewöhnlich zurückzustellen, rendert kein
-Dialekt: das ändert, was die Spalte *ist*, nicht wie sie gefüllt wird.
+**Die Erzeugungsart einer Spalte ändern** — berechnet ↔ gewöhnlich, Identity
+hinzufügen, entfernen oder ihren Modus wechseln. Auch das hängt am Server, und
+auch hier gilt: gemessen, nicht angenommen.
+
+| Übergang | PostgreSQL | MySQL | SQLite | Oracle | SQL Server |
+| --- | --- | --- | --- | --- | --- |
+| berechnet → gewöhnlich | `ALTER COLUMN … DROP EXPRESSION`; der gespeicherte Wert bleibt als Daten stehen | blockt (`'Changing the STORED status' is not supported`) | Tabellen-Neubau; der gerechnete Wert wird übernommen | blockt: das `MODIFY` wird **angenommen** und ändert nichts — die Spalte bleibt virtuell | blockt (`Cannot alter column … because it is 'COMPUTED'`) |
+| gewöhnlich → berechnet | blockt (`is not a generated column`) | blockt (dieselbe Meldung) | Tabellen-Neubau; die Spalte bleibt aus dem `INSERT` und wird gerechnet | blockt (`ORA-54026`) | blockt (Syntaxfehler) |
+| Identity-Modus (`always` ↔ `by_default`) | `ALTER COLUMN … SET GENERATED …` | — (MySQL kennt keinen Modus) | — (Identity steckt im Typ) | `MODIFY (… GENERATED … AS IDENTITY)` | blockt (Syntaxfehler) |
+| Identity entfernen | `DROP IDENTITY` | `MODIFY COLUMN …` ohne `AUTO_INCREMENT` (Schlüsselspalte) | — (Identity steckt im Typ) | `MODIFY (… DROP IDENTITY)`, **plus** `NOT NULL`, das Oracle sonst mitnimmt | blockt: `ALTER COLUMN` läuft, lässt `IsIdentity` aber stehen |
+| Identity hinzufügen | blockt: die neue Sequenz beginnt bei 1 und der nächste `INSERT` kollidiert | `MODIFY COLUMN … AUTO_INCREMENT` (nur Schlüsselspalte; der Zähler setzt über dem Bestand auf) | — | blockt (`ORA-30673`) | blockt (Syntaxfehler) |
+
+Zwei Regeln stecken darin, die über die Tabelle hinausgehen:
+
+- **Eine angenommene Anweisung ist noch keine wirksame.** Oracles `MODIFY` auf
+  einer virtuellen Spalte ist gültiges SQL und tut nichts; sichtbar wird das
+  erst, wenn der Lauf danach zurückliest. Deshalb steht in dieser Tabelle nur,
+  was durch den vollen Pfad belegt ist.
+- **Wo die Identity im Typ steckt** (`identifier` + `auto_increment`), ist
+  `generation` nicht der Weg: PostgreSQL, MySQL und SQLite falten beide
+  Schreibweisen auf dieselbe Spalte, und SQLite führt sie ausschließlich im
+  Typ. Der dokumentierte Weg ist dort die Typangabe. Oracle ist der einzige,
+  dessen Reverse die Identity mit ihrem Modus in `generation` zurückgibt.
 
 Ob eine Änderung überhaupt **feststeht**, entscheidet vorher die Herkunft oder
 der Sandkasten (`W137`, wenn nicht entscheidbar) — siehe

@@ -6,6 +6,8 @@ import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.core.model.ColumnGenerationTransition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
@@ -554,8 +556,42 @@ internal object OperationMapper {
                 objectRef = ref,
                 before = it.before,
                 after = it.after,
+                reversibility = generationReversibility(it.before, it.after),
             )
         }
+    }
+
+    /**
+     * Die Umkehrbarkeit einer Generationsaenderung haengt am **Uebergang**, nicht
+     * am Operationstyp — gemessen an allen fuenf Zielen:
+     *
+     * - Ein **Ausdruckswechsel** ist umkehrbar: den alten Ausdruck
+     *   zurueckzuschreiben ist derselbe Befehl mit anderem Text.
+     * - Eine berechnete Spalte **gewoehnlich** zu machen ist es **nicht**: die
+     *   Gegenrichtung (gewoehnlich → berechnet) kann kein Server in place.
+     * - Den Identity-**Modus** zu wechseln ist umkehrbar (PostgreSQL
+     *   `SET GENERATED …`, Oracle `MODIFY … AS IDENTITY`).
+     * - Identity zu **entfernen** ist es nicht: sie wieder hinzuzufuegen
+     *   scheitert auf Oracle (`ORA-30673`) und auf SQL Server an der Syntax,
+     *   und auf PostgreSQL startet die neue Sequenz bei 1 — der naechste
+     *   `INSERT` kollidiert mit dem Bestand (live gemessen).
+     *
+     * Eine falsche Zusage hier waere teuer: sie entscheidet, ob ein Lauf ein
+     * Rollback-Artefakt verspricht, das den Zustand nicht wiederherstellt.
+     */
+    private fun generationReversibility(
+        before: ColumnGeneration?,
+        after: ColumnGeneration?,
+    ): Reversibility = when (ColumnGenerationTransition.of(before, after)) {
+        ColumnGenerationTransition.COMPUTED_EXPRESSION -> Reversibility.AUTOMATIC
+        ColumnGenerationTransition.COMPUTED_ADDED -> Reversibility.AUTOMATIC
+        ColumnGenerationTransition.COMPUTED_DROPPED -> Reversibility.NOT_REVERSIBLE
+        ColumnGenerationTransition.IDENTITY ->
+            if (before is ColumnGeneration.Identity && after is ColumnGeneration.Identity) {
+                Reversibility.AUTOMATIC
+            } else {
+                Reversibility.NOT_REVERSIBLE
+            }
     }
 
     private fun mapTableConstraints(table: TableDiff, ops: MutableList<DiffOperation>) {

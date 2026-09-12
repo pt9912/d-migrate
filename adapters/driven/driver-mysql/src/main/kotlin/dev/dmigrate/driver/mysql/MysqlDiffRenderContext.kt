@@ -245,6 +245,17 @@ internal class MysqlDiffRenderContext(
         return schema?.tables?.get(table)?.columns.orEmpty()
     }
 
+    /**
+     * Der Primaerschluessel von [table] auf derselben Seite. MySQL laesst
+     * `AUTO_INCREMENT` nur auf einer Schluesselspalte zu ("there can be only
+     * one auto column and it must be defined as a key", gemessen) -- der
+     * Renderer muss das vor dem Emittieren wissen.
+     */
+    fun primaryKeyOf(table: String): List<String> {
+        val schema = if (direction == MysqlRenderDirection.UP) desiredSchema else currentSchema
+        return schema?.tables?.get(table)?.primaryKey.orEmpty()
+    }
+
     fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {
         val schema = if (direction == MysqlRenderDirection.UP) desiredSchema else currentSchema
         val columns = schema?.tables?.get(table)?.columns.orEmpty()

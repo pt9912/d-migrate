@@ -206,10 +206,17 @@ sealed interface DiffOperation {
      * (`ORA-54022`). Wer das an einer Typaenderung mitfuehrte, verstoepselte
      * zwei Entscheidungen, die getrennt gehoeren.
      *
-     * **Umkehrbar, aber nicht billig.** Den alten Ausdruck zurueckzuschreiben
-     * ist mechanisch und verliert nichts — gespeicherte Werte entstehen neu.
-     * Was es kostet, ist die erneute Neuschreibung der Tabelle unter
-     * exklusiver Sperre; das steht in [risks], nicht in der Umkehrbarkeit.
+     * **Umkehrbarkeit haengt am Uebergang, nicht am Operationstyp.** Einen
+     * Ausdruck zurueckzuschreiben ist mechanisch und verliert nichts —
+     * gespeicherte Werte entstehen neu. Eine berechnete Spalte gewoehnlich zu
+     * machen oder eine Identity zu entfernen ist dagegen **nicht** automatisch
+     * umkehrbar; der Mapper setzt [reversibility] deshalb je Uebergang
+     * ([ColumnGenerationTransition]).
+     *
+     * Ebenso [risks]: eine **Ausdrucks**aenderung schreibt die Tabelle unter
+     * exklusiver Sperre neu, eine Identity-Aenderung nicht. Das Feld bleibt
+     * bewusst auf der vorsichtigen Seite (Bestaetigung fuer beide Richtungen) —
+     * zu viel zu fragen ist harmlos, zu wenig nicht.
      */
     data class AlterColumnGeneration(
         override val id: String,

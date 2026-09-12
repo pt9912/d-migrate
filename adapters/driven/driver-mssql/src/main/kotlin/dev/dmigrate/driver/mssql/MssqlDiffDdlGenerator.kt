@@ -1,9 +1,9 @@
 package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.ColumnGenerationTransition
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.Reversibility
-import dev.dmigrate.driver.ColumnGenerationTransition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.DiffDdlGenerator
