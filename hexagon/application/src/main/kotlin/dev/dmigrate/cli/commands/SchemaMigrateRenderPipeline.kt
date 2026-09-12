@@ -100,6 +100,12 @@ internal class SchemaMigrateRenderPipeline(
      * [MigrationPreflightPlanner.plan] still flow through.
      */
     private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
+    /**
+     * Das Urteil ueber rohen Ausdruckstext. Vom treibenden CLI gebunden; ohne
+     * Bindung prueft der Lauf nicht — dieselbe Bauweise wie bei den
+     * Preflight-Sonden darueber.
+     */
+    private val rawSqlPortability: RawSqlPortabilityFn? = null,
 ) {
 
     fun run(
@@ -137,7 +143,10 @@ internal class SchemaMigrateRenderPipeline(
             request, dialect, outcomes, preflightPlan, serverVersion, routineCapabilityResolver,
         )
         val renderedUp = renderUp(effectivePlan, overlayPreflight, renderer, renderOptions, outcomes)
-        val effectiveUp = MigrateDestructiveGuard.apply(renderedUp, request.allowDestructive)
+        // Hinter allen fuenf Renderern: was keiner von ihnen als fremden
+        // Rohtext erkannt hat, faellt hier auf, bevor irgendetwas angewandt ist.
+        val guardedUp = MigrateRawSqlPortabilityGuard.apply(renderedUp, effectivePlan, dialect, rawSqlPortability)
+        val effectiveUp = MigrateDestructiveGuard.apply(guardedUp, request.allowDestructive)
 
         val renderedDown = if (request.generateRollback && !overlayPreflight.hasBlockers) {
             cancellationToken.throwIfCancellationRequested()

@@ -115,6 +115,11 @@ class SchemaMigrateRunner(
      * [MysqlSequenceCanonicityStage] for skip semantics.
      */
     private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
+    /**
+     * Das Urteil ueber rohen Ausdruckstext gegen den Zieldialekt. Vom
+     * treibenden CLI gebunden; ohne Bindung prueft der Lauf nicht.
+     */
+    private val rawSqlPortability: RawSqlPortabilityFn? = null,
     private val postApplyStatusProbe: PostApplyStatusProbeFn? = null,
     /**
      * Der Wegwerf-Sandkasten, wo keine Herkunft vorliegt. `null` = nicht
@@ -185,6 +190,7 @@ class SchemaMigrateRunner(
         sqliteCastPreflightProbe = sqliteCastPreflightProbe,
         checkPreflightProbe = checkPreflightProbe,
         mysqlSequenceCanonicityProbe = mysqlSequenceCanonicityProbe,
+        rawSqlPortability = rawSqlPortability,
     )
 
     private val executionStage = SchemaMigrateExecutionStage(

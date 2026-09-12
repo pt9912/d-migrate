@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`schema migrate` hält an, bevor ein Ausdruck aus einem fremden Dialekt an
+  den Server geht.** Der generate-Pfad prüft rohen Ausdruckstext auf allen fünf
+  Dialekten; der Migrationspfad tat es für PostgreSQL, MySQL und SQLite nicht —
+  ihre Diff-Renderer bauen die Spaltenzeile selbst, SQLite zusätzlich im
+  Tabellen-Neubau. Ein PostgreSQL-Ausdruck lief damit bis zum Server und
+  scheiterte dort, mitten in einer Folge bereits angewandter Anweisungen
+  (gemessen: Exit 5 mit Post-Compare-Drift).
+
+  Geprüft wird jetzt **hinter allen fünf Renderern**, über die Operationen, die
+  wirklich gerendert wurden — und zwar an allen Stellen, an denen roher Text in
+  eine Anweisung gerät: CHECK-Ausdruck, Index-Prädikat, Ausdrucks-Schlüssel,
+  Berechnung einer Spalte und Funktions-Default. Findet sich einer, blockt der
+  Lauf (`E053`, Exit 8), und es ist nichts angewandt.
+
 ### Added
 
 - **`--target-version` sagt, für welchen Server erzeugt wird** — auf

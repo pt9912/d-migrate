@@ -2439,6 +2439,11 @@ Zurücklesen wiederfinden.
   Die Spalte entsteht als gewöhnliche, und der Lauf meldet **E053** mit dem
   Grund. Übersetzt wird der Text nicht — dafür bräuchte es einen SQL-Parser je
   Dialekt.
+- **Bei `schema migrate` wird stattdessen geblockt.** Dort geht die Anweisung
+  sofort an den Server; ihn ablehnen zu lassen hieße, mitten in einer Folge
+  bereits angewandter Anweisungen abzubrechen. Der Lauf hält vorher an
+  (Exit 8), und es ist nichts angewandt. Dasselbe gilt für einen CHECK, ein
+  Index-Prädikat und einen Funktions-Default aus einem fremden Dialekt.
 - **`stored: false` braucht auf PostgreSQL Version 18 oder neuer.** Bis 17 gibt
   es die virtuelle Form dort nicht. Kennt d-migrate die Zielversion (also immer,
   wenn es gegen eine Datenbank arbeitet), rendert es die Form, die diese Version
