@@ -32,9 +32,11 @@ internal object OracleMetadataQueries {
 
     /**
      * [indices] traegt auch Indizes ueber einem Ausdruck, den das neutrale
-     * Modell als `IndexColumn.expression` fuehrt. Oracle
-     * fuehrt an ihrer Stelle eine unsichtbare Systemspalte (`SYS_NC00006$`);
-     * den echten Ausdruck liefert `ALL_IND_EXPRESSIONS`.
+     * Modell als `IndexColumn.expression` fuehrt. Oracle fuehrt an ihrer Stelle
+     * eine unsichtbare Systemspalte (`SYS_NC00006$`); den echten Ausdruck
+     * liefert `ALL_IND_EXPRESSIONS`. Dass dort eine Zeile steht, heisst
+     * allerdings noch nicht, dass der Schluessel ein Ausdruck ist — siehe
+     * `resolveIndexColumns`.
      */
     data class IndexScan(
         val indices: List<IndexProjection>,
@@ -347,9 +349,29 @@ internal object OracleMetadataQueries {
     data class ResolvedKey(val text: String, val isExpression: Boolean)
 
     /**
-     * Loest die Schluesselspalten eines Index auf. Ein Ausdruck, der nur aus
-     * einem zitierten Bezeichner besteht, IST die Spalte — so sieht ein
-     * DESC-Index von innen aus; alles andere bleibt ein Ausdruck.
+     * Loest die Schluesselspalten eines Index auf.
+     *
+     * **Eine Zeile in `ALL_IND_EXPRESSIONS` heisst nicht, dass der Schluessel
+     * ein Ausdruck ist.** Oracle fuehrt einen Index ueber einer **virtuellen
+     * Spalte** als `FUNCTION-BASED NORMAL` und legt dort seine Berechnung ab —
+     * `ALL_IND_COLUMNS` nennt aber die **echte** Spalte. Gemessen an Oracle 23:
+     *
+     * ```
+     * all_ind_columns:      ix_total → line_total        ix_nm → SYS_NC00005$
+     * all_ind_expressions:   ix_total → "quantity"*"unit_price"
+     *                        ix_nm    → UPPER("nm")
+     * all_indexes:           beide    → FUNCTION-BASED NORMAL
+     * ```
+     *
+     * Wer allein auf die Ausdruckszeile hoert, meldet `ix_total` als
+     * Ausdrucks-Index — und ein Soll mit `columns: [line_total]` konvergiert
+     * nie. **Oracle selbst sagt, welcher Fall vorliegt:** nur wo der Schluessel
+     * eine unsichtbare Systemspalte ist (`SYS_NC…`), steht der echte in der
+     * Ausdruckszeile.
+     *
+     * Die zweite Pruefung bleibt als Rueckfall: ein Ausdruck, der nur aus einem
+     * zitierten Bezeichner besteht, IST die Spalte — so sieht ein DESC-Index
+     * von innen aus.
      */
     private fun resolveIndexColumns(
         indexName: String,
@@ -357,8 +379,11 @@ internal object OracleMetadataQueries {
         expressions: Map<Pair<String, Int>, String>,
     ): List<ResolvedKey> = group.map { row ->
         val position = (row["column_position"] as Number).toInt()
+        val columnName = row.string("column_name")
         val expression = expressions[indexName to position]
-            ?: return@map ResolvedKey(row.string("column_name"), isExpression = false)
+        if (expression == null || !isSystemGenerated(columnName)) {
+            return@map ResolvedKey(columnName, isExpression = false)
+        }
         val plainColumn = PLAIN_COLUMN_EXPRESSION.matchEntire(expression.trim())
             ?.groupValues?.get(1)?.replace("\"\"", "\"")
         if (plainColumn != null) {
@@ -367,6 +392,14 @@ internal object OracleMetadataQueries {
             ResolvedKey(expression.trim(), isExpression = true)
         }
     }
+
+    /**
+     * Die unsichtbare Spalte, die Oracle fuer einen echten Ausdrucks-Index
+     * anlegt (`SYS_NC00005$`). Ein Anwender kann eine Spalte nicht so nennen:
+     * `SYS_`-Praefixe sind dem Server vorbehalten.
+     */
+    private fun isSystemGenerated(columnName: String): Boolean =
+        columnName.startsWith("SYS_NC") && columnName.endsWith("$")
 
     /**
      * Ein Ausdruck, der NUR aus einem zitierten Bezeichner besteht. Oracle

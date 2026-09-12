@@ -368,7 +368,7 @@ eingeschalteter `DROP`+`ADD`-Weg waere ein eigener Schnitt mit eigener Option.
 **Nebenbefund, eigenes Ticket:** ein Index auf einer virtuellen Oracle-Spalte
 kommt als **Ausdrucks**-Index zurueck (Oracle legt ihn funktionsbasiert an).
 Ein Soll, das ihn als Spaltenindex fuehrt, konvergiert deshalb nie —
-[`oracle-index-auf-virtueller-spalte.md`](oracle-index-auf-virtueller-spalte.md).
+[`oracle-index-auf-virtueller-spalte.md`](../done/oracle-index-auf-virtueller-spalte.md).
 Solange das so ist, sucht der Oracle-Renderer **beide** Formen, sonst fiele
 seine Vorab-Blockade auf einem zurueckgelesenen Schema ins Leere.
 

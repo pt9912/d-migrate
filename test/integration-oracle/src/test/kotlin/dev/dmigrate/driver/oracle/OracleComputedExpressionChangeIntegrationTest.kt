@@ -75,14 +75,15 @@ class OracleComputedExpressionChangeIntegrationTest : FunSpec({
     val serverForm = """"quantity"*"unit_price""""
     val doubled = """"quantity" * "unit_price" * 2"""
     /**
-     * Der Index steht hier in der Form, in der Oracle ihn **zurueckgibt**:
-     * ueber einer virtuellen Spalte legt der Server einen Ausdrucks-Index an,
-     * und der Reverse liest ihn aus `ALL_IND_EXPRESSIONS` (gemessen). Stuende
-     * er hier als Spaltenindex, plante jeder Lauf ihn erneut.
+     * Der Index steht hier als **Spaltenindex** — so, wie ein Anwender ihn
+     * schreibt. Bis der Leser Oracles Doppelbuchfuehrung auflöste
+     * (`ALL_IND_COLUMNS` nennt die echte Spalte, `ALL_IND_EXPRESSIONS` traegt
+     * trotzdem eine Zeile), musste hier die Serverform stehen, sonst plante
+     * jeder Lauf ihn erneut.
      */
     val indexed = IndexDefinition(
         name = "ix_ocl_total",
-        columns = listOf(IndexColumn(name = serverForm, expression = serverForm)),
+        columns = listOf(IndexColumn("line_total")),
     )
 
     fun table(expression: String, stored: Boolean, indices: List<IndexDefinition>) = TableDefinition(

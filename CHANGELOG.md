@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Ein Index auf einer virtuellen Oracle-Spalte kommt als Spaltenindex
+  zurück** — so, wie er geschrieben wurde. Bisher als Ausdrucks-Index, weshalb
+  ein Soll mit `columns: [line_total]` **nie** konvergierte: jeder Vergleich
+  meldete denselben Unterschied, und `schema migrate --execute` endete im
+  Post-Compare mit Drift.
+
+  Die Ursache lag im Leser, nicht im Server. Oracle führt einen solchen Index
+  als `FUNCTION-BASED NORMAL` und schreibt die Berechnung nach
+  `ALL_IND_EXPRESSIONS` — nennt in `ALL_IND_COLUMNS` aber die **echte** Spalte.
+  Eine unsichtbare `SYS_NC…` steht dort nur beim *echten* Ausdrucks-Index. Der
+  Leser hörte allein darauf, *ob* eine Ausdruckszeile existiert, und ersetzte
+  damit einen brauchbaren Spaltennamen. Er fragt jetzt zuerst Oracles eigene
+  Auskunft.
+
+  Nachgemessen: Oracle ist damit allein — auf PostgreSQL, MySQL, SQL Server und
+  SQLite kommt derselbe Index schon immer als Spaltenindex zurück.
+
 ### Changed
 
 - **Eine Frage, eine Stelle: „kann das Ziel das?"** Die beiden letzten

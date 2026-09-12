@@ -435,13 +435,13 @@ internal object OracleDiffTableOps {
      * gesucht: einer, den derselbe Lauf erst anlegt, blockiert genauso wie
      * einer, der schon da ist.
      *
-     * **Zwei Formen, weil Oracle die Spalte nicht so zurueckgibt, wie man sie
-     * anlegt.** `CREATE INDEX … ("line_total")` ueber einer virtuellen Spalte
-     * legt Oracle als **Ausdrucks**-Index an; der Reverse liest ihn aus
-     * `ALL_IND_EXPRESSIONS` und meldet ihn als
-     * `columns=[expr:"quantity"*"unit_price"]`, nicht als Spalte (gemessen).
-     * Wer nur nach dem Spaltennamen sucht, findet auf einem zurueckgelesenen
-     * Schema also nichts — und der Lauf liefe in `ORA-54022`.
+     * **Zwei Formen, weil ein Ausdruck dieselbe Spalte meinen kann.** Der
+     * Reverse gibt einen Index ueber einer virtuellen Spalte inzwischen als
+     * Spaltenindex zurueck — Oracles Doppelbuchfuehrung ist im Leser
+     * aufgeloest —, sodass die Suche nach dem Namen den Regelfall trifft. Die
+     * zweite Form bleibt fuer das von Hand geschriebene Soll: wer den Index
+     * absichtlich als Ausdruck fuehrt, der wortgleich die Berechnung der Spalte
+     * ist, hat denselben Index gemeint.
      *
      * Ein Ausdrucks-Index, der die Spalte **anders** nennt als ihre eigene
      * Berechnung (`UPPER("line_total")`), faellt weiterhin durch: das zu sehen

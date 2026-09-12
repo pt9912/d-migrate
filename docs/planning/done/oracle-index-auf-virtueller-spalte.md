@@ -1,10 +1,52 @@
 ---
 id: oracle-index-auf-virtueller-spalte
 title: "Ein Index auf einer virtuellen Oracle-Spalte kommt als Ausdrucks-Index zurück"
-status: open
+status: done
 ---
 
 # Ein Index auf einer virtuellen Oracle-Spalte kommt als Ausdrucks-Index zurück
+
+## Behoben (2026-09-12) — und die erste Erklärung war falsch
+
+Der Befund unten stimmt in seiner Wirkung und **nicht in seiner Ursache**. Er
+sagte, Oracle ersetze die Spalte durch eine unsichtbare Systemspalte
+(`SYS_NC0000n$`) und der echte Schlüssel stehe nur in `ALL_IND_EXPRESSIONS`.
+Nachgemessen, beide Sichten nebeneinander:
+
+```
+all_ind_columns:       ix_total -> line_total          ix_nm -> SYS_NC00005$
+all_ind_expressions:   ix_total -> "quantity"*"unit_price"
+                       ix_nm    -> UPPER("nm")
+all_indexes:           beide    -> FUNCTION-BASED NORMAL
+```
+
+`ALL_IND_COLUMNS` nennt für den Index über der virtuellen Spalte die **echte
+Spalte**. Eine `SYS_NC…` steht dort nur beim *echten* Ausdrucks-Index. Oracle
+führt beide Bücher — und sagt damit selbst, welcher Fall vorliegt.
+
+**Der Fehler lag also im Leser, nicht im Server:** `resolveIndexColumns` hörte
+allein darauf, *ob* eine Zeile in `ALL_IND_EXPRESSIONS` existiert. Für einen
+Index über einer virtuellen Spalte existiert sie — und damit wurde ein
+brauchbarer Spaltenname durch einen Ausdruck ersetzt. Die Prüfung fragt jetzt
+zuerst, ob der Schlüssel eine Systemspalte ist; nur dann steht der echte in der
+Ausdruckszeile.
+
+**Was das für den vorgeschlagenen Schnitt bedeutet.** „Der Leser könnte einen
+Ausdrucks-Index, dessen Ausdruck wortgleich der Berechnung einer Spalte
+entspricht, wieder als Spaltenindex melden" — dieser Weg war gebaut und wurde
+**wieder entfernt**, als die Messung den einfacheren Ort zeigte. Er hätte
+funktioniert, aber auf einem Textvergleich beruht, wo Oracle eine eindeutige
+Auskunft gibt. Die Gegenrichtung (`UPPER("nm")` bleibt ein Ausdruck) ist damit
+nicht mehr eine Bedingung, die man einhalten muss, sondern fällt von selbst
+heraus.
+
+**Die zweite offene Frage ist gemessen:** Oracle ist allein. Auf PostgreSQL,
+MySQL, SQL Server und SQLite kommt derselbe Index als Spaltenindex zurück —
+alle vier nachgemessen, nicht geschlossen.
+
+Live belegt (`OracleVirtualColumnIndexIntegrationTest`): die Doppelbuchführung
+selbst, die zurückgegebene Spalte, der echte Ausdrucks-Index daneben, und ein
+handgeschriebenes Soll mit `columns: [line_total]`, das jetzt konvergiert.
 
 ## Der Befund (gemessen 2026-09-12, Oracle 23)
 
@@ -75,5 +117,5 @@ kann die zweite Suche dort wieder entfallen.
 ## Herkunft
 
 Nebenbefund beim Bau des Slice
-[`generated-column-expression-dropped.md`](generated-column-expression-dropped.md),
+[`generated-column-expression-dropped.md`](../open/generated-column-expression-dropped.md),
 gemessen an Oracle 23 über den Reverse.
