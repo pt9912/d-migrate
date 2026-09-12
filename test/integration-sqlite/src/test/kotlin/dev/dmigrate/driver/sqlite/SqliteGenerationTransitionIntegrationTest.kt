@@ -19,11 +19,16 @@ import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import kotlin.io.path.createTempDirectory
 
 /**
- * Was auf SQLite geschieht, wenn ein Soll die **Identity** einer Spalte ueber
- * `generation` aendert.
+ * Die Generationsuebergaenge auf SQLite — der Dialekt ohne `ALTER COLUMN`, der
+ * jede Spaltenaenderung ueber den Tabellen-Neubau faehrt.
+ *
+ * **Zwei Faelle, zwei Antworten.** Den Wechsel berechnet ↔ gewoehnlich kann der
+ * Neubau (und tut es, unten belegt); die **Identity** kann er nicht — sie
+ * steckt hier im Spaltentyp.
  *
  * **Dort steckt die Identity nicht.** Der Reverse liefert sie als
  * Spalten**typ** (`Identifier(autoIncrement = true)`, gerendert als
@@ -38,7 +43,7 @@ import kotlin.io.path.createTempDirectory
  * Post-Compare meldete Drift (Exit 5). Ein Neubau fuer nichts -- teurer und
  * riskanter als eine benannte Ablehnung.
  */
-class SqliteIdentityTransitionIntegrationTest : FunSpec({
+class SqliteGenerationTransitionIntegrationTest : FunSpec({
 
     beforeSpec { DatabaseDriverRegistry.register(SqliteDriver()) }
 
@@ -129,11 +134,84 @@ class SqliteIdentityTransitionIntegrationTest : FunSpec({
             val (exit, lines) = migrate(pool, want)
 
             // MANUAL_ACTION_REQUIRED, nicht Drift: der Lauf sagt es vorher.
-            exit shouldBe 0
+            exit shouldBe 8
             withClue(lines.joinToString(" | ")) {
-                lines.any { it.contains("__dmg_rebuild_") } shouldBe true
+                lines.none { it.contains("__dmg_rebuild_") } shouldBe true
             }
             tableSql(pool) shouldBe "CREATE TABLE counters (id INTEGER PRIMARY KEY, label TEXT)"
+        }
+    }
+
+    /**
+     * Der Neubau kann den Kind-Wechsel: die Spalte verliert ihre Berechnung
+     * und **behaelt den gerechneten Wert** als gewoehnliche Daten — er steht in
+     * der `INSERT … SELECT`-Spaltenliste des Neubaus.
+     */
+    test("a computed column becomes an ordinary one, and keeps the value it had") {
+        newPool(
+            "CREATE TABLE counters (id INTEGER PRIMARY KEY, qty INTEGER NOT NULL, " +
+                "total INTEGER GENERATED ALWAYS AS (qty * 2) STORED)",
+        ).use { pool ->
+            pool.borrow().asJdbc().use { c ->
+                c.createStatement().use { it.execute("INSERT INTO counters (id, qty) VALUES (1, 21)") }
+            }
+            val live = liveSchema(pool)
+            val col = live.tables.getValue("counters").columns.getValue("total")
+            val want = live.copy(
+                tables = live.tables.mapValues { (_, t) ->
+                    t.copy(columns = LinkedHashMap(t.columns).also { it["total"] = col.copy(generation = null) })
+                },
+            )
+
+            val (exit, lines) = migrate(pool, want)
+
+            withClue(lines.joinToString(" | ")) { exit shouldBe 0 }
+            tableSql(pool) shouldNotContain "GENERATED ALWAYS"
+            pool.borrow().asJdbc().use { c ->
+                c.createStatement().use { st ->
+                    st.executeQuery("SELECT total FROM counters WHERE id = 1").use { rs ->
+                        rs.next() shouldBe true
+                        rs.getInt(1) shouldBe 42
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Und die Gegenrichtung: die Spalte bleibt aus der `INSERT`-Liste des
+     * Neubaus heraus, SQLite rechnet sie neu — der alte Wert (7) wird durch den
+     * gerechneten (42) ersetzt, was das Soll genau so verlangt.
+     */
+    test("an ordinary column becomes computed, and the server recomputes it") {
+        newPool("CREATE TABLE counters (id INTEGER PRIMARY KEY, qty INTEGER NOT NULL, total INTEGER)").use { pool ->
+            pool.borrow().asJdbc().use { c ->
+                c.createStatement().use { it.execute("INSERT INTO counters (id, qty, total) VALUES (1, 21, 7)") }
+            }
+            val live = liveSchema(pool)
+            val col = live.tables.getValue("counters").columns.getValue("total")
+            val want = live.copy(
+                tables = live.tables.mapValues { (_, t) ->
+                    t.copy(
+                        columns = LinkedHashMap(t.columns).also {
+                            it["total"] = col.copy(generation = ColumnGeneration.Computed("qty * 2", stored = true))
+                        },
+                    )
+                },
+            )
+
+            val (exit, lines) = migrate(pool, want)
+
+            withClue(lines.joinToString(" | ")) { exit shouldBe 0 }
+            tableSql(pool) shouldContain "GENERATED ALWAYS AS (qty * 2) STORED"
+            pool.borrow().asJdbc().use { c ->
+                c.createStatement().use { st ->
+                    st.executeQuery("SELECT total FROM counters WHERE id = 1").use { rs ->
+                        rs.next() shouldBe true
+                        rs.getInt(1) shouldBe 42
+                    }
+                }
+            }
         }
     }
 
