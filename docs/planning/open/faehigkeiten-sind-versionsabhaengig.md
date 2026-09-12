@@ -27,7 +27,7 @@ Stellen mit **drei verschiedenen Mustern**:
 | --- | --- | --- |
 | `ServerVersion` (sealed) | `hexagon/ports-read` | Oracles `supportsDropIfExists` (23+), MySQLs CHECK-Enforcement |
 | `RoutineCapability` + `minServerVersion` | `hexagon/ports-read`, CLI-überschreibbar | Routinen je Kind und Serverversion |
-| Ad-hoc-Schwelle im Renderer | je Adapter | `CREATE OR REPLACE TRIGGER` ab PG 14, `GREATEST` ab SQL Server 2022, `RENAME COLUMN` ab SQLite 3.25 |
+| Ad-hoc-Schwelle im Renderer | je Adapter | **widerlegt** — siehe „Die bestehenden Muster einsammeln“: keines der drei Beispiele ist eine Schwelle im Dialekt-Code |
 
 Ein vierter Ad-hoc-Fall wäre der Auslöser oben. Genau das soll dieser Slice
 verhindern.
@@ -164,21 +164,65 @@ Drei Kandidaten sind schon benannt und kosten keine Suche mehr:
 **Nicht-Scope von B:** die Fähigkeiten umzustellen. B erhebt nur, was
 umzustellen ist.
 
-### C — Die drei bestehenden Muster einsammeln
+### C — Die bestehenden Muster einsammeln
 
-Ein `ServerVersion` neben einer version-blinden Tabelle ist die eigentliche
-Unstimmigkeit. Nach A gibt es einen Ort für die Frage „kann das Ziel das?", und
-die Ad-hoc-Schwellen in den Renderern (`CREATE OR REPLACE TRIGGER` ab PG 14,
-`GREATEST` ab SQL Server 2022, `RENAME COLUMN` ab SQLite 3.25) wandern dorthin
-— jede mit ihrer Messung, keine auf Verdacht.
+**Nachgemessen (2026-09-12), und die Aufzählung oben war falsch.** Vor dem Bau
+einmal durchgesehen, welche Ad-hoc-Schwellen es wirklich gibt — von den drei
+genannten hält keine stand:
 
-**Ausdrücklich offen gelassen:** ob `RoutineCapability` mit hineingehört. Es hat
-einen CLI-Override, den die Tabelle nicht kennt; das zusammenzulegen ist ein
-eigener Entwurf und kein Nebenprodukt.
+| Genannt | Befund |
+| --- | --- |
+| `CREATE OR REPLACE TRIGGER` ab PG 14 | **keine Ad-hoc-Schwelle.** Läuft längst über `TriggerCapabilityDefaults` + `TriggerPlanningContext`; der Renderer-KDoc sagt ausdrücklich, dass er die Fähigkeit *nicht* selbst nachschlägt. Und weil die zugesagte Spanne bei 14 beginnt, ist die Konstante durch die Spanne gedeckt. |
+| `GREATEST` ab SQL Server 2022 | **existiert im Dialekt-Code nicht.** `GREATEST` kommt im Repo nur in `persistence-jdbc` vor — dem PostgreSQL-**only** Backing-Store des Servers. Es ist keine Zieldialekt-Frage. |
+| `RENAME COLUMN` ab SQLite 3.25 | **kein Server, sondern eine Abhängigkeit.** SQLite ist treibergebunden; gemessen liefert der mitgelieferte Treiber 3.53.4. Es gibt keinen älteren SQLite-Server, für den man erzeugen könnte. |
 
-**Lücke, die C zuerst schließen muss:** für SQL Server und SQLite gibt es
-überhaupt keinen `ServerVersion`-Typ — nur MySQL, Oracle und PostgreSQL haben
-einen. Ihre Ad-hoc-Schwellen lassen sich vorher nicht einsammeln.
+Damit fällt auch die vermeintliche Vorbedingung weg: **SQL Server und SQLite
+brauchen heute keinen `ServerVersion`-Typ**, weil keine einzige Fähigkeit an
+einem hinge. Zwei Typen samt Lesepfad und Pin für null Verwender zu bauen wäre
+Vorgriff.
+
+Gemessen wurde dabei auch, wie die beiden ihre Version überhaupt ausweisen —
+falls je ein Verwender auftaucht, steht es hier statt in einer Vermutung:
+
+```
+SQL Server   SERVERPROPERTY('ProductVersion') = 17.0.4085.5,
+             ProductMajorVersion = 17, Banner = "SQL Server 2025"
+             → Marketingjahr ≠ Hauptversion (2017=14, 2019=15, 2022=16, 2025=17)
+SQLite       sqlite_version() = 3.53.4
+```
+
+### Was von C übrig bleibt
+
+Die **wirklich** versionsabhängigen Stellen sind vier, auf drei Dialekten, und
+jeder davon hat seinen Versionstyp schon:
+
+| Stelle | Schwelle | Heutige Form |
+| --- | --- | --- |
+| PostgreSQL `SET EXPRESSION` | ≥ 17 | `PostgresServerVersion.supportsSetExpression` |
+| PostgreSQL virtuelle berechnete Spalte | ≥ 18 | `DialectCapabilities.forTarget` (Scheibe A) |
+| Oracle `DROP … IF EXISTS` | 23+ | `OracleServerVersion.supportsDropIfExists` |
+| MySQL Routinen | `minServerVersion` | `RoutineCapability`, CLI-überschreibbar |
+
+Die Zusammenlegung der ersten drei auf `forTarget` wäre **kein reiner Umbau**,
+und das ist der Grund, warum C hier anhält statt weiterzulaufen:
+
+**„Unbekannte Version" bedeutet nicht bei jeder Fähigkeit dasselbe.** Die
+Eignerentscheidung (unbekannt = aktuellste bekannte) steht auf der Begründung,
+dass „konservativ" hier hieße, *etwas anderes zu rendern, als der Autor
+geschrieben hat*. Das trifft auf `supportsVirtualComputedColumns` zu — dort
+steht `stored: false` in der Schemadatei. Auf `supportsDropIfExists` trifft es
+**nicht**: kein Autor hat `IF EXISTS` verlangt, es ist eine Bequemlichkeit der
+Rücknahme-Anweisungen. Würde dieses Flag durch `forTarget` laufen, kippte sein
+Default für Dateiziele stillschweigend von „weglassen" auf „hinschreiben" — und
+ein Oracle-19-Ziel bekäme einen Syntaxfehler für etwas, das niemand wollte.
+
+**Zu entscheiden ist deshalb zuerst:** bekommt `forTarget` eine Auskunft je
+Fähigkeit darüber, was „unbekannt" heißt (optimistisch vs. konservativ), oder
+bleiben Flags dieser zweiten Art bewusst draußen? Vor dieser Antwort ist die
+Zusammenlegung kein Fortschritt, sondern eine verschobene Entscheidung.
+
+**Ausdrücklich weiter offen:** ob `RoutineCapability` hineingehört. Es hat einen
+CLI-Override, den die Tabelle nicht kennt; das ist ein eigener Entwurf.
 
 ### D — Die Ausweichtür für Dateiziele — gebaut (2026-09-12)
 
@@ -204,7 +248,9 @@ Scheibe** — bis zu 25 Fähigkeiten × zwei Versionsgrenzen × fünf Dialekte, 
 die Untergrenzen brauchen Container-Images, die es in `TestImages` heute nicht
 gibt. Wer den Slice aufteilt, teilt ihn hier.
 
-C hängt an einer Vorarbeit (zwei fehlende `ServerVersion`-Typen), D an A.
+C hängt an keiner Vorarbeit mehr — die vermeintliche ist widerlegt —, sondern
+an **einer Entscheidung**: was „unbekannte Version" je Fähigkeit bedeutet. D ist
+gebaut.
 
 ## Die Vorbedingung ist erfüllt (2026-09-11)
 
