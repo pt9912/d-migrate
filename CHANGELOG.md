@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ein Funktions-Default aus einem fremden Dialekt landet nicht mehr in der
+  DDL.** Die Spec führt `default: <funktion>` als *übersetzten Namen*; was ein
+  Reverse nicht erkennt, legt er als Servertext in dasselbe Feld. Ein
+  PostgreSQL-Default `ARRAY['NEW'::order_status]` wurde damit wörtlich nach
+  T-SQL kopiert — und dabei zu `ARRAY['NEW'::order_status]()` verstümmelt, weil
+  alle fünf Dialekte dieselbe Zeile trugen, die an einen Namen Klammern hängt.
+  Zwei Fehler in einem, beide von einem Konsumenten gemeldet und nachgemessen.
+
+  Der Text wird jetzt **vor** dem Rendern herausgenommen, an der einen Stelle,
+  durch die jeder `generate`-Lauf aller fünf Dialekte geht: der Default
+  entfällt, und der Lauf meldet `E053`. Auf dem Dialekt, aus dem er stammt,
+  bleibt er stehen. Und Klammern bekommt nur noch, was wirklich ein Name ist.
+
 - **Ein Berechnungsausdruck aus einem fremden Dialekt wird nicht mehr
   durchgereicht.** Für CHECK-Ausdrücke, Index-Prädikate und Ausdrucks-Schlüssel
   prüft d-migrate seit 1.3.0, ob der rohe Text auf dem Ziel überhaupt gilt, und

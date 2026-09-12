@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.mssql
 
+import dev.dmigrate.driver.FunctionDefaultText
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FloatPrecision
 import dev.dmigrate.core.model.NeutralType
@@ -128,7 +129,7 @@ class MssqlTypeMapper : TypeMapper {
         "gen_uuid" -> "NEWID()"
         // Der MSSQL-Reverse liefert unbekannte Funktions-Defaults mit
         // Klammern (`sysdatetimeoffset()`); nur nackte Namen bekommen `()`.
-        else -> if (name.trimEnd().endsWith(")")) name else "$name()"
+        else -> FunctionDefaultText.call(name)
     }
 
     companion object {

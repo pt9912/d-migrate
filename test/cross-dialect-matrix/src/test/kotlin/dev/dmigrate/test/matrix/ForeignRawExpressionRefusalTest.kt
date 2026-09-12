@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -98,6 +99,57 @@ class ForeignRawExpressionRefusalTest : FunSpec({
             }
             withClue(result.notes.joinToString { "${it.code}:${it.message}" }) {
                 result.notes.any { it.code == "E053" } shouldBe true
+            }
+        }
+    }
+
+    val withFunctionDefault = TableDefinition(
+        columns = linkedMapOf(
+            "id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+            "status_history" to ColumnDefinition(
+                NeutralType.Text(),
+                required = true,
+                // So liefert der PostgreSQL-Reverse einen Default, den er nicht
+                // als bekannte Funktion erkennt: roher Servertext im Feld, das
+                // die Spec als **uebersetzten Namen** fuehrt.
+                default = DefaultValue.FunctionCall("ARRAY['NEW'::order_status]"),
+            ),
+        ),
+        primaryKey = listOf("id"),
+    )
+
+    foreignTargets.forEach { (dialect, generator) ->
+        test("${dialect.name.lowercase()} refuses a PostgreSQL function default") {
+            val result = generator().generate(schemaWith(withFunctionDefault), DdlGenerationOptions())
+            val sql = result.statements.joinToString("\n") { it.sql }
+
+            withClue(sql) {
+                sql.contains("ARRAY[") shouldBe false
+                sql.contains("::") shouldBe false
+            }
+            withClue(result.notes.joinToString { "${it.code}:${it.message}" }) {
+                result.notes.any { it.code == "E053" } shouldBe true
+            }
+        }
+    }
+
+    test("a known function default still translates, on every dialect") {
+        val table = TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                "created_at" to ColumnDefinition(
+                    NeutralType.DateTime(),
+                    required = true,
+                    default = DefaultValue.FunctionCall("current_timestamp"),
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+
+        (foreignTargets + (DatabaseDialect.POSTGRESQL to { PostgresDdlGenerator() })).forEach { (dialect, gen) ->
+            val result = gen().generate(schemaWith(table), DdlGenerationOptions())
+            withClue("$dialect: ${result.statements.joinToString("\n") { it.sql }}") {
+                result.notes.none { it.code == "E053" } shouldBe true
             }
         }
     }

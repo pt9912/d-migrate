@@ -2427,6 +2427,11 @@ Zurücklesen wiederfinden.
   dem Zieldialekt gültig sein. Geprüft wird, was ohne SQL-Parser entscheidbar
   ist: dass ein Ausdruck dasteht, dass er sich nicht auf die Spalte bezieht,
   die er berechnet, und dass die genannten Spalten existieren.
+- **Dasselbe gilt für einen Default, den d-migrate nicht kennt.** Was der
+  Reverse nicht als bekannte Funktion erkennt (`current_timestamp`,
+  `gen_uuid`, …), legt er als Servertext ab. Beim Erzeugen für ein anderes Ziel
+  entfällt ein solcher Default samt **E053**, statt als ungültiges SQL in der
+  Datei zu landen.
 - **Ein Ausdruck aus einem fremden Dialekt wird nicht durchgereicht.** Wer ein
   PostgreSQL-Schema zurückliest, bekommt dort die Serverform — etwa
   `((quantity)::numeric * unit_price)`. Ein `schema generate --target mysql`

@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.driver.FunctionDefaultText
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.TypeMapper
@@ -64,7 +65,7 @@ class PostgresTypeMapper : TypeMapper {
             // Klammern (`newid()`, `now() - interval '1 day'`); nur ein
             // nackter Name bekommt sie noch. Blind angehaengt entstuende
             // `newid()()`.
-            else -> if (default.name.trimEnd().endsWith(")")) default.name else "${default.name}()"
+            else -> FunctionDefaultText.call(default.name)
         }
         is DefaultValue.SequenceNextVal -> "nextval('${default.sequenceName}')"
     }

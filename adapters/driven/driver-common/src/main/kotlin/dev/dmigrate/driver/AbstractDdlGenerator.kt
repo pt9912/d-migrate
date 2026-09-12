@@ -9,7 +9,12 @@ abstract class AbstractDdlGenerator(
     protected val typeMapper: TypeMapper
 ) : DdlGenerator {
 
-    override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
+    override fun generate(rawSchema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
+        // Fremder Rohtext in einem Feld, das die Spec als uebersetzten Namen
+        // fuehrt, wird hier herausgenommen — vor jedem Renderer und einmal fuer
+        // alle fuenf Dialekte (siehe ForeignFunctionDefaultFilter).
+        val filtered = ForeignFunctionDefaultFilter.apply(rawSchema, dialect)
+        val schema = filtered.schema
         val statements = mutableListOf<DdlStatement>()
         val skipped = mutableListOf<SkippedObject>()
         val blockedTables = mutableSetOf<String>()
@@ -78,6 +83,7 @@ abstract class AbstractDdlGenerator(
         statements += sortedViews.notes.map { DdlStatement("", notes = listOf(it)) }
 
         val globalNotes = mutableListOf<TransformationNote>()
+        globalNotes += filtered.notes
         val (preDataViews, postDataViews, viewDiagNotes) = classifyViewsByPhase(
             sortedViews.sorted, schema.functions.keys,
         )

@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.oracle
 
+import dev.dmigrate.driver.FunctionDefaultText
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FloatPrecision
 import dev.dmigrate.core.model.NeutralType
@@ -142,7 +143,7 @@ class OracleTypeMapper : TypeMapper {
         // SYS_GUID() liefert 32 Hex-Zeichen ohne Bindestriche -- der Spalten-
         // Helfer haengt fuer diesen Fall eine Notiz an (W150).
         "gen_uuid" -> "RAWTOHEX(SYS_GUID())"
-        else -> if (name.trimEnd().endsWith(")")) name else "$name()"
+        else -> FunctionDefaultText.call(name)
     }
 
     companion object {

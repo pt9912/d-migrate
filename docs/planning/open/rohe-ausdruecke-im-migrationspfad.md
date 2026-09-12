@@ -49,6 +49,29 @@ Weg 2 ist der bessere Zuschnitt, aber ein eigener Entwurf: er muss beantworten,
 wie sich eine Vorprüfung zu den bestehenden Preflights verhält
 (`CheckPreflight`, `SqliteCastPreflight`) und ob sie blockt oder meldet.
 
+## Nachtrag (2026-09-12): ein fuenftes Feld, und ein besserer Ort
+
+Derselbe Konsument fand ein Feld, das die Aufzaehlung oben nicht kennt:
+`DefaultValue.FunctionCall.name`. Die Spec fuehrt es als **uebersetzten
+Namen**, der Reverse legt dort aber Servertext ab, wenn er die Funktion nicht
+erkennt — `ARRAY['NEW'::order_status]` aus PostgreSQL, woertlich nach T-SQL
+kopiert und dabei zu `…]()` verstuemmelt.
+
+Behoben fuer den generate-Pfad, und zwar **nicht** je Dialekt: `DEFAULT` wird
+an einem Dutzend Stellen gerendert (SQLite und PostgreSQL an je drei). Der
+Filter sitzt stattdessen in `AbstractDdlGenerator.generate` — der einen Stelle,
+durch die jeder generate-Lauf aller fuenf Dialekte geht. Das Schema wird dort
+einmal gefiltert, danach kann kein Renderer den Text mehr sehen.
+
+**Damit ist Weg 2 oben nicht mehr nur eine Idee, sondern erprobt.** Ein
+Durchgang vor dem Rendern kostet weniger als vier weitere Aufrufstellen und
+haelt die Aussage an einem Ort. Wer diesen Schnitt baut, sollte pruefen, ob die
+heutigen per-Dialekt-Pruefungen fuer CHECK und Berechnung dorthin wandern —
+dann faellt die Verdopplung zwischen generate- und migrate-Renderern mit weg.
+
+Fuer den **migrate**-Pfad steht das alles weiterhin aus, jetzt fuer fuenf
+Felder statt vier.
+
 ## Herkunft
 
 Nebenbefund beim Schließen des Konsumentenbefunds zu berechneten Spalten

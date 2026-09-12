@@ -169,6 +169,13 @@ default:                       # Sequence-basierter Default
 Hinweis: `sequence_nextval` ist eine Objektform und nur fuer numerische/Identifier-Spalten
 zulaessig. Alte `nextval(...)`-Textnotationen werden mit E122 abgelehnt.
 
+**Ein Funktions-Default ist ein Name, kein Ausdruck.** Jeder Dialekt uebersetzt
+die Namen, die er kennt. Was ein Reverse nicht erkennt, legt er als Servertext
+in demselben Feld ab — ein PostgreSQL-Default kann dort also
+`ARRAY['NEW'::order_status]` heissen. Beim Erzeugen fuer einen **anderen**
+Dialekt wird solcher Text nicht weitergereicht: der Default entfaellt, und der
+Lauf meldet `E053`. Nur auf dem Dialekt, aus dem er stammt, bleibt er stehen.
+
 ---
 
 ## Tabellen-Definition
