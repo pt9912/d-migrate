@@ -6,6 +6,7 @@ import dev.dmigrate.driver.metadata.ForeignKeyProjection
 import dev.dmigrate.driver.metadata.IndexProjection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.TableRef
+import java.sql.Clob
 
 /**
  * Katalog-Queries für den Oracle-Reverse-Read. `ALL_*`-Sichten (nicht
@@ -622,6 +623,45 @@ internal object OracleMetadataQueries {
             schema,
             table,
         ).mapNotNullTo(mutableSetOf()) { it["column_name"] as? String }
+
+    /**
+     * Die Tabellen-DDL, wie `DBMS_METADATA` sie erzeugt — oder `null`, wenn das
+     * Paket nicht ausfuehrbar ist.
+     *
+     * **Warum ueberhaupt DDL, wenn es einen Katalog gibt.** Fuer eine
+     * **materialisiert** berechnete Spalte fuehrt der Katalog nichts, was sie
+     * von einer gewoehnlichen Spalte mit `DEFAULT` unterscheidet — gemessen:
+     * `VIRTUAL_COLUMN = 'NO'`, `USER_GENERATED = 'YES'`, Ausdruck in
+     * `DATA_DEFAULT`, genau wie bei einem Default. Das Wort `MATERIALIZED`
+     * steht nur in der DDL. Gebraucht wird daraus allein die Einordnung; den
+     * Ausdruck liefert weiter `DATA_DEFAULT` ([OracleGeneratedColumnScanner]).
+     *
+     * **Warum der Fehlschlag nichts kostet.** `EXECUTE`-Recht auf
+     * `DBMS_METADATA` hat nicht jeder Leser. Ohne die DDL bleiben virtuelle
+     * Spalten vollstaendig (sie stehen im Katalog); nur die materialisierten
+     * sind dann nicht als solche erkennbar, und **das** meldet der Leser statt
+     * es zu raten.
+     *
+     * Der Locator wird in der Abfrage aufgeloest (`TO_CLOB` auf `VARCHAR2` ginge
+     * nicht — die DDL sprengt 4000 Zeichen), deshalb `getSubString` hier und
+     * nicht `row.string(...)`.
+     */
+    fun tableDdl(session: JdbcOperations, schema: String, table: String): String? =
+        runCatching {
+            session.querySingle(
+                "SELECT DBMS_METADATA.GET_DDL('TABLE', ?, ?) AS ddl FROM dual",
+                table,
+                schema,
+            )?.get("ddl")
+        }.getOrNull()?.let { value ->
+            when (value) {
+                is Clob -> runCatching { value.getSubString(1, value.length().toInt()) }
+                    .also { runCatching { value.free() } }
+                    .getOrNull()
+                is String -> value
+                else -> null
+            }
+        }
 
     /** `MAX(<column>)` der Tabelle; `null` bei leerer Tabelle. */
     fun maxValue(session: JdbcOperations, quotedTable: String, column: String): Long? =

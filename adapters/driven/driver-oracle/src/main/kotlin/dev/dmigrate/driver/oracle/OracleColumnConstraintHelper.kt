@@ -12,6 +12,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.ManualActionRequired
+import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
@@ -48,6 +49,19 @@ internal class OracleColumnConstraintHelper(
         val type = col.type
         val ctx = ColumnContext(tableName, colName, col, notes, inlineNamedConstraints)
         val generation = col.generation
+
+        // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
+        // DEFAULT und UNIQUE sind dort keine Frage. Oracles Wort fuer die
+        // gespeicherte Form ist `MATERIALIZED`, nicht `STORED`; ohne Angabe ist
+        // die Spalte virtuell.
+        ComputedColumnClause.of(col)?.let { computed ->
+            return listOf(
+                quoteIdentifier(colName),
+                typeMapper.toSql(type),
+                ComputedColumnClause.clause(computed, if (computed.stored) "MATERIALIZED" else "VIRTUAL"),
+            ).joinToString(" ")
+        }
+
         return when {
             generation is ColumnGeneration.Identity && supportsIdentity(type) ->
                 identityColumn(ctx, identityModeOverride ?: generation.mode)

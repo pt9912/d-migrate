@@ -22,7 +22,6 @@ import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 import java.sql.Connection
-import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 
 /**
  * Oracle [SchemaReader]: Tabellen (Spalten, PK, FKs, Unique-/Nicht-Unique-
@@ -109,9 +108,7 @@ class OracleSchemaReader(
             OracleConstraintQueries.listUniqueConstraintColumns(session, schema, table),
         )
         val pkColumns = primaryKey.toSet()
-        // Dieselbe Abfrage, die der Schreibpfad benutzt, um nicht in virtuelle
-        // Spalten zu schreiben. Der Lesepfad wusste bisher nichts von ihnen.
-        val virtualColumns = OracleMetadataQueries.virtualColumns(session, schema, table)
+        val computedColumns = OracleGeneratedColumns.read(session, schema, table, columnRows, notes)
 
         val columns = columnRows.associate { row ->
             val mapping = OracleTypeMapping.mapColumn(
@@ -128,10 +125,7 @@ class OracleSchemaReader(
                 ),
             )
             mapping.note?.let { notes += it }
-            if (row.name in virtualColumns) {
-                // Der Ausdruck einer virtuellen Spalte steht in `data_default`.
-                notes += GeneratedColumnNotes.expressionDropped(table, row.name, row.defaultDefinition)
-            }
+            val computed = computedColumns[row.name]
             row.name to ColumnDefinition(
                 type = mapping.type,
                 // PK-Spalten folgen der Reverse-Konvention required=false/
@@ -140,8 +134,15 @@ class OracleSchemaReader(
                 unique = row.name in singleColumnUnique && row.name !in pkColumns,
                 uniqueConstraintName = singleColumnUniqueNames[row.name]
                     ?.takeIf { row.name in singleColumnUnique && row.name !in pkColumns },
-                default = if (row.isIdentity) null else OracleTypeMapping.parseDefault(row.defaultDefinition, mapping.type),
-                generation = mapping.generation,
+                // Bei einer berechneten Spalte traegt `data_default` den
+                // Ausdruck, nicht einen Default: sonst stuende er doppelt im
+                // Modell und `schema generate` schriebe beides hin.
+                default = if (row.isIdentity || computed != null) {
+                    null
+                } else {
+                    OracleTypeMapping.parseDefault(row.defaultDefinition, mapping.type)
+                },
+                generation = computed ?: mapping.generation,
                 ordinal = row.ordinal,
             )
         }
