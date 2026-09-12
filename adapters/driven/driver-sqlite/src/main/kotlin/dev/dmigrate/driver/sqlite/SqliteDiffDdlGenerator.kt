@@ -303,6 +303,10 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.RenameTrigger,
         is DiffOperation.RenameFunction,
         is DiffOperation.RenameProcedure,
+        // SQLite kennt kein `ALTER COLUMN`; sein Weg waere der Tabellen-Neubau,
+        // den dieser Dialekt ohnehin geht. Erreichbar wird die Operation aber erst
+        // mit dem Lesepfad — `PRAGMA table_info` blendet generierte Spalten aus.
+        is DiffOperation.AlterColumnGeneration,
         -> OpCategory.UNSUPPORTED
 
         // 0.9.7 Phase F2: SQLite-helper_table sequence diff-migration.

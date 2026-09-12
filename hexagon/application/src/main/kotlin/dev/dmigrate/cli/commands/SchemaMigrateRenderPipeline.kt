@@ -6,30 +6,31 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlDialectContext
-import dev.dmigrate.driver.SqliteCastPreflightDeclaration
-import dev.dmigrate.driver.MssqlHashPartitionMode
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.ExecutionMode
-import dev.dmigrate.driver.mysqlContext
-import dev.dmigrate.driver.sqliteContext
 import dev.dmigrate.driver.ExtensionAvailabilityDeclaration
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionInstallPolicy
+import dev.dmigrate.driver.MssqlHashPartitionMode
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlServerVersion
 import dev.dmigrate.driver.OracleServerVersion
-import dev.dmigrate.driver.ServerVersion
+import dev.dmigrate.driver.PostgresServerVersion
 import dev.dmigrate.driver.RoutineCapabilityDefaults
+import dev.dmigrate.driver.ServerVersion
 import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.SpatialProfilePolicy
+import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.SqliteCatalogProbeMode
 import dev.dmigrate.driver.SqliteLiveCatalog
 import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.migration.DiffDdlGenerator
-import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationDdlResult
+import dev.dmigrate.driver.mysqlContext
+import dev.dmigrate.driver.sqliteContext
 import java.nio.file.Path
 
 /**
@@ -593,9 +594,12 @@ internal class SchemaMigrateRenderPipeline(
                         ?.let(MssqlHashPartitionMode::fromCliName)
                         ?: MssqlHashPartitionMode.ACTION_REQUIRED,
                 )
-                // PostgreSQL traegt, ob Indizes nebenlaeufig angelegt werden.
+                // PostgreSQL traegt, ob Indizes nebenlaeufig angelegt werden — und
+                // die Serverversion: sie entscheidet ueber
+                // `ALTER COLUMN … SET EXPRESSION`, das es erst ab 17 gibt.
                 DatabaseDialect.POSTGRESQL -> DdlDialectContext.Postgres(
                     concurrentIndexes = request.pgConcurrentIndexes,
+                    serverVersion = serverVersion as? PostgresServerVersion,
                 )
                 // Oracle traegt die Serverversion: sie entscheidet, ob die
                 // Ruecknahme-Anweisungen `IF EXISTS` fuehren duerfen.

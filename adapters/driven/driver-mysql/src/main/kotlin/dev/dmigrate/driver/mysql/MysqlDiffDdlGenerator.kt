@@ -201,6 +201,12 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.RenameTrigger,
         is DiffOperation.RenameFunction,
         is DiffOperation.RenameProcedure,
+        // MySQL KANN den Ausdruck in place setzen (`MODIFY COLUMN … GENERATED
+        // ALWAYS AS (…)`, gemessen: Sicht und Index ueberleben). Wir tun es noch
+        // nicht — der MySQL-Lesepfad meldet berechnete Spalten gar nicht zurueck,
+        // eine Aenderung ist also nicht erkennbar und die Operation hier nicht
+        // erreichbar. Sie kommt mit dem Lesepfad, nicht davor.
+        is DiffOperation.AlterColumnGeneration,
         -> OpCategory.UNSUPPORTED
     }
 

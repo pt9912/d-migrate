@@ -170,6 +170,11 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         -> OpCategory.MATERIALIZED_VIEW
 
         is DiffOperation.AlterTablePartitions,
+        // Oracle kann es nur unter Bedingungen: virtuelle Spalten per `MODIFY`,
+        // aber `ORA-54022`, sobald ein Index auf der Spalte liegt; materialisierte
+        // gar nicht (`ORA-54060`). Das zu unterscheiden braucht den Lesepfad, der
+        // die Form ueberhaupt erst meldet.
+        is DiffOperation.AlterColumnGeneration,
         -> OpCategory.UNSUPPORTED
     }
 

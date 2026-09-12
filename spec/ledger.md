@@ -54,7 +54,7 @@ neuen Version.
 | E125 | Sequence-internal-Validierung (Inkrement/Bereich) |
 | E130 - E133 | Identity-Generation-Validierung (Typ, Default-Konflikt, `sequence_name`) |
 | E134 - E136 | Computed-Generation-Validierung: fehlender Ausdruck, Default-Konflikt, unbekannte oder selbstbezuegliche Spalte im Ausdruck |
-| E137 | Migrate: der Berechnungsausdruck einer Spalte hat sich belegt geändert — `schema migrate` führt diese Änderung nicht aus |
+| E137 | **Zurückgezogen.** Stand für „der Berechnungsausdruck hat sich belegt geändert, `schema migrate` führt das nicht aus". Die Änderung wird heute als `AlterColumnGeneration` geplant; ob der Zielserver sie ausführen kann, sagt der Renderer, der Dialekt und Version kennt. Die Kennung bleibt vergeben und wird nicht neu belegt — sie stand in ausgelieferten Berichten. |
 | W001 | Float-fuer-Geldbetraege-Warnung |
 | W100 - W112 | Dialekt-Warnungen (Typ-Mapping, Index-Konvertierung) |
 | W113 | Circular-FK-Warnung |

@@ -125,6 +125,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.AlterColumnType,
         is DiffOperation.AlterColumnNullability,
         is DiffOperation.AlterColumnDefault,
+        is DiffOperation.AlterColumnGeneration,
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,
         is DiffOperation.AlterTablePartitions,
@@ -187,6 +188,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnType -> PostgresDiffTableOps.renderAlterColumnType(op, ctx)
             is DiffOperation.AlterColumnNullability -> PostgresDiffTableOps.renderAlterColumnNullability(op, ctx)
             is DiffOperation.AlterColumnDefault -> PostgresDiffTableOps.renderAlterColumnDefault(op, ctx)
+            is DiffOperation.AlterColumnGeneration -> PostgresDiffTableOps.renderAlterColumnGeneration(op, ctx)
             is DiffOperation.AddPrimaryKey -> PostgresDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> PostgresDiffTableOps.renderDropPrimaryKey(op, ctx)
             is DiffOperation.AlterTablePartitions -> PostgresDiffPartitionOps.renderAlterTablePartitions(op, ctx)

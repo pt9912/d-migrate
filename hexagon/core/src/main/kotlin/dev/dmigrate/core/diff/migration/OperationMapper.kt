@@ -544,6 +544,18 @@ internal object OperationMapper {
                 after = it.after,
             )
         }
+        // Ohne diesen Zweig fiel eine geaenderte Generation hier herunter: der
+        // Vergleich sah sie (ColumnDiff.generation), der Planer machte nichts
+        // daraus, und der Lauf endete mit Exit 0, waehrend die Datenbank
+        // weiter nach der alten Formel rechnete.
+        cd.generation?.let {
+            ops += DiffOperation.AlterColumnGeneration(
+                id = OperationIdFactory.makeId("AlterColumnGeneration", ref, "${it.before}->${it.after}"),
+                objectRef = ref,
+                before = it.before,
+                after = it.after,
+            )
+        }
     }
 
     private fun mapTableConstraints(table: TableDiff, ops: MutableList<DiffOperation>) {

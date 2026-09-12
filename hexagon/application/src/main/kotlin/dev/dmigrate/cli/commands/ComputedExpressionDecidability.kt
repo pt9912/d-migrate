@@ -31,12 +31,6 @@ internal object ComputedExpressionDecidability {
     /** Die Frage blieb offen — es wurde nichts geplant. */
     const val UNDECIDED: String = "W137"
 
-    /**
-     * Die Frage war beantwortet, und die Antwort lautet "geaendert" — nur
-     * ausfuehren kann der Lauf sie nicht.
-     */
-    const val UNSUPPORTED_CHANGE: String = "E137"
-
     fun diagnostics(
         current: SchemaDefinition,
         desired: SchemaDefinition,
@@ -51,10 +45,14 @@ internal object ComputedExpressionDecidability {
                 // Wortgleich braucht keine Quelle.
                 if (desiredExpression == currentExpression) continue
                 val path = "$tableName.$columnName"
+                // `true` (belegt geaendert) erzeugt hier **nichts** mehr: daraus
+                // wird eine `AlterColumnGeneration`, und ob der Zielserver sie
+                // ausfuehren kann, weiss allein der Renderer — er kennt Dialekt
+                // und Version. Hier zu blocken hiesse, dieselbe Frage ein
+                // zweites Mal und schlechter informiert zu beantworten.
                 when (decide(tableName, columnName, desiredExpression, currentExpression, authorship, serverForm)) {
                     null -> add(undecidedNote(path))
-                    true -> add(unsupportedChange(path))
-                    false -> Unit
+                    true, false -> Unit
                 }
             }
         }
@@ -66,15 +64,6 @@ internal object ComputedExpressionDecidability {
             "form the server keeps never match literally, and neither a `raw-text-provenance` overlay nor " +
             "the raw-SQL sandbox was available to decide. A change to it would NOT have been migrated.",
         severity = DiffDiagnostic.Severity.WARNING,
-    )
-
-    private fun unsupportedChange(path: String) = DiffDiagnostic(
-        code = UNSUPPORTED_CHANGE,
-        message = "The computed expression of column `$path` has changed, but `schema migrate` cannot apply " +
-            "that change: altering it rewrites the table under an exclusive lock, and on some servers the " +
-            "only available route drops the column — losing its indexes, and failing outright when a view " +
-            "depends on it. Change the expression manually on the target, or drop and recreate the column.",
-        severity = DiffDiagnostic.Severity.BLOCKER,
     )
 
     /**

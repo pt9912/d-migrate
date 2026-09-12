@@ -1,19 +1,22 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
-import dev.dmigrate.core.model.IndexDefinition
-import dev.dmigrate.driver.postgresContext
-import dev.dmigrate.driver.migration.DialectExecutionHints
-import dev.dmigrate.driver.migration.TransactionScope
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
-import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.core.model.TableDefinition
-import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.inOrdinalOrder
+import dev.dmigrate.core.model.isSpatialGeometryIndex
+import dev.dmigrate.driver.DdlDialectContext
+import dev.dmigrate.driver.PostgresServerVersion
+import dev.dmigrate.driver.metadata.EnumValueCheck
+import dev.dmigrate.driver.migration.DialectExecutionHints
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
+import dev.dmigrate.driver.migration.TransactionScope
+import dev.dmigrate.driver.postgresContext
 
 /**
  * Per-operation renderers for table / column / primary-key DDL.
@@ -22,6 +25,12 @@ import dev.dmigrate.driver.migration.PlannerBlockerClassifier
  * back into it.
  */
 internal object PostgresDiffTableOps {
+
+    /** Der Server kann den Ausdruck nicht in place setzen (unter 17, oder Version unbekannt). */
+    private const val COMPUTED_SET_EXPRESSION_UNSUPPORTED = "POSTGRES_COMPUTED_SET_EXPRESSION_UNSUPPORTED"
+
+    /** Aus einer berechneten Spalte wieder eine gewoehnliche zu machen, geht nicht in place. */
+    private const val COMPUTED_DROP_NOT_SUPPORTED = "POSTGRES_COMPUTED_DROP_NOT_SUPPORTED"
 
     fun renderCreateTable(op: DiffOperation.CreateTable, ctx: PostgresDiffRenderContext) {
         val tableName = op.objectRef.rootName
@@ -268,6 +277,57 @@ internal object PostgresDiffTableOps {
                 "SET DEFAULT ${ctx.sql.toDefaultSql(target, NeutralType.Text())};"
         }
         ctx.emit(op, text)
+    }
+
+    /**
+     * Der Berechnungsausdruck einer Spalte, in place gesetzt.
+     *
+     * **Ab PostgreSQL 17, und nur da.** Live gemessen gegen 18.6: Index auf der
+     * Spalte und abhaengige Sicht ueberleben, der gespeicherte Wert entsteht
+     * neu (3 × 7,00 → 42,00 nach Verdopplung des Ausdrucks). Darunter gibt es
+     * den Befehl nicht; der einzige Ausweg waere `DROP` + `ADD`, und der nimmt
+     * gemessen den Index stillschweigend mit und scheitert an einer
+     * abhaengigen Sicht. Etwas stillschweigend zu verlieren ist schlechter,
+     * als es nicht zu tun — deshalb wird dort geblockt statt ausgewichen.
+     *
+     * Ohne bekannte Serverversion (Datei-zu-Datei) wird die Faehigkeit **nicht**
+     * unterstellt: eine geratene Zusage waere auf jeder Version unter 17 falsch.
+     */
+    fun renderAlterColumnGeneration(op: DiffOperation.AlterColumnGeneration, ctx: PostgresDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        val target = if (ctx.direction == PostgresRenderDirection.UP) op.after else op.before
+        val expression = (target as? ColumnGeneration.Computed)?.expression
+        if (expression == null) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} would drop the computed expression of `$table`.`$column`. " +
+                    "PostgreSQL cannot turn a generated column into an ordinary one in place; " +
+                    "drop and recreate the column manually.",
+                code = COMPUTED_DROP_NOT_SUPPORTED,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        val version = (ctx.options.dialectContext as? DdlDialectContext.Postgres)?.serverVersion
+        if (version == null || !version.supportsSetExpression) {
+            val seen = version?.let { "${it.major}.${it.minor}" } ?: "unknown (file-to-file run)"
+            ctx.skip(
+                op,
+                "Operation ${op.id} changes the computed expression of `$table`.`$column`, which needs " +
+                    "`ALTER COLUMN … SET EXPRESSION` — available from PostgreSQL " +
+                    "${PostgresServerVersion.SET_EXPRESSION_SINCE_MAJOR} on; target reports $seen. " +
+                    "The only route below that drops and recreates the column, losing its indexes and " +
+                    "failing when a view depends on it, so it is not taken automatically.",
+                code = COMPUTED_SET_EXPRESSION_UNSUPPORTED,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        ctx.emit(
+            op,
+            "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} " +
+                "SET EXPRESSION AS ($expression);",
+        )
     }
 
     fun renderAddPrimaryKey(op: DiffOperation.AddPrimaryKey, ctx: PostgresDiffRenderContext) {

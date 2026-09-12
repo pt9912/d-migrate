@@ -12,6 +12,7 @@ import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.ViewDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 
 /**
@@ -189,6 +190,39 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(
             up = if (after) OperationRisk(requiresManualConfirmation = true) else OperationRisk.SAFE,
             down = if (before) OperationRisk(requiresManualConfirmation = true) else OperationRisk.SAFE,
+        ),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
+
+    /**
+     * Der Berechnungsausdruck einer Spalte aendert sich.
+     *
+     * **Warum eine eigene Operation und nicht ein Feld an [AlterColumnType].**
+     * Der Weg dorthin haengt am Server, nicht am Typ: PostgreSQL ab 17 und
+     * MySQL koennen ihn in place setzen, SQL Server und Oracle-materialisierte
+     * Spalten gar nicht, Oracle-virtuelle nur ohne Index auf der Spalte
+     * (`ORA-54022`). Wer das an einer Typaenderung mitfuehrte, verstoepselte
+     * zwei Entscheidungen, die getrennt gehoeren.
+     *
+     * **Umkehrbar, aber nicht billig.** Den alten Ausdruck zurueckzuschreiben
+     * ist mechanisch und verliert nichts — gespeicherte Werte entstehen neu.
+     * Was es kostet, ist die erneute Neuschreibung der Tabelle unter
+     * exklusiver Sperre; das steht in [risks], nicht in der Umkehrbarkeit.
+     */
+    data class AlterColumnGeneration(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val before: ColumnGeneration?,
+        val after: ColumnGeneration?,
+        override val phase: DiffPhase = DiffPhase.COLUMNS,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(
+            // Die Tabelle wird neu geschrieben; gespeicherte Werte entstehen neu.
+            up = OperationRisk(requiresManualConfirmation = true),
+            down = OperationRisk(requiresManualConfirmation = true),
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)

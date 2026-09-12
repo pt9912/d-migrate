@@ -4,6 +4,7 @@ import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.PostgresServerVersion
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
@@ -74,10 +75,33 @@ class PostgresSchemaReader(
                 aggregates = aggregates,
             )
 
-            return SchemaReadResult(schema = schemaDef, notes = notes, skippedObjects = skipped)
+            return SchemaReadResult(
+                schema = schemaDef,
+                notes = notes,
+                skippedObjects = skipped,
+                serverVersion = readPostgresServerVersion(session),
+            )
         }
     }
 }
+
+/**
+ * Die Serverversion, strukturell — fuer Faehigkeiten, die an ihr haengen und
+ * nicht am Dialekt (`ALTER COLUMN … SET EXPRESSION` gibt es ab 17).
+ *
+ * `server_version` statt `version()`: die lange Form traegt Compiler und
+ * Plattform mit sich, die hier niemanden interessieren.
+ *
+ * **Scheitert die Abfrage, faellt nur die Version aus, nicht das Lesen.** Sie
+ * ist eine Zusatzauskunft; ein Schema-Lesen daran scheitern zu lassen, waere
+ * unverhaeltnismaessig. Ohne sie unterstellt der Renderer die
+ * versionsabhaengige Faehigkeit nicht — das ist die sichere Seite.
+ */
+private fun readPostgresServerVersion(session: JdbcOperations): PostgresServerVersion? = runCatching {
+    val row = session.querySingle("SELECT current_setting('server_version') AS version") ?: return@runCatching null
+    val raw = row["version"] as? String ?: return@runCatching null
+    PostgresServerVersion.parse(raw)
+}.getOrNull()
 
 private fun readPostgresExtensionNotes(
     session: JdbcOperations,

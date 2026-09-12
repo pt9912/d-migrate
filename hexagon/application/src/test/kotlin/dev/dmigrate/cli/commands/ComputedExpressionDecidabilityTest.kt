@@ -58,14 +58,15 @@ class ComputedExpressionDecidabilityTest : FunSpec({
         diagnose(authorship = authorship).shouldBeEmpty()
     }
 
-    test("provenance that reports a real change blocks — the run cannot apply it") {
+    test("provenance that reports a real change says nothing — the plan carries it instead") {
         val authorship = RawTextAuthorship { _, _, _, _, _ -> true }
 
-        val diagnostic = diagnose(authorship = authorship).single()
-
-        diagnostic.code shouldBe ComputedExpressionDecidability.UNSUPPORTED_CHANGE
-        diagnostic.severity shouldBe dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.BLOCKER
-        diagnostic.message shouldContain "cannot apply"
+        // Frueher stand hier ein Blocker (E137, zurueckgezogen). Eine belegte
+        // Aenderung wird heute zu einer `AlterColumnGeneration`; ob der
+        // Zielserver sie ausfuehren kann, entscheidet der Renderer, der Dialekt
+        // und Version kennt. Hier zu blocken hiesse, dieselbe Frage ein zweites
+        // Mal und schlechter informiert zu beantworten.
+        diagnose(authorship = authorship).shouldBeEmpty()
     }
 
     test("the sandbox answers where provenance is silent") {

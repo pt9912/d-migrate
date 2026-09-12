@@ -260,9 +260,16 @@ sealed interface DdlDialectContext {
      *   abgebaut werden. Das ist keine Eigenschaft des Schemas, sondern eine
      *   Aussage darueber, WIE migriert werden soll — deshalb eine Option des
      *   Laufs und kein Feld am Index.
+     * - [serverVersion]: die Version des Ziels, sofern gegen eine Verbindung
+     *   gerendert wird. Sie entscheidet ueber
+     *   `ALTER COLUMN … SET EXPRESSION`, das es erst ab 17 gibt — waehrend die
+     *   zugesagte Spanne bei 14 beginnt. `null` (file-zu-Datei) heisst: die
+     *   Version ist unbekannt, und dann wird die Faehigkeit nicht
+     *   unterstellt.
      */
     data class Postgres(
         val concurrentIndexes: Boolean = false,
+        val serverVersion: PostgresServerVersion? = null,
     ) : DdlDialectContext
 
     /**
