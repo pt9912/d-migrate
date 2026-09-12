@@ -3,14 +3,15 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 import dev.dmigrate.driver.metadata.IndexProjection
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 import dev.dmigrate.driver.sqlite.parser.SqliteTriggerSqlParser
-import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 
 /**
  * SQLite [SchemaReader] implementation.
@@ -166,12 +167,11 @@ class SqliteSchemaReader : SchemaReader {
         autoincrementReverse: SqliteAutoincrementReverse,
     ): TableDefinition {
         val columns = SqliteMetadataQueries.listColumns(session, tableName)
-        // `table_info` laesst generierte Spalten aus — sie fehlen also nicht
-        // nur in ihrem Ausdruck, sondern ganz. Ohne diese Meldung faellt das
-        // niemandem auf.
-        for ((generatedColumn, kind) in SqliteMetadataQueries.listGeneratedColumns(session, tableName)) {
-            notes += GeneratedColumnNotes.columnAbsent(tableName, generatedColumn, kind)
-        }
+        // `table_info` laesst generierte Spalten ganz weg; `table_xinfo` fuehrt
+        // sie samt Speicherform, und der Ausdruck steht im abgelegten
+        // `CREATE TABLE`-Text. Erst beides zusammen ergibt die Spalte.
+        val generated = SqliteMetadataQueries.listGeneratedColumnDetails(session, tableName)
+        val generatedExpressions = SqliteGeneratedColumnScanner.expressionsOf(createSql)
         val pkColumns = SqliteMetadataQueries.listPrimaryKeyColumns(session, tableName)
         val fks = SqliteMetadataQueries.listForeignKeys(session, tableName)
         val indices = SqliteMetadataQueries.listIndices(session, tableName)
@@ -219,6 +219,8 @@ class SqliteSchemaReader : SchemaReader {
                 ordinal = col.ordinalPosition + 1,
             )
         }
+
+        mergeGeneratedColumns(columnDefs, generated, generatedExpressions, tableName, notes, autoincrementReverse)
 
         val constraints = mutableListOf<ConstraintDefinition>()
         constraints += SchemaReaderUtils.buildForeignKeyConstraints(fks)
@@ -405,4 +407,44 @@ class SqliteSchemaReader : SchemaReader {
         return result
     }
 
+}
+
+/**
+ * Sortiert die generierten Spalten an ihre Stelle in [columnDefs].
+ *
+ * `table_xinfo.cid` zaehlt sie mit, `table_info` nicht — ohne Einsortieren
+ * staenden sie am Ende, und der Round-Trip aenderte die Spaltenreihenfolge.
+ * Gibt der abgelegte `CREATE TABLE`-Text den Ausdruck nicht her, bleibt es bei
+ * der Meldung: dann ist die Berechnung wirklich verloren.
+ */
+private fun mergeGeneratedColumns(
+    columnDefs: LinkedHashMap<String, ColumnDefinition>,
+    generated: List<SqliteMetadataQueries.GeneratedColumn>,
+    expressions: Map<String, String>,
+    tableName: String,
+    notes: MutableList<SchemaReadNote>,
+    autoincrementReverse: SqliteAutoincrementReverse,
+) {
+    if (generated.isEmpty()) return
+    for (gen in generated) {
+        val expression = expressions[gen.name]
+        if (expression == null) {
+            notes += GeneratedColumnNotes.columnAbsent(tableName, gen.name, gen.kind)
+            continue
+        }
+        val mapping = SqliteTypeMapping.mapColumn(
+            gen.declaredType, false, tableName, gen.name, autoincrementReverse,
+        )
+        if (mapping.note != null) notes += mapping.note
+        columnDefs[gen.name] = ColumnDefinition(
+            type = mapping.type,
+            required = !gen.isNullable,
+            generation = ColumnGeneration.Computed(expression, stored = gen.kind == "STORED"),
+            ordinal = gen.ordinalPosition + 1,
+        )
+    }
+    val ordered = columnDefs.entries.sortedBy { it.value.ordinal ?: Int.MAX_VALUE }
+        .associateTo(LinkedHashMap()) { it.key to it.value }
+    columnDefs.clear()
+    columnDefs.putAll(ordered)
 }

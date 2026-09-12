@@ -2,6 +2,7 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
@@ -27,6 +28,17 @@ internal class SqliteColumnConstraintHelper(
         isSolePrimaryKey: Boolean = true,
     ): String {
         val type = col.type
+
+        // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
+        // DEFAULT und UNIQUE sind dort keine Frage. SQLite kennt beide
+        // Speicherformen und nimmt ohne Angabe die virtuelle.
+        ComputedColumnClause.of(col)?.let { computed ->
+            return listOf(
+                quoteIdentifier(colName),
+                typeMapper.toSql(type),
+                ComputedColumnClause.clause(computed, if (computed.stored) "STORED" else "VIRTUAL"),
+            ).joinToString(" ")
+        }
 
         val isRowidIdentity = col.generation is ColumnGeneration.Identity && supportsRowidIdentity(type)
         val isAutoIncrementIdentifier = type is NeutralType.Identifier && type.autoIncrement

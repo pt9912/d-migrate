@@ -57,7 +57,18 @@ object SqliteMetadataQueries {
      * virtuelle, `3` fuer eine gespeicherte generierte Spalte (`1` sind die
      * versteckten Spalten virtueller Tabellen und gehoeren nicht dazu).
      */
-    fun listGeneratedColumns(session: JdbcMetadataSession, table: String): Map<String, String> {
+    fun listGeneratedColumns(session: JdbcMetadataSession, table: String): Map<String, String> =
+        listGeneratedColumnDetails(session, table).associate { it.name to it.kind }
+
+    /**
+     * Die generierten Spalten samt Typ und Position.
+     *
+     * `PRAGMA table_info` laesst sie ganz weg; `table_xinfo` fuehrt sie mit und
+     * unterscheidet ueber `hidden` die Speicherform. Den **Ausdruck** meldet
+     * keines von beiden — der steht nur im abgelegten `CREATE TABLE`-Text
+     * ([SqliteGeneratedColumnScanner]).
+     */
+    fun listGeneratedColumnDetails(session: JdbcMetadataSession, table: String): List<GeneratedColumn> {
         val rows = session.queryList(
             "PRAGMA table_xinfo(${SqlIdentifiers.quoteStringLiteral(table, DatabaseDialect.SQLITE)})",
         )
@@ -66,10 +77,25 @@ object SqliteMetadataQueries {
                 GENERATED_VIRTUAL -> "VIRTUAL"
                 GENERATED_STORED -> "STORED"
                 else -> null
-            }
-            kind?.let { (row["name"] as String) to it }
-        }.toMap()
+            } ?: return@mapNotNull null
+            GeneratedColumn(
+                name = row["name"] as String,
+                kind = kind,
+                declaredType = (row["type"] as? String).orEmpty(),
+                ordinalPosition = (row["cid"] as Number).toInt(),
+                isNullable = (row["notnull"] as Number).toInt() == 0,
+            )
+        }
     }
+
+    /** Eine generierte Spalte, wie `table_xinfo` sie meldet. */
+    data class GeneratedColumn(
+        val name: String,
+        val kind: String,
+        val declaredType: String,
+        val ordinalPosition: Int,
+        val isNullable: Boolean,
+    )
 
     fun listColumns(session: JdbcMetadataSession, table: String): List<ColumnProjection> {
         val rows = session.queryList("PRAGMA table_info(${SqlIdentifiers.quoteStringLiteral(table, DatabaseDialect.SQLITE)})")

@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -9,6 +10,7 @@ import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 
 /**
@@ -38,7 +40,7 @@ class SqliteGeneratedColumnReverseIntegrationTest : FunSpec({
         ),
     )
 
-    test("a generated column is absent from the model, and the reverse says so") {
+    test("generated columns come back with their expression, in their place") {
         val pool = newPool()
         try {
             pool.borrow().asJdbc().use { conn ->
@@ -57,18 +59,28 @@ class SqliteGeneratedColumnReverseIntegrationTest : FunSpec({
             val read = SqliteSchemaReader().read(pool)
             val table = read.schema.tables.getValue("order_line")
 
-            // Der gemessene Ist-Zustand: die Spalten sind weg.
-            table.columns.keys.toList() shouldContainExactly listOf("id", "qty", "price")
+            // `table_info` verschweigt die beiden; ueber `table_xinfo` sind sie
+            // da — und an ihrer Stelle, nicht hinten angehaengt.
+            table.columns.keys.toList() shouldContainExactly listOf("id", "qty", "price", "total", "virt")
 
-            val notes = read.notes.filter { it.code == GeneratedColumnNotes.COLUMN_ABSENT }
             withClue(read.notes.map { "${it.code}:${it.objectName}" }.toString()) {
-                notes.map { it.objectName } shouldContainExactly
-                    listOf("order_line.total", "order_line.virt")
+                read.notes.none { it.code == GeneratedColumnNotes.COLUMN_ABSENT } shouldBe true
             }
-            // Die Art steht in der Meldung — STORED und VIRTUAL sind
-            // verschiedene Zusicherungen.
-            notes.single { it.objectName == "order_line.total" }.message.contains("STORED") shouldBe true
-            notes.single { it.objectName == "order_line.virt" }.message.contains("VIRTUAL") shouldBe true
+
+            val stored = table.columns.getValue("total").generation as? ColumnGeneration.Computed
+            val virtual = table.columns.getValue("virt").generation as? ColumnGeneration.Computed
+            withClue(table.columns.getValue("total").generation.toString()) {
+                stored.shouldNotBeNull()
+                stored.stored shouldBe true
+                // SQLite legt den Autorentext ab, nicht eine Normalform —
+                // anders als PostgreSQL und MySQL.
+                stored.expression shouldBe "qty * price"
+            }
+            withClue(table.columns.getValue("virt").generation.toString()) {
+                virtual.shouldNotBeNull()
+                virtual.stored shouldBe false
+                virtual.expression shouldBe "qty + 1"
+            }
         } finally {
             pool.close()
         }

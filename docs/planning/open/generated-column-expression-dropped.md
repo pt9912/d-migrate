@@ -237,10 +237,26 @@ lehren reichte nicht: der Migrate-Pfad legte die Spalte als gewoehnliche an,
 und der Post-Compare meldete die Abweichung als Drift. Wer einen der beiden
 aendert, prueft den anderen mit.
 
-**Offen bleiben die drei uebrigen Lesepfade** — SQLite (`PRAGMA table_info`
-blendet die Spalte aus, `table_xinfo` nicht), SQL Server und Oracle (dessen
-gespeicherte Form als DEFAULT zurueckkommt). Ihre Renderer sind entsprechend
-als „noch nicht" eingeordnet, jeweils mit dem gemessenen Grund am Fundort.
+**SQLite dazu (2026-09-12).** Lese- und Schreibpfad. Der Unterschied zu den
+beiden anderen liegt in der Quelle: `PRAGMA table_xinfo` sagt, **dass** eine
+Spalte generiert ist und ob gespeichert (`hidden = 3`) oder virtuell (`= 2`) —
+den **Ausdruck** meldet kein Pragma. Der steht nur im abgelegten
+`CREATE TABLE`-Text, und zwar **wortgleich wie geschrieben**: SQLite
+normalisiert ihn nicht, anders als PostgreSQL und MySQL. Gelesen wird er mit
+dem klammer- und quote-sicheren Werkzeug, das schon die CHECK-Ausdruecke liest
+(`SqliteDdlScanning`), nicht per Regex — Unit-geprueft gegen verschachtelte
+Klammern, ein Komma in einer Zeichenkette, zitierte Bezeichner und
+Tabellen-Constraints, die kein Spaltenname sind.
+
+Die Spalten werden ausserdem **an ihre Stelle** einsortiert: `table_xinfo.cid`
+zaehlt sie mit, `table_info` nicht — sonst aenderte der Round-Trip die
+Spaltenreihenfolge.
+
+**Offen bleiben zwei Lesepfade** — SQL Server und Oracle (dessen gespeicherte
+Form als DEFAULT zurueckkommt). Ihre Renderer sind als „noch nicht"
+eingeordnet, jeweils mit dem gemessenen Grund am Fundort. Offen ist auch das
+**Aendern** auf SQLite: dort gibt es kein `ALTER COLUMN`, der Weg waere der
+Tabellen-Neubau, den der Dialekt ohnehin geht — das ist ein eigener Schnitt.
 
 ## Der Befund, der den Schnitt anhaelt: eine geaenderte Generation wird gar nicht geplant
 

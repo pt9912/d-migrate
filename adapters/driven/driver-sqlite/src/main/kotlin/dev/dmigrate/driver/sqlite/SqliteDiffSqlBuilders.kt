@@ -3,7 +3,6 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
-import dev.dmigrate.driver.renderKey
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
@@ -13,10 +12,12 @@ import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.core.model.toSqlEventClause
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.RoutineBodyOrigin
+import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
+import dev.dmigrate.driver.renderKey
 
 /**
  * Stateless SQL fragment builders for the SQLite diff renderer.
@@ -46,6 +47,16 @@ internal class SqliteDiffSqlBuilders {
         col: ColumnDefinition,
         isSolePrimaryKey: Boolean = true,
     ): String {
+        // Wie im Generate-Pfad: eine berechnete Spalte traegt ihren Ausdruck,
+        // nicht NOT NULL/DEFAULT/UNIQUE. Beide Renderer muessen dasselbe
+        // schreiben, sonst meldet der Post-Compare Drift.
+        ComputedColumnClause.of(col)?.let { computed ->
+            return listOf(
+                quote(name),
+                typeMapper.toSql(col.type),
+                ComputedColumnClause.clause(computed, if (computed.stored) "STORED" else "VIRTUAL"),
+            ).joinToString(" ")
+        }
         val parts = mutableListOf<String>()
         parts += quote(name)
         // SQLite renders an `identifier` column inline as `INTEGER PRIMARY KEY AUTOINCREMENT`
