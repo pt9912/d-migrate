@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Das Preserve-Fenster ist auf allen fünf Dialekten belegt.** Gebaut war es
+  überall; nachgemessen war es auf PostgreSQL, MySQL und SQLite. SQL Server und
+  Oracle haben jetzt dieselbe Abnahme — Probe, Executor und der Weg über
+  `schema migrate --execute`.
+
+  Zwei Voraussetzungen, die dabei zum ersten Mal belegt sind: SQL Server
+  braucht die Sequenz-Definition im Batch (`RESTART WITH` setzt den *nächsten*
+  Wert, also entscheiden Schrittweite und Schranken), und Oracles `DBMS_LOCK`
+  verlangt `GRANT EXECUTE ON SYS.DBMS_LOCK` — den nur SYS als SYSDBA vergeben
+  darf, nicht `system`. Fehlt er, meldet der Lauf das benannt, statt still auf
+  ein ungeschütztes Fenster zurückzufallen.
+
+- **Ein Preserve-Fenster, das nicht atomar ist, sagt es (`W159`).** Auf Oracle
+  committet jedes DDL implizit: niemand kommt im Fenster dazwischen, aber ein
+  Fehlschlag lässt stehen, was bis dahin lief. Das Modell trug diese
+  Unterscheidung seit jeher (`preserveWindowIsolation`) und wurde produktiv nie
+  gelesen — ein Betreiber bekam auf Oracle dasselbe Bild wie auf PostgreSQL.
+  Jetzt steht die Folge im Report, im Klartext. Gemessen, nicht hergeleitet:
+  die Abnahme führt im Fenster zwei Anweisungen aus, von denen die zweite
+  scheitert, und belegt, dass die erste steht.
+
 ### Fixed
 
 - **`schema migrate` hält an, bevor ein Ausdruck aus einem fremden Dialekt an

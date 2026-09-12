@@ -12,10 +12,13 @@ import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.PreserveWindowIsolation
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.SequenceCapability
 import dev.dmigrate.driver.SequenceCapabilityDefaults
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
@@ -206,6 +209,47 @@ class SequencePreserveStageTest : FunSpec({
         )
         outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
         outcome.atomicBatch.requests.size shouldBe 1
+    }
+
+    // ── Was das Fenster zusichert ──────────────────────────────────────
+    //
+    // `preserveWindowIsolation` unterschied `ATOMIC` von `SERIALIZED`, gelesen
+    // hat es produktiv niemand: ein Betreiber bekam auf Oracle dasselbe Bild
+    // wie auf PostgreSQL und erfuhr nicht, dass ein Abbruch in der Mitte
+    // Angewandtes stehen laesst.
+
+    test("a serialized window says what it does not guarantee") {
+        val outcome = SequencePreserveStage.run(
+            request = executeRequest(),
+            target = dbTarget(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            plan = synthesisePlan(listOf(alterSeqOp()), currentSchema = schemaWithSequence()),
+            capabilityResolver = { dialect ->
+                SequenceCapabilityDefaults.forDialect(dialect)
+                    .copy(preserveWindowIsolation = PreserveWindowIsolation.SERIALIZED)
+            },
+        )
+
+        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+        val note = outcome.infoDiagnostics.single()
+        note.code shouldBe SequencePreserveStage.WINDOW_NOT_ATOMIC_CODE
+        note.severity shouldBe DiffDiagnostic.Severity.WARNING
+        withClue(note.message) {
+            note.message shouldContain "serialized, not atomic"
+            note.message shouldContain "stays applied"
+        }
+    }
+
+    test("an atomic window says nothing — there is nothing to warn about") {
+        val outcome = SequencePreserveStage.run(
+            request = executeRequest(),
+            target = dbTarget(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            plan = synthesisePlan(listOf(alterSeqOp()), currentSchema = schemaWithSequence()),
+        )
+
+        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+        outcome.infoDiagnostics.shouldBeEmpty()
     }
 
     // ── Candidate classification ───────────────────────────────────────

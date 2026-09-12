@@ -14,7 +14,7 @@ committet dort implizit, und sowohl die geschützten Operationen als auch der
 Restore sind DDL. Das ist keine Lücke, die sich schließen lässt, sondern eine
 Eigenschaft des Servers.
 
-[`sequence-preserve-mssql-oracle.md`](sequence-preserve-mssql-oracle.md) macht
+[`sequence-preserve-mssql-oracle.md`](../done/sequence-preserve-mssql-oracle.md) macht
 diese Zusage sichtbar — als **Warnung** im Report. Offen bleibt, ob das reicht.
 
 ## Warum das nicht schon dort entschieden wurde
@@ -33,14 +33,20 @@ Entscheidung eine Meinung über eine Beschreibung.
    braucht es eine Option, ihren Namen, ihren Platz in der Konfiguration und
    eine Antwort darauf, was ein bestehender Lauf beim nächsten Update erlebt.
 
-## Die Aktivierungsbedingung
+## Die Aktivierungsbedingung — halb erfüllt (2026-09-12)
 
-Der gemessene Fehlerfall aus Slice B — und, falls vorhanden, ein Betreiber, den
-ein halb angewandtes Fenster wirklich getroffen hat. Ohne das eine ist die
-Entscheidung unbegründet, ohne das andere ist sie verfrüht.
+**Die Messung liegt vor.** `OracleSequencePreserveIntegrationTest` führt im
+Fenster zwei DDLs aus, von denen das zweite scheitert, und belegt, dass das
+erste steht. Der Unterschied zwischen `SERIALIZED` und `ATOMIC` ist damit
+gemessen statt beschrieben, und `W159` sagt ihn dem Betreiber.
+
+**Was fehlt, ist der zweite Teil:** ein Betreiber, den ein halb angewandtes
+Fenster wirklich getroffen hat. Ohne ihn bliebe ein Opt-in-Blocker eine
+Vorsichtsmaßnahme gegen eine Lage, die noch niemand hatte — und er bräche
+bestehende Oracle-Läufe beim nächsten Update.
 
 ## Herkunft
 
 Aus der Eignerentscheidung vom 2026-09-12 zu
-[`sequence-preserve-mssql-oracle.md`](sequence-preserve-mssql-oracle.md):
+[`sequence-preserve-mssql-oracle.md`](../done/sequence-preserve-mssql-oracle.md):
 Warnung jetzt, diese Frage gestaffelt danach.

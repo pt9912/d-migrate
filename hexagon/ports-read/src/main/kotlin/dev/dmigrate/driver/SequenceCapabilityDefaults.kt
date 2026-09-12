@@ -207,12 +207,17 @@ object SequenceCapabilityDefaults {
     // preserve_current_value-Zeile in spec/neutral-model-spec.md
     // Abschnitt 9 fuehrt Oracle mit genau dieser Form.
     //
-    // Der atomare Ausfuehrungspfad fehlt weiterhin -- deshalb bleiben die
-    // Atomic-Faehigkeiten false und protectedSequenceOperations
-    // leer. Oracle steht trotzdem in SequencePreserveStage.PRESERVE_DIALECTS:
-    // ein Preserve-Kandidat blockt so oder so, aber nur dort mit einer
-    // wahren Begruendung (SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED statt
-    // "not supported on ORACLE", was seit 5d falsch waere).
+    // Der Ausfuehrungspfad ist gebaut und live abgenommen
+    // (`OracleSequencePreserveIntegrationTest`): Probe, geschuetzte
+    // Anweisungen und Restore laufen in EINEM Fenster unter `DBMS_LOCK`,
+    // und der vorgefundene Stand ueberlebt.
+    //
+    // Was er NICHT ist, steht unten an `preserveWindowIsolation`: serialisiert
+    // statt atomar. Dieser Absatz behauptete frueher das Gegenteil dessen, was
+    // drei Zeilen tiefer konfiguriert ist — "der atomare Ausfuehrungspfad
+    // fehlt weiterhin, deshalb bleiben die Atomic-Faehigkeiten false und
+    // protectedSequenceOperations leer" —, und wer ihn las, hielt Oracle fuer
+    // gesperrt.
     private val Oracle = SequenceCapability(
         supportsNamedSequences = true,
         supportsStart = true,

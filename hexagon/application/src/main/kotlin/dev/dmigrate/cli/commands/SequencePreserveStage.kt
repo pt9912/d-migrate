@@ -8,6 +8,7 @@ import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.ProtectedOperationId
+import dev.dmigrate.driver.PreserveWindowIsolation
 import dev.dmigrate.driver.SequenceCapability
 import dev.dmigrate.driver.SequenceCapabilityDefaults
 import dev.dmigrate.driver.SqliteNamedSequenceMode
@@ -148,7 +149,7 @@ object SequencePreserveStage {
         // `true` after Phase D landed (2026-06-01).
         allInPlanBlocker(candidates, capability, plan)?.let { return it }
 
-        return buildBatch(candidates, plan)
+        return buildBatch(candidates, plan, capability)
     }
 
     /**
@@ -407,6 +408,7 @@ object SequencePreserveStage {
     private fun buildBatch(
         candidates: List<Candidate>,
         plan: DiffResult,
+        capability: SequenceCapability,
     ): Outcome.Succeeded {
         val requests = candidates.map { ctx ->
             AtomicSequencePreserveRequest(
@@ -442,7 +444,37 @@ object SequencePreserveStage {
         return Outcome.Succeeded(
             augmentedPlan = augmentedPlan,
             atomicBatch = batch,
-            infoDiagnostics = emptyList(),
+            infoDiagnostics = listOfNotNull(isolationNote(candidates, capability)),
+        )
+    }
+
+    /** Das Fenster sichert weniger zu, als sein Name vermuten laesst. */
+    const val WINDOW_NOT_ATOMIC_CODE: String = "W159"
+
+    /**
+     * Was das Fenster **zusichert**, wenn es nicht atomar ist — und was nicht.
+     *
+     * `SequenceCapability.preserveWindowIsolation` traegt die Unterscheidung
+     * seit jeher, gelesen hat sie produktiv niemand. Ein Betreiber bekam damit
+     * auf Oracle dasselbe Bild wie auf PostgreSQL und erfuhr nicht, dass ein
+     * Abbruch in der Mitte Angewandtes stehen laesst — live gemessen, nicht
+     * hergeleitet (`OracleSequencePreserveIntegrationTest`).
+     *
+     * Eine Warnung und kein Blocker: das Fenster **funktioniert**, es sichert
+     * nur weniger zu, und die Eigenschaft laesst sich nicht abstellen (Oracle
+     * committet jedes DDL implizit). Ob daraus eine Zustimmungspflicht werden
+     * soll, ist eine eigene Frage.
+     */
+    private fun isolationNote(candidates: List<Candidate>, capability: SequenceCapability): DiffDiagnostic? {
+        if (capability.preserveWindowIsolation != PreserveWindowIsolation.SERIALIZED) return null
+        val names = candidates.map { it.applyRef.name }.distinct().sorted()
+        return DiffDiagnostic(
+            code = WINDOW_NOT_ATOMIC_CODE,
+            message = "The preserve window on this target is serialized, not atomic: nobody else consumes " +
+                "sequence values inside it, but if a protected statement fails, everything that already ran " +
+                "stays applied — the window cannot roll itself back. Affected: ${names.joinToString(", ")}.",
+            severity = DiffDiagnostic.Severity.WARNING,
+            operationId = candidates.first().parentOp.id,
         )
     }
 

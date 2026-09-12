@@ -1,7 +1,7 @@
 ---
 id: sequence-preserve-mssql-oracle
 title: "Das Preserve-Fenster gibt es auf fünf Dialekten — belegt ist es auf dreien"
-status: open
+status: done
 ---
 
 # Das Preserve-Fenster gibt es auf fünf Dialekten — belegt ist es auf dreien
@@ -158,6 +158,48 @@ A und B sind der Löwenanteil und laufen fast nur in Containerzeit (SQL Server
 ~2 min, Oracle ~1,5 min je Klasse). C ist klein, hängt aber inhaltlich an B. D
 ist reine Textarbeit, darf aber nicht vorgezogen werden — genau das hat den
 Befund erzeugt.
+
+## Gebaut (2026-09-12)
+
+**A und B — die Live-Abnahme.** Je eine Klasse für SQL Server (sieben Specs) und
+Oracle (fünf), beide mit Probe, Executor und — bei SQL Server — dem Weg über
+`schema migrate --execute`. Eine Klasse statt drei, weil der Containerstart der
+teuerste Teil ist.
+
+Was die Abnahme zutage förderte, stand vorher nirgends:
+
+- **SQL Server braucht die Sequenz-Definition im Batch.** `RESTART WITH` setzt
+  den *nächsten* Wert, also entscheiden Schrittweite und Schranken über den
+  Fortsetzungspunkt. Ohne `AtomicSequencePreserveRequest.sequence` blockt der
+  Executor — richtig so, aber es war nirgends belegt.
+- **Oracles `DBMS_LOCK` fehlt dem Containernutzer.** Gemessen: ohne
+  `GRANT EXECUTE ON SYS.DBMS_LOCK` meldet der Executor benannt `Failed` samt
+  der nötigen Anweisung — kein stiller Rückfall auf ein ungeschütztes Fenster.
+  Und: `system` darf diesen Grant **nicht** vergeben (ORA-01031), nur SYS als
+  SYSDBA. Das ist die Voraussetzung, die ein Betreiber kennen muss.
+- **Der Unterschied ist jetzt gemessen, nicht behauptet.** Die letzte
+  Oracle-Spec führt im Fenster zwei DDLs aus, von denen das zweite scheitert,
+  und prüft danach, dass das erste **steht**. Genau das trennt `SERIALIZED` von
+  `ATOMIC`.
+- **Nebenbefund:** `OracleSequenceCurrentValueProbe` war als einziger der fünf
+  `internal`. Jetzt nicht mehr — vier von fünf waren es nie.
+
+**C — die Warnung.** `preserveWindowIsolation` wird gelesen: ein Lauf mit
+Preserve-Kandidat gegen ein `SERIALIZED`-Ziel setzt `W159` in den Report, mit
+der Folge im Klartext. Warnung und nicht Blocker, wie entschieden; die Frage
+nach einem Opt-in steht in
+[`preserve-window-serialized-opt-in.md`](../open/preserve-window-serialized-opt-in.md)
+und hat jetzt die Messung, auf die sie wartete.
+
+**D — Kommentar und Doku.** Der Absatz in `SequenceCapabilityDefaults`, der
+Oracle für gesperrt erklärte und drei Zeilen später das Gegenteil
+konfigurierte, sagt jetzt, was gebaut ist und was es nicht ist. Beide READMEs
+nennen `preserveCurrentValue` für alle fünf Dialekte samt Oracle-Vorbehalt.
+
+**Was von Punkt 4 nicht mehr galt:** `guide.md` und die Kurzmatrix im
+Anwenderhandbuch führten die fünf Lock-Strategien und den Oracle-Vorbehalt
+bereits — die Beobachtung im Plan war überholt. Nur die READMEs trugen noch die
+Dreierliste.
 
 ## Akzeptanzkriterien
 

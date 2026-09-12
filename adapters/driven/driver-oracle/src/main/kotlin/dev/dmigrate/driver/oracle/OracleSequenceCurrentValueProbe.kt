@@ -21,7 +21,7 @@ import java.sql.SQLException
  * Migrationsverbindung hat das nie getan, und ein `NEXTVAL` zum Messen
  * verbrauchte den Wert, den man erhalten will.
  */
-internal object OracleSequenceCurrentValueProbe {
+object OracleSequenceCurrentValueProbe {
 
     /** SQLSTATE-Praefix fuer fehlende Rechte (`ORA-01031` u. a.). */
     private const val SQLSTATE_INSUFFICIENT_PRIVILEGE = "42000"

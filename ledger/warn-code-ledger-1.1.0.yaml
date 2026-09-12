@@ -295,3 +295,18 @@ entries:
         path_type: production
       - source: "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffComputedColumnOps.kt"
         path_type: production
+
+  # W159 — das Preserve-Fenster sichert nicht ueberall dasselbe zu. Oracle
+  # committet jedes DDL implizit; die Sperre haelt zwar durch, aber ein
+  # Fehlschlag laesst stehen, was bis dahin lief. `preserveWindowIsolation`
+  # trug die Unterscheidung seit jeher und wurde produktiv nie gelesen.
+  - code: W159
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SequencePreserveStageTest.kt"
+    evidence_paths:
+      - source: "hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SequencePreserveStage.kt"
+        path_type: production
+      - source: "hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SequenceCapabilityDefaults.kt"
+        path_type: production

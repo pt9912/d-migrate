@@ -76,10 +76,11 @@ Die aktuellen Fähigkeiten:
   (`--migration-overlay`).
 - **Sequenz-Pipeline**: MySQL-Helper-Table-Emulation
   (`dmg_sequences`) mit Live-Drift-Check; opt-in
-  `preserveCurrentValue` für PG / MySQL / SQLite — Probe + Restore
-  in einer einzigen Transaktion unter einem Per-Dialekt-Lock
-  (`pg_advisory_xact_lock` / `SELECT FOR UPDATE` /
-  `BEGIN IMMEDIATE`); SQLite-Sequence-Emulation via
+  `preserveCurrentValue` auf allen fünf Dialekten — Probe + Restore in
+  einem Fenster unter einem Per-Dialekt-Lock (`pg_advisory_xact_lock` /
+  `SELECT FOR UPDATE` / `BEGIN IMMEDIATE` / `sp_getapplock` /
+  `DBMS_LOCK`). Auf Oracle ist dieses Fenster serialisiert statt atomar
+  und sagt das auch (`W159`); SQLite-Sequence-Emulation via
   `--sqlite-named-sequences helper_table`.
 - **Spatial-DDL**: PostGIS, MySQL native, SpatiaLite
   (`--spatial-profile`); View-Query-Transformation über Dialekte

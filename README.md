@@ -69,10 +69,11 @@ The current capabilities:
   `--rename-column`) or file overlay (`--migration-overlay`).
 - **Sequence pipeline**: MySQL helper-table emulation
   (`dmg_sequences`) with live drift check; opt-in
-  `preserveCurrentValue` for PG / MySQL / SQLite — probe + restore
-  folded into a single transaction under a per-dialect lock
-  (`pg_advisory_xact_lock` / `SELECT FOR UPDATE` /
-  `BEGIN IMMEDIATE`); SQLite sequence emulation via
+  `preserveCurrentValue` on all five dialects — probe + restore folded
+  into one window under a per-dialect lock (`pg_advisory_xact_lock` /
+  `SELECT FOR UPDATE` / `BEGIN IMMEDIATE` / `sp_getapplock` /
+  `DBMS_LOCK`). On Oracle that window is serialized rather than atomic
+  and says so (`W159`); SQLite sequence emulation via
   `--sqlite-named-sequences helper_table`.
 - **Spatial DDL**: PostGIS, MySQL native, SpatiaLite
   (`--spatial-profile`); view-query transformation across dialects.
