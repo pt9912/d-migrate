@@ -311,11 +311,23 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
 
     // ── PK required preserved, PK-implicit unique not duplicated ──
 
-    test("PK columns preserve required but do not duplicate unique") {
+    /**
+     * **Eine PK-Spalte traegt `required` NICHT** — das ist die Regel des
+     * neutralen Modells, nicht eine Luecke des Lesers: der wirksame Zwang ist
+     * „`required` ODER Teil des Primaerschluessels" (`ImportTableValidator`,
+     * und fuer den einzigen Dialekt, dessen `PRIMARY KEY` kein `NOT NULL`
+     * impliziert, materialisiert `SqlitePrimaryKeyNullability` es beim
+     * Rendern). Beides zu fuehren erzeugte einen Unterschied, den niemand
+     * herstellen kann: ein Soll mit `primaryKey: [id]` allein stand gegen ein
+     * Ist mit `required: true`, und `SET NOT NULL` auf einer PK-Spalte ist ein
+     * Nichts. Der PostgreSQL-Leser war der letzte, der es doppelt fuehrte;
+     * gepinnt in `PostgresPrimaryKeyRequiredIntegrationTest`.
+     */
+    test("a PK column carries no required flag, and no duplicated unique") {
         pool().use { pool ->
             val result = reader.read(pool)
             val customers = result.schema.tables["customers"]!!
-            customers.columns["id"]!!.required shouldBe true
+            customers.columns["id"]!!.required shouldBe false
             customers.columns["id"]!!.unique shouldBe false
         }
     }
@@ -326,8 +338,11 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             val table = result.schema.tables["optimization_objective_breakdowns"]!!
 
             table.primaryKey shouldBe listOf("run_id", "name")
-            table.columns["run_id"]!!.required shouldBe true
-            table.columns["name"]!!.required shouldBe true
+            // Die beiden PK-Spalten tragen `required` nicht (siehe oben) --
+            // `position` schon: es ist `NOT NULL`, aber nicht im Schluessel.
+            // Genau diese Haelfte zeigt, dass die Regel schmal ist.
+            table.columns["run_id"]!!.required shouldBe false
+            table.columns["name"]!!.required shouldBe false
             table.columns["position"]!!.required shouldBe true
 
             table.columns["run_id"]!!.references.shouldBeNull()
