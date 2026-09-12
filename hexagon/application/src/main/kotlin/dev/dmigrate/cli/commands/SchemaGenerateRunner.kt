@@ -8,6 +8,12 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlScript
 import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.MssqlHashPartitionMode
+import dev.dmigrate.driver.MysqlServerVersion
+import dev.dmigrate.driver.OracleServerVersion
+import dev.dmigrate.driver.PostgresServerVersion
+import dev.dmigrate.driver.ServerVersion
+import dev.dmigrate.driver.TargetServerVersionParser
+import dev.dmigrate.driver.TargetVersionParse
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlResult
@@ -57,6 +63,17 @@ data class SchemaGenerateRequest(
      * Ziel und kommen deshalb aus der Konfiguration, nicht aus einem Flag.
      */
     val mysqlTableOptions: MysqlTableOptions = MysqlTableOptions(),
+    /**
+     * Die Version des Servers, fuer den erzeugt wird — `null`, wenn sie nicht
+     * gesagt wurde.
+     *
+     * Ohne Angabe antwortet die Faehigkeitstabelle fuer die aktuellste
+     * gemessene Version (`MeasuredServerVersions`): lautes Scheitern auf einem
+     * aelteren Server schlaegt stille Umdeutung dessen, was der Autor
+     * geschrieben hat. Wer bewusst fuer einen aelteren Server erzeugt, sagt es
+     * hier — sonst gaebe es dafuer keinen Weg.
+     */
+    val targetVersion: String? = null,
     val output: Path?,
     val report: Path?,
     val generateRollback: Boolean,
@@ -261,10 +278,12 @@ class SchemaGenerateRunner(
         val sqliteSeqMode = resolveSqliteSeqMode(request, dialect) ?: return Preflight.Exit(2)
         val mssqlHashMode = resolveMssqlHashMode(request, dialect) ?: return Preflight.Exit(2)
         val generatedAt = resolveGeneratedAt(request) ?: return Preflight.Exit(2)
+        val targetVersion = resolveTargetVersion(request, dialect) ?: return Preflight.Exit(2)
         val dialectContext: DdlDialectContext = when (dialect) {
             DatabaseDialect.MYSQL -> DdlDialectContext.MySql(
                 namedSequenceMode = mysqlSeqMode.value ?: MysqlNamedSequenceMode.ACTION_REQUIRED,
                 tableOptions = request.mysqlTableOptions,
+                serverVersion = targetVersion.value as? MysqlServerVersion,
             )
             DatabaseDialect.SQLITE -> DdlDialectContext.Sqlite(
                 namedSequenceMode = sqliteSeqMode.value ?: SqliteNamedSequenceMode.ACTION_REQUIRED,
@@ -272,7 +291,12 @@ class SchemaGenerateRunner(
             DatabaseDialect.MSSQL -> DdlDialectContext.MsSql(
                 hashPartitionMode = mssqlHashMode.value ?: MssqlHashPartitionMode.ACTION_REQUIRED,
             )
-            else -> DdlDialectContext.None
+            // PostgreSQL und Oracle tragen im generate-Pfad nur die Version —
+            // alles andere an ihrem Kontext entsteht erst beim Migrieren.
+            DatabaseDialect.POSTGRESQL ->
+                DdlDialectContext.Postgres(serverVersion = targetVersion.value as? PostgresServerVersion)
+            DatabaseDialect.ORACLE ->
+                DdlDialectContext.Oracle(serverVersion = targetVersion.value as? OracleServerVersion)
         }
         val options = DdlGenerationOptions(
             spatialProfile = spatialProfile,
@@ -293,6 +317,38 @@ class SchemaGenerateRunner(
 
     private data class OptionalMssqlHashMode(val value: MssqlHashPartitionMode?)
     private data class OptionalInstant(val value: Instant?)
+
+    private data class OptionalServerVersion(val value: ServerVersion?)
+
+    /**
+     * `--target-version` lesen. `null` = Eingabefehler (schon gemeldet),
+     * `OptionalServerVersion(null)` = nichts angegeben.
+     */
+    private fun resolveTargetVersion(
+        request: SchemaGenerateRequest,
+        dialect: DatabaseDialect,
+    ): OptionalServerVersion? {
+        val raw = request.targetVersion ?: return OptionalServerVersion(null)
+        return when (val parsed = TargetServerVersionParser.parse(dialect, raw)) {
+            is TargetVersionParse.Parsed -> OptionalServerVersion(parsed.version)
+            is TargetVersionParse.Unreadable -> {
+                printError(
+                    "Invalid --target-version '$raw' for ${dialect.name.lowercase()}: expected " +
+                        "${parsed.expected}.",
+                    request.source.toString(),
+                )
+                null
+            }
+            TargetVersionParse.NotVersioned -> {
+                printError(
+                    "--target-version is not supported for ${dialect.name.lowercase()} yet: d-migrate has no " +
+                        "structural version for this dialect, so no capability depends on it.",
+                    request.source.toString(),
+                )
+                null
+            }
+        }
+    }
 
     private fun resolveGeneratedAt(request: SchemaGenerateRequest): OptionalInstant? {
         val raw = getenv("SOURCE_DATE_EPOCH") ?: return OptionalInstant(null)

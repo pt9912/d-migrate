@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`--target-version` sagt, für welchen Server erzeugt wird** — auf
+  `schema generate` und `schema migrate`. Es entscheidet die
+  versionsabhängigen Fähigkeiten; ohne die Angabe gilt die neueste Version,
+  gegen die d-migrate gemessen hat. Bei einem Dateiziel gab es dafür bisher
+  keinen Weg: wer für PostgreSQL 16 erzeugte, bekam die Form für 18. Gegen eine
+  lebende Datenbank gewinnt die Angabe über die gelesene Version — sie sagt,
+  wofür das Skript gedacht ist, nicht, woraus gelesen wurde.
+
+  Nicht lesbar, oder für einen Dialekt ohne strukturelle Version (SQL Server,
+  SQLite): Exit 2 mit der erwarteten Schreibweise in der Meldung, statt einer
+  stillschweigend ignorierten Option.
+
 ### Fixed
 
 - **Ein Funktions-Default aus einem fremden Dialekt landet nicht mehr in der

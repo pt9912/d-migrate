@@ -151,6 +151,32 @@ class SchemaMigrateGenerationCanonicalizationWiringTest : FunSpec({
         planOnly = true,
     )
 
+    // ── `--target-version` ────────────────────────────────────────
+    //
+    // Ob es eine virtuelle berechnete Spalte gibt, haengt bei PostgreSQL an
+    // der Version: bis 17 nicht, ab 18 doch. Der Lauf ist hier Datei-zu-Datei,
+    // es gibt also keine gelesene Version — die Angabe ist das Einzige, was
+    // die Faehigkeit entscheidet, und sie muss bis zum Planer durchkommen.
+
+    test("an explicit target version decides which capabilities the planner is handed") {
+        val virtual = ColumnGeneration.Computed("a * b", stored = false)
+
+        val below = CapturingPlanner()
+        runnerFor(below).first.execute(
+            request(DatabaseDialect.POSTGRESQL).copy(targetVersion = "16"),
+        )
+        val above = CapturingPlanner()
+        runnerFor(above).first.execute(
+            request(DatabaseDialect.POSTGRESQL).copy(targetVersion = "18"),
+        )
+
+        // Unter 18 gibt es die virtuelle Form nicht — `stored` ist dort keine
+        // Wahl, und der Vergleich faltet sie weg.
+        (below.captured.shouldNotBeNull()(virtual) as ColumnGeneration.Computed).stored shouldBe true
+        // Ab 18 ist sie eine Wahl und bleibt stehen.
+        (above.captured.shouldNotBeNull()(virtual) as ColumnGeneration.Computed).stored shouldBe false
+    }
+
     test("the runner hands the planner Oracle's generation projection, not the identity default") {
         val planner = CapturingPlanner()
         runnerFor(planner).first.execute(request(DatabaseDialect.ORACLE))

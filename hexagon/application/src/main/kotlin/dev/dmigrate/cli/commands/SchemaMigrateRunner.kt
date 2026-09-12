@@ -22,6 +22,9 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.BodyEmbedding
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DialectCapabilities
+import dev.dmigrate.driver.ServerVersion
+import dev.dmigrate.driver.TargetServerVersionParser
+import dev.dmigrate.driver.TargetVersionParse
 import dev.dmigrate.driver.SpatialProfilePolicy
 import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.RoutineBodyDisplay
@@ -313,6 +316,45 @@ class SchemaMigrateRunner(
         }
     }
 
+    private sealed interface TargetVersionOutcome {
+        data class Resolved(val version: ServerVersion?) : TargetVersionOutcome
+        data class Invalid(val exitCode: Int) : TargetVersionOutcome
+    }
+
+    /** `--target-version`, gelesen fuer den Zieldialekt. */
+    private fun parseTargetVersion(
+        request: SchemaMigrateRequest,
+        dialect: DatabaseDialect,
+    ): TargetVersionOutcome {
+        val raw = request.targetVersion ?: return TargetVersionOutcome.Resolved(null)
+        return when (val parsed = TargetServerVersionParser.parse(dialect, raw)) {
+            is TargetVersionParse.Parsed -> TargetVersionOutcome.Resolved(parsed.version)
+            is TargetVersionParse.Unreadable -> {
+                userFacingPrintError(
+                    "Invalid --target-version '$raw' for ${dialect.name.lowercase()}: expected ${parsed.expected}.",
+                    "--target-version",
+                )
+                TargetVersionOutcome.Invalid(2)
+            }
+            TargetVersionParse.NotVersioned -> {
+                userFacingPrintError(
+                    "--target-version is not supported for ${dialect.name.lowercase()} yet: d-migrate has no " +
+                        "structural version for this dialect, so no capability depends on it.",
+                    "--target-version",
+                )
+                TargetVersionOutcome.Invalid(2)
+            }
+        }
+    }
+
+    /** Die ausdrueckliche Angabe an die Stelle setzen, von der alle sie lesen. */
+    private fun withTargetVersion(
+        prepared: SchemaMigratePrepared,
+        explicit: ServerVersion?,
+    ): SchemaMigratePrepared =
+        if (explicit == null) prepared
+        else prepared.copy(targetNormalized = prepared.targetNormalized.copy(serverVersion = explicit))
+
     fun execute(
         request: SchemaMigrateRequest,
         cancellationToken: CancellationToken = CancellationToken.none(),
@@ -327,12 +369,20 @@ class SchemaMigrateRunner(
         spatialProfileError(request.spatialProfile, authored.effectiveDialect)?.let {
             userFacingPrintError(it, "--spatial-profile"); return 2
         }
+        // `--target-version` gewinnt, wo es gesagt wurde: es ist eine Aussage
+        // ueber das Ziel des erzeugten Skripts, nicht ueber die Verbindung,
+        // ueber die gelesen wurde. Uebersteuert wird an EINER Stelle — danach
+        // sieht jeder Leser der Version dieselbe.
+        val explicitVersion = when (val parsed = parseTargetVersion(request, authored.effectiveDialect)) {
+            is TargetVersionOutcome.Invalid -> return parsed.exitCode
+            is TargetVersionOutcome.Resolved -> parsed.version
+        }
 
         // Eine LIST-Partitionierung, die der Zieldialekt nicht kennt, wird
         // hier uebersetzt — vor dem Vergleich, sonst meldete er bei jedem Lauf
         // dieselbe Strategieaenderung. Ab hier ist `planning.prepared` das
         // Soll-Schema; `authored` bleibt nur fuer die Bindung des Overlays.
-        val planning = planningInput(authored, request.migrationOverlays)
+        val planning = planningInput(withTargetVersion(authored, explicitVersion), request.migrationOverlays)
         val prepared = planning.prepared
 
         // F.4 cli-inline-overlay slice §3.3: build the synthetic
@@ -774,6 +824,16 @@ class SchemaMigrateRunner(
 data class SchemaMigrateRequest(
     val source: String,
     val target: String,
+    /**
+     * Die Version des Servers, fuer den erzeugt wird — `null`, wenn sie nicht
+     * gesagt wurde.
+     *
+     * Gegen eine lebende Datenbank ist die Angabe erlaubt und **gewinnt**: sie
+     * sagt etwas ueber das Ziel des erzeugten Skripts, nicht ueber die
+     * Verbindung, ueber die gelesen wurde. Ohne Angabe gilt die Version, die
+     * der Lesepfad meldet, und ohne die die aktuellste gemessene.
+     */
+    val targetVersion: String? = null,
     /**
      * Required for file-to-file mode; optional with DB-target — the
      * loader derives it from the connection. If both this field and a

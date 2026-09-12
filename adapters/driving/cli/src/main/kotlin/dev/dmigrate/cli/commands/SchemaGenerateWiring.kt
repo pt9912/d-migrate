@@ -38,6 +38,7 @@ internal data class SchemaGenerateOptions(
     val mysqlNamedSequences: String?,
     val sqliteNamedSequences: String?,
     val mssqlHashPartitions: String?,
+    val targetVersion: String? = null,
     val migrationOverlays: List<Path> = emptyList(),
     val cliContext: CliContext,
     val configPath: Path? = null,
@@ -157,6 +158,7 @@ internal object SchemaGenerateWiring {
             mysqlNamedSequences = options.mysqlNamedSequences,
             sqliteNamedSequences = options.sqliteNamedSequences,
             mssqlHashPartitions = ddl.hashPartitions,
+            targetVersion = options.targetVersion,
             deterministic = options.deterministic,
             migrationOverlays = MigrationOverlayFileLoader.load(options.migrationOverlays),
         )

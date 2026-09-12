@@ -2446,7 +2446,9 @@ Zurücklesen wiederfinden.
   musste. Ohne bekannte Zielversion, etwa bei `schema generate` in eine Datei,
   gilt die neueste Version, die d-migrate gemessen hat: das Skript läuft dann
   auf einem aktuellen Server und scheitert auf einem alten mit einem klaren
-  Syntaxfehler — lautes Scheitern statt stiller Umdeutung.
+  Syntaxfehler — lautes Scheitern statt stiller Umdeutung. Wer bewusst für einen
+  älteren Server erzeugt, sagt es mit `--target-version 16`; dann steht dort
+  `STORED` und die Meldung dazu.
 - **Die Speicherform nachträglich zu wechseln**, geht auf keinem Dialekt in
   place: das ändert, wo der Wert liegt, nicht wie er heißt. Der Lauf blockt mit
   einer Meldung, die beide Formen nennt.
@@ -3067,6 +3069,7 @@ Fortschritt/Warnungen nach stderr.
 | `--spatial-profile` | `postgis`, `native`, `spatialite`, `none` |
 | `--partition-storage` | Ablageort partitionierter Daten; bei SQL Server der Filegroup-Name (Standard `PRIMARY`) |
 | `--mssql-hash-partitions` | `action_required` (Standard) oder `computed_column` für die HASH-Emulation (nur `--target mssql`) |
+| `--target-version` | Version des Zielservers (`16` für PostgreSQL, `8.0.16` für MySQL, `23` für Oracle). Ohne die Angabe erzeugt d-migrate für die neueste Version, die es gemessen hat. Bei `schema migrate` gewinnt sie über die Version, die aus der Verbindung gelesen wurde |
 | `--migration-overlay` | Overlay-Datei mit den RANGE-Grenzen zu einer LIST-Wertemenge (wiederholbar); siehe [3.2](#ihre-list-partitionierung-kennt-das-ziel-nicht) |
 
 #### A.5 `schema reverse`

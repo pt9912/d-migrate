@@ -51,6 +51,7 @@ internal data class SchemaMigrateOptions(
     val strictGapOperations: Boolean,
     val sqliteNamedSequences: String?,
     val mssqlHashPartitions: String? = null,
+    val targetVersion: String? = null,
     val pgConcurrentIndexes: Boolean = false,
     val lockTimeoutMs: Long?,
     val cliContext: CliContext,
@@ -140,6 +141,7 @@ internal object SchemaMigrateWiring {
                 return 7
             },
             lockTimeoutMillis = options.lockTimeoutMs,
+            targetVersion = options.targetVersion,
         )
         val runner = SchemaMigrateRunner(
             fileLoader = { op ->

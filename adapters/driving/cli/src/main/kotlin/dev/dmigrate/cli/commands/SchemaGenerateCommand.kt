@@ -63,6 +63,13 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         help = "SQL Server hash-partitioning strategy: 'action_required' (default) or 'computed_column' " +
             "to emulate it with a persisted computed column")
         .choice("action_required", "computed_column")
+    val targetVersion by option(
+        "--target-version",
+        help = "Version of the server this DDL is meant for (e.g. 16 for PostgreSQL, 8.0.16 for MySQL, " +
+            "23 for Oracle). Without it, d-migrate renders for the newest version it has measured — a script " +
+            "that runs on a current server and fails loudly on an older one, rather than quietly meaning " +
+            "something else than what you wrote.",
+    )
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -77,6 +84,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
                 spatialProfile = spatialProfile,
                 partitionStorage = partitionStorage,
                 split = split,
+                targetVersion = targetVersion,
                 mysqlNamedSequences = mysqlNamedSequences,
                 sqliteNamedSequences = sqliteNamedSequences,
                 mssqlHashPartitions = mssqlHashPartitions,

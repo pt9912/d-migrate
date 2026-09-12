@@ -180,11 +180,21 @@ eigener Entwurf und kein Nebenprodukt.
 überhaupt keinen `ServerVersion`-Typ — nur MySQL, Oracle und PostgreSQL haben
 einen. Ihre Ad-hoc-Schwellen lassen sich vorher nicht einsammeln.
 
-### D — Die Ausweichtür für Dateiziele
+### D — Die Ausweichtür für Dateiziele — gebaut (2026-09-12)
 
-Eine ausdrückliche Angabe der Zielserverversion (`--target-version` o. ä.),
-damit wer bewusst für einen älteren Server erzeugt, das sagen kann, statt auf
-den Default zu treffen. Erst nach A, weil vorher nichts sie auswerten könnte.
+`--target-version` steht auf `schema generate` **und** `schema migrate`. Ohne
+die Angabe bleibt es beim Pin; mit ihr entscheidet sie die versionsabhängigen
+Fähigkeiten.
+
+**Gegen eine lebende Datenbank gewinnt die Angabe.** Sie sagt, wofür das
+Skript gedacht ist, nicht, woraus gelesen wurde — ein Lauf gegen Staging, der
+für die ältere Produktion erzeugt, ist ein wirklicher Fall. Übersteuert wird an
+**einer** Stelle im Runner (`withTargetVersion`), nicht an den vier, die die
+Version lesen; sonst wäre die nächste Lesestelle die, die es vergisst.
+
+Ein Dialekt ohne strukturelle Version (SQL Server, SQLite) nimmt die Option
+nicht entgegen, sondern sagt es und endet mit Exit 2 — eine stillschweigend
+ignorierte Option wäre schlechter als keine.
 
 ## Aufwand, ehrlich geschätzt
 

@@ -17,6 +17,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Path
@@ -71,6 +72,7 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         splitMode: SplitMode = SplitMode.SINGLE,
         mysqlNamedSequences: String? = null,
         sqliteNamedSequences: String? = null,
+        targetVersion: String? = null,
         deterministic: Boolean = false,
     ) = SchemaGenerateRequest(
         source = source, target = target,
@@ -80,6 +82,7 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         quiet = quiet, splitMode = splitMode,
         mysqlNamedSequences = mysqlNamedSequences,
         sqliteNamedSequences = sqliteNamedSequences,
+        targetVersion = targetVersion,
         deterministic = deterministic,
     )
 
@@ -667,5 +670,63 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         val h = harness()
         h.runner().execute(request(outputFormat = "json")) shouldBe 0
         h.stdout.joined() shouldContain "\"generator\": \"d-migrate ${VersionInfo.PRODUCT_VERSION}\""
+    }
+
+    // ── `--target-version` ────────────────────────────────────────
+    //
+    // Ohne Angabe antwortet die Faehigkeitstabelle fuer die aktuellste
+    // gemessene Version. Wer bewusst fuer einen aelteren Server erzeugt,
+    // braucht einen Weg, das zu sagen — und einen klaren Fehler, wenn die
+    // Angabe nicht zu lesen ist.
+
+    test("a target version reaches the dialect context") {
+        val h = harness()
+
+        val exit = h.runner().execute(request(target = "postgresql", targetVersion = "16.4"))
+
+        exit shouldBe 0
+        val context = h.generator.generateOptions?.dialectContext
+        (context as? dev.dmigrate.driver.DdlDialectContext.Postgres)?.serverVersion shouldBe
+            dev.dmigrate.driver.PostgresServerVersion(16, 4)
+    }
+
+    test("a bare major is enough for PostgreSQL") {
+        val h = harness()
+
+        h.runner().execute(request(target = "postgresql", targetVersion = "16")) shouldBe 0
+
+        val context = h.generator.generateOptions?.dialectContext
+        (context as? dev.dmigrate.driver.DdlDialectContext.Postgres)?.serverVersion shouldBe
+            dev.dmigrate.driver.PostgresServerVersion(16, 0)
+    }
+
+    test("an unreadable target version is a config error, and the message says what was expected") {
+        val h = harness()
+
+        val exit = h.runner().execute(request(target = "postgresql", targetVersion = "latest"))
+
+        exit shouldBe 2
+        h.stderr.joined() shouldContain "Invalid --target-version 'latest'"
+        h.stderr.joined() shouldContain "major.minor"
+        h.generator.generateCalls shouldBe 0
+    }
+
+    test("a dialect without a version type says so instead of guessing") {
+        val h = harness()
+
+        val exit = h.runner().execute(request(target = "sqlite", targetVersion = "3.45"))
+
+        exit shouldBe 2
+        h.stderr.joined() shouldContain "not supported for sqlite"
+        h.generator.generateCalls shouldBe 0
+    }
+
+    test("without the option nothing is claimed about the version") {
+        val h = harness()
+
+        h.runner().execute(request(target = "postgresql")) shouldBe 0
+
+        val context = h.generator.generateOptions?.dialectContext
+        (context as? dev.dmigrate.driver.DdlDialectContext.Postgres)?.serverVersion.shouldBeNull()
     }
 })
