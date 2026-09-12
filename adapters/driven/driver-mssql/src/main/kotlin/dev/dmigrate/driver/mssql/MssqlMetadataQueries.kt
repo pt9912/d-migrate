@@ -36,6 +36,8 @@ internal object MssqlMetadataQueries {
         val identityIncrement: Long?,
         val isComputed: Boolean,
         val computedDefinition: String?,
+        /** `PERSISTED` — der Wert liegt gespeichert, nicht nur berechnet. */
+        val computedPersisted: Boolean,
         val defaultDefinition: String?,
         val ordinal: Int,
     )
@@ -89,7 +91,7 @@ internal object MssqlMetadataQueries {
                    c.is_nullable, c.is_identity, c.is_computed, c.column_id,
                    dc.definition AS default_definition,
                    ic.seed_value, ic.increment_value,
-                   cc.definition AS computed_definition
+                   cc.definition AS computed_definition, cc.is_persisted AS computed_persisted
             FROM sys.columns c
             JOIN sys.types ty ON ty.user_type_id = c.user_type_id
             LEFT JOIN sys.default_constraints dc ON dc.object_id = c.default_object_id
@@ -114,6 +116,8 @@ internal object MssqlMetadataQueries {
                 identityIncrement = row.long("increment_value"),
                 isComputed = row.bool("is_computed"),
                 computedDefinition = row["computed_definition"] as? String,
+                computedPersisted = row["computed_persisted"] == true ||
+                    (row["computed_persisted"] as? Number)?.toInt() == 1,
                 defaultDefinition = row["default_definition"] as? String,
                 ordinal = row.int("column_id") ?: 0,
             )

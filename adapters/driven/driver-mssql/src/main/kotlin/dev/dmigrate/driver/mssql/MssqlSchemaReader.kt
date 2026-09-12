@@ -3,27 +3,27 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DependencyInfo
 import dev.dmigrate.core.model.FunctionDefinition
-import dev.dmigrate.core.model.ProcedureDefinition
-import dev.dmigrate.core.model.TriggerDefinition
-import dev.dmigrate.core.model.TriggerEvent
-import dev.dmigrate.core.model.TriggerForEach
-import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.ParameterDefinition
 import dev.dmigrate.core.model.ParameterDirection
-import dev.dmigrate.core.model.ReturnType
 import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
-import dev.dmigrate.driver.metadata.IndexProjection
+import dev.dmigrate.core.model.ProcedureDefinition
+import dev.dmigrate.core.model.ReturnType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.TriggerDefinition
+import dev.dmigrate.core.model.TriggerEvent
+import dev.dmigrate.core.model.TriggerForEach
+import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadOptions
@@ -33,11 +33,12 @@ import dev.dmigrate.driver.SchemaReader
 import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.metadata.GeneratedColumnNotes
+import dev.dmigrate.driver.metadata.IndexProjection
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 import java.sql.Connection
-import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 
 /**
  * MSSQL [SchemaReader]: tables (columns, PK, FKs, unique, indexes
@@ -158,8 +159,18 @@ class MssqlSchemaReader(
                         "is not carried in the neutral model; generate renders IDENTITY(1,1).",
                 )
             }
-            if (row.isComputed) {
-                notes += GeneratedColumnNotes.expressionDropped(table, row.name, row.computedDefinition)
+            // `sys.computed_columns` fuehrt den Ausdruck in Serverform
+            // (gemessen auf 2025: `([qty]*[price])`, aus `CAST` wird `CONVERT`)
+            // und `is_persisted` die Speicherform. Fehlt der Ausdruck, ist die
+            // Berechnung wirklich verloren — dann bleibt es bei der Meldung.
+            val computed = if (row.isComputed) {
+                row.computedDefinition?.takeIf { it.isNotBlank() }
+                    ?.let { ColumnGeneration.Computed(it, stored = row.computedPersisted) }
+            } else {
+                null
+            }
+            if (row.isComputed && computed == null) {
+                notes += GeneratedColumnNotes.expressionDropped(table, row.name, null)
             }
             row.name to ColumnDefinition(
                 type = mapping.type,
@@ -174,7 +185,7 @@ class MssqlSchemaReader(
                 } else {
                     MssqlTypeMapping.parseDefault(row.defaultDefinition, mapping.type)
                 },
-                generation = mapping.generation,
+                generation = computed ?: mapping.generation,
                 ordinal = row.ordinal,
             )
         }

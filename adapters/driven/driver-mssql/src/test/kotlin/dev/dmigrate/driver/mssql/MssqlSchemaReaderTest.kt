@@ -10,11 +10,13 @@ import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.metadata.JdbcOperations
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldBeEmpty as shouldBeEmptyMap
 import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
@@ -201,7 +203,7 @@ class MssqlSchemaReaderTest : FunSpec({
         note.objectName shouldBe "t.id"
     }
 
-    test("computed column suppresses default and emits R343 action_required") {
+    test("a computed column comes back with its expression, and carries no default") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
         stubTableQueries(jdbc)
@@ -212,10 +214,17 @@ class MssqlSchemaReaderTest : FunSpec({
         )
         val (reader, pool) = rig(jdbc)
         val result = reader.read(pool)
-        result.schema.tables.getValue("t").columns.getValue("total").default.shouldBeNull()
-        val note = result.notes.single()
-        note.code shouldBe "R343"
-        note.severity shouldBe SchemaReadSeverity.ACTION_REQUIRED
+        val column = result.schema.tables.getValue("t").columns.getValue("total")
+        // Der Wert kommt aus dem Ausdruck; ein Default waere daneben sinnlos.
+        column.default.shouldBeNull()
+        val generation = column.generation as? ColumnGeneration.Computed
+        withClue(column.generation.toString()) {
+            generation.shouldNotBeNull()
+            // Serverform, wie `sys.computed_columns` sie fuehrt.
+            generation.expression shouldBe "([a]+[b])"
+        }
+        // Nichts mehr zu melden: die Berechnung wird getragen.
+        result.notes.none { it.code == "R343" } shouldBe true
     }
 
     test("index INCLUDE columns are carried into the model, not merged into the key") {

@@ -13,11 +13,12 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.NoteType
-import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.RawSqlExpressionPortability
-import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.driver.metadata.ComputedColumnClause
 
 /**
  * Spalten- und Constraint-Rendering für T-SQL, aus [MssqlDdlGenerator]
@@ -65,6 +66,13 @@ internal class MssqlColumnConstraintHelper(
      * Enum und Domain, kein DEFAULT auf IDENTITY — faellt damit an genau
      * einer Stelle statt an zweien, die auseinanderlaufen koennen.
      */
+    private fun computedColumn(colName: String, col: ColumnDefinition): String {
+        val computed = requireNotNull(ComputedColumnClause.of(col)) { "computedColumn called for a plain column" }
+        // Ohne `GENERATED ALWAYS` und ohne Typ — beides lehnt SQL Server ab.
+        val suffix = if (computed.stored) " PERSISTED" else ""
+        return "${quoteIdentifier(colName)} AS (${computed.expression})$suffix"
+    }
+
     fun renderColumn(
         tableName: String,
         colName: String,
@@ -77,6 +85,12 @@ internal class MssqlColumnConstraintHelper(
         val generation = col.generation
         val ctx = ColumnContext(tableName, colName, col, table, notes)
         val declaration = when {
+            // SQL Server faellt aus dem Muster der anderen vier: die Spalte
+            // bekommt ihren Typ aus dem Ausdruck, ein davorstehender Typ ist
+            // ein Syntaxfehler. `PERSISTED` heisst gespeichert; ohne Angabe
+            // wird bei jedem Zugriff gerechnet. NOT NULL, DEFAULT und UNIQUE
+            // sind an einer berechneten Spalte keine Frage.
+            ComputedColumnClause.of(col) != null -> computedColumn(colName, col)
             generation is ColumnGeneration.Identity && supportsIdentity(type) ->
                 identityColumn(ctx, typeMapper.toSql(type), generation.mode)
             type is NeutralType.Identifier && type.autoIncrement -> identityColumn(ctx, "INT", IdentityMode.ALWAYS)
