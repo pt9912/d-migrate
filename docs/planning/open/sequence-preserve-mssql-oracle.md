@@ -82,18 +82,82 @@ Oracle für gesperrt.
 - Die Kurzmatrix im Anwenderhandbuch begründet ausdrücklich, warum SQL Server
   fehlt; Oracle kommt dort nicht vor.
 
+## Entscheidung (Eigner, 2026-09-12): Warnung jetzt, Opt-in-Frage später
+
+Die offene Frage aus Punkt 2 — Warnung im Report oder Blocker mit Opt-in — ist
+**gestaffelt** entschieden: **jetzt eine Warnung**, und die Frage, ob daraus
+später ein Opt-in-Blocker wird, bekommt ein eigenes Ticket, das auf der
+Messung des Fehlerfalls aus Slice A aufsetzt.
+
+Der Grund für die Staffelung: das Oracle-Fenster **funktioniert**, es sichert
+nur weniger zu. Es heute zu blocken bräche bestehende Läufe für eine
+Eigenschaft, die sich nicht ändern lässt (Oracle committet DDL implizit). Und
+ob ein Blocker das richtige Mittel ist, lässt sich erst beurteilen, wenn der
+Fehlerfall gemessen ist statt beschrieben.
+
 ## Der Schnitt
 
-1. **Live-Abnahme SQL Server und Oracle.** Je ein Executor-IT, ein Weg über
-   `schema migrate --execute`, und ein Probe-IT — gleicher Zuschnitt wie bei
-   den drei belegten Dialekten, damit die Reihe vergleichbar bleibt. Der
-   Oracle-Fall braucht zusätzlich den Nachweis des Fehlerfalls: ein Abbruch
-   zwischen zwei geschützten Operationen lässt Angewandtes stehen.
-2. **`preserveWindowIsolation` wirksam machen.** Wer `SERIALIZED` fährt, muss
-   es erfahren. Zu entscheiden ist die Form: Warnung im Report oder Blocker mit
-   Opt-in. Die Wahl gehört in diesen Slice, nicht in seine Umsetzung.
-3. **Kommentar und Doku nachziehen** — erst nach Punkt 1, damit die Zusage auf
-   einer Messung steht und nicht auf einer zweiten Behauptung.
+Vier Scheiben, in dieser Reihenfolge. A ist die Voraussetzung für alles andere:
+erst messen, dann behaupten.
+
+### A — Live-Abnahme SQL Server (3 Specs)
+
+Gleicher Zuschnitt wie bei den drei belegten Dialekten, damit die Reihe
+vergleichbar bleibt:
+
+| Spec | Vorbild | Was sie belegt |
+| --- | --- | --- |
+| `MssqlAtomicSequencePreserveExecutorIntegrationTest` | `SqliteAtomicSequencePreserveExecutorIntegrationTest` | `sp_getapplock` hält das Fenster; eine zweite Sitzung kommt nicht dazwischen |
+| `MssqlSchemaMigrateAtomicPreserveIntegrationTest` | `SqliteSchemaMigrateAtomicPreserveIntegrationTest` | `schema migrate --execute` mit Preserve-Kandidat läuft durch, der Wert steht danach auf dem vorgefundenen Stand |
+| `MssqlSequenceCurrentValueProbeIntegrationTest` | das PG-Pendant | die Probe liest den Stand, den der Server wirklich führt |
+
+**Kosten:** SQL Server braucht ~2 min Containerstart je Spec-Klasse; die drei
+gehören deshalb in **eine** Klasse mit gemeinsamem `beforeSpec`, nicht in drei.
+
+### B — Live-Abnahme Oracle (3 Specs + der Fehlerfall)
+
+Dieselben drei, plus die Scheibe, die SQL Server nicht braucht:
+
+- **Der Abbruch mitten im Fenster.** Ein gezielt herbeigeführter Fehlschlag
+  zwischen zwei geschützten Operationen, und der Nachweis, dass die erste
+  **steht** — das ist der Unterschied zwischen `SERIALIZED` und `ATOMIC`, und
+  er ist heute nur behauptet. Ohne diese Messung darf C nichts zusagen.
+
+**Offene Frage in B, vor dem Bau zu klären:** wie der Fehlschlag herbeigeführt
+wird, ohne den Test von Zufall abhängig zu machen. Kandidat: eine zweite
+geschützte Operation, die am Server scheitert (etwa ein `ALTER SEQUENCE` auf
+einen Wert, den Oracle ablehnt), statt einen Abbruch von außen zu simulieren.
+
+### C — `preserveWindowIsolation` erreicht den Betreiber
+
+Heute liest kein Zweig das Feld. Nach A/B:
+
+- Ein Lauf mit Preserve-Kandidat gegen einen `SERIALIZED`-Dialekt setzt eine
+  **Warnung** in den Report — mit der Folge im Klartext: „ein Abbruch im
+  Fenster lässt angewandte Operationen stehen".
+- `NONE` bleibt, was es ist: der Dialekt bietet das Fenster nicht an.
+- Ein neuer Warncode gehört in den Ledger (`warn-code-ledger-*`), anders als
+  bei der R-Serie ist der dort geführt und getestet.
+
+**Nicht in C:** ein Blocker, eine Option, ein Opt-in. Das ist das Folgeticket.
+
+### D — Kommentar und Doku nachziehen
+
+Erst jetzt, damit jede Zusage auf einer Messung steht:
+
+- Der Kommentar in `SequenceCapabilityDefaults`, der Oracle für gesperrt
+  erklärt und drei Zeilen später das Gegenteil konfiguriert.
+- `docs/user/guide.md`: alle fünf Lock-Strategien, mit dem Oracle-Vorbehalt am
+  Fundort statt in einer Fußnote.
+- Die Kurzmatrix im Anwenderhandbuch: Oracle kommt dort gar nicht vor.
+- Die Root-READMEs nennen `preserveCurrentValue` für alle fünf.
+
+## Aufwand und Reihenfolge
+
+A und B sind der Löwenanteil und laufen fast nur in Containerzeit (SQL Server
+~2 min, Oracle ~1,5 min je Klasse). C ist klein, hängt aber inhaltlich an B. D
+ist reine Textarbeit, darf aber nicht vorgezogen werden — genau das hat den
+Befund erzeugt.
 
 ## Akzeptanzkriterien
 

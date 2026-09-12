@@ -184,7 +184,8 @@ Rumpf ist ueber alle Dialekte derselbe, das Wort dahinter nicht:
 
 | Dialekt | virtuell (`stored: false`) | gespeichert (`stored: true`) |
 | --- | --- | --- |
-| PostgreSQL | — kennt nur die gespeicherte Form | `STORED` (Pflichtwort) |
+| PostgreSQL bis 17 | — gibt es nicht, `STORED` ist Pflichtwort | `STORED` |
+| PostgreSQL ab 18 | `VIRTUAL`, und die Vorgabe ohne Angabe | `STORED` |
 | MySQL | `VIRTUAL` | `STORED` |
 | SQLite | `VIRTUAL` | `STORED` |
 | Oracle | `VIRTUAL` | `MATERIALIZED` |
@@ -192,9 +193,15 @@ Rumpf ist ueber alle Dialekte derselbe, das Wort dahinter nicht:
 
 SQL Server faellt aus dem Muster: dort lautet die Spalte
 `<quoted_name> AS (<expression>) [PERSISTED]`; ein Typ davor ist ein
-Syntaxfehler, die Spalte bekommt ihn aus dem Ausdruck. PostgreSQL kennt die
-virtuelle Form nicht — `stored` wird dort auf `true` projiziert, damit ein
-Round-Trip nicht als Aenderung erscheint.
+Syntaxfehler, die Spalte bekommt ihn aus dem Ausdruck.
+
+**PostgreSQL ist als einziger versionsabhaengig** — gemessen an 18.6:
+`VIRTUAL` ist gueltig (`pg_attribute.attgenerated = 'v'`), und ohne Angabe
+entsteht ebenfalls die virtuelle Form. Bis 17 gibt es sie nicht, dort ist
+`STORED` Pflichtwort. Gerendert wird deshalb nach der Version des Ziels: ab 18
+das Wort, das `stored` verlangt, darunter `STORED` — und wer dort `stored:
+false` schreibt, bekommt die Abweichung gesagt, statt sie stillschweigend
+umgedeutet zu bekommen.
 
 `NOT NULL`, `DEFAULT` und `UNIQUE` entfallen an einer berechneten Spalte: ihr
 Wert kommt aus dem Ausdruck.

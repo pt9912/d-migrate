@@ -51,22 +51,111 @@ an **eine** Stelle gepinnt, und die Fähigkeits-Suite in CI muss gegen genau
 diesen Pin laufen. So trägt der Default die Testmatrix, statt von ihr
 abzuhängen.
 
-## Was zu schneiden ist
+## Der Schaden ist heute lieferbar (gemessen 2026-09-12)
 
-- **Die Signatur.** `forDialect(dialect)` → `forTarget(dialect, serverVersion?)`.
-  59 Aufrufstellen; der Umbau läuft über `make ast-grep`. Die meisten Stellen
-  kennen ihr Ziel bereits, es geht also weniger um Änderungen als um
-  Durchreichen.
-- **Welche der 25 Fähigkeiten wirklich versionsabhängig sind.** Nicht alle sind
-  es; die Liste ist zu messen, nicht zu schätzen. Bekannt ist bisher genau eine
-  (`supportsVirtualComputedColumns`, PG ab 18).
-- **Die drei bestehenden Muster einsammeln.** Ein `ServerVersion` neben einer
-  version-blinden Fähigkeitstabelle ist die eigentliche Unstimmigkeit. Ob
-  `RoutineCapability` mit hineingehört (es hat einen CLI-Override, den die
-  Tabelle nicht kennt), ist eine eigene Frage.
-- **Die Ausweichtür für Dateiziele:** eine ausdrückliche Angabe der
-  Zielserverversion, damit wer bewusst für einen alten Server erzeugt, das sagen
-  kann — statt auf einen Default zu treffen.
+Nicht mehr nur „die Fähigkeit ist falsch". Gemessen gegen **PostgreSQL 18.6 —
+die Version, die in CI läuft** (`TestImages.POSTGRESQL` ist `postgres:18-alpine`):
+
+```
+virtual:    CREATE TABLE pv (a int, b int GENERATED ALWAYS AS (a*2) VIRTUAL)  → OK
+no keyword: CREATE TABLE pn (a int, b int GENERATED ALWAYS AS (a*2))          → OK
+attgenerated:  pv.b = 'v'   pn.b = 'v'   ps.b = 's'
+```
+
+`VIRTUAL` ist gültig, und **ohne Angabe entsteht ebenfalls die virtuelle Form**.
+Daraus wird eine geschlossene Kette stiller Degradation:
+
+1. Der Autor schreibt `stored: false`.
+2. `TypeCanonicalizerWiring` faltet `stored` auf `true`, weil
+   `supportsVirtualComputedColumns = false` — der Vergleich sieht keinen
+   Unterschied mehr.
+3. `PostgresColumnConstraintHelper` rendert unbedingt `STORED`.
+4. Der Server legt `attgenerated = 's'` an.
+5. Der Leser liest korrekt `stored = true` zurück (er wertet `attgenerated`
+   aus, er ist als einziger Teil der Kette schon version-fest).
+6. Der Round-Trip ist sauber — und die Angabe des Autors ist weg.
+
+Kein Schritt der Kette meldet etwas. Genau die stille Degradation also, gegen
+die die Eignerentscheidung unten „laut scheitern" setzt.
+
+**Die Kette hat genau eine Aufrufstelle je Glied**, und das ist die gute
+Nachricht: `supportsVirtualComputedColumns` wird produktiv **einmal** gelesen
+(`TypeCanonicalizerWiring.kt`, `foldsStored`). Der erste Schnitt braucht deshalb
+nicht die Signatur aller 59 Stellen anzufassen.
+
+## Der Schnitt
+
+Vier Scheiben. Die Reihenfolge ist die Aussage: erst den Mechanismus an **einem**
+gemessenen Fall bauen, dann erst verbreitern.
+
+### A — Der Mechanismus, an einer Fähigkeit
+
+- `forDialect(dialect)` bekommt ein Geschwister `forTarget(dialect,
+  serverVersion: ServerVersion?)`. `forDialect` bleibt und ruft `forTarget(d,
+  null)` — damit müssen die 59 Stellen **nicht** in dieser Scheibe wandern.
+- Je Dialekt **eine** gepinnte „neueste gemessene Version" (die
+  Eignerentscheidung: unbekannt = aktuellste bekannte). Der Pin gehört neben die
+  Fähigkeitstabelle, und die Test-Images müssen gegen genau diesen Pin laufen —
+  ein Test, der Pin und `TestImages` vergleicht, hält die beiden zusammen.
+- `supportsVirtualComputedColumns` wird die erste versionsabhängige Fähigkeit:
+  `false` unter PostgreSQL 18, `true` ab 18, `true` für die übrigen vier.
+- Die eine Aufrufstelle (`TypeCanonicalizerWiring`) reicht die Version durch —
+  sie kennt das Ziel bereits.
+
+**Akzeptanz:** eine Live-Spec gegen PG 18 schreibt `stored: false` und findet
+danach `attgenerated = 'v'`; dieselbe Spec gegen einen 17er-Pin bekommt
+`STORED` **und eine Meldung**, nicht stillschweigend.
+
+### B — Die Liste der versionsabhängigen Fähigkeiten, gemessen
+
+Nicht alle 25 sind es, und geschätzt wird nicht. Die Erhebung läuft gegen die
+Grenzen der Spanne aus dem Lastenheft 3.3 (PostgreSQL 14, MySQL 8.0.16, SQL
+Server 2017, Oracle 23ai, SQLite treibergebunden) — je Fähigkeit **eine**
+Messung an der Untergrenze und eine an der Obergrenze. Wo beide gleich
+antworten, ist die Fähigkeit versionsfest und bleibt, wo sie ist.
+
+Drei Kandidaten sind schon benannt und kosten keine Suche mehr:
+
+| Fähigkeit / Verhalten | Schwelle | Beleg |
+| --- | --- | --- |
+| `supportsVirtualComputedColumns` | PostgreSQL 18 | oben gemessen |
+| `SET EXPRESSION` für berechnete Spalten | PostgreSQL 17 | `PostgresServerVersion.SET_EXPRESSION_SINCE_MAJOR` |
+| `json`/`array` → nativer `JSON`-Typ | Oracle 21c | Grund, warum Oracle nicht auf 19c zugesagt wurde |
+
+**Nicht-Scope von B:** die Fähigkeiten umzustellen. B erhebt nur, was
+umzustellen ist.
+
+### C — Die drei bestehenden Muster einsammeln
+
+Ein `ServerVersion` neben einer version-blinden Tabelle ist die eigentliche
+Unstimmigkeit. Nach A gibt es einen Ort für die Frage „kann das Ziel das?", und
+die Ad-hoc-Schwellen in den Renderern (`CREATE OR REPLACE TRIGGER` ab PG 14,
+`GREATEST` ab SQL Server 2022, `RENAME COLUMN` ab SQLite 3.25) wandern dorthin
+— jede mit ihrer Messung, keine auf Verdacht.
+
+**Ausdrücklich offen gelassen:** ob `RoutineCapability` mit hineingehört. Es hat
+einen CLI-Override, den die Tabelle nicht kennt; das zusammenzulegen ist ein
+eigener Entwurf und kein Nebenprodukt.
+
+**Lücke, die C zuerst schließen muss:** für SQL Server und SQLite gibt es
+überhaupt keinen `ServerVersion`-Typ — nur MySQL, Oracle und PostgreSQL haben
+einen. Ihre Ad-hoc-Schwellen lassen sich vorher nicht einsammeln.
+
+### D — Die Ausweichtür für Dateiziele
+
+Eine ausdrückliche Angabe der Zielserverversion (`--target-version` o. ä.),
+damit wer bewusst für einen älteren Server erzeugt, das sagen kann, statt auf
+den Default zu treffen. Erst nach A, weil vorher nichts sie auswerten könnte.
+
+## Aufwand, ehrlich geschätzt
+
+A ist klein (eine Fähigkeit, eine Aufrufstelle, ein Pin, zwei Specs) und
+liefert den ganzen Nutzen des ersten gemessenen Falls. **B ist die teuerste
+Scheibe** — bis zu 25 Fähigkeiten × zwei Versionsgrenzen × fünf Dialekte, und
+die Untergrenzen brauchen Container-Images, die es in `TestImages` heute nicht
+gibt. Wer den Slice aufteilt, teilt ihn hier.
+
+C hängt an einer Vorarbeit (zwei fehlende `ServerVersion`-Typen), D an A.
 
 ## Die Vorbedingung ist erfüllt (2026-09-11)
 
