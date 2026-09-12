@@ -31,7 +31,12 @@ internal class PostgresColumnConstraintHelper(
         // DEFAULT und UNIQUE sind dort keine Frage. Welche Speicherform
         // dahintersteht, haengt bei PostgreSQL als einzigem Dialekt an der
         // Serverversion (siehe PostgresComputedStorage).
+        // Traegt der Ausdruck fremde Grammatik, faellt die Berechnung weg und
+        // die Spalte bleibt gewoehnlich. Gemeldet wird das dort, wo die Notizen
+        // entstehen (`PostgresDdlGenerator.generateTable`) — beide Seiten
+        // fragen dieselbe Stelle, damit sie nicht auseinanderlaufen.
         ComputedColumnClause.of(col)?.let { computed ->
+            if (!PostgresComputedStorage.isPortable(computed)) return@let
             return listOf(
                 quoteIdentifier(colName),
                 typeMapper.toSql(type),

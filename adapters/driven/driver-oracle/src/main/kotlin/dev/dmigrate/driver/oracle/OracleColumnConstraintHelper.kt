@@ -54,12 +54,23 @@ internal class OracleColumnConstraintHelper(
         // DEFAULT und UNIQUE sind dort keine Frage. Oracles Wort fuer die
         // gespeicherte Form ist `MATERIALIZED`, nicht `STORED`; ohne Angabe ist
         // die Spalte virtuell.
+        // Traegt der Ausdruck fremde Grammatik, faellt die Berechnung weg und
+        // die Spalte bleibt gewoehnlich — benannt, nicht still. Der Reverse
+        // uebersetzt rohen Text nicht; ihn hier weiterzureichen ergaebe SQL,
+        // das erst dem Zielserver auffaellt.
         ComputedColumnClause.of(col)?.let { computed ->
-            return listOf(
-                quoteIdentifier(colName),
-                typeMapper.toSql(type),
-                ComputedColumnClause.clause(computed, if (computed.stored) "MATERIALIZED" else "VIRTUAL"),
-            ).joinToString(" ")
+            val refusal = RawSqlExpressionPortability.computedRefusal(
+                colName, computed.expression, DatabaseDialect.ORACLE,
+            )
+            if (refusal != null) {
+                notes += refusal
+            } else {
+                return listOf(
+                    quoteIdentifier(colName),
+                    typeMapper.toSql(type),
+                    ComputedColumnClause.clause(computed, if (computed.stored) "MATERIALIZED" else "VIRTUAL"),
+                ).joinToString(" ")
+            }
         }
 
         return when {

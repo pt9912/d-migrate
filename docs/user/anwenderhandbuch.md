@@ -2424,9 +2424,16 @@ Zurücklesen wiederfinden.
 **Hinweise:**
 
 - **`expression` ist roher SQL-Text und wird nicht übersetzt.** Er muss auf
-  dem Zieldialekt gültig sein. Geprüft wird nur, was ohne SQL-Parser
-  entscheidbar ist: dass ein Ausdruck dasteht, dass er sich nicht auf die
-  Spalte bezieht, die er berechnet, und dass die genannten Spalten existieren.
+  dem Zieldialekt gültig sein. Geprüft wird, was ohne SQL-Parser entscheidbar
+  ist: dass ein Ausdruck dasteht, dass er sich nicht auf die Spalte bezieht,
+  die er berechnet, und dass die genannten Spalten existieren.
+- **Ein Ausdruck aus einem fremden Dialekt wird nicht durchgereicht.** Wer ein
+  PostgreSQL-Schema zurückliest, bekommt dort die Serverform — etwa
+  `((quantity)::numeric * unit_price)`. Ein `schema generate --target mysql`
+  daraus erzeugt **keine** Spalte mit diesem Ausdruck: `::` gibt es dort nicht.
+  Die Spalte entsteht als gewöhnliche, und der Lauf meldet **E053** mit dem
+  Grund. Übersetzt wird der Text nicht — dafür bräuchte es einen SQL-Parser je
+  Dialekt.
 - **`stored: false` braucht auf PostgreSQL Version 18 oder neuer.** Bis 17 gibt
   es die virtuelle Form dort nicht. Kennt d-migrate die Zielversion (also immer,
   wenn es gegen eine Datenbank arbeitet), rendert es die Form, die diese Version

@@ -15,8 +15,8 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ManualActionRequired
-import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.RawSqlExpressionPortability
+import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.metadata.ComputedColumnClause
 
@@ -66,6 +66,19 @@ internal class MssqlColumnConstraintHelper(
      * Enum und Domain, kein DEFAULT auf IDENTITY — faellt damit an genau
      * einer Stelle statt an zweien, die auseinanderlaufen koennen.
      */
+    /** `true`, wenn der Ausdruck auf T-SQL nicht gilt — dann ist er gemeldet. */
+    private fun refuseUnportableComputed(
+        colName: String,
+        col: ColumnDefinition,
+        notes: MutableList<TransformationNote>,
+    ): Boolean {
+        val computed = ComputedColumnClause.of(col) ?: return false
+        val note = RawSqlExpressionPortability.computedRefusal(colName, computed.expression, DatabaseDialect.MSSQL)
+            ?: return false
+        notes += note
+        return true
+    }
+
     private fun computedColumn(colName: String, col: ColumnDefinition): String {
         val computed = requireNotNull(ComputedColumnClause.of(col)) { "computedColumn called for a plain column" }
         // Ohne `GENERATED ALWAYS` und ohne Typ — beides lehnt SQL Server ab.
@@ -90,6 +103,11 @@ internal class MssqlColumnConstraintHelper(
             // ein Syntaxfehler. `PERSISTED` heisst gespeichert; ohne Angabe
             // wird bei jedem Zugriff gerechnet. NOT NULL, DEFAULT und UNIQUE
             // sind an einer berechneten Spalte keine Frage.
+            //
+            // Traegt der Ausdruck fremde Grammatik, faellt die Berechnung weg
+            // und die Spalte bleibt gewoehnlich — benannt, nicht still.
+            ComputedColumnClause.of(col) != null && refuseUnportableComputed(colName, col, notes) ->
+                plainColumn(ctx)
             ComputedColumnClause.of(col) != null -> computedColumn(colName, col)
             generation is ColumnGeneration.Identity && supportsIdentity(type) ->
                 identityColumn(ctx, typeMapper.toSql(type), generation.mode)

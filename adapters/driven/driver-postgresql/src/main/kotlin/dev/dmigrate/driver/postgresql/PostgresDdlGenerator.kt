@@ -82,6 +82,24 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
 
     // ── Tables ───────────────────────────────────
 
+    /**
+     * Die Spaltenzeilen einer Tabelle, in physischer Ordinalreihenfolge (siehe
+     * `inOrdinalOrder`) — samt der beiden Meldungen, die nur hier entstehen
+     * koennen: die Degradierung einer virtuellen berechneten Spalte auf einem
+     * aelteren Server, und die Absage fuer einen Ausdruck, den PostgreSQL gar
+     * nicht parsen kann.
+     */
+    private fun columnLines(
+        name: String,
+        table: TableDefinition,
+        schema: SchemaDefinition,
+        notes: MutableList<TransformationNote>,
+    ): List<String> = table.columns.inOrdinalOrder().map { (colName, col) ->
+        PostgresComputedStorage.degradedNote(name, colName, col, currentServerVersion)?.let { notes += it }
+        PostgresComputedStorage.refusalNote(colName, col)?.let { notes += it }
+        generateColumnSql(colName, col, schema, name)
+    }
+
     override fun generateTable(
         name: String,
         table: TableDefinition,
@@ -102,11 +120,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             )
         }
 
-        // Columns — physische Ordinalreihenfolge (siehe inOrdinalOrder).
-        for ((colName, col) in table.columns.inOrdinalOrder()) {
-            columnLines += generateColumnSql(colName, col, schema, name)
-            PostgresComputedStorage.degradedNote(name, colName, col, currentServerVersion)?.let { notes += it }
-        }
+        columnLines += columnLines(name, table, schema, notes)
 
         // Inline foreign key constraints (non-circular, from column references)
         for ((colName, col) in table.columns.inOrdinalOrder()) {

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ein Berechnungsausdruck aus einem fremden Dialekt wird nicht mehr
+  durchgereicht.** Für CHECK-Ausdrücke, Index-Prädikate und Ausdrucks-Schlüssel
+  prüft d-migrate seit 1.3.0, ob der rohe Text auf dem Ziel überhaupt gilt, und
+  verwirft ihn sonst benannt (`E053`). Die Berechnung einer Spalte ist das
+  vierte Feld dieser Art und war nicht dabei: ein aus PostgreSQL
+  zurückgelesenes `((quantity)::numeric * unit_price)` landete wörtlich in
+  T-SQL, MySQL, SQLite und Oracle, wo es `::` nicht gibt. Jetzt entsteht dort
+  die gewöhnliche Spalte, und der Lauf sagt warum.
+
+  Gemeldet von einem Konsumenten; die Regel gilt in beide Richtungen — ein
+  MySQL-Ausdruck mit Backticks wird gegen PostgreSQL genauso verworfen.
+
 - **`stored: false` überlebt auf PostgreSQL 18 bis in die Datenbank.** Bisher
   nicht — und zwar gegen genau die Version, gegen die die Integrationssuite
   läuft. `VIRTUAL` ist dort gültig und ohne Angabe sogar die Vorgabe

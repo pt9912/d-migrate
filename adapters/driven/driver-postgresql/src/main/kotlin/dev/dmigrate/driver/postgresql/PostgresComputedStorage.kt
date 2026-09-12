@@ -6,6 +6,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.PostgresServerVersion
+import dev.dmigrate.driver.RawSqlExpressionPortability
 import dev.dmigrate.driver.TransformationNote
 
 /**
@@ -38,6 +39,22 @@ internal object PostgresComputedStorage {
         DialectCapabilities
             .forTarget(DatabaseDialect.POSTGRESQL, serverVersion)
             .supportsVirtualComputedColumns
+
+    /**
+     * Ob der Ausdruck auf PostgreSQL ueberhaupt gilt.
+     *
+     * Rohen Text uebersetzt der Reverse nicht — ein aus MySQL zurueckgelesener
+     * Ausdruck mit Backticks ist hier kein gueltiger. Dann faellt die
+     * Berechnung weg und die Spalte bleibt gewoehnlich; [refusalNote] sagt es.
+     */
+    fun isPortable(computed: ColumnGeneration.Computed): Boolean =
+        RawSqlExpressionPortability.assess(computed.expression, DatabaseDialect.POSTGRESQL).portable
+
+    /** Die Absage fuer einen Ausdruck, den PostgreSQL nicht parsen kann — sonst `null`. */
+    fun refusalNote(colName: String, column: ColumnDefinition): TransformationNote? {
+        val computed = column.generation as? ColumnGeneration.Computed ?: return null
+        return RawSqlExpressionPortability.computedRefusal(colName, computed.expression, DatabaseDialect.POSTGRESQL)
+    }
 
     /**
      * Die Meldung zur Degradierung — **nur** wo die Zielversion bekannt ist.

@@ -126,6 +126,10 @@ owned/implizite Sequence; dieselbe Sequence darf nicht zusaetzlich unter
 
 `type: computed` traegt eine berechnete Spalte. `expression` ist roher
 SQL-Text und wird nicht uebersetzt — er muss auf dem Zieldialekt gueltig sein.
+Was der Zieldialekt nicht parsen kann (PostgreSQLs `::`-Cast oder sein interner
+`~~`-Operator, MySQLs Backticks), wird **nicht** weitergereicht: die Spalte
+entsteht dann als gewoehnliche, und der Lauf meldet `E053`. Dieselbe Regel wie
+bei einem CHECK-Ausdruck — es ist dasselbe Wesen.
 Geprueft wird, was ohne SQL-Parser entscheidbar ist: dass ein Ausdruck
 dasteht, dass er sich nicht auf die Spalte bezieht, die er berechnet, und dass
 die genannten Spalten existieren.

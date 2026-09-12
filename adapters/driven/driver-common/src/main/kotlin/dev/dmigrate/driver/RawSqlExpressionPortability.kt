@@ -99,6 +99,27 @@ object RawSqlExpressionPortability {
     }
 
     /**
+     * Der **Berechnungsausdruck** einer Spalte — `null`, wenn er auf dem Ziel
+     * gilt, sonst die Absage.
+     *
+     * Dasselbe Wesen wie ein CHECK, und derselbe Grund: der Reverse uebersetzt
+     * rohen Text nicht, also darf das Rendern gegen ein anderes Ziel ihn nicht
+     * weiterreichen. Gemeldet von einem Konsumenten an genau diesem Fall: ein
+     * PostgreSQL-Reverse liefert `((quantity)::numeric * unit_price)`, und
+     * `::` gibt es in T-SQL, MySQL, SQLite und Oracle nicht.
+     *
+     * **Die Spalte bleibt, ihre Berechnung geht.** Sie ganz wegzulassen liesse
+     * eine unvollstaendige Tabelle entstehen; sie berechnet zu rendern ergaebe
+     * ungueltiges SQL. Uebrig bleibt die gewoehnliche Spalte — und die Meldung
+     * ist `ACTION_REQUIRED`, damit niemand das fuer den Normalfall haelt.
+     */
+    fun computedRefusal(columnName: String, expression: String?, target: DatabaseDialect): TransformationNote? {
+        val verdict = assess(expression, target)
+        if (verdict.portable) return null
+        return notPortableNote("column", columnName, "computed expression", verdict.reason, target)
+    }
+
+    /**
      * Die Meldung fuer einen Ausdruck, der auf dem Ziel nicht parsebar ist —
      * eine Stelle fuer alle fuenf Dialekte, damit aus einer Fassung nicht
      * fuenf leicht verschiedene werden.

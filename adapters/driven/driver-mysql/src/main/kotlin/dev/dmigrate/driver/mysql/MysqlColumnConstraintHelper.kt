@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.RawSqlExpressionPortability
 import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
@@ -26,6 +27,8 @@ internal class MysqlColumnConstraintHelper(
         // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
         // DEFAULT und AUTO_INCREMENT sind dort keine Frage. MySQL kennt beide
         // Speicherformen und nimmt ohne Angabe die virtuelle.
+        ComputedColumnClause.of(col) != null && refuseUnportableComputed(colName, col, notes) ->
+            columnSql(tableName, colName, col, schema)
         ComputedColumnClause.of(col) != null -> columnComputed(colName, col)
         col.generation is ColumnGeneration.Identity && supportsIdentityGeneration(col.type) ->
             columnGeneratedIdentity(colName, col)
@@ -35,6 +38,19 @@ internal class MysqlColumnConstraintHelper(
         col.type is NeutralType.Geometry -> columnGeometry(colName, col, notes)
         col.type is NeutralType.FullText -> columnFullText(tableName, colName, col, schema, notes)
         else -> columnSql(tableName, colName, col, schema)
+    }
+
+    /** `true`, wenn der Ausdruck auf MySQL nicht gilt — dann ist er gemeldet. */
+    private fun refuseUnportableComputed(
+        colName: String,
+        col: ColumnDefinition,
+        notes: MutableList<TransformationNote>,
+    ): Boolean {
+        val computed = ComputedColumnClause.of(col) ?: return false
+        val note = RawSqlExpressionPortability.computedRefusal(colName, computed.expression, DatabaseDialect.MYSQL)
+            ?: return false
+        notes += note
+        return true
     }
 
     private fun columnComputed(colName: String, col: ColumnDefinition): String {
