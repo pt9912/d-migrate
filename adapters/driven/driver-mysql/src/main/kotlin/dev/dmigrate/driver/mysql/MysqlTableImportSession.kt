@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.driver.data.AbstractTableImportSession
+import dev.dmigrate.driver.data.ComputedTargetColumns
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.JdbcForeignValueNormalizer
 import dev.dmigrate.driver.data.OnConflict
@@ -17,6 +18,7 @@ internal class MysqlTableImportSession(
     table: String,
     private val qualifiedTable: MysqlQualifiedTableName,
     targetColumns: List<TargetColumn>,
+    computedColumns: Set<String>,
     primaryKeyColumns: List<String>,
     options: ImportOptions,
     private val schemaSync: MysqlSchemaSync,
@@ -24,6 +26,12 @@ internal class MysqlTableImportSession(
 ) : AbstractTableImportSession(conn, savedAutoCommit, table, targetColumns, primaryKeyColumns, options) {
 
     private var discardConnection: Boolean = false
+
+    /**
+     * MySQL lehnt jeden Wert fuer eine berechnete Spalte ab -- gespeichert wie
+     * virtuell ("The value specified for generated column … is not allowed").
+     */
+    override val computedTargetColumns = ComputedTargetColumns(computedColumns, "MySQL")
 
     // VA1c: MySQL-native Geometriespalten beim INSERT aus WKB konstruieren
     // (ST_GeomFromWKB, OGC-Standard; das WKB stammt von ST_AsBinary, VA1b).

@@ -47,8 +47,12 @@ class OracleDataWriterTest : FunSpec({
             every { conn.autoCommit = any() } answers { autoCommit = firstArg() }
             every { jdbc.querySingle(match { it.contains("CURRENT_SCHEMA") }) } returns
                 mapOf("schema_name" to "APP")
-            every { jdbc.queryList(match { it.contains("all_tab_identity_cols") }, any(), any()) } returns emptyList()
-            every { jdbc.queryList(match { it.contains("virtual_column") }, any(), any()) } returns emptyList()
+            every { jdbc.queryList(match { it.contains("all_sequences") }, any(), any()) } returns emptyList()
+            every { jdbc.queryList(match { it.contains("virtual_column = 'YES'") }, any(), any()) } returns emptyList()
+            // OracleGeneratedColumns.names fragt zusaetzlich den Spaltenkatalog.
+            // Die Matcher muessen scharf sein: listColumns nennt
+            // all_tab_identity_cols mit, identityColumns all_sequences.
+            every { jdbc.queryList(match { it.contains("all_tab_columns") }, any(), any()) } returns emptyList()
             every { jdbc.queryList(match { it.contains("constraint_type = 'P'") }, any(), any()) } returns emptyList()
             every { jdbc.queryList(match { it.contains("constraint_type = 'R'") }, any(), any()) } returns emptyList()
         }
@@ -72,7 +76,7 @@ class OracleDataWriterTest : FunSpec({
         }
 
         fun withIdentityColumn(name: String, generation: String = "ALWAYS", sequenceName: String = "ISEQ\$\$_1") = apply {
-            every { jdbc.queryList(match { it.contains("all_tab_identity_cols") }, any(), any()) } returns
+            every { jdbc.queryList(match { it.contains("all_sequences") }, any(), any()) } returns
                 listOf(
                     mapOf(
                         "column_name" to name, "generation_type" to generation,
@@ -82,8 +86,38 @@ class OracleDataWriterTest : FunSpec({
         }
 
         fun withVirtualColumns(vararg names: String) = apply {
-            every { jdbc.queryList(match { it.contains("virtual_column") }, any(), any()) } returns
+            every { jdbc.queryList(match { it.contains("virtual_column = 'YES'") }, any(), any()) } returns
                 names.map { mapOf<String, Any?>("column_name" to it) }
+        }
+
+        /**
+         * Eine materialisiert berechnete Spalte, wie Oracle sie fuehrt: im
+         * Katalog nicht virtuell und mit dem Ausdruck im Default, das Wort
+         * `MATERIALIZED` nur in der abgelegten DDL.
+         */
+        fun withMaterializedColumn(name: String, expression: String) = apply {
+            catalogColumn(name, expression)
+            val ddl = "CREATE TABLE \"APP\".\"orders\" (\n" +
+                "  \"id\" NUMBER(9),\n" +
+                "  \"" + name + "\" NUMBER GENERATED ALWAYS AS (" + expression + ") MATERIALIZED\n" +
+                ")"
+            every { jdbc.querySingle(match { it.contains("GET_DDL") }, any(), any()) } returns
+                mapOf("ddl" to ddl)
+        }
+
+        /** Eine gewoehnliche Spalte mit Literal-Default -- kein Kandidat. */
+        fun withPlainDefault(name: String, default: String) = apply { catalogColumn(name, default) }
+
+        private fun catalogColumn(name: String, default: String) {
+            every { jdbc.queryList(match { it.contains("all_tab_columns") }, any(), any()) } returns
+                listOf(
+                    mapOf<String, Any?>(
+                        "column_name" to name, "data_type" to "NUMBER", "data_length" to 22,
+                        "data_precision" to null, "data_scale" to null, "nullable" to "Y",
+                        "column_id" to 2, "data_default" to default,
+                        "identity_generation" to null, "identity_sequence" to null,
+                    ),
+                )
         }
 
         fun withPrimaryKey(vararg names: String) = apply {
@@ -218,8 +252,35 @@ class OracleDataWriterTest : FunSpec({
 
         rig.writer.openTable(rig.pool, "orders", ImportOptions(reseedSequences = false)).use { session ->
             shouldThrow<ImportSchemaMismatchException> { session.write(chunk(arrayOf(1, "a"))) }
-                .message!! shouldContain "virtual column"
+                .message!! shouldContain "computed column(s) name"
         }
+    }
+
+    /**
+     * Die materialisierte Form steht im Katalog wie eine gewoehnliche Spalte mit
+     * `DEFAULT`; erkannt wird sie nur ueber die abgelegte DDL. Live gegen
+     * Oracle 23 in `OracleDataPathIntegrationTest`.
+     */
+    test("a materialized computed column is rejected too, recognised from the stored DDL") {
+        val rig = Rig().withColumns(column("id"), column("name"))
+            .withMaterializedColumn("name", "\"qty\" * 3")
+        rig.withInsertStatement()
+
+        rig.writer.openTable(rig.pool, "orders", ImportOptions(reseedSequences = false)).use { session ->
+            shouldThrow<ImportSchemaMismatchException> { session.write(chunk(arrayOf(1, "a"))) }
+                .message!! shouldContain "computed column(s) name"
+        }
+    }
+
+    test("a plain literal DEFAULT is no candidate, and costs no DDL call") {
+        val rig = Rig().withColumns(column("id"), column("name")).withPlainDefault("name", "42")
+        val insert = rig.withInsertStatement()
+        every { insert.executeBatch() } returns intArrayOf(1)
+
+        rig.writer.openTable(rig.pool, "orders", ImportOptions(reseedSequences = false)).use { session ->
+            session.write(chunk(arrayOf(1, "a"))).rowsInserted shouldBe 1
+        }
+        verify(exactly = 0) { rig.jdbc.querySingle(match { it.contains("GET_DDL") }, any(), any()) }
     }
 
     test("skip: batch counts of 1/0 distinguish inserted from skipped rows") {

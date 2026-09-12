@@ -1,7 +1,7 @@
 ---
 id: generated-column-expression-dropped
 title: "Eine berechnete Spalte verliert ihre Berechnung — stumm"
-status: open
+status: done
 ---
 
 # Eine berechnete Spalte verliert ihre Berechnung
@@ -371,6 +371,101 @@ Ein Soll, das ihn als Spaltenindex fuehrt, konvergiert deshalb nie —
 [`oracle-index-auf-virtueller-spalte.md`](../done/oracle-index-auf-virtueller-spalte.md).
 Solange das so ist, sucht der Oracle-Renderer **beide** Formen, sonst fiele
 seine Vorab-Blockade auf einem zurueckgelesenen Schema ins Leere.
+
+## Gebaut (2026-09-12): der Schreibpfad, auf allen fuenf — und an einer Stelle
+
+Der letzte offene Punkt aus „Was der Schnitt klaeren muss": *eine berechnete
+Spalte darf nicht befuellt werden.* Gemessen, was die fuenf Server wirklich tun,
+bevor etwas gebaut wurde:
+
+| Server | Schreiben auf eine berechnete Spalte | vorher |
+| --- | --- | --- |
+| SQL Server | Msg 271, abgelehnt | benannt abgelehnt |
+| PostgreSQL | `cannot insert a non-DEFAULT value into column` (gespeichert **und** virtuell) | roher Treiberfehler |
+| MySQL | `The value specified for generated column … is not allowed` (beide Formen) | roher Treiberfehler |
+| SQLite | `cannot INSERT into generated column` (beide Formen) | roher Treiberfehler |
+| Oracle | `ORA-54013` — **auch materialisiert**, die Meldung nennt sie trotzdem „virtual" | nur virtuell benannt abgelehnt |
+
+Zwei Dinge, die die Messung klaerte: Datenverlust stand nie im Raum — **alle
+fuenf** lehnen ab. Und **alle** nehmen das Schluesselwort `DEFAULT` an; die
+Ablehnung gilt dem Wert, nicht der Spalte in der Spaltenliste. Der Unterschied
+war also nicht *ob*, sondern *wann und wie verstaendlich*: bei vier von fuenf
+fiel ein Treiberfehler mitten im ersten Chunk, ohne zu sagen, welche Spalte das
+Werkzeug ausnehmen soll.
+
+**Gebaut wurde es nicht fuenfmal.** Die Frage „ist diese Spalte berechnet?"
+wird an genau einer Stelle gestellt — `AbstractTableImportSession
+.ensureInsertPlan`, dem einzigen Punkt, den alle fuenf Import-Sessions einmalig
+vor dem ersten `INSERT` passieren und der die **tatsaechlich importierten**
+Spalten schon kennt. Der Dialekt liefert nur, was er allein weiss: die Namen aus
+seinem Katalog und den Namen, unter dem die Meldung das Ziel nennt
+(`ComputedTargetColumns`). SQL Servers eigene Pruefung und Oracles
+`rejectVirtualColumns` sind dabei entfallen — beide sagten dasselbe, nur an
+verschiedenen Stellen.
+
+Die Pruefung gilt dem **Chunk**, nicht der Tabelle: eine berechnete Spalte, die
+der Import ohnehin auslaesst, ist kein Fehler — genau das ist der Ausweg, den
+die Meldung nennt.
+
+**Oracle brauchte mehr als eine Abfrage.** `virtual_column = 'YES'` findet nur
+die virtuelle Form; die materialisierte ist im Katalog von einer Spalte mit
+`DEFAULT` in keinem Feld zu unterscheiden (oben gemessen). Der Schreibpfad geht
+deshalb denselben Weg wie der Lesepfad — Kandidatenfilter, dann
+`DBMS_METADATA.GET_DDL` — und teilt sich die Erkennung mit ihm
+(`OracleGeneratedColumns.names`). Fehlt das `EXECUTE`-Recht, bleibt es fuer die
+materialisierte Form beim Treiberfehler; anders als beim Lesen gibt es im
+Schreibpfad keinen Kanal fuer eine Notiz, und geraten wird nicht.
+
+Live abgenommen auf allen fuenf: PostgreSQL 18.6, MySQL 9.7.2, SQLite,
+SQL Server und Oracle 23 — je Dialekt beide Speicherformen, plus die Gegenprobe,
+dass dieselbe Tabelle ohne die berechneten Spalten sauber importiert und der
+Server selbst rechnet. Alle Specs sabotage-geprueft.
+
+**Nebenbefund, sofort mitbehoben:** MySQLs Einordnung war zu weit. `EXTRA`
+traegt fuer eine Spalte mit Default-**Ausdruck** `DEFAULT_GENERATED`
+(`DEFAULT CURRENT_TIMESTAMP`, ab 8.0.13) — ein `contains("GENERATED")` faengt
+sie mit. Im Schreibpfad haette das ein **gueltiges** Schreiben abgelehnt; im
+Lesepfad tat es seit dem MySQL-Stueck dieses Slices etwas Falsches, nur
+leiser: fuer jede solche Spalte meldete der Reverse einen Verlust (`R343`), den
+es nicht gibt. Beide fragen jetzt dieselbe Stelle
+(`MysqlGeneratedColumns`), die `VIRTUAL GENERATED`/`STORED GENERATED` von
+`DEFAULT_GENERATED` unterscheidet; die drei Schreibweisen sind live
+festgenagelt, statt der Doku geglaubt.
+
+**Nebenbefund, eigenes Ticket:** die Testtabelle liess sich auf Oracle
+zunaechst nicht anlegen — zwei berechnete Spalten mit **demselben** Ausdruck
+sind dort `ORA-54015` („Duplicate column expression"), auf den uebrigen vier
+nicht. Das trifft nicht nur Tests:
+[`oracle-doppelter-generierungsausdruck.md`](../open/oracle-doppelter-generierungsausdruck.md).
+
+## Abschluss (2026-09-12)
+
+Alles unter „Was der Schnitt klaeren muss" steht: die Modellform
+(`ColumnGeneration.Computed`), der Ausdruck als fuenftes rohes SQL-Textfeld,
+die drei Identitaets-Projektionen, der Lesepfad auf allen fuenf Dialekten, der
+Aenderungspfad (dreimal gebaut, zweimal ein benannter Blocker mit gemessenem
+Grund) und zuletzt der Schreibpfad — ebenfalls auf allen fuenf, an einer
+Stelle.
+
+Der Befund, der den Schnitt anhielt (`generation` wurde von keiner Stelle zu
+einer Operation), ist behoben: `AlterColumnGeneration` existiert und der
+Mapper fuellt ihn.
+
+**Was ausdruecklich nicht mit geschlossen ist:**
+
+- [`berechnete-spalten-im-transferpfad.md`](../open/berechnete-spalten-im-transferpfad.md)
+  — die Ablehnung des Schreibpfads nennt einen Ausweg („Spalte aus
+  Export/Transfer herausnehmen"), den ein **direkter** `data transfer` nicht
+  hat: es gibt keinen Spaltenfilter. Ob das Auslassen der berechneten Spalte
+  (verlustfrei, der Wert ist abgeleitet) das bessere Verhalten ist, ist eine
+  eigene Entscheidung.
+- [`column-generation-diff-unmapped.md`](../open/column-generation-diff-unmapped.md)
+  — dessen Befund ist von diesem Slice ueberholt (`AlterColumnGeneration`
+  existiert jetzt), aber nicht deckungsgleich: er gilt auch fuer `identity`,
+  und dort meldet die Operation heute einen irrefuehrenden Grund. Das Ticket
+  braucht eine Neufassung, keine stille Schliessung.
+- [`oracle-index-auf-virtueller-spalte.md`](oracle-index-auf-virtueller-spalte.md)
+  — als Nebenbefund hier aufgefallen und inzwischen eigenstaendig geschlossen.
 
 ## Der Befund, der den Schnitt anhaelt: eine geaenderte Generation wird gar nicht geplant
 

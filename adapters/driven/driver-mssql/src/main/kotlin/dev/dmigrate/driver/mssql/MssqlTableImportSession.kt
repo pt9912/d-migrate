@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mssql
 import com.microsoft.sqlserver.jdbc.ISQLServerConnection
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.data.AbstractTableImportSession
+import dev.dmigrate.driver.data.ComputedTargetColumns
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.JdbcForeignValueNormalizer
 import dev.dmigrate.driver.data.OnConflict
@@ -49,6 +50,12 @@ internal class MssqlTableImportSession(
     private var identityInsertEnabled: Boolean = false
     private var discardConnection: Boolean = false
 
+    /**
+     * SQL Server lehnt jedes Schreiben auf eine Computed Column ab (Msg 271) --
+     * auch mit `SET IDENTITY_INSERT`.
+     */
+    override val computedTargetColumns = ComputedTargetColumns(computedColumns, "SQL Server")
+
     override fun isGeometryTypeName(typeNameLower: String): Boolean =
         MssqlInsertSql.isGeometryTypeName(typeNameLower)
 
@@ -73,9 +80,9 @@ internal class MssqlTableImportSession(
 
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         // Der einzige Hook, der einmalig vor dem ersten Chunk laeuft und die
-        // tatsaechlich importierten Spalten kennt — hier fallen die
-        // Computed-Column-Pruefung und die IDENTITY_INSERT-Entscheidung.
-        rejectComputedColumns(importedTargetColumns)
+        // tatsaechlich importierten Spalten kennt — hier faellt die
+        // IDENTITY_INSERT-Entscheidung (die Computed-Column-Pruefung liegt in
+        // der Basisklasse, siehe computedTargetColumns).
         enableIdentityInsertIfNeeded(importedTargetColumns)
         return MssqlInsertSql.build(
             qualifiedTable,
@@ -206,20 +213,6 @@ internal class MssqlTableImportSession(
         if (discardConnection) {
             runCatching { conn.abort(DIRECT_EXECUTOR) }.onFailure(::recordCleanupFailure)
         }
-    }
-
-    /**
-     * SQL Server lehnt jedes Schreiben auf eine Computed Column ab (Msg 271) —
-     * auch mit `SET IDENTITY_INSERT`. Statt den Treiberfehler mitten im ersten
-     * Chunk durchzureichen, benennt der Import die Spalte vorab.
-     */
-    private fun rejectComputedColumns(importedTargetColumns: List<TargetColumn>) {
-        val offending = importedTargetColumns.map { it.name }.filter { it in computedColumns }
-        if (offending.isEmpty()) return
-        throw ImportSchemaMismatchException(
-            "Target table '$table' has computed column(s) ${offending.joinToString()}; SQL Server does not " +
-                "allow writing them. Exclude the column(s) from the export/transfer.",
-        )
     }
 
     private fun enableIdentityInsertIfNeeded(importedTargetColumns: List<TargetColumn>) {

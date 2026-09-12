@@ -6,6 +6,7 @@ import com.mysql.cj.conf.PropertyKey
 import com.mysql.cj.jdbc.JdbcConnection
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -20,6 +21,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import org.testcontainers.mysql.MySQLContainer
 
 
@@ -78,6 +80,19 @@ class MysqlDataWriterIntegrationTest : FunSpec({
                         ") ENGINE=InnoDB"
                 )
                 stmt.execute("CREATE TABLE writer_no_pk (name VARCHAR(100) NOT NULL) ENGINE=InnoDB")
+                // `created_at` ist bewusst dabei: MySQL setzt fuer eine Spalte mit
+                // Default-*Ausdruck* EXTRA = DEFAULT_GENERATED -- eine Angabe, die
+                // das Wort GENERATED traegt, ohne eine berechnete Spalte zu sein.
+                stmt.execute(
+                    "CREATE TABLE writer_generated (" +
+                        "id INT NOT NULL PRIMARY KEY, " +
+                        "qty INT NOT NULL, " +
+                        "price INT NOT NULL, " +
+                        "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, " +
+                        "total_stored INT GENERATED ALWAYS AS (qty * price) STORED, " +
+                        "total_virtual INT GENERATED ALWAYS AS (qty * price) VIRTUAL" +
+                        ") ENGINE=InnoDB"
+                )
                 stmt.execute(
                     "CREATE TABLE writer_composite_target (" +
                         "z_part INT NOT NULL, " +
@@ -126,6 +141,7 @@ class MysqlDataWriterIntegrationTest : FunSpec({
                 stmt.execute("ALTER TABLE writer_upsert_target AUTO_INCREMENT = 1")
                 stmt.execute("DELETE FROM writer_unique_target")
                 stmt.execute("DELETE FROM writer_no_pk")
+                stmt.execute("DELETE FROM writer_generated")
                 stmt.execute("DELETE FROM writer_composite_target")
                 stmt.execute("DELETE FROM `WriterCaseTarget`")
                 stmt.execute("DELETE FROM writer_child")
@@ -161,6 +177,90 @@ class MysqlDataWriterIntegrationTest : FunSpec({
 
     test("schemaSync exposes MysqlSchemaSync") {
         writer.schemaSync().javaClass shouldBe MysqlSchemaSync::class.java
+    }
+
+    /**
+     * MySQL lehnt jeden Wert fuer eine generierte Spalte ab ("The value
+     * specified for generated column … is not allowed") -- erst beim Schreiben
+     * des ersten Chunks. Gepruefte Zusicherung ist, dass `EXTRA` in
+     * `information_schema.columns` **beide** Speicherformen findet und der
+     * Import vorher mit Spaltennamen abbricht.
+     */
+    test("import into a generated column is refused by name, stored and virtual alike") {
+        listOf("total_stored", "total_virtual").forEach { generated ->
+            val session = writer.openTable(pool!!, "writer_generated", ImportOptions())
+            val ex = session.use {
+                shouldThrow<ImportSchemaMismatchException> {
+                    it.write(
+                        chunk(
+                            table = "writer_generated",
+                            columnNames = listOf("id", "qty", "price", generated),
+                            rows = listOf(arrayOf<Any?>(1, 2, 3, 6)),
+                        )
+                    )
+                }
+            }
+            ex.message shouldContain "computed column(s) $generated"
+            ex.message shouldContain "MySQL does not allow writing them"
+        }
+    }
+
+    /**
+     * Die Gegenprobe zur Abgrenzung oben: `EXTRA = DEFAULT_GENERATED` (Spalte
+     * mit Default-Ausdruck) ist **keine** berechnete Spalte, und ein Import,
+     * der sie schreibt, ist gueltig. Ein `extra LIKE '%GENERATED%'` haette ihn
+     * abgelehnt.
+     */
+    test("a DEFAULT_GENERATED column is writable and not taken for a computed one") {
+        val extras = mutableMapOf<String, String>()
+        pool!!.borrow().asJdbc().use { conn ->
+            conn.prepareStatement(
+                "SELECT column_name, extra FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'writer_generated'",
+            ).use { ps ->
+                ps.executeQuery().use { rs ->
+                    while (rs.next()) extras[rs.getString(1)] = rs.getString(2)
+                }
+            }
+        }
+        // Gemessen, nicht angenommen: so nennt dieser Server die drei Faelle.
+        extras["created_at"] shouldBe "DEFAULT_GENERATED"
+        extras["total_stored"] shouldBe "STORED GENERATED"
+        extras["total_virtual"] shouldBe "VIRTUAL GENERATED"
+
+        writer.openTable(pool!!, "writer_generated", ImportOptions()).use { session ->
+            session.write(
+                chunk(
+                    table = "writer_generated",
+                    columnNames = listOf("id", "qty", "price", "created_at"),
+                    rows = listOf(arrayOf<Any?>(9, 2, 3, java.sql.Timestamp.valueOf("2026-09-12 10:00:00"))),
+                )
+            ).rowsInserted shouldBe 1
+            session.commitChunk()
+        }
+    }
+
+    test("the same table imports fine without the generated columns") {
+        writer.openTable(pool!!, "writer_generated", ImportOptions()).use { session ->
+            session.write(
+                chunk(
+                    table = "writer_generated",
+                    columnNames = listOf("id", "qty", "price"),
+                    rows = listOf(arrayOf<Any?>(1, 2, 3)),
+                )
+            ).rowsInserted shouldBe 1
+            session.commitChunk()
+        }
+
+        pool!!.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery("SELECT total_stored, total_virtual FROM writer_generated").use { rs ->
+                    rs.next() shouldBe true
+                    rs.getInt(1) shouldBe 6
+                    rs.getInt(2) shouldBe 6
+                }
+            }
+        }
     }
 
     test("writes single chunk into target table") {

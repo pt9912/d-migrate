@@ -839,6 +839,13 @@ betroffene Verarbeitung abgebrochen, sodass keine halben Stände entstehen.
   mit `--truncate`).
 - Trigger stören den Import? Auf PostgreSQL hilft `--trigger-mode disable`, auf
   MySQL/SQLite `--disable-fk-checks`.
+- Bricht der Import mit „has computed column(s) …" ab? Diese Spalte berechnet
+  die Zieldatenbank selbst — hineinschreiben läßt sich keine davon, auf keinem
+  der fünf Ziele. Lassen Sie sie in den Quelldaten weg; die übrigen Spalten
+  reichen, der Server rechnet sie neu aus. Bei einem direkten
+  `data transfer` ([3.8](#38-daten-direkt-von-datenbank-zu-datenbank-übertragen))
+  gibt es dafür keinen Schalter — dort führt der Weg über eine Exportdatei, aus
+  der Sie die Spalte entfernen.
 - **Tipp (Trigger/Funktionen):** Erzeugen Sie das Schema mit
   `--split pre-post` ([3.2](#32-sql-für-eine-zieldatenbank-erzeugen)), spielen
   Sie zuerst `schema.pre-data.sql` ein, importieren dann die Daten und aktivieren

@@ -64,6 +64,7 @@ class PostgresDataWriter(
             savedAutoCommit = conn.autoCommit
             val targetColumns = enrichGeometrySrid(jdbc, conn, qualified, loadTargetColumns(conn, qualified))
             val generatedAlwaysColumns = loadGeneratedAlwaysColumns(jdbc, conn, qualified)
+            val computedColumns = loadComputedColumns(jdbc, conn, qualified)
             val primaryKeyColumns = if (options.onConflict == OnConflict.UPDATE) {
                 loadPrimaryKeyColumns(conn, qualified).also {
                     require(it.isNotEmpty()) {
@@ -102,6 +103,7 @@ class PostgresDataWriter(
                 qualifiedTable = qualified,
                 targetColumns = targetColumns,
                 generatedAlwaysColumns = generatedAlwaysColumns,
+                computedColumns = computedColumns,
                 primaryKeyColumns = primaryKeyColumns,
                 options = options,
                 schemaSync = sync,
@@ -163,6 +165,36 @@ class PostgresDataWriter(
               AND table_name = ?
               AND is_identity = 'YES'
               AND identity_generation = 'ALWAYS'
+            """.trimIndent(),
+            schema, table.table,
+        ).mapTo(mutableSetOf()) { it["column_name"] as String }
+    }
+
+    /**
+     * Die berechneten Spalten (`GENERATED ALWAYS AS (…)`) der Zieltabelle --
+     * gespeichert wie virtuell. `information_schema.is_generated` meldet fuer
+     * beide Formen `ALWAYS` (gegen 18.6 gemessen, siehe
+     * [PostgresTableMetadataQueries.listColumns]); fuer den Schreibpfad ist die
+     * Unterscheidung gleichgueltig, PostgreSQL lehnt beide ab
+     * (`cannot insert a non-DEFAULT value into column`).
+     *
+     * Nicht mit [loadGeneratedAlwaysColumns] zusammengelegt: das sind
+     * IDENTITY-Spalten, die der Import mit `OVERRIDING SYSTEM VALUE` sehr wohl
+     * schreiben darf.
+     */
+    private fun loadComputedColumns(
+        jdbc: JdbcOperations,
+        conn: Connection,
+        table: QualifiedTableName,
+    ): Set<String> {
+        val schema = table.schemaOrCurrent(conn)
+        return jdbc.queryList(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = ?
+              AND table_name = ?
+              AND is_generated = 'ALWAYS'
             """.trimIndent(),
             schema, table.table,
         ).mapTo(mutableSetOf()) { it["column_name"] as String }

@@ -8,6 +8,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.lang.reflect.Proxy
 import java.sql.Connection
@@ -94,6 +95,7 @@ class AbstractTableImportSessionTest : FunSpec({
         closeFinallyAction: (() -> Unit)? = null,
         geometryBindCtor: String? = null,
         geometryBindOpts: String? = null,
+        computed: ComputedTargetColumns = ComputedTargetColumns.NONE,
     ) = TestTableImportSession(
         conn = conn,
         savedAutoCommit = true,
@@ -107,6 +109,7 @@ class AbstractTableImportSessionTest : FunSpec({
         closeFinallyAction = closeFinallyAction,
         geometryBindCtor = geometryBindCtor,
         geometryBindOpts = geometryBindOpts,
+        computed = computed,
     )
 
     // ── write ──────────────────────────────────────────────
@@ -145,6 +148,37 @@ class AbstractTableImportSessionTest : FunSpec({
         shouldThrow<ImportSchemaMismatchException> {
             s.write(chunk(cols = unknown, rows = listOf(arrayOf(1))))
         }
+    }
+
+    // ── berechnete Spalten (ComputedTargetColumns) ─────────
+
+    test("write into a computed column is refused, naming column and target") {
+        val s = session(computed = ComputedTargetColumns(setOf("name"), "PostgreSQL"))
+        val ex = shouldThrow<ImportSchemaMismatchException> { s.write(chunk()) }
+        ex.message shouldContain "computed column(s) name"
+        ex.message shouldContain "PostgreSQL does not allow writing them"
+    }
+
+    test("the refusal names every computed column the chunk carries") {
+        val s = session(computed = ComputedTargetColumns(setOf("id", "name"), "MySQL"))
+        val ex = shouldThrow<ImportSchemaMismatchException> { s.write(chunk()) }
+        ex.message shouldContain "computed column(s) id, name"
+    }
+
+    /**
+     * Die Pruefung gilt fuer den **Chunk**, nicht fuer die Tabelle: eine
+     * berechnete Spalte, die der Import ohnehin auslaesst, ist kein Fehler --
+     * genau das ist der dokumentierte Ausweg ("exclude the column").
+     */
+    test("a computed column the chunk leaves out does not block the import") {
+        val s = session(computed = ComputedTargetColumns(setOf("name"), "SQLite"))
+        val result = s.write(chunk(cols = listOf(ColumnDescriptor("id", nullable = false)), rows = listOf(arrayOf(1))))
+        result.rowsInserted shouldBe 1
+    }
+
+    test("without computed columns nothing is checked") {
+        val s = session(computed = ComputedTargetColumns.NONE)
+        s.write(chunk()).rowsInserted shouldBe 1
     }
 
     test("write validates row widths") {
@@ -560,12 +594,14 @@ internal class TestTableImportSession(
     private val closeFinallyAction: (() -> Unit)? = null,
     geometryBindCtor: String? = null,
     geometryBindOpts: String? = null,
+    computed: ComputedTargetColumns = ComputedTargetColumns.NONE,
 ) : AbstractTableImportSession(conn, savedAutoCommit, table, targetColumns, primaryKeyColumns, options) {
 
     var reseedThrows: Throwable? = null
 
     override val geometryBindConstructor: String? = geometryBindCtor
     override val geometryBindOptions: String? = geometryBindOpts
+    override val computedTargetColumns: ComputedTargetColumns = computed
 
     // MySQL-artige Erkennung (alle OGC-Namen), damit die VA1c-Tests sowohl
     // "geometry" als auch Subtypen wie "POINT" abdecken.

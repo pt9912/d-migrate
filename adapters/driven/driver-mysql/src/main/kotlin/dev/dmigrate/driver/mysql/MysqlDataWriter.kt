@@ -66,6 +66,7 @@ class MysqlDataWriter(
             val targetColumns = enrichGeometrySrid(
                 jdbc, conn, qualified, lowerCaseSetting, loadTargetColumns(conn, qualified),
             )
+            val computedColumns = loadComputedColumns(jdbc, conn, qualified, lowerCaseSetting)
             val primaryKeyColumns = if (options.onConflict == OnConflict.UPDATE) {
                 loadPrimaryKeyColumns(conn, qualified, lowerCaseSetting).also {
                     require(it.isNotEmpty()) {
@@ -96,6 +97,7 @@ class MysqlDataWriter(
                 table = table,
                 qualifiedTable = qualified,
                 targetColumns = targetColumns,
+                computedColumns = computedColumns,
                 primaryKeyColumns = primaryKeyColumns,
                 options = options,
                 schemaSync = sync,
@@ -143,6 +145,31 @@ class MysqlDataWriter(
         if (sridByColumn.isEmpty()) return columns
         return columns.map { col -> sridByColumn[col.name]?.let { col.copy(srid = it) } ?: col }
     }
+
+    /**
+     * Die berechneten Spalten (`GENERATED ALWAYS AS (…)`) der Zieltabelle --
+     * gespeichert wie virtuell; fuer den Schreibpfad ist die Speicherform
+     * gleichgueltig, MySQL lehnt beide ab. Die Einordnung trifft
+     * [MysqlGeneratedColumns], dieselbe Stelle wie im Lesepfad: ein
+     * `extra LIKE '%GENERATED%'` faenge auch `DEFAULT_GENERATED` und lehnte
+     * damit ein gueltiges Schreiben ab.
+     */
+    private fun loadComputedColumns(
+        jdbc: JdbcOperations,
+        conn: Connection,
+        table: MysqlQualifiedTableName,
+        lowerCaseSetting: Int,
+    ): Set<String> =
+        jdbc.queryList(
+            """
+            SELECT column_name, extra
+            FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = ?
+            """.trimIndent(),
+            table.metadataSchema(conn, lowerCaseSetting),
+            table.metadataTable(lowerCaseSetting),
+        ).filter { MysqlGeneratedColumns.isGenerated((it["extra"] as? String).orEmpty()) }
+            .mapNotNullTo(mutableSetOf()) { it["column_name"] as? String }
 
     private fun loadPrimaryKeyColumns(
         conn: Connection,

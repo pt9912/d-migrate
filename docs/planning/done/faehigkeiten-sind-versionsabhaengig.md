@@ -5,7 +5,7 @@
 > Messkampagne ueber alle Faehigkeiten erwies sich nach der Triage als
 > unnoetig.
 > Trigger: beim Bau von
-> [`generated-column-expression-dropped.md`](../open/generated-column-expression-dropped.md)
+> [`generated-column-expression-dropped.md`](generated-column-expression-dropped.md)
 > ausgeliefert und sofort widerlegt.
 
 ## Der Auslöser

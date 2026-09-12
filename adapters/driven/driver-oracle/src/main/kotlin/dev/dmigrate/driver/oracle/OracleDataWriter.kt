@@ -152,7 +152,8 @@ class OracleDataWriter(
             val identities = OracleMetadataQueries.identityColumns(jdbc, qualified.schema, qualified.table)
             val generatedAlwaysColumns = identities.filter { it.generation == "ALWAYS" }
                 .mapTo(mutableSetOf()) { it.column }
-            val virtualColumns = OracleMetadataQueries.virtualColumns(jdbc, qualified.schema, qualified.table)
+            // Virtuell UND materialisiert: beide lehnt Oracle beim Schreiben ab.
+            val computedColumns = OracleGeneratedColumns.names(jdbc, qualified.schema, qualified.table)
             val primaryKeyColumns = if (options.onConflict == OnConflict.ABORT) {
                 emptyList()
             } else {
@@ -188,7 +189,7 @@ class OracleDataWriter(
                 targetColumns = targetColumns,
                 primaryKeyColumns = primaryKeyColumns,
                 generatedAlwaysColumns = generatedAlwaysColumns,
-                virtualColumns = virtualColumns,
+                computedColumns = computedColumns,
                 disabledFkConstraints = disabledFkConstraints,
                 options = options,
                 jdbc = jdbc,

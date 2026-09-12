@@ -58,24 +58,69 @@ internal object OracleGeneratedColumns {
             }
         }
 
-        val candidates = columns.filter { row ->
-            row.name !in virtual &&
-                !row.isIdentity &&
-                !row.defaultDefinition.isNullOrBlank() &&
-                !isPlainDefault(row.defaultDefinition)
-        }
+        val candidates = materializedCandidates(columns, virtual)
         if (candidates.isEmpty()) return result
 
-        val ddl = OracleMetadataQueries.tableDdl(session, schema, table)
-        if (ddl == null) {
+        val materialized = materializedNames(session, schema, table)
+        if (materialized == null) {
             notes += GeneratedColumnNotes.generationUndecidable(table, candidates.map { it.name })
             return result
         }
-        val materialized = OracleGeneratedColumnScanner.materializedColumns(ddl)
         candidates.filter { it.name in materialized }.forEach { row ->
             result[row.name] = ColumnGeneration.Computed(row.defaultDefinition!!.trim(), stored = true)
         }
         return result
+    }
+
+    /**
+     * Die **Namen** der berechneten Spalten -- virtuell wie materialisiert.
+     *
+     * Der Schreibpfad braucht nur sie: Oracle lehnt jeden Wert fuer eine
+     * berechnete Spalte ab (ORA-54013), und *welcher* Ausdruck dahintersteht,
+     * aendert daran nichts. Am `GET_DDL` kommt aber auch er nicht vorbei --
+     * die materialisierte Form ist im Katalog von einem `DEFAULT` nicht zu
+     * unterscheiden (siehe oben); ist das Paket nicht ausfuehrbar, bleibt die
+     * Spalte fuer den Import unsichtbar und der Treiberfehler steht. Anders als
+     * beim Lesen gibt es dafuer keinen Kanal fuer eine Notiz: der Import
+     * scheitert in diesem Fall so, wie er es ohne diese Pruefung immer taete.
+     */
+    fun names(session: JdbcOperations, schema: String, table: String): Set<String> {
+        val virtual = OracleMetadataQueries.virtualColumns(session, schema, table)
+        val candidates = materializedCandidates(
+            OracleMetadataQueries.listColumns(session, schema, table),
+            virtual,
+        )
+        if (candidates.isEmpty()) return virtual
+        val materialized = materializedNames(session, schema, table) ?: return virtual
+        return virtual + candidates.map { it.name }.filter { it in materialized }
+    }
+
+    /**
+     * Spalten, bei denen eine materialisierte Berechnung ueberhaupt in Frage
+     * kommt -- alles andere braucht den DDL-Aufruf nicht ([isPlainDefault]).
+     */
+    private fun materializedCandidates(
+        columns: List<OracleMetadataQueries.ColumnRow>,
+        virtual: Set<String>,
+    ): List<OracleMetadataQueries.ColumnRow> = columns.filter { row ->
+        row.name !in virtual &&
+            !row.isIdentity &&
+            !row.defaultDefinition.isNullOrBlank() &&
+            !isPlainDefault(row.defaultDefinition)
+    }
+
+    /**
+     * Die materialisiert berechneten Spalten laut abgelegter DDL -- `null`, wenn
+     * `DBMS_METADATA` nicht ausfuehrbar ist (die Einordnung bleibt dann offen).
+     * Nur aufrufen, wenn es Kandidaten gibt: der Aufruf kostet.
+     */
+    private fun materializedNames(
+        session: JdbcOperations,
+        schema: String,
+        table: String,
+    ): Set<String>? {
+        val ddl = OracleMetadataQueries.tableDdl(session, schema, table) ?: return null
+        return OracleGeneratedColumnScanner.materializedColumns(ddl)
     }
 
     /**

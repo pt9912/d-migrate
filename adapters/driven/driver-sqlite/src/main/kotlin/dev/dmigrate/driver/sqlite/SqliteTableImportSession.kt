@@ -2,6 +2,7 @@ package dev.dmigrate.driver.sqlite
 
 
 import dev.dmigrate.driver.data.AbstractTableImportSession
+import dev.dmigrate.driver.data.ComputedTargetColumns
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.SequenceAdjustment
@@ -17,6 +18,7 @@ internal class SqliteTableImportSession(
     private val qualifiedTable: SqliteQualifiedTableName,
     targetColumns: List<TargetColumn>,
     private val geometryColumns: Set<String>,
+    computedColumns: Set<String>,
     primaryKeyColumns: List<String>,
     options: ImportOptions,
     private val schemaSync: SqliteSchemaSync,
@@ -24,6 +26,12 @@ internal class SqliteTableImportSession(
 ) : AbstractTableImportSession(conn, savedAutoCommit, table, targetColumns, primaryKeyColumns, options) {
 
     private var discardConnection: Boolean = false
+
+    /**
+     * SQLite lehnt jeden Wert fuer eine generierte Spalte ab -- gespeichert wie
+     * virtuell (`cannot INSERT into generated column`).
+     */
+    override val computedTargetColumns = ComputedTargetColumns(computedColumns, "SQLite")
 
     /**
      * SpatiaLite baut Geometrie aus WKB mit `GeomFromWKB`. Ohne diesen

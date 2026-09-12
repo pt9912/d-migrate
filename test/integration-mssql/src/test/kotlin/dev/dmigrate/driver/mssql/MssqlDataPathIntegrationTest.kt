@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -14,11 +15,13 @@ import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.test.containers.newMssqlContainer
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import java.sql.DriverManager
 
 // Datenpfad gegen echtes SQL Server 2022 — IDENTITY_INSERT, MERGE-Konfliktmodi, DBCC-Reseed,
@@ -106,6 +109,17 @@ class MssqlDataPathIntegrationTest : FunSpec({
                 stmt.execute("CREATE TABLE plain (id INT NOT NULL PRIMARY KEY, label NVARCHAR(50) NULL)")
                 stmt.execute(
                     """
+                    CREATE TABLE generated_cols (
+                        id INT NOT NULL PRIMARY KEY,
+                        qty INT NOT NULL,
+                        price INT NOT NULL,
+                        total_computed AS (qty * price),
+                        total_persisted AS (qty * price) PERSISTED
+                    )
+                    """.trimIndent(),
+                )
+                stmt.execute(
+                    """
                     CREATE TABLE child (
                         id INT NOT NULL PRIMARY KEY,
                         parent_id INT NOT NULL,
@@ -120,6 +134,37 @@ class MssqlDataPathIntegrationTest : FunSpec({
     afterSpec {
         pool.close()
         container.stop()
+    }
+
+    /**
+     * SQL Server lehnt jedes Schreiben auf eine Computed Column ab (Msg 271) --
+     * persistiert wie nicht persistiert. Gepruefte Zusicherung ist, dass
+     * `sys.computed_columns` beide findet und der Import vorab mit Spaltennamen
+     * abbricht, statt den Treiberfehler mitten im ersten Chunk durchzureichen.
+     */
+    test("import into a computed column is refused by name, persisted and not") {
+        listOf("total_computed", "total_persisted").forEach { generated ->
+            val ex = shouldThrow<ImportSchemaMismatchException> {
+                importChunk(
+                    table = "generated_cols",
+                    columns = listOf("id", "qty", "price", generated),
+                    rows = listOf(arrayOf<Any?>(1, 2, 3, 6)),
+                )
+            }
+            ex.message shouldContain "computed column(s) $generated"
+            ex.message shouldContain "SQL Server does not allow writing them"
+        }
+    }
+
+    test("the same table imports fine without the computed columns") {
+        importChunk(
+            table = "generated_cols",
+            columns = listOf("id", "qty", "price"),
+            rows = listOf(arrayOf<Any?>(1, 2, 3)),
+        )
+
+        queryRows("SELECT total_computed, total_persisted FROM generated_cols") shouldContainExactly
+            listOf(listOf(6, 6))
     }
 
     test("insert with explicit identity values needs IDENTITY_INSERT and reseeds afterwards") {

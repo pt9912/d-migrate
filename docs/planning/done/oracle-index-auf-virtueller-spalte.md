@@ -117,5 +117,5 @@ kann die zweite Suche dort wieder entfallen.
 ## Herkunft
 
 Nebenbefund beim Bau des Slice
-[`generated-column-expression-dropped.md`](../open/generated-column-expression-dropped.md),
+[`generated-column-expression-dropped.md`](generated-column-expression-dropped.md),
 gemessen an Oracle 23 über den Reverse.

@@ -76,6 +76,14 @@ abstract class AbstractTableImportSession(
      */
     protected open val geometryBindOptions: String? = null
 
+    /**
+     * Die berechneten Spalten der Zieltabelle. Default [ComputedTargetColumns.NONE]
+     * -- kein Import prueft dann etwas. Jeder Dialekt, dessen Katalog sie kennt,
+     * ueberschreibt; [ensureInsertPlan] lehnt einen Chunk ab, der eine davon
+     * mitbringt (siehe [ComputedTargetColumns]).
+     */
+    protected open val computedTargetColumns: ComputedTargetColumns = ComputedTargetColumns.NONE
+
     /** Execute a chunk of rows using the dialect-specific conflict strategy. */
     protected abstract fun executeChunk(
         importedTargetColumns: List<TargetColumn>,
@@ -240,12 +248,30 @@ abstract class AbstractTableImportSession(
                 )
         }
 
+        rejectComputedColumns(resolvedTargetColumns)
         validateUpsertColumns(resolvedTargetColumns)
 
         preparedStatement = conn.prepareStatement(buildInsertSql(resolvedTargetColumns))
         importedColumns = chunk.columns
         importedTargetColumns = resolvedTargetColumns
         return resolvedTargetColumns
+    }
+
+    /**
+     * Ein Chunk, der eine berechnete Spalte mitbringt, ist nirgends schreibbar
+     * ([ComputedTargetColumns]). Die Pruefung laeuft einmalig in
+     * [ensureInsertPlan] -- also **vor** dem ersten `INSERT` und mit den
+     * tatsaechlich importierten Spalten, nicht schon gegen die ganze Tabelle.
+     */
+    private fun rejectComputedColumns(resolvedTargetColumns: List<TargetColumn>) {
+        val computed = computedTargetColumns
+        if (computed.names.isEmpty()) return
+        val offending = resolvedTargetColumns.map { it.name }.filter { it in computed.names }
+        if (offending.isEmpty()) return
+        throw ImportSchemaMismatchException(
+            "Target table '$table' has computed column(s) ${offending.joinToString()}; ${computed.target} does " +
+                "not allow writing them. Exclude the column(s) from the export/transfer.",
+        )
     }
 
     /**

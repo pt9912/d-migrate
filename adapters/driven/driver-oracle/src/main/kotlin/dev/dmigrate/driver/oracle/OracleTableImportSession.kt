@@ -2,6 +2,7 @@ package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.data.AbstractTableImportSession
+import dev.dmigrate.driver.data.ComputedTargetColumns
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.JdbcForeignValueNormalizer
 import dev.dmigrate.driver.data.OnConflict
@@ -57,7 +58,7 @@ internal class OracleTableImportSession(
     targetColumns: List<TargetColumn>,
     primaryKeyColumns: List<String>,
     private val generatedAlwaysColumns: Set<String>,
-    private val virtualColumns: Set<String>,
+    private val computedColumns: Set<String>,
     private val disabledFkConstraints: List<String>,
     options: ImportOptions,
     private val jdbc: JdbcOperations,
@@ -66,6 +67,12 @@ internal class OracleTableImportSession(
 
     private var fkReenabled: Boolean = false
     private var toggledIdentityColumns: List<String> = emptyList()
+
+    /**
+     * Oracle lehnt das Schreiben auf eine berechnete Spalte ab -- virtuell wie
+     * materialisiert (ORA-54013).
+     */
+    override val computedTargetColumns = ComputedTargetColumns(computedColumns, "Oracle")
 
     /**
      * `MERGE` bindet die Schlüsselspalten aus der `src`-Zeile -- fehlt eine im
@@ -105,7 +112,6 @@ internal class OracleTableImportSession(
         OracleTypeMapping.isGeometryTypeName(typeNameLower)
 
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
-        rejectVirtualColumns(importedTargetColumns)
         toggleIdentityIfNeeded(importedTargetColumns)
         return OracleInsertSql.build(
             qualifiedTable,
@@ -300,14 +306,5 @@ internal class OracleTableImportSession(
             }
             fkReenabled = true
         }.exceptionOrNull()
-    }
-
-    private fun rejectVirtualColumns(importedTargetColumns: List<TargetColumn>) {
-        val offending = importedTargetColumns.map { it.name }.filter { it in virtualColumns }
-        if (offending.isEmpty()) return
-        throw ImportSchemaMismatchException(
-            "Target table '$table' has virtual column(s) ${offending.joinToString()}; Oracle does not allow " +
-                "writing them. Exclude the column(s) from the export/transfer.",
-        )
     }
 }

@@ -2,6 +2,7 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -14,6 +15,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.absolutePathString
@@ -67,6 +69,14 @@ class SqliteDataWriterTest : FunSpec({
                     "CREATE TABLE \"MixedCaseTarget\" (" +
                         "id INTEGER NOT NULL PRIMARY KEY, " +
                         "name TEXT NOT NULL)"
+                )
+                stmt.execute(
+                    "CREATE TABLE writer_generated (" +
+                        "id INTEGER PRIMARY KEY, " +
+                        "qty INTEGER NOT NULL, " +
+                        "price INTEGER NOT NULL, " +
+                        "total_virtual INTEGER GENERATED ALWAYS AS (qty * price), " +
+                        "total_stored INTEGER GENERATED ALWAYS AS (qty * price) STORED)"
                 )
                 stmt.execute("CREATE TABLE writer_parent (id INTEGER NOT NULL PRIMARY KEY)")
                 stmt.execute(
@@ -129,6 +139,54 @@ class SqliteDataWriterTest : FunSpec({
                         rows += rs.getInt(1) to rs.getString(2)
                     }
                     rows shouldContainExactly listOf(10 to "alice", 11 to "bob")
+                }
+            }
+        }
+    }
+
+    /**
+     * SQLite lehnt jeden Wert fuer eine generierte Spalte ab ("cannot INSERT
+     * into generated column") -- der Treiberfehler faellt aber erst mitten im
+     * ersten Chunk. Gemessen wird hier, dass `PRAGMA table_xinfo` **beide**
+     * Speicherformen findet und der Import vorher abbricht.
+     */
+    test("import into a generated column is refused by name, virtual and stored alike") {
+        listOf("total_virtual", "total_stored").forEach { generated ->
+            val session = writer.openTable(pool, "writer_generated", ImportOptions())
+            val ex = session.use {
+                shouldThrow<ImportSchemaMismatchException> {
+                    it.write(
+                        chunk(
+                            table = "writer_generated",
+                            columnNames = listOf("id", "qty", "price", generated),
+                            rows = listOf(arrayOf<Any?>(1, 2, 3, 6)),
+                        )
+                    )
+                }
+            }
+            ex.message shouldContain "computed column(s) $generated"
+            ex.message shouldContain "SQLite does not allow writing them"
+        }
+    }
+
+    test("the same table imports fine without the generated columns") {
+        writer.openTable(pool, "writer_generated", ImportOptions()).use { session ->
+            session.write(
+                chunk(
+                    table = "writer_generated",
+                    columnNames = listOf("id", "qty", "price"),
+                    rows = listOf(arrayOf<Any?>(1, 2, 3)),
+                )
+            ).rowsInserted shouldBe 1
+            session.commitChunk()
+        }
+
+        pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery("SELECT total_virtual, total_stored FROM writer_generated").use { rs ->
+                    rs.next() shouldBe true
+                    rs.getInt(1) shouldBe 6
+                    rs.getInt(2) shouldBe 6
                 }
             }
         }

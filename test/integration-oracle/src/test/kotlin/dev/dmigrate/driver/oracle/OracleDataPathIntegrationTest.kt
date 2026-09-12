@@ -2,6 +2,7 @@ package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -12,11 +13,13 @@ import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.test.images.TestImages
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.testcontainers.oracle.OracleContainer
 import java.time.Duration
@@ -145,6 +148,24 @@ class OracleDataPathIntegrationTest : FunSpec({
                     )
                     """.trimIndent(),
                 )
+                // Beide Formen berechneter Spalten -- mit *verschiedenen*
+                // Ausdruecken: zweimal derselbe in einer Tabelle ist auf Oracle
+                // ORA-54015 ("Duplicate column expression"), hier gemessen.
+                // Die materialisierte Form ist im
+                // Katalog von einer Spalte mit DEFAULT nicht zu unterscheiden
+                // (gemessen: VIRTUAL_COLUMN = 'NO', Ausdruck in DATA_DEFAULT) --
+                // der Schreibpfad findet sie nur ueber DBMS_METADATA.GET_DDL.
+                stmt.execute(
+                    """
+                    CREATE TABLE "generated" (
+                        "id" NUMBER(9) PRIMARY KEY,
+                        "qty" NUMBER(9) NOT NULL,
+                        "price" NUMBER(9) NOT NULL,
+                        "total_virtual" NUMBER GENERATED ALWAYS AS ("qty" * "price") VIRTUAL,
+                        "total_materialized" NUMBER GENERATED ALWAYS AS ("qty" + "price") MATERIALIZED
+                    )
+                    """.trimIndent(),
+                )
                 stmt.execute("INSERT INTO \"parent\" (\"id\") VALUES (1)")
             }
         }
@@ -153,6 +174,38 @@ class OracleDataPathIntegrationTest : FunSpec({
     afterSpec {
         pool.close()
         container.stop()
+    }
+
+    /**
+     * Oracle lehnt jeden Wert fuer eine berechnete Spalte ab -- ORA-54013
+     * ("INSERT operation disallowed on virtual columns"), und zwar **auch** fuer
+     * die materialisierte Form, die die Meldung trotzdem "virtual" nennt (live
+     * gemessen). Gepruefte Zusicherung ist, dass der Import beide vorab benennt:
+     * die virtuelle aus dem Katalog, die materialisierte aus der abgelegten DDL.
+     */
+    test("import into a computed column is refused by name, virtual and materialized alike") {
+        listOf("total_virtual", "total_materialized").forEach { generated ->
+            val ex = shouldThrow<ImportSchemaMismatchException> {
+                importChunk(
+                    table = "generated",
+                    columns = listOf("id", "qty", "price", generated),
+                    rows = listOf(arrayOf<Any?>(1, 2, 3, 6)),
+                )
+            }
+            ex.message shouldContain "computed column(s) $generated"
+            ex.message shouldContain "Oracle does not allow writing them"
+        }
+    }
+
+    test("the same table imports fine without the computed columns") {
+        importChunk(
+            table = "generated",
+            columns = listOf("id", "qty", "price"),
+            rows = listOf(arrayOf<Any?>(1, 2, 3)),
+        )
+
+        queryRows("SELECT \"total_virtual\", \"total_materialized\" FROM \"generated\"") shouldContainExactly
+            listOf(listOf(6, 5))
     }
 
     test("insert with an explicit GENERATED ALWAYS identity value toggles to BY DEFAULT and reseeds afterwards") {

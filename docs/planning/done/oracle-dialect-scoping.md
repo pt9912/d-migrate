@@ -1680,7 +1680,7 @@ hier festgehalten, weil es Oracle-Betriebswissen ist, das sonst in fünf
 Tickets verstreut läge.
 
 **Berechnete Spalten** (aus
-[`generated-column-expression-dropped.md`](../open/generated-column-expression-dropped.md)):
+[`generated-column-expression-dropped.md`](generated-column-expression-dropped.md)):
 Oracle war der schwierigste der fünf, und der Plan hielt die gespeicherte Form
 zunächst für „prinzipiell nicht round-trip-fähig". Gemessen über **alle**
 Spalten von `ALL_TAB_COLS`: eine materialisierte berechnete Spalte ist dort von

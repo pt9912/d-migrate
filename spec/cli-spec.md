@@ -1820,6 +1820,19 @@ nicht übernommen; Provenienz bleibt im Report oder in stabilen Metadaten.
 `exports.down`) auf Basis des bestehenden full-state-`generateRollback()`-Pfads.
 Dies ist nicht der spätere diff-basierte `DiffResult`-Rollback.
 
+**Berechnete Spalten im Importpfad**: Eine berechnete Spalte
+(`GENERATED ALWAYS AS (...)`, SQL Server: Computed Column) kann kein Ziel
+beschreiben — gespeichert/persistiert/materialisiert wie virtuell. Enthaelt der
+Chunk eine, bricht der Import vor dem ersten Schreiben mit einer benennenden
+Meldung ab (Spaltenname + Zielsystem), statt den Treiberfehler mitten im ersten
+Chunk durchzureichen; der Ausweg ist, die Spalte aus Export/Transfer
+auszunehmen. Die Pruefung gilt fuer den Chunk, nicht fuer die Tabelle: eine
+berechnete Spalte, die der Import ohnehin auslaesst, ist kein Fehler. Fuer ein
+Oracle-Ziel gilt das auch fuer die materialisierte Form, die der Katalog nicht
+von einer Spalte mit `DEFAULT` unterscheidet — sie wird ueber die abgelegte DDL
+(`DBMS_METADATA.GET_DDL`) erkannt; ist das Paket nicht ausfuehrbar, bleibt es
+beim Treiberfehler (`ORA-54013`).
+
 **MSSQL-Datenpfad**: `--on-conflict skip` verlangt für ein SQL-Server-Ziel
 einen Primärschlüssel — und dass die übertragenen Spalten ihn enthalten
 (T-SQL hat keine schlüsselfreie Form wie `ON CONFLICT DO NOTHING`/
@@ -1830,9 +1843,7 @@ vorab (Exit 2, vor der ersten Verbindung, alle betroffenen Tabellen auf
 einmal); ohne `--schema` gibt es dort nichts zu prüfen, und es bleibt bei der
 Meldung beim Öffnen der Tabelle. Fehlt der Schlüssel nur im Chunk, meldet es
 der Import benennend statt als Treiberfehler.
-Computed Columns kann SQL Server nicht beschreiben — enthält der Chunk eine,
-bricht der Import mit einer benennenden Meldung ab, statt den Treiberfehler
-durchzureichen. Schlüsselwerte einer IDENTITY-Spalte werden mit
+Schlüsselwerte einer IDENTITY-Spalte werden mit
 `SET IDENTITY_INSERT` übernommen und der Zähler danach per `DBCC CHECKIDENT`
 auf den deklarierten `IDENTITY(seed, increment)`-Vertrag nachgeführt.
 
@@ -1850,9 +1861,7 @@ BY DEFAULT AS IDENTITY` temporär um und beim Abschluss zurück. Die
 zugrundeliegende Sequenz ist system-generiert (`ALTER SEQUENCE` scheitert
 mit `ORA-32793`); das Nachführen läuft deshalb ebenfalls über die
 Identity-Klausel der Tabelle (`ALTER TABLE ... MODIFY <col> GENERATED
-<Modus> AS IDENTITY (START WITH n)`). Virtuelle Spalten (`GENERATED ALWAYS
-AS (...) VIRTUAL`) kann Oracle nicht beschreiben — enthält der Chunk eine,
-bricht der Import benennend ab. `--disable-fk-checks` gibt es (anders als
+<Modus> AS IDENTITY (START WITH n)`). `--disable-fk-checks` gibt es (anders als
 MySQL/SQLite) nicht als globalen Schalter: die Zieltabelle setzt ihre
 eigenen FK-Constraints einzeln aus (`ALTER TABLE ... DISABLE CONSTRAINT
 <name>`) und schaltet sie im Cleanup mit `ENABLE NOVALIDATE` wieder scharf

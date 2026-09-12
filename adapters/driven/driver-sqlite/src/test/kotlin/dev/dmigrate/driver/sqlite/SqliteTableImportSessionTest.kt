@@ -54,6 +54,7 @@ class SqliteTableImportSessionTest : FunSpec({
             qualifiedTable = SqliteQualifiedTableName(null, "writer_child"),
             geometryColumns = emptySet(),
             targetColumns = listOf(TargetColumn("id", nullable = false, jdbcType = java.sql.Types.INTEGER)),
+            computedColumns = emptySet(),
             primaryKeyColumns = emptyList(),
             options = ImportOptions(disableFkChecks = true, reseedSequences = false),
             schemaSync = SqliteSchemaSync(),

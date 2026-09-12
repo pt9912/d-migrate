@@ -59,6 +59,7 @@ class SqliteDataWriter : DataWriter {
         try {
             savedAutoCommit = conn.autoCommit
             val targetColumns = enrichGeometrySrid(conn, qualified, loadTargetColumns(conn, qualified))
+            val computedColumns = loadComputedColumns(conn, qualified)
             val primaryKeyColumns = if (options.onConflict == OnConflict.UPDATE) {
                 loadPrimaryKeyColumns(conn, qualified).also {
                     require(it.isNotEmpty()) {
@@ -95,6 +96,7 @@ class SqliteDataWriter : DataWriter {
                 qualifiedTable = qualified,
                 targetColumns = targetColumns,
                 geometryColumns = SqliteGeometryCatalog.registeredColumns(conn, qualified).keys,
+                computedColumns = computedColumns,
                 primaryKeyColumns = primaryKeyColumns,
                 options = options,
                 schemaSync = sync,
@@ -156,6 +158,34 @@ class SqliteDataWriter : DataWriter {
         conn: Connection,
         table: SqliteQualifiedTableName,
     ): List<TargetColumn> = dev.dmigrate.driver.data.loadTargetColumns(conn, table.quotedPath())
+
+    /**
+     * Die generierten Spalten (`GENERATED ALWAYS AS (…)`) der Zieltabelle --
+     * gespeichert wie virtuell. `PRAGMA table_info` laesst sie ganz weg,
+     * `table_xinfo` fuehrt sie mit und unterscheidet sie ueber `hidden`
+     * ([SqliteMetadataQueries.isGeneratedHiddenValue]); fuer den Schreibpfad ist
+     * die Speicherform gleichgueltig, SQLite lehnt beide ab
+     * (`cannot INSERT into generated column`).
+     */
+    private fun loadComputedColumns(
+        conn: Connection,
+        table: SqliteQualifiedTableName,
+    ): Set<String> {
+        conn.createStatement().use { stmt ->
+            stmt.executeQuery(
+                "PRAGMA ${quoteSqliteIdentifier(table.schemaOrMain())}" +
+                    ".table_xinfo(${quoteSqliteStringLiteral(table.table)})",
+            ).use { rs ->
+                return buildSet {
+                    while (rs.next()) {
+                        if (SqliteMetadataQueries.isGeneratedHiddenValue(rs.getInt("hidden"))) {
+                            add(rs.getString("name"))
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private fun loadPrimaryKeyColumns(
         conn: Connection,

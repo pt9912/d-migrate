@@ -4,6 +4,7 @@ import dev.dmigrate.driver.connection.asJdbc
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -59,6 +60,16 @@ class PostgresDataWriterIntegrationTest : FunSpec({
                 stmt.execute("CREATE TABLE writer_zero_chunk (id SERIAL PRIMARY KEY, label TEXT)")
                 stmt.execute("CREATE TABLE writer_upsert_target (id SERIAL PRIMARY KEY, name TEXT NOT NULL)")
                 stmt.execute("CREATE TABLE writer_no_pk (name TEXT NOT NULL)")
+                // Beide Speicherformen berechneter Spalten; VIRTUAL gibt es ab
+                // PostgreSQL 18 (TestImages.POSTGRESQL ist der Obergrenzenstand).
+                stmt.execute(
+                    "CREATE TABLE writer_generated (" +
+                        "id INT PRIMARY KEY, " +
+                        "qty INT NOT NULL, " +
+                        "price INT NOT NULL, " +
+                        "total_stored INT GENERATED ALWAYS AS (qty * price) STORED, " +
+                        "total_virtual INT GENERATED ALWAYS AS (qty * price) VIRTUAL)"
+                )
                 // I-04: benannter PG-Enum-Typ als Transfer-Ziel
                 stmt.execute("CREATE TYPE mood AS ENUM ('sad', 'ok', 'happy')")
                 stmt.execute(
@@ -87,6 +98,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
                         writer_zero_chunk,
                         writer_upsert_target,
                         writer_no_pk,
+                        writer_generated,
                         writer_enum_target
                     RESTART IDENTITY
                     """.trimIndent()
@@ -140,6 +152,55 @@ class PostgresDataWriterIntegrationTest : FunSpec({
                         rows += rs.getLong(1) to rs.getString(2)
                     }
                     rows shouldContainExactly listOf(10L to "alice", 11L to "bob")
+                }
+            }
+        }
+    }
+
+    /**
+     * PostgreSQL lehnt jeden Wert fuer eine berechnete Spalte ab ("cannot
+     * insert a non-DEFAULT value into column") -- gemessen fuer **beide**
+     * Speicherformen. Der Treiberfehler faellt erst mitten im ersten Chunk;
+     * gepruefte Zusicherung ist, dass `information_schema.is_generated` beide
+     * findet und der Import vorher mit Spaltennamen abbricht.
+     */
+    test("import into a computed column is refused by name, stored and virtual alike") {
+        listOf("total_stored", "total_virtual").forEach { generated ->
+            val session = writer.openTable(pool!!, "writer_generated", ImportOptions())
+            val ex = session.use {
+                shouldThrow<ImportSchemaMismatchException> {
+                    it.write(
+                        chunk(
+                            table = "writer_generated",
+                            columnNames = listOf("id", "qty", "price", generated),
+                            rows = listOf(arrayOf<Any?>(1, 2, 3)),
+                        )
+                    )
+                }
+            }
+            ex.message shouldContain "computed column(s) $generated"
+            ex.message shouldContain "PostgreSQL does not allow writing them"
+        }
+    }
+
+    test("the same table imports fine without the computed columns") {
+        writer.openTable(pool!!, "writer_generated", ImportOptions()).use { session ->
+            session.write(
+                chunk(
+                    table = "writer_generated",
+                    columnNames = listOf("id", "qty", "price"),
+                    rows = listOf(arrayOf<Any?>(1, 2, 3)),
+                )
+            ).rowsInserted shouldBe 1
+            session.commitChunk()
+        }
+
+        pool!!.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery("SELECT total_stored, total_virtual FROM writer_generated").use { rs ->
+                    rs.next() shouldBe true
+                    rs.getInt(1) shouldBe 6
+                    rs.getInt(2) shouldBe 6
                 }
             }
         }

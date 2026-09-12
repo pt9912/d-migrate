@@ -169,7 +169,7 @@ class MysqlSchemaReader(
             val computed = mysqlComputedGeneration(extra, row["generation_expression"] as? String)
             // Meldet der Server eine berechnete Spalte ohne Ausdruck, ist die
             // Berechnung wirklich verloren — dann bleibt es bei der Meldung.
-            if (computed == null && extra.contains("GENERATED", ignoreCase = true)) {
+            if (computed == null && MysqlGeneratedColumns.isGenerated(extra)) {
                 notes += GeneratedColumnNotes.expressionDropped(displayName, colName, null)
             }
             val mapping = MysqlTypeMapping.mapColumn(MysqlTypeMapping.ColumnInput(
@@ -244,13 +244,14 @@ class MysqlSchemaReader(
 /**
  * Die Berechnung einer MySQL-Spalte, aus dem, was `information_schema` fuehrt.
  *
- * `EXTRA` traegt "STORED GENERATED" bzw. "VIRTUAL GENERATED",
+ * `EXTRA` traegt "STORED GENERATED" bzw. "VIRTUAL GENERATED"
+ * ([MysqlGeneratedColumns] -- `DEFAULT_GENERATED` ist keines von beiden),
  * `GENERATION_EXPRESSION` den Ausdruck in Serverform mit Backticks (gemessen
  * auf 9.7.2: "(`q` * `price`)"). Ohne Ausdruck gibt es nichts zu tragen —
  * dann meldet der Leser den Verlust, statt eine leere Berechnung zu erfinden.
  */
 private fun mysqlComputedGeneration(extra: String, expression: String?): ColumnGeneration.Computed? {
-    if (!extra.contains("GENERATED", ignoreCase = true)) return null
+    if (!MysqlGeneratedColumns.isGenerated(extra)) return null
     val text = expression?.takeIf { it.isNotBlank() } ?: return null
-    return ColumnGeneration.Computed(text, stored = extra.contains("STORED", ignoreCase = true))
+    return ColumnGeneration.Computed(text, stored = MysqlGeneratedColumns.isStored(extra))
 }

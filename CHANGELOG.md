@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ein Import, der eine berechnete Spalte befüllen würde, bricht auf allen
+  fünf Zielen benennend ab** — mit Spaltenname und Zielsystem, vor dem ersten
+  Schreiben. Bisher tat das nur SQL Server (und Oracle für die virtuelle Form);
+  auf PostgreSQL, MySQL und SQLite fiel stattdessen ein roher Treiberfehler
+  mitten im ersten Chunk, der nicht sagte, welche Spalte man ausnehmen soll.
+
+  Gemessen, bevor etwas gebaut wurde: **alle fünf** Server lehnen das Schreiben
+  ab — es ging nie um Datenverlust, sondern darum, *wann* und *wie
+  verständlich* der Abbruch kommt. Geprüft wird der **Chunk**, nicht die
+  Tabelle: eine berechnete Spalte, die der Import ohnehin ausläßt, bleibt
+  folgenlos.
+
+  Für ein Oracle-Ziel gilt die Sperre jetzt auch für die **materialisierte**
+  Form. Sie ist im Katalog von einer Spalte mit `DEFAULT` nicht zu
+  unterscheiden; der Schreibpfad erkennt sie über dieselbe abgelegte DDL wie der
+  Lesepfad. Ohne `EXECUTE`-Recht auf `DBMS_METADATA` bleibt es dort beim
+  Treiberfehler (`ORA-54013`).
+
+- **Eine MySQL-Spalte mit Default-Ausdruck wird nicht mehr als berechnete
+  Spalte gemeldet.** MySQL setzt `EXTRA` für `DEFAULT CURRENT_TIMESTAMP` (und
+  jeden anderen Default-Ausdruck ab 8.0.13) auf `DEFAULT_GENERATED` — eine
+  Angabe, die das Wort trägt, ohne eine berechnete Spalte zu sein. Der Leser
+  hörte nur auf das Wort und meldete für jede solche Spalte einen Verlust
+  (`R343`), den es nicht gibt.
+
+  Aufgefallen beim Bau der Import-Sperre oben: dieselbe zu weite Prüfung hätte
+  dort ein **gültiges** Schreiben abgelehnt. Beide Pfade fragen jetzt an einer
+  Stelle, und die unterscheidet `VIRTUAL GENERATED`/`STORED GENERATED` von
+  `DEFAULT_GENERATED`. Die drei `EXTRA`-Schreibweisen sind live festgenagelt.
+
 - **Ein Index auf einer virtuellen Oracle-Spalte kommt als Spaltenindex
   zurück** — so, wie er geschrieben wurde. Bisher als Ausdrucks-Index, weshalb
   ein Soll mit `columns: [line_total]` **nie** konvergierte: jeder Vergleich

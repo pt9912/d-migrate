@@ -101,4 +101,48 @@ class MysqlGeneratedColumnReverseIntegrationTest : FunSpec({
         // Eine gewoehnliche Spalte bleibt eine gewoehnliche.
         columns.getValue("plain_note").generation shouldBe null
     }
+
+    /**
+     * Die Abgrenzung, die der Leser vorher nicht machte: MySQL setzt `EXTRA`
+     * auch auf `DEFAULT_GENERATED` -- fuer eine Spalte mit Default-**Ausdruck**
+     * (ab 8.0.13). Wer nur auf das Wort `GENERATED` hoert, meldet fuer jedes
+     * `DEFAULT CURRENT_TIMESTAMP` einen Verlust, den es nicht gibt.
+     */
+    test("a column with a default expression is no computed column, and reports no loss") {
+        val active = pool!!
+        active.borrow().asJdbc().use { c ->
+            c.createStatement().use { s ->
+                s.execute(
+                    """CREATE TABLE audit_entry (
+                         id INT PRIMARY KEY,
+                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                         touched_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+                           ON UPDATE CURRENT_TIMESTAMP)""",
+                )
+            }
+        }
+
+        // Gemessen, nicht angenommen: so nennt der Server diese beiden Spalten.
+        val extras = mutableMapOf<String, String>()
+        active.borrow().asJdbc().use { c ->
+            c.prepareStatement(
+                "SELECT column_name, extra FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'audit_entry'",
+            ).use { ps ->
+                ps.executeQuery().use { rs -> while (rs.next()) extras[rs.getString(1)] = rs.getString(2) }
+            }
+        }
+        extras["created_at"] shouldBe "DEFAULT_GENERATED"
+        extras["touched_at"] shouldBe "DEFAULT_GENERATED on update CURRENT_TIMESTAMP"
+
+        val read = MysqlSchemaReader().read(active)
+        val columns = read.schema.tables.getValue("audit_entry").columns
+        columns.getValue("created_at").generation shouldBe null
+        columns.getValue("touched_at").generation shouldBe null
+        withClue(read.notes.map { "${it.code}:${it.objectName}" }.toString()) {
+            read.notes.none {
+                it.code == GeneratedColumnNotes.EXPRESSION_DROPPED && it.objectName.contains("audit_entry")
+            } shouldBe true
+        }
+    }
 })

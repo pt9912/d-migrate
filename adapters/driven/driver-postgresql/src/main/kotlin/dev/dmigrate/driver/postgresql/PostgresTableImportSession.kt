@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.driver.data.AbstractTableImportSession
+import dev.dmigrate.driver.data.ComputedTargetColumns
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.SequenceAdjustment
@@ -21,6 +22,7 @@ internal class PostgresTableImportSession(
     private val qualifiedTable: QualifiedTableName,
     targetColumns: List<TargetColumn>,
     private val generatedAlwaysColumns: Set<String>,
+    computedColumns: Set<String>,
     primaryKeyColumns: List<String>,
     options: ImportOptions,
     private val schemaSync: PostgresSchemaSync,
@@ -28,6 +30,12 @@ internal class PostgresTableImportSession(
 ) : AbstractTableImportSession(conn, savedAutoCommit, table, targetColumns, primaryKeyColumns, options) {
 
     private var triggersReenabled: Boolean = false
+
+    /**
+     * PostgreSQL lehnt jeden Wert fuer eine berechnete Spalte ab -- gespeichert
+     * wie virtuell (`cannot insert a non-DEFAULT value into column`).
+     */
+    override val computedTargetColumns = ComputedTargetColumns(computedColumns, "PostgreSQL")
 
     /**
      * I-04: Namen der PostgreSQL-Enum-Typen im Ziel. Werte für solche Spalten

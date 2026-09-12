@@ -57,6 +57,16 @@ object SqliteMetadataQueries {
      * virtuelle, `3` fuer eine gespeicherte generierte Spalte (`1` sind die
      * versteckten Spalten virtueller Tabellen und gehoeren nicht dazu).
      */
+    /**
+     * Ist der `hidden`-Wert aus `PRAGMA table_xinfo` eine generierte Spalte?
+     *
+     * Die beiden Werte stehen nur hier -- der Schreibpfad
+     * (`SqliteDataWriter.loadComputedColumns`) fragt dasselbe PRAGMA auf einer
+     * rohen Connection ab und soll die Zahlen nicht ein zweites Mal kennen.
+     */
+    fun isGeneratedHiddenValue(hidden: Int): Boolean =
+        hidden == GENERATED_VIRTUAL || hidden == GENERATED_STORED
+
     fun listGeneratedColumns(session: JdbcMetadataSession, table: String): Map<String, String> =
         listGeneratedColumnDetails(session, table).associate { it.name to it.kind }
 
