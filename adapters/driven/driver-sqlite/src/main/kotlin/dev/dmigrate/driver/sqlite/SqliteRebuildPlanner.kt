@@ -3,6 +3,7 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
@@ -431,6 +432,13 @@ internal object SqliteRebuildPlanner {
             val sourceCol = source.columns[name]
             val quoted = sql.quote(name)
             when {
+                // Eine berechnete Spalte steht in KEINER der beiden Listen: in
+                // sie hineinzuschreiben lehnt SQLite ab („cannot INSERT into
+                // generated column"), und zu fuellen ist sie auch nicht — der
+                // Ausdruck in der neuen Tabelle rechnet sie aus. Faellt sie
+                // hier durch, landet sie in der Spaltenliste des `INSERT` und
+                // der ganze Neubau scheitert.
+                targetCol.generation is ColumnGeneration.Computed -> Unit
                 // Gleicher neutraler Typ, oder zwei neutrale Typen, die SQLite
                 // in derselben Spaltenform ablegt: dann wird nichts umgewandelt,
                 // und die Cast-Matrix hat nichts zu entscheiden. Ein `enum` und
@@ -501,10 +509,27 @@ internal object SqliteRebuildPlanner {
         }
     }
 
+    /**
+     * Eine **gespeicherte** berechnete Spalte laesst sich nicht anhaengen.
+     * Gemessen: `ALTER TABLE … ADD COLUMN … STORED` gelingt auf der leeren
+     * Tabelle und scheitert auf der gefuellten — sie braucht Platz in jeder
+     * vorhandenen Zeile. Ob die Zieltabelle Zeilen hat, weiss der Plan nicht,
+     * also geht dieser Fall immer ueber den Neubau. Die virtuelle Form haengt
+     * sich in beiden Faellen an.
+     */
+    private fun addsStoredComputedColumn(op: DiffOperation): Boolean {
+        if (op !is DiffOperation.AddColumn) return false
+        return (op.column.generation as? ColumnGeneration.Computed)?.stored == true
+    }
+
     private fun isRebuildTrigger(op: DiffOperation): Boolean = when (op) {
+        is DiffOperation.AddColumn -> addsStoredComputedColumn(op)
         is DiffOperation.AlterColumnType,
         is DiffOperation.AlterColumnNullability,
         is DiffOperation.AlterColumnDefault,
+        // SQLite kennt kein `ALTER COLUMN`; ein geaenderter Berechnungsausdruck
+        // laeuft wie jede andere Spaltenaenderung ueber den Neubau.
+        is DiffOperation.AlterColumnGeneration,
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,
         is DiffOperation.AddConstraint,
@@ -525,6 +550,7 @@ internal object SqliteRebuildPlanner {
         is DiffOperation.AlterColumnType,
         is DiffOperation.AlterColumnNullability,
         is DiffOperation.AlterColumnDefault,
+        is DiffOperation.AlterColumnGeneration,
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,
         is DiffOperation.AddConstraint,
@@ -541,6 +567,7 @@ internal object SqliteRebuildPlanner {
         is DiffOperation.AlterColumnType,
         is DiffOperation.AlterColumnNullability,
         is DiffOperation.AlterColumnDefault,
+        is DiffOperation.AlterColumnGeneration,
         -> op.objectRef.path[0]
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,

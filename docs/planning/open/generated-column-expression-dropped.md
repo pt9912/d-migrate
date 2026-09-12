@@ -319,6 +319,59 @@ als `UNSUPPORTED` eingeordnet, mit dem gemessenen Grund am Fundort (Oracle:
 `ORA-54022` sobald ein Index auf der Spalte liegt, `ORA-54060` fuer die
 materialisierte Form).
 
+## Gebaut (2026-09-12): der Aenderungspfad auf den drei letzten Dialekten
+
+Damit ist die Frage „was geschieht bei einer belegten Aenderung?" auf allen
+fuenf Dialekten beantwortet — dreimal durch Bauen, zweimal durch einen
+benannten Blocker mit gemessenem Grund.
+
+**SQLite: Tabellen-Neubau.** Der Weg, den dieser Dialekt fuer jedes
+`ALTER COLUMN` geht. Das Besondere steckt im Kopiervorgang: eine berechnete
+Spalte darf in der Spaltenliste des `INSERT INTO neu (…) SELECT … FROM alt`
+**nicht** vorkommen — SQLite lehnt das Schreiben ab und der ganze Neubau
+scheitert. Sie bleibt draussen und wird von der neuen Tabelle ausgerechnet.
+
+Drei Stellen mussten es wissen, nicht eine: `categorize` im Renderer **und**
+`isRebuildTrigger`/`isAbsorbedByRebuild`/`tableOf` im Planer. Waeren sie sich
+uneinig, blockte der Lauf mit `SQLITE_REBUILD_REQUIRED` statt zu bauen — die
+Sabotageprobe hat genau das gezeigt.
+
+**Dabei aufgefallen (gemessen):** `ALTER TABLE … ADD COLUMN … STORED` gelingt
+auf der **leeren** Tabelle und scheitert auf der gefuellten — eine gespeicherte
+Spalte braucht Platz in jeder vorhandenen Zeile. Ob die Zieltabelle Zeilen hat,
+weiss der Plan nicht; deshalb geht auch das **Hinzufuegen** einer gespeicherten
+berechneten Spalte ueber den Neubau. Die virtuelle Form haengt sich in beiden
+Faellen an.
+
+**Oracle: `MODIFY`, aber nur virtuell und nur ohne Index.** Live gemessen:
+
+| Lage | Oracle |
+| --- | --- |
+| virtuell, kein Index | `MODIFY` gelingt, der Wert wird neu gerechnet (7 × 10 = 70) |
+| virtuell, mit Index | `ORA-54022` |
+| materialisiert | `ORA-54060`, auch ohne Index |
+
+Beide Fehlschlaege sind **laut** — anders als PostgreSQL 16 verliert Oracle
+nichts stillschweigend. Geblockt wird trotzdem schon beim Planen: ein Lauf, der
+mitten in der Ausfuehrung an `ORA-54022` scheitert, hat die vorigen Anweisungen
+bereits angewandt.
+
+**SQL Server: geblockt, mit gemessenem Grund.** `ALTER TABLE … ALTER COLUMN c
+AS (…)` ist ein Syntaxfehler — den Befehl gibt es nicht. `DROP COLUMN` + `ADD`
+waere der einzige Weg; er scheitert **laut** an einem Index auf der Spalte
+(„The index 'ix' is dependent on column 'c'"), laesst aber eine **Sicht**
+darueber **still** zurueck: der Drop gelingt, und die Sicht bricht erst beim
+naechsten `SELECT`. Etwas stillschweigend zu zerbrechen ist schlechter, als es
+nicht zu tun — deshalb blockt der Pfad, statt auszuweichen. Ein ausdruecklich
+eingeschalteter `DROP`+`ADD`-Weg waere ein eigener Schnitt mit eigener Option.
+
+**Nebenbefund, eigenes Ticket:** ein Index auf einer virtuellen Oracle-Spalte
+kommt als **Ausdrucks**-Index zurueck (Oracle legt ihn funktionsbasiert an).
+Ein Soll, das ihn als Spaltenindex fuehrt, konvergiert deshalb nie —
+[`oracle-index-auf-virtueller-spalte.md`](oracle-index-auf-virtueller-spalte.md).
+Solange das so ist, sucht der Oracle-Renderer **beide** Formen, sonst fiele
+seine Vorab-Blockade auf einem zurueckgelesenen Schema ins Leere.
+
 ## Der Befund, der den Schnitt anhaelt: eine geaenderte Generation wird gar nicht geplant
 
 `OperationMapper.mapColumnChange` bildet genau drei Felder eines

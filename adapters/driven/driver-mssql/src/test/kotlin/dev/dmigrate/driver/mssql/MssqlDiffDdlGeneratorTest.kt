@@ -288,6 +288,33 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
             .message shouldContainStr "materialized"
     }
 
+    test("a changed computed expression is blocked, and the message says why") {
+        // Live gemessen gegen SQL Server 2025: `ALTER TABLE … ALTER COLUMN c AS (…)`
+        // ist ein Syntaxfehler. `DROP COLUMN` + `ADD` waere der einzige Weg —
+        // er scheitert laut an einem Index auf der Spalte, laesst aber eine
+        // Sicht darueber still zurueck.
+        val before = ColumnGeneration.Computed("qty * price", stored = true)
+        val after = ColumnGeneration.Computed("qty * price * 2", stored = true)
+        val r = up(
+            SchemaDiff(
+                tablesChanged = listOf(
+                    TableDiff(
+                        name = "order_line",
+                        columnsChanged = listOf(
+                            ColumnDiff(name = "total", generation = ValueChange(before, after)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        r.statements.shouldBeEmpty()
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        val message = r.diagnostics.single { it.code == "DIALECT_UNSUPPORTED_OPERATION" }.message
+        message shouldContainStr "ALTER COLUMN"
+        message shouldContainStr "silently broken"
+    }
+
     test("statements declare SQL Server's fully transactional DDL") {
         val r = up(SchemaDiff(tablesRemoved = listOf(NamedTable("legacy", TableDefinition()))))
         r.statements.single().hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL

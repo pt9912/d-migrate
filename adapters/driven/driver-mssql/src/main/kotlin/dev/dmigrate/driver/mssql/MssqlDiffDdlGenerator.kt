@@ -260,6 +260,17 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropMaterializedView,
         -> "SQL Server has no materialized views; the generate path degrades them to a plain view (W103)"
 
+        // Live gemessen gegen SQL Server 2025: `ALTER TABLE … ALTER COLUMN c AS (…)`
+        // ist ein Syntaxfehler — T-SQL kennt den Befehl nicht. Der einzige Weg
+        // ist `DROP COLUMN` + `ADD`. Der scheitert LAUT, wenn ein Index auf der
+        // Spalte liegt („The index 'x' is dependent on column 'c'"), aber eine
+        // Sicht darueber laesst er STILL zurueck: der Drop gelingt, und die
+        // Sicht bricht erst beim naechsten `SELECT`. Deshalb wird hier geblockt
+        // statt ausgewichen.
+        is DiffOperation.AlterColumnGeneration ->
+            "T-SQL has no `ALTER COLUMN … AS (…)`; the only route is dropping and recreating the column, " +
+                "which leaves a view over it silently broken"
+
         else -> "no MSSQL rendering exists for this operation"
     }
 }

@@ -3,6 +3,7 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.CheckPreflightGate
@@ -244,10 +245,19 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
      * planner could not locate the table's current/desired schema.
      */
     private fun categorize(op: DiffOperation): OpCategory = when (op) {
+        // Eine gespeicherte berechnete Spalte laesst sich nicht anhaengen
+        // (gemessen: auf der gefuellten Tabelle scheitert es) — sie geht ueber
+        // den Neubau, wie `SqliteRebuildPlanner.classify` sie auch einsortiert.
+        is DiffOperation.AddColumn ->
+            if ((op.column.generation as? ColumnGeneration.Computed)?.stored == true) {
+                OpCategory.REBUILD
+            } else {
+                OpCategory.SIMPLE
+            }
+
         is DiffOperation.CreateTable,
         is DiffOperation.DropTable,
         is DiffOperation.RenameTable,
-        is DiffOperation.AddColumn,
         is DiffOperation.DropColumn,
         is DiffOperation.RenameColumn,
         is DiffOperation.AddIndex,
@@ -260,6 +270,11 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.AlterColumnType,
         is DiffOperation.AlterColumnNullability,
         is DiffOperation.AlterColumnDefault,
+        // SQLite kennt kein `ALTER COLUMN` — der Weg ist der Tabellen-Neubau,
+        // den dieser Dialekt ohnehin geht. Die neue Tabelle traegt den neuen
+        // Ausdruck, und die Spalte bleibt aus dem `INSERT` heraus: SQLite
+        // rechnet sie aus, sie laesst sich nicht beschreiben.
+        is DiffOperation.AlterColumnGeneration,
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,
         is DiffOperation.AddConstraint,
@@ -303,10 +318,6 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.RenameTrigger,
         is DiffOperation.RenameFunction,
         is DiffOperation.RenameProcedure,
-        // SQLite kennt kein `ALTER COLUMN`; sein Weg waere der Tabellen-Neubau,
-        // den dieser Dialekt ohnehin geht. Erreichbar wird die Operation aber erst
-        // mit dem Lesepfad — `PRAGMA table_info` blendet generierte Spalten aus.
-        is DiffOperation.AlterColumnGeneration,
         -> OpCategory.UNSUPPORTED
 
         // 0.9.7 Phase F2: SQLite-helper_table sequence diff-migration.

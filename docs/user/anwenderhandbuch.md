@@ -2432,13 +2432,24 @@ Zurücklesen wiederfinden.
   als geändert meldet.
 - **`generation` und `default` schließen einander aus** — der Wert kommt aus
   dem Ausdruck.
-- **Den Ausdruck später zu ändern, ist teuer.** Wie bei einer Sicht oder einem
-  CHECK gibt kein Server ihn wortgleich zurück; wann d-migrate eine Änderung
-  überhaupt erkennt, steht unter
+- **Den Ausdruck später zu ändern, geht nicht überall.** Wie bei einer Sicht
+  oder einem CHECK gibt kein Server ihn wortgleich zurück; wann d-migrate eine
+  Änderung überhaupt erkennt, steht unter
   [„Jeder Lauf plant dieselbe Sicht — oder denselben CHECK — erneut"](#jeder-lauf-plant-dieselbe-sicht--oder-denselben-check--erneut).
-  Steht eine Änderung fest, blockt der Lauf (**E137**): die Tabelle wird unter
-  exklusiver Sperre neu geschrieben, auf manchen Servern über das Lösen der
-  Spalte samt ihren Indizes.
+  Steht sie fest, hängt der Weg am Server:
+
+  | Ziel | Was passiert |
+  | --- | --- |
+  | PostgreSQL ab 17 | `SET EXPRESSION` — Index und abhängige Sicht überleben |
+  | PostgreSQL 16 | der Lauf blockt: der einzige Weg darunter verlöre den Index |
+  | MySQL | `MODIFY COLUMN` |
+  | SQLite | die Tabelle wird neu gebaut (Daten bleiben, der Wert wird neu gerechnet) |
+  | Oracle | nur bei `stored: false` **und** ohne Index auf der Spalte |
+  | SQL Server | der Lauf blockt: T-SQL hat keinen Befehl dafür |
+
+  Wo geblockt wird, nennt die Meldung den Grund samt Fehlernummer des Servers.
+  Der Ausweg ist überall derselbe: die Spalte von Hand lösen und neu anlegen —
+  bei SQLite tut d-migrate genau das selbst.
 - **Oracle, ohne `DBMS_METADATA`:** kann der lesende Benutzer die Tabellen-DDL
   nicht holen, ist eine `MATERIALIZED`-Spalte im Katalog nicht von einer
   gewöhnlichen mit `DEFAULT` zu unterscheiden. d-migrate rät dann nicht,

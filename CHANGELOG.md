@@ -30,13 +30,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `STORED`/`VIRTUAL`, Oracle `MATERIALIZED`/`VIRTUAL`, SQL Server `PERSISTED`
   bzw. ohne Zusatz — dort auch ohne `GENERATED ALWAYS` und **ohne Typ**.
 
-- **Eine belegte Aenderung des Ausdrucks wird angewandt**, nicht nur gemeldet:
-  auf PostgreSQL ab 17 ueber `ALTER COLUMN … SET EXPRESSION AS (…)`, auf MySQL
-  ueber `MODIFY COLUMN`. Darunter — und auf SQLite, SQL Server und Oracle —
-  blockt der Lauf mit benannter Meldung, statt die Spalte zu loesen und neu
-  anzulegen, was gemessen ihre Indizes stillschweigend mitnimmt. Ob eine
-  Aenderung ueberhaupt **feststeht**, entscheidet weiterhin Herkunft oder
-  Sandkasten (`W137`, wenn nicht entscheidbar).
+- **Eine belegte Änderung des Ausdrucks wird angewandt**, nicht nur gemeldet.
+  Wie, hängt am Server — gemessen: PostgreSQL ab 17 `ALTER COLUMN … SET
+  EXPRESSION`, MySQL `MODIFY COLUMN`, SQLite über den Tabellen-Neubau (die
+  berechnete Spalte bleibt dabei aus der `INSERT`-Spaltenliste heraus, sonst
+  lehnt SQLite den ganzen Neubau ab), Oracle über `MODIFY` — dort aber nur für
+  die virtuelle Form und nur, solange kein Index auf der Spalte liegt.
+
+  Wo es keinen Weg in place gibt, blockt der Lauf mit dem gemessenen Grund
+  statt auszuweichen: PostgreSQL 16 (`DROP`+`ADD` nähme den Index still mit),
+  SQL Server (kein `ALTER COLUMN … AS (…)`; `DROP`+`ADD` ließe eine Sicht still
+  zerbrechen), Oracle materialisiert (`ORA-54060`) und Oracle mit Index
+  (`ORA-54022`). Ob eine Änderung überhaupt **feststeht**, entscheidet
+  weiterhin Herkunft oder Sandkasten (`W137`, wenn nicht entscheidbar).
+
+- **Eine gespeicherte berechnete Spalte lässt sich auf SQLite auch nicht
+  anhängen** — gemessen: `ADD COLUMN … STORED` gelingt auf der leeren Tabelle
+  und scheitert auf der gefüllten. Sie geht deshalb ebenfalls über den
+  Tabellen-Neubau.
 
 ## [1.3.1] - 2026-09-11
 

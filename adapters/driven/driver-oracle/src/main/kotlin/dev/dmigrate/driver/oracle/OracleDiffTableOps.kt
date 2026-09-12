@@ -2,6 +2,7 @@ package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.model.isSpatialGeometryIndex
@@ -10,6 +11,7 @@ import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -346,6 +348,121 @@ internal object OracleDiffTableOps {
             "ALTER TABLE ${ctx.sql.quote(table)} MODIFY ${ctx.sql.quote(column)} DEFAULT ${ctx.sql.toDefaultSql(target, type)};",
         )
     }
+
+    /** Die Spalte traegt `MATERIALIZED` — Oracle aendert sie nie (ORA-54060). */
+    const val COMPUTED_MATERIALIZED_IMMUTABLE: String = "ORACLE_MATERIALIZED_EXPRESSION_IMMUTABLE"
+
+    /** Ein Index auf der Spalte verbietet die Aenderung (ORA-54022). */
+    const val COMPUTED_INDEXED: String = "ORACLE_VIRTUAL_EXPRESSION_INDEXED"
+
+    /** Aus einer berechneten Spalte eine gewoehnliche zu machen ist kein `MODIFY`. */
+    const val COMPUTED_DROP_NOT_SUPPORTED: String = "ORACLE_COMPUTED_DROP_NOT_SUPPORTED"
+
+    /**
+     * Den Berechnungsausdruck einer Spalte aendern.
+     *
+     * **Nur die virtuelle Form, und nur ohne Index** — live gemessen gegen
+     * Oracle 23:
+     *
+     * | Lage | Oracle |
+     * | --- | --- |
+     * | virtuell, kein Index | `MODIFY` gelingt, der Wert wird neu gerechnet (7 × 10 = 70) |
+     * | virtuell, mit Index | `ORA-54022` |
+     * | materialisiert | `ORA-54060`, auch ohne Index |
+     *
+     * Beide Fehlschlaege sind **laut**: Oracle lehnt ab, statt etwas
+     * stillschweigend zu verlieren. Geblockt wird hier trotzdem schon beim
+     * Planen — ein Lauf, der mitten in der Ausfuehrung an `ORA-54022`
+     * scheitert, hat die vorigen Anweisungen bereits angewandt.
+     */
+    fun renderAlterColumnGeneration(op: DiffOperation.AlterColumnGeneration, ctx: OracleDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        val target = if (ctx.direction == OracleRenderDirection.UP) op.after else op.before
+        val computed = target as? ColumnGeneration.Computed
+        if (computed == null) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} would drop the computed expression of '$table.$column'. Oracle has no " +
+                    "`MODIFY` that turns a generated column back into an ordinary one; drop and recreate the " +
+                    "column manually.",
+                code = COMPUTED_DROP_NOT_SUPPORTED,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        if (computed.stored) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} changes the expression of the MATERIALIZED column '$table.$column'. " +
+                    "Oracle refuses that with ORA-54060 for any materialized expression column, with or " +
+                    "without an index on it; the column has to be dropped and recreated manually.",
+                code = COMPUTED_MATERIALIZED_IMMUTABLE,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        // Beide Ausdrucksformen: der Index kann noch den alten nennen.
+        val expressions = setOfNotNull(
+            (op.before as? ColumnGeneration.Computed)?.expression,
+            (op.after as? ColumnGeneration.Computed)?.expression,
+        )
+        val indexes = indexNamesOver(ctx, table, column, expressions)
+        if (indexes.isNotEmpty()) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} changes the expression of the virtual column '$table.$column', but " +
+                    "${indexes.joinToString(", ")} is defined on it — Oracle refuses that with ORA-54022. " +
+                    "Drop the index, change the expression and recreate it, or do the change manually.",
+                code = COMPUTED_INDEXED,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        // `MODIFY` ersetzt die ganze Spaltendeklaration, deshalb muss der Typ
+        // mit — den traegt die Operation nicht, er kommt aus der Seite, die
+        // diese Richtung liest.
+        val type = ctx.columnFor(table, column)?.type
+            ?: return blockMissingColumn(op, ctx, table, column, "its column type")
+        ctx.emit(
+            op,
+            "ALTER TABLE ${ctx.sql.quote(table)} MODIFY (${ctx.sql.quote(column)} ${ctx.sql.toSql(type)} " +
+                "${ComputedColumnClause.clause(computed, "VIRTUAL")});",
+        )
+    }
+
+    /**
+     * Die Indizes, die der Aenderung im Weg stehen — auf **beiden** Seiten
+     * gesucht: einer, den derselbe Lauf erst anlegt, blockiert genauso wie
+     * einer, der schon da ist.
+     *
+     * **Zwei Formen, weil Oracle die Spalte nicht so zurueckgibt, wie man sie
+     * anlegt.** `CREATE INDEX … ("line_total")` ueber einer virtuellen Spalte
+     * legt Oracle als **Ausdrucks**-Index an; der Reverse liest ihn aus
+     * `ALL_IND_EXPRESSIONS` und meldet ihn als
+     * `columns=[expr:"quantity"*"unit_price"]`, nicht als Spalte (gemessen).
+     * Wer nur nach dem Spaltennamen sucht, findet auf einem zurueckgelesenen
+     * Schema also nichts — und der Lauf liefe in `ORA-54022`.
+     *
+     * Ein Ausdrucks-Index, der die Spalte **anders** nennt als ihre eigene
+     * Berechnung (`UPPER("line_total")`), faellt weiterhin durch: das zu sehen
+     * braeuchte einen Parser. Dieser Fall bleibt dem Server ueberlassen, der
+     * ihn laut ablehnt.
+     */
+    private fun indexNamesOver(
+        ctx: OracleDiffRenderContext,
+        table: String,
+        column: String,
+        expressions: Set<String>,
+    ): List<String> =
+        listOfNotNull(ctx.schemaForDirection(), ctx.schemaOppositeOfDirection())
+            .flatMap { it.tables[table]?.indices.orEmpty() }
+            .filter { idx ->
+                column in idx.columnNames ||
+                    idx.columns.any { it.expression != null && it.expression in expressions }
+            }
+            .map { idx -> idx.name ?: "an index" }
+            .distinct()
+            .sorted()
 
     fun renderAddPrimaryKey(op: DiffOperation.AddPrimaryKey, ctx: OracleDiffRenderContext) {
         val table = op.objectRef.rootName

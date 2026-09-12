@@ -124,6 +124,7 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.AlterColumnType,
         is DiffOperation.AlterColumnNullability,
         is DiffOperation.AlterColumnDefault,
+        is DiffOperation.AlterColumnGeneration,
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,
         -> OpCategory.TABLE
@@ -170,11 +171,6 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         -> OpCategory.MATERIALIZED_VIEW
 
         is DiffOperation.AlterTablePartitions,
-        // Oracle kann es nur unter Bedingungen: virtuelle Spalten per `MODIFY`,
-        // aber `ORA-54022`, sobald ein Index auf der Spalte liegt; materialisierte
-        // gar nicht (`ORA-54060`). Das zu unterscheiden braucht den Lesepfad, der
-        // die Form ueberhaupt erst meldet.
-        is DiffOperation.AlterColumnGeneration,
         -> OpCategory.UNSUPPORTED
     }
 
@@ -219,6 +215,7 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnType -> OracleDiffTableOps.renderAlterColumnType(op, ctx)
             is DiffOperation.AlterColumnNullability -> OracleDiffTableOps.renderAlterColumnNullability(op, ctx)
             is DiffOperation.AlterColumnDefault -> OracleDiffTableOps.renderAlterColumnDefault(op, ctx)
+            is DiffOperation.AlterColumnGeneration -> OracleDiffTableOps.renderAlterColumnGeneration(op, ctx)
             is DiffOperation.AddPrimaryKey -> OracleDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> OracleDiffTableOps.renderDropPrimaryKey(op, ctx)
             else -> error("Op ${op::class.simpleName} is categorised TABLE but renderTableOp does not handle it")

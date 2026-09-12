@@ -199,6 +199,25 @@ Round-Trip nicht als Aenderung erscheint.
 `NOT NULL`, `DEFAULT` und `UNIQUE` entfallen an einer berechneten Spalte: ihr
 Wert kommt aus dem Ausdruck.
 
+**Den Ausdruck einer bestehenden Spalte ändern.** Ob das in place geht, hängt
+am Server — gemessen, nicht der Doku entnommen:
+
+| Dialekt | Weg | Bedingung |
+| --- | --- | --- |
+| PostgreSQL ab 17 | `ALTER COLUMN … SET EXPRESSION AS (…)` | Index und abhängige Sicht überleben |
+| PostgreSQL 16 | — | blockt; der einzige Weg wäre `DROP`+`ADD`, und der nimmt den Index still mit |
+| MySQL | `MODIFY COLUMN … GENERATED ALWAYS AS (…)` | — |
+| SQLite | Tabellen-Neubau | die berechnete Spalte bleibt aus der `INSERT`-Spaltenliste heraus |
+| Oracle | `MODIFY (… GENERATED ALWAYS AS (…) VIRTUAL)` | nur virtuell **und** ohne Index (`ORA-54022`); materialisiert nie (`ORA-54060`) |
+| SQL Server | — | blockt; T-SQL kennt kein `ALTER COLUMN … AS (…)`, und `DROP`+`ADD` lässt eine Sicht darüber still zerbrechen |
+
+Eine Spalte **von** berechnet auf gewöhnlich zurückzustellen, rendert kein
+Dialekt: das ändert, was die Spalte *ist*, nicht wie sie gefüllt wird.
+
+Ob eine Änderung überhaupt **feststeht**, entscheidet vorher die Herkunft oder
+der Sandkasten (`W137`, wenn nicht entscheidbar) — siehe
+[`schema-reference.md`](schema-reference.md).
+
 ### 3.3 PostgreSQL
 
 ```sql
