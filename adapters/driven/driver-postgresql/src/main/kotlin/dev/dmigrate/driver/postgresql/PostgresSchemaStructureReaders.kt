@@ -85,7 +85,13 @@ private fun readPostgresTable(
         )
         if (mapping.note != null) notes += mapping.note
 
-        val required = (row["is_nullable"] as String) == "NO"
+        // PK-Spalten folgen der Reverse-Konvention required=false/unique=false —
+        // PK impliziert beides (MySQL-Praezedenz, dieselbe Regel in allen fuenf
+        // Lesern). `unique` hielt sie hier schon, `required` nicht: PostgreSQL
+        // meldete als einziger Leser `required: true`, und ein Vergleich gegen
+        // eine Schemadatei, die `required` an der PK-Spalte weglaesst, zeigte
+        // deshalb einen Unterschied, den niemand herstellen kann.
+        val required = !isPrimaryKeyColumn && (row["is_nullable"] as String) == "NO"
         val unique = if (isPrimaryKeyColumn) false else columnName in singleColumnUnique
         val colDefault = row["column_default"] as? String
         val defaultValue = when {

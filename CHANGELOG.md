@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Ein Primärschlüssel erzeugt keinen Unterschied mehr, den niemand herstellen
+  kann.** `schema compare` meldete `required: false -> true` an der PK-Spalte,
+  wenn die Schemadatei `required` dort wegließ — der Release-Smoke verglich
+  `minimal.yaml` gegen die aus ihr erzeugte Datenbank und bekam `DIFFERENT`.
+  Eine PK-Spalte ist auf keinem der fünf Dialekte nullable; der Unterschied war
+  nirgends auflösbar.
+
+  Zwei Ursachen. PostgreSQL hielt als einziger Leser die Reverse-Konvention
+  „ein Primärschlüssel impliziert `required` und `unique`, also behaupte keines
+  von beiden noch einmal" nur zur Hälfte — `unique` faltete er, `required`
+  nicht. Und der **strikte** Vergleich rechnete die Implikation nicht ein,
+  obwohl Fingerabdruck und ziel-bewusster Vergleich es längst taten; zwei der
+  drei Projektionen standen damit gegeneinander.
+
+  `schema migrate` war nie betroffen: sein Vergleich läuft ziel-bewusst.
+
 ### Added
 
 - **Berechnete Spalten (`GENERATED ALWAYS AS (…)`) sind Teil des neutralen

@@ -108,6 +108,15 @@ Schemata ist `ordinal` optional — fehlt es, gilt die Reihenfolge der Spalten i
 `ordinal` ist bewusst **kein** Bestandteil von `schema compare` (eine reine Umsortierung
 ist kein Migrationsschritt).
 
+**`required` an einer Schluesselspalte ist redundant, nie falsch.** Eine Spalte
+im `primary_key` ist auf keinem der fuenf Dialekte nullable — die Server setzen
+`NOT NULL` von sich aus, und wo einer es nicht tut (SQLite), schreibt d-migrate
+es hin. Der Vergleich rechnet das auf **beiden** Seiten ein: ob `required: true`
+dasteht oder fehlt, ergibt dasselbe Ergebnis. Dasselbe gilt fuer `unique`.
+
+Der Reverse schreibt es an solchen Spalten deshalb **nicht** aus: was der
+Primaerschluessel schon sagt, sagt er nicht ein zweites Mal.
+
 `generation` ist mit `default` gegenseitig ausgeschlossen. Ein
 `generation.sequence_name` beschreibt eine an die Spalte gebundene
 owned/implizite Sequence; dieselbe Sequence darf nicht zusaetzlich unter

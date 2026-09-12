@@ -122,8 +122,11 @@ class PostgresSchemaReaderTest : FunSpec({
         table.columns.mapShouldHaveSize(2)
 
         val idCol = table.columns["id"]!!
-        idCol.required shouldBe true
-        idCol.unique shouldBe false   // PK columns have unique=false
+        // PK-Spalten folgen der Reverse-Konvention: PK impliziert beides, also
+        // wird keines von beiden noch einmal behauptet. `unique` hielt diese
+        // Regel hier schon, `required` nicht.
+        idCol.required shouldBe false
+        idCol.unique shouldBe false
 
         val nameCol = table.columns["name"]!!
         nameCol.required shouldBe false // nullable

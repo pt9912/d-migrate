@@ -49,17 +49,34 @@ class SchemaComparatorTargetAwareTest : FunSpec({
         SchemaComparator(sqliteLike).compare(current, desired).isEmpty() shouldBe false
     }
 
-    test("PK-implied required is suppressed in target-aware mode, non-PK required stays strict") {
+    test("PK-implied required is suppressed in BOTH modes, non-PK required stays a difference") {
         fun pkTable(required: Boolean) = schemaWith(TableDefinition(
             columns = mapOf("id" to ColumnDefinition(NeutralType.Integer, required = required)),
             primaryKey = listOf("id"),
         ))
+        // Nicht nur ziel-bewusst: eine PK-Spalte ist auf keinem Dialekt
+        // nullable, und kein Ziel koennte den Unterschied herstellen oder
+        // aufloesen. Strikt zu melden, was es nirgends gibt, war der Befund
+        // aus dem Release-Smoke (`required: false -> true` gegen eine aus
+        // derselben Fixture erzeugte Datenbank).
         SchemaComparator(sqliteLike).compare(pkTable(true), pkTable(false)).isEmpty() shouldBe true
-        SchemaComparator().compare(pkTable(true), pkTable(false)).isEmpty() shouldBe false
-        // Nicht-PK-Spalte: required bleibt auch target-aware ein Unterschied.
+        SchemaComparator().compare(pkTable(true), pkTable(false)).isEmpty() shouldBe true
+        // Nicht-PK-Spalte: required bleibt in beiden Modi ein Unterschied.
         SchemaComparator(sqliteLike)
             .compare(typed(NeutralType.Integer, required = true), typed(NeutralType.Integer, required = false))
             .isEmpty() shouldBe false
+        SchemaComparator()
+            .compare(typed(NeutralType.Integer, required = true), typed(NeutralType.Integer, required = false))
+            .isEmpty() shouldBe false
+    }
+
+    test("an identifier column without an explicit PK folds required the same way") {
+        // Der effektive PK leitet sich aus genau einer `identifier`-Spalte ab
+        // (v3-Regel) — und genau die rendert jeder Dialekt als PRIMARY KEY.
+        fun t(required: Boolean) = schemaWith(TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true), required = required)),
+        ))
+        SchemaComparator().compare(t(true), t(false)).isEmpty() shouldBe true
     }
 
     test("implicit identifier PK equals explicit PK in target-aware mode (effective PK)") {

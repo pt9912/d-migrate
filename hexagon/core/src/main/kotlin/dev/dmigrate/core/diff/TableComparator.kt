@@ -65,10 +65,21 @@ internal class TableComparator(
         val leftNorm = normalizeConstraints(left)
         val rightNorm = normalizeConstraints(right)
 
-        // Im ziel-bewussten Modus zählt der EFFEKTIVE PK (v3-Regel) für
-        // PK-Vergleich und PK-implizites required — sonst leere Sets (strikt).
-        val leftPk = if (targetProjection != null) EffectivePrimaryKey.of(left).toSet() else emptySet()
-        val rightPk = if (targetProjection != null) EffectivePrimaryKey.of(right).toSet() else emptySet()
+        // Der EFFEKTIVE PK (v3-Regel) — und zwar in BEIDEN Modi.
+        //
+        // Fuer den PK-Vergleich selbst bleibt er ziel-bewusst (ein abgeleiteter
+        // gegen einen ausgeschriebenen PK ist strikt ein Unterschied). Fuer
+        // `required` gilt er immer: eine PK-Spalte ist auf keinem der fuenf
+        // Dialekte nullable, und kein Ziel koennte den Unterschied herstellen
+        // oder aufloesen. Ihn strikt zu melden hiess, einen Unterschied zu
+        // behaupten, den es nirgends gibt — gemessen am Release-Smoke, der
+        // `minimal.yaml` gegen die aus ihr erzeugte Datenbank stellte und
+        // `required: false -> true` meldete.
+        //
+        // Der Fingerabdruck faltet es seit v7 genauso, unbedingt. Es anders zu
+        // halten hiesse, zwei der drei Projektionen widersprechen sich.
+        val leftPk = EffectivePrimaryKey.of(left).toSet()
+        val rightPk = EffectivePrimaryKey.of(right).toSet()
         val absorbedColumns = AbsorbedColumns(
             uniqueLeft = leftNorm.singleColumnUnique,
             uniqueRight = rightNorm.singleColumnUnique,
@@ -171,7 +182,7 @@ internal class TableComparator(
     private data class AbsorbedColumns(
         val uniqueLeft: Set<String>, val uniqueRight: Set<String>,
         val fkLeft: Set<String>, val fkRight: Set<String>,
-        /** Effektive PK-Spalten je Seite (leer im strikten Modus). */
+        /** Effektive PK-Spalten je Seite — in beiden Modi besetzt. */
         val pkLeft: Set<String> = emptySet(), val pkRight: Set<String> = emptySet(),
     )
 
@@ -264,8 +275,8 @@ internal class TableComparator(
             canon != null && canon(left.type) == canon(right.type) -> null
             else -> diffValueChangeOrNull(left.type, right.type)
         }
-        // PK ⇒ NOT NULL — required vergleicht im ziel-bewussten Modus effektiv.
-        val requiredDiff = if (canon != null && effectiveRequiredEqual(name, left, right, absorbed)) null
+        // PK ⇒ NOT NULL — `required` vergleicht immer effektiv, auch strikt.
+        val requiredDiff = if (effectiveRequiredEqual(name, left, right, absorbed)) null
             else diffValueChangeOrNull(left.required, right.required)
         val defaultDiff = if (left.default == right.default) null
             else ValueChange(left.default, right.default)
