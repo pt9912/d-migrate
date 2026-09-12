@@ -258,6 +258,67 @@ eingeordnet, jeweils mit dem gemessenen Grund am Fundort. Offen ist auch das
 **Aendern** auf SQLite: dort gibt es kein `ALTER COLUMN`, der Weg waere der
 Tabellen-Neubau, den der Dialekt ohnehin geht — das ist ein eigener Schnitt.
 
+## Gebaut (2026-09-12): die beiden letzten Lesepfade — und Oracle ist doch round-trip-faehig
+
+**SQL Server.** Der Leser fuehrte den Verlust laengst als `R343`, die Daten
+lagen die ganze Zeit da: `sys.computed_columns.definition` traegt den Ausdruck,
+`is_persisted` die Speicherform. Beides wandert jetzt ins Modell. Der Renderer
+bekam die Klausel in der Form, die T-SQL als einzige annimmt —
+`name AS (ausdruck) [PERSISTED]`, **ohne** `GENERATED ALWAYS` und **ohne Typ**;
+ein Typ davor ist dort ein Syntaxfehler.
+
+**Oracle — der Befund oben ist widerlegt.** Dieser Plan hielt fest, die
+gespeicherte Form sei „**nicht round-trip-faehig**, und zwar prinzipiell". Das
+stimmt fuer den Katalog und nur fuer ihn. Nachgemessen an Oracle 23, diesmal
+ueber **alle** Spalten von `ALL_TAB_COLS` im Vergleich materialisiert gegen
+`DEFAULT 7`:
+
+| Feld | materialisiert | Default | virtuell |
+| --- | --- | --- | --- |
+| `VIRTUAL_COLUMN` | `NO` | `NO` | `YES` |
+| `DATA_DEFAULT` | `"qty"*"price"*2` | `7` | `"qty"*"price"` |
+| `SEGMENT_COLUMN_ID` | 4 | 5 | *leer* |
+
+Ausser Position, Name und Default-Text unterscheidet die Sicht sie in **keinem**
+Feld — der alte Befund haelt. Was nicht haelt, ist der Schluss daraus. Die
+Aufgabe ist naemlich kleiner, als sie aussah:
+
+- Der **Ausdruck** kommt in beiden Formen sauber aus `DATA_DEFAULT`. Er muss
+  nirgends aus Text geschnitten werden.
+- Aus der DDL wird nur **eine Ja/Nein-Frage** beantwortet: traegt diese Spalte
+  `MATERIALIZED`? Dafuer braucht es keinen SQL-Parser, sondern dasselbe
+  klammer- und quote-sichere Abschreiten, mit dem SQLite seine Ausdruecke liest.
+
+Der frueher notierte Einwand — „als DDL-Text, den zu lesen einen Parser
+braeuchte" — bemass die Aufgabe also am vollen Ausdruck statt an dem einen Wort.
+
+**Was die DDL kostet, und wann sie nicht geholt wird.** `GET_DDL` je Tabelle
+waere auf einem grossen Schema teuer. Geholt wird sie nur, wenn eine
+nicht-virtuelle Spalte einen Default traegt, der kein einfaches Literal ist
+(`DEFAULT 7`, `'n/a'`, `SYSDATE`, `NULL` kosten nichts). Der naheliegendere
+Filter — „nennt der Default eine Nachbarspalte?" — waere **falsch** gewesen:
+gemessen nimmt Oracle `GENERATED ALWAYS AS (1+1) MATERIALIZED` an, ein
+Ausdruck muss keine Spalte nennen.
+
+**Und wenn `DBMS_METADATA` fehlt.** Ohne `EXECUTE`-Recht bleiben virtuelle
+Spalten vollstaendig (sie stehen im Katalog); fuer die uebrigen Kandidaten wird
+`R369` gemeldet — je Tabelle, nicht je Spalte, weil in aller Regel keiner von
+ihnen berechnet ist. Geraten wird nicht.
+
+**Die eine Grenze, die bleibt:** ein generierter Ausdruck, der *selbst* nur ein
+Literal ist (`GENERATED ALWAYS AS (7) MATERIALIZED`), kommt als `DEFAULT 7`
+durch. Im Katalog ist er in keinem Feld von einem Default unterscheidbar, und
+eine stets konstante gespeicherte Spalte baut niemand.
+
+Live belegt gegen Oracle 23 und SQL Server 2025, beide Specs
+sabotage-geprueft.
+
+**Offen bleibt** das **Aendern** auf SQLite (Tabellen-Neubau, eigener Schnitt)
+sowie auf SQL Server und Oracle: deren `AlterColumnGeneration` ist weiterhin
+als `UNSUPPORTED` eingeordnet, mit dem gemessenen Grund am Fundort (Oracle:
+`ORA-54022` sobald ein Index auf der Spalte liegt, `ORA-54060` fuer die
+materialisierte Form).
+
 ## Der Befund, der den Schnitt anhaelt: eine geaenderte Generation wird gar nicht geplant
 
 `OperationMapper.mapColumnChange` bildet genau drei Felder eines

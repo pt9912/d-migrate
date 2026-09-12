@@ -173,6 +173,32 @@ Reihenfolge innerhalb einer Spalte:
 <quoted_name> <type> [NOT NULL] [DEFAULT <value>] [UNIQUE] [<inline_constraint>]
 ```
 
+### 3.2a Berechnete Spalten
+
+Eine Spalte mit `generation.type: computed` wird als berechnete gerendert. Der
+Rumpf ist ueber alle Dialekte derselbe, das Wort dahinter nicht:
+
+```
+<quoted_name> <type> GENERATED ALWAYS AS (<expression>) <speicherform>
+```
+
+| Dialekt | virtuell (`stored: false`) | gespeichert (`stored: true`) |
+| --- | --- | --- |
+| PostgreSQL | — kennt nur die gespeicherte Form | `STORED` (Pflichtwort) |
+| MySQL | `VIRTUAL` | `STORED` |
+| SQLite | `VIRTUAL` | `STORED` |
+| Oracle | `VIRTUAL` | `MATERIALIZED` |
+| SQL Server | Vorgabe, **ohne** `GENERATED ALWAYS` und **ohne Typ** | `PERSISTED` |
+
+SQL Server faellt aus dem Muster: dort lautet die Spalte
+`<quoted_name> AS (<expression>) [PERSISTED]`; ein Typ davor ist ein
+Syntaxfehler, die Spalte bekommt ihn aus dem Ausdruck. PostgreSQL kennt die
+virtuelle Form nicht — `stored` wird dort auf `true` projiziert, damit ein
+Round-Trip nicht als Aenderung erscheint.
+
+`NOT NULL`, `DEFAULT` und `UNIQUE` entfallen an einer berechneten Spalte: ihr
+Wert kommt aus dem Ausdruck.
+
 ### 3.3 PostgreSQL
 
 ```sql

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Berechnete Spalten (`GENERATED ALWAYS AS (…)`) sind Teil des neutralen
+  Modells.** `generation.type: computed` traegt Ausdruck und Speicherform
+  (`stored`); alle fuenf Dialekte lesen und schreiben sie. Bisher kam eine
+  solche Spalte als gewoehnliche zurueck (`R343`) — bei SQLite gar nicht
+  (`R367`), weil `PRAGMA table_info` sie ausblendet, und bei Oracle in der
+  materialisierten Form als gewoehnliche Spalte **mit DEFAULT**, was ein
+  `schema generate` in eine beschreibbare Spalte verwandelte.
+
+  Woher der Ausdruck kommt, ist je Server verschieden und gemessen:
+  PostgreSQL und MySQL fuehren ihn im Katalog (normalisiert), SQL Server in
+  `sys.computed_columns`, SQLite allein im abgelegten `CREATE TABLE`-Text
+  (wortgleich wie geschrieben), Oracle in `DATA_DEFAULT` — dort braucht nur die
+  Einordnung „materialisiert oder Default" einen Blick in
+  `DBMS_METADATA.GET_DDL`, und ohne dieses Recht wird sie gemeldet (`R369`)
+  statt geraten.
+
+  Das Wort fuer die Speicherform setzt d-migrate je Dialekt: PostgreSQL
+  `STORED` (Pflicht, die virtuelle Form gibt es dort nicht), MySQL und SQLite
+  `STORED`/`VIRTUAL`, Oracle `MATERIALIZED`/`VIRTUAL`, SQL Server `PERSISTED`
+  bzw. ohne Zusatz — dort auch ohne `GENERATED ALWAYS` und **ohne Typ**.
+
+- **Eine belegte Aenderung des Ausdrucks wird angewandt**, nicht nur gemeldet:
+  auf PostgreSQL ab 17 ueber `ALTER COLUMN … SET EXPRESSION AS (…)`, auf MySQL
+  ueber `MODIFY COLUMN`. Darunter — und auf SQLite, SQL Server und Oracle —
+  blockt der Lauf mit benannter Meldung, statt die Spalte zu loesen und neu
+  anzulegen, was gemessen ihre Indizes stillschweigend mitnimmt. Ob eine
+  Aenderung ueberhaupt **feststeht**, entscheidet weiterhin Herkunft oder
+  Sandkasten (`W137`, wenn nicht entscheidbar).
+
 ## [1.3.1] - 2026-09-11
 
 ### Fixed

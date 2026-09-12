@@ -2382,6 +2382,68 @@ rules:
   `template`-Token-Syntax) bricht **vor** jeder Zeilengenerierung mit
   Exit 7 ab.
 
+### 3.23 Eine Spalte aus anderen Spalten berechnen lassen
+
+**Ziel:** Einen Wert nicht schreiben, sondern rechnen lassen — und ihn beim
+Zurücklesen wiederfinden.
+
+**Voraussetzungen:** Ein Schema.
+
+**Vorgehen:**
+
+1. Geben Sie der Spalte statt eines `default` eine `generation`:
+
+   ```yaml
+   tables:
+     order_line:
+       columns:
+         id:         { type: identifier, auto_increment: true }
+         quantity:   { type: integer }
+         unit_price: { type: decimal, precision: 12, scale: 2 }
+         line_total:
+           type: decimal
+           precision: 14
+           scale: 2
+           generation:
+             type: computed
+             expression: "quantity * unit_price"
+             stored: true
+       primary_key: [id]
+   ```
+
+2. Erzeugen Sie die DDL wie gewohnt (`schema generate --target …`).
+
+**Ergebnis:**
+
+- Jeder der fünf Dialekte legt die Spalte als berechnete an; das Wort für die
+  Speicherform setzt d-migrate selbst (PostgreSQL `STORED`, MySQL/SQLite
+  `STORED` bzw. `VIRTUAL`, Oracle `MATERIALIZED` bzw. `VIRTUAL`, SQL Server
+  `PERSISTED` bzw. ohne Zusatz).
+- Ein Reverse liest die Spalte samt Ausdruck und Speicherform zurück.
+
+**Hinweise:**
+
+- **`expression` ist roher SQL-Text und wird nicht übersetzt.** Er muss auf
+  dem Zieldialekt gültig sein. Geprüft wird nur, was ohne SQL-Parser
+  entscheidbar ist: dass ein Ausdruck dasteht, dass er sich nicht auf die
+  Spalte bezieht, die er berechnet, und dass die genannten Spalten existieren.
+- **`stored: false` gibt es auf PostgreSQL nicht.** Dort wird immer
+  gespeichert; d-migrate rechnet das ein, damit ein Round-Trip die Spalte nicht
+  als geändert meldet.
+- **`generation` und `default` schließen einander aus** — der Wert kommt aus
+  dem Ausdruck.
+- **Den Ausdruck später zu ändern, ist teuer.** Wie bei einer Sicht oder einem
+  CHECK gibt kein Server ihn wortgleich zurück; wann d-migrate eine Änderung
+  überhaupt erkennt, steht unter
+  [„Jeder Lauf plant dieselbe Sicht — oder denselben CHECK — erneut"](#jeder-lauf-plant-dieselbe-sicht--oder-denselben-check--erneut).
+  Steht eine Änderung fest, blockt der Lauf (**E137**): die Tabelle wird unter
+  exklusiver Sperre neu geschrieben, auf manchen Servern über das Lösen der
+  Spalte samt ihren Indizes.
+- **Oracle, ohne `DBMS_METADATA`:** kann der lesende Benutzer die Tabellen-DDL
+  nicht holen, ist eine `MATERIALIZED`-Spalte im Katalog nicht von einer
+  gewöhnlichen mit `DEFAULT` zu unterscheiden. d-migrate rät dann nicht,
+  sondern meldet **R369** und liest sie als gewöhnliche Spalte.
+
 ---
 
 ## 4. Konfiguration

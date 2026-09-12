@@ -250,13 +250,19 @@ T-SQL-Quoting.
 
 - `hierarchyid`, `sql_variant`, `rowversion`/`timestamp` und CLR-UDTs fallen
   auf `Text()` + R301.
-- Computed Columns werden als normale Spalten gelesen (R343). Dieselbe Meldung
-  gilt fuer PostgreSQL (`GENERATED ALWAYS AS (…) STORED`), MySQL (`STORED`/
-  `VIRTUAL GENERATED`) und Oracles virtuelle Spalten — das neutrale Modell
-  fuehrt fuer alle vier keine Form, `ColumnGeneration` kennt nur `Identity`.
-  **SQLite ist der Sonderfall (R367):** dort blendet `PRAGMA table_info` die
-  Spalte ganz aus, sie fehlt also nicht nur in ihrem Ausdruck, sondern im
-  Modell — ein Vergleich plant sie bei jedem Lauf erneut als fehlend.
+- Computed Columns kommen als berechnete Spalten zurueck
+  (`generation.type: computed`), in allen fuenf Dialekten und mit ihrer
+  Speicherform. Der Ausdruck ist die **Serverform**, nicht der Autorentext, und
+  wird deshalb nur unter den Bedingungen aus
+  [`schema-reference.md`](schema-reference.md) verglichen.
+  Gemeldet wird nur noch, was der Server nicht hergibt:
+  `R343`, wenn die Spalte ohne ihren Ausdruck kommt;
+  `R367`, wenn SQLite die Spalte in `PRAGMA table_info` ausblendet **und** der
+  abgelegte `CREATE TABLE`-Text den Ausdruck nicht hergibt — dann fehlt die
+  Spalte im Modell, nicht nur ihre Berechnung;
+  `R369`, wenn Oracle die Einordnung materialisiert/Default nicht entscheidbar
+  macht — ohne `DBMS_METADATA.GET_DDL` steht eine materialisierte Spalte im
+  Katalog wie eine gewoehnliche mit `DEFAULT`.
 - Collations werden nicht modelliert (Scoping-Entscheidung).
 
 ### 6.4 Spatial: `geometry` vs. `geography`
