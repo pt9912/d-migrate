@@ -998,7 +998,7 @@ Datenbanksystem — `schema reverse`, `generate`, `migrate`, der Datenpfad und
 ### Milestone 1.8.0 — Weitere Datenbanken (Oracle) ✅ (2026-09-11)
 
 Geliefert in dreizehn nummerierten Slices ([ADR 0052](../../adr/0052-oracle-fuenfter-dialekt-scoping.md),
-[`oracle-dialect-scoping.md`](oracle-dialect-scoping.md)).
+[`oracle-dialect-scoping.md`](../done/oracle-dialect-scoping.md)).
 
 | Bereich | Aufgabe                                                  | LF-Ref                                                   | Status |
 | ------- | -------------------------------------------------------- | -------------------------------------------------------- | ------ |

@@ -40,7 +40,7 @@ Beispiele:
 | **Permanent** | Bewusste Produkt-Entscheidung; wird **nie** gebaut werden ohne Produkt-Re-Charter. | Zeile bleibt für historische Klarheit; neue Slices verweisen darauf statt sie neu zu debattieren. |
 | **Provisional** | Aktuell out-of-scope, aber **bei klarer Aktivierungsbedingung** rückholbar. | Zeile bleibt mit explizitem Trigger; sobald Trigger feuert, Eintrag nach `next/` oder `in-progress/` migrieren und Status → **Promoted**. |
 | **Promoted** | Wurde aus Carve-Out zu echtem Plan-Slice gehoben; Plan-Doc lebt jetzt in `open/` / `next/` / `in-progress/`. | Zeile bleibt als Audit-Spur; `Plan-Doc`-Ref zeigt jetzt auf den Slice. |
-| **Resolved** | Wurde implementiert; Carve-Out ist faktisch geschlossen. | Zeile kann in „§7 Resolved"-Abschnitt verschoben werden, bleibt aber historisch sichtbar. |
+| **Resolved** | Wurde implementiert; Carve-Out ist faktisch geschlossen. | Zeile kann in den „Resolved"-Abschnitt verschoben werden, bleibt aber historisch sichtbar. |
 
 ---
 
@@ -152,7 +152,21 @@ Quelldokument: [`../done/tpc-4c-volume-acceptance-slice.md`](../done/tpc-4c-volu
 
 ---
 
-## 11. Lifecycle und Pflege
+## 11. Oracle als fünfter Dialekt (ADR 0052, 1.3.0)
+
+Quelldokument: [`../done/oracle-dialect-scoping.md`](../done/oracle-dialect-scoping.md)
+(Closure — Slices 0 bis 12 geliefert; der Eintrag hier trägt, was die Umbrella
+bewusst **nicht** abbildet, damit es ihren Umzug nach `done/` überlebt).
+
+| Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
+| --------- | ------ | ---------------- | ------------ |
+| PL/SQL Packages als Routinen-Gruppierung | Permanent | Das neutrale Modell führt Routinen **einzeln** und kennt keine Gruppierung; ein Package abzubilden heißt, das Modell um eine Routinen-Hülle zu erweitern — und die hätte in PostgreSQL, MySQL, SQLite und SQL Server kein Gegenstück. Bewusst **kein Slice mit Liefertermin** ([ADR 0052](../../adr/0052-oracle-fuenfter-dialekt-scoping.md) Entscheidung 4). **Für den Anwender gedeckt, ohne dass es Planung verrät:** der Reverse meldet vorhandene Packages zur Laufzeit als `R342` und listet sie als `SkippedObject`, und das Anwenderhandbuch sagt, dass `schema migrate` bei Routinen und Triggern benannt blockt. Eine Re-Charter bräuchte eine Modellentscheidung, nicht einen Slice. | [`../done/oracle-dialect-scoping.md`](../done/oracle-dialect-scoping.md) |
+| `ALTER TABLE … DROP CONSTRAINT IF EXISTS` | Permanent | Oracle lehnt die Form auch in der 23er-Linie ab (`ORA-01735`, gemessen) — anders als die Objekt-`DROP`s, die sie ab 23 kennen. Kein Trigger: das ist eine Eigenschaft der Grammatik, kein fehlender Bau. | [`../done/oracle-dialect-scoping.md`](../done/oracle-dialect-scoping.md) |
+| Atomares Preserve-Fenster auf Oracle | Permanent | Oracle committet **jedes** DDL implizit; sowohl die geschützten Operationen als auch der Restore sind DDL. Ein alles-oder-nichts-Fenster ist dort nicht baubar — das Fenster ist `SERIALIZED` und sagt es (`W159`). Ob daraus eine Zustimmungspflicht wird, ist eine eigene, offene Frage. | [`../open/preserve-window-serialized-opt-in.md`](../open/preserve-window-serialized-opt-in.md) |
+
+---
+
+## 12. Lifecycle und Pflege
 
 - **Neuer Carve-Out** → in das passende §3-§7 (oder neuen
   Abschnitt) als Zeile aufnehmen; Status setzen; Plan-Doc-Ref
@@ -161,7 +175,7 @@ Quelldokument: [`../done/tpc-4c-volume-acceptance-slice.md`](../done/tpc-4c-volu
 - **Promotion** (Provisional → Plan-Slice): Status auf
   **Promoted** setzen, `Plan-Doc-Ref`-Spalte auf den neuen
   Slice umbiegen. Zeile bleibt für die Audit-Spur.
-- **Resolution** (Permanent → Resolved): in §12 Resolved
+- **Resolution** (Permanent → Resolved): in §13 Resolved
   verschieben mit Datum und Release-Bezug.
 - **Konvention für Quelldokumente**: jeder Carve-Out-Block in
   einem Plan-Doc sollte einen Link zurück auf die passende
@@ -170,6 +184,6 @@ Quelldokument: [`../done/tpc-4c-volume-acceptance-slice.md`](../done/tpc-4c-volu
 
 ---
 
-## 12. Resolved
+## 13. Resolved
 
 *(noch leer — wird beim ersten Carve-Out-Resolve gefüllt)*

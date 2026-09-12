@@ -1,7 +1,8 @@
 # Vorabklärung: Oracle als fünfter Dialekt (Milestone 1.8.0)
 
-> **Status:** In Progress. Alle fünf Grundsatzentscheidungen getroffen (siehe
-> ADR 0052). **Geliefert: Slices 0 bis 12.** Oracle führt damit denselben
+> **Status:** Closure (2026-09-12) — siehe `## Closure` am Ende. Alle fünf
+> Grundsatzentscheidungen getroffen (siehe ADR 0052). **Geliefert: Slices 0 bis
+> 12.** Oracle führt damit denselben
 > Befehlsumfang wie die vier anderen Dialekte: Reverse, Generate, Compare,
 > Migrate, der Datenpfad, die Werkzeug-Exporte und `data profile`. Der
 > Sample-DB-Harness fährt Pagila in **beide** Richtungen, Bitmap-,
@@ -1661,3 +1662,95 @@ Diff-Blocker und die Rollback-Umkehrung — alle fünf haben jetzt Tests.
   darüberhinausgehende Aussage — dass Packages auch nach Slice 9 unabgebildet
   blieben — gehört **nicht** ins Handbuch: dort steht der Ist-Zustand, keine
   Planung.
+
+## Closure (2026-09-12)
+
+**Alle numerierten Slices sind geliefert (0 bis 12).** Oracle führt denselben
+Befehlsumfang wie die vier anderen Dialekte; `DialectCommandGate` ist mit
+seinem letzten Eintrag entfallen. Was bewusst **nicht** abgebildet wird, ist
+aus dieser Umbrella in den Living Tracker gewandert und überlebt ihren Umzug:
+[`carveout.md`](../in-progress/carveout.md) Abschnitt 11 — PL/SQL Packages
+(Entscheidung 4), `ALTER TABLE … DROP CONSTRAINT IF EXISTS` (`ORA-01735`, auch
+in 23), und das nicht-atomare Preserve-Fenster.
+
+### Was nach Slice 12 noch auf Oracle landete
+
+Nicht als Slice dieser Umbrella, sondern als Folgearbeit aus anderen Tickets —
+hier festgehalten, weil es Oracle-Betriebswissen ist, das sonst in fünf
+Tickets verstreut läge.
+
+**Berechnete Spalten** (aus
+[`generated-column-expression-dropped.md`](../open/generated-column-expression-dropped.md)):
+Oracle war der schwierigste der fünf, und der Plan hielt die gespeicherte Form
+zunächst für „prinzipiell nicht round-trip-fähig". Gemessen über **alle**
+Spalten von `ALL_TAB_COLS`: eine materialisierte berechnete Spalte ist dort von
+einer gewöhnlichen mit `DEFAULT` in keinem Feld zu unterscheiden
+(`VIRTUAL_COLUMN = 'NO'`, Ausdruck in `DATA_DEFAULT`). Der Befund hält — der
+Schluss nicht: der **Ausdruck** kommt in beiden Formen sauber aus
+`DATA_DEFAULT`, und aus `DBMS_METADATA.GET_DDL` wird nur **eine** Ja/Nein-Frage
+beantwortet (trägt die Spalte `MATERIALIZED`?). Dafür genügt klammer- und
+quote-sicheres Abschreiten, kein SQL-Parser.
+
+`GET_DDL` wird nur geholt, wenn ein nicht-virtueller Default kein einfaches
+Literal ist — `DEFAULT 7`, `'n/a'`, `SYSDATE` kosten nichts. Der naheliegendere
+Filter („nennt der Default eine Nachbarspalte?") wäre falsch: gemessen nimmt
+Oracle `GENERATED ALWAYS AS (1+1) MATERIALIZED` an. Fehlt das Recht auf
+`DBMS_METADATA`, wird `R369` gemeldet statt geraten. Die eine bleibende Grenze:
+ein generierter Ausdruck, der *selbst* nur ein Literal ist, kommt als `DEFAULT`
+durch.
+
+**Den Ausdruck ändern** geht nur für die virtuelle Form und nur ohne Index —
+live gemessen: `ORA-54022` mit Index, `ORA-54060` materialisiert (auch ohne
+Index). Beide Fehlschläge sind **laut**; Oracle verliert nichts stillschweigend.
+Geblockt wird trotzdem beim Planen, weil ein Abbruch mitten in der Ausführung
+die vorigen Anweisungen schon angewandt hat.
+
+**Ein Index auf einer virtuellen Spalte** kam als Ausdrucks-Index zurück,
+weshalb ein Soll mit `columns: [line_total]` nie konvergierte. Die Ursache lag
+im Leser: Oracle führt einen solchen Index als `FUNCTION-BASED NORMAL` und legt
+die Berechnung in `ALL_IND_EXPRESSIONS` ab — nennt in `ALL_IND_COLUMNS` aber die
+**echte** Spalte. Eine `SYS_NC…` steht dort nur beim *echten* Ausdrucks-Index.
+Der Leser hörte allein darauf, *ob* eine Ausdruckszeile existiert.
+
+**Das Preserve-Fenster** ist live abgenommen
+([`sequence-preserve-mssql-oracle.md`](../done/sequence-preserve-mssql-oracle.md)),
+mit zwei Voraussetzungen, die vorher nirgends standen: `DBMS_LOCK` braucht
+`GRANT EXECUTE ON SYS.DBMS_LOCK`, und den vergibt **nur SYS als SYSDBA** —
+`system` scheitert mit `ORA-01031`. Fehlt das Recht, meldet der Executor es
+benannt statt still ungeschützt weiterzumachen. Dass das Fenster
+`SERIALIZED` und nicht `ATOMIC` ist, ist jetzt gemessen: die Abnahme führt darin
+zwei DDLs aus, von denen das zweite scheitert, und belegt, dass das erste steht.
+
+**Rohe Ausdrücke** aus einem fremden Dialekt landen nicht in Oracle-DDL —
+CHECK, Index-Prädikat, Ausdrucks-Schlüssel, Berechnung und Funktions-Default,
+im generate- wie im migrate-Pfad.
+
+### Was der Umzug nach `done/` gekostet hat
+
+Vier Verweise zeigten auf den alten Pfad, und einer davon steht in einem
+**akzeptierten ADR** ([0052](../../adr/0052-oracle-fuenfter-dialekt-scoping.md)).
+Gemessen, statt der Vorsicht zu folgen: `make doc-immutable` erlaubt die
+Korrektur im **Body** eines akzeptierten ADRs — eingefroren sind das
+Frontmatter und die Statuszeile. Der `consulted:`-Pfad im Frontmatter bleibt
+deshalb stehen, wie er war; er ist historisch gemeint, und `docs-check` prüft
+ihn nicht.
+
+Wer die nächste Umbrella schließt, prüft **zuerst**, was nur sie trug: hier war
+es der PL/SQL-Verzicht, der in keinem anderen Dokument stand. Er liegt jetzt im
+Carve-Out-Tracker.
+
+### Wovon der nächste Oracle-Bau ausgehen kann
+
+- **`DBMS_METADATA.GET_DDL` ist ein brauchbares Werkzeug**, wo der Katalog
+  schweigt — aber es kostet einen Aufruf je Tabelle, und das Recht darauf hat
+  nicht jeder Leser. Beides gehört in die Abwägung, bevor man es benutzt.
+- **Oracles Data Dictionary führt manche Dinge doppelt** (Index-Spalte *und*
+  Ausdruck). Wer nur eine Sicht liest, liest womöglich die unpassende — die
+  andere trägt oft die eindeutige Auskunft.
+- **Implizite DDL-Commits** sind die Wurzel der meisten Oracle-Eigenheiten
+  dieses Dialekts: das nicht-atomare Preserve-Fenster, die session- statt
+  transaktionsgebundene Sperre, und dass ein Fehlschlag mitten in einer Folge
+  Angewandtes stehen lässt.
+- **Die Marketing-Version ist nicht die Release-Nummer** (Banner „Oracle AI
+  Database 26ai", Release `23.26.3.0.0` — die 23er-Linie). Verglichen wird
+  `major`, nicht der Banner.

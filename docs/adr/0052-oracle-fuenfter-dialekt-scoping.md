@@ -23,7 +23,7 @@ informed: .github/dependabot.yml, docs/user/quality.md
 Ein fünfter Dialekt ist — wie MSSQL zuvor — ein Milestone in der
 Größenordnung mehrerer bisheriger Releases. Bestandsaufnahme, Oracle-Inventar
 und Slice-Schnitt trägt das Plan-Dokument
-[`oracle-dialect-scoping.md`](../planning/in-progress/oracle-dialect-scoping.md)
+[`oracle-dialect-scoping.md`](../planning/done/oracle-dialect-scoping.md)
 (deskriptiv). Fünf Fragen waren vor Baubeginn zu entscheiden: Testziel-Version,
 Feature-Schnitt, Umgang mit dem Oracle-JDBC-Lizenzmodell, CI-Einbettung und die
 Einordnung von PL/SQL Packages.

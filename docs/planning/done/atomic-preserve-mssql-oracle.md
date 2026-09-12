@@ -136,7 +136,7 @@ nur die eigentliche Implementierung.
 `schema migrate`-Pfad (Slice 5, `MssqlDiff*Ops`).
 
 **Phase B — Oracle.** **Blockiert bis Oracle Slice 5** (Diff/Migrate,
-`docs/planning/in-progress/oracle-dialect-scoping.md`) geliefert ist — ein
+`docs/planning/done/oracle-dialect-scoping.md`) geliefert ist — ein
 Atomic-Preserve-Pfad ohne einen bestehenden `schema migrate`-Pfad hat
 nichts, worin er sich einreiht.
 
