@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SQLite baut die Tabelle nicht mehr um, wenn nichts umzubauen ist.** Ein
+  Soll, das die Identity einer Spalte über `generation` setzt, löste auf SQLite
+  einen vollständigen Tabellen-Neubau aus — `CREATE TABLE …__dmg_rebuild_…`,
+  `INSERT … SELECT`, `DROP TABLE`, `RENAME` — und die neue Tabelle sah aus wie
+  die alte: **kein `AUTOINCREMENT`**. Danach meldete der Post-Compare Drift
+  (Exit 5). Auf SQLite steckt die Identity im Spalten**typ** (`identifier`),
+  nie in `generation`; der Neubau konnte das Verlangte also nie herstellen. Der
+  Fall wird jetzt vor dem ersten Statement benannt abgelehnt, die Tabelle bleibt
+  unberührt.
+
+- **Eine Identity-Änderung wird nicht mehr als Berechnungsausdruck gemeldet.**
+  Auf PostgreSQL, MySQL und Oracle fiel sie in denselben Zweig wie ein
+  geänderter Ausdruck und bekam dessen Meldung — es ging weder um einen
+  Ausdruck, noch konnten die Server so wenig, wie die Meldung behauptete.
+
+  Bei der Messung fielen zwei eigene **Falschaussagen** auf: „PostgreSQL cannot
+  turn a generated column into an ordinary one in place" und „Oracle has no
+  `MODIFY` that turns a generated column back into an ordinary one". Beides
+  stimmt nicht — `ALTER COLUMN … DROP EXPRESSION` bzw. `MODIFY (c <typ>)` laufen
+  durch. Geblockt wird weiter (der Übergang ist ungebaut), aber die Meldung nennt
+  jetzt den Befehl, den der Server annimmt.
+
+- **Kein Statement mehr, das der Server ablehnt.** „Gewöhnliche Spalte wird
+  berechnet" rendert nicht länger `SET EXPRESSION` bzw.
+  `MODIFY … GENERATED ALWAYS AS`; alle drei Server weisen das ab (gemessen:
+  `column … is not a generated column`, `'Changing the STORED status' is not
+  supported`, `ORA-54026`). Der Fall wird vorab benannt.
+
 - **Ein Import, der eine berechnete Spalte befüllen würde, bricht auf allen
   fünf Zielen benennend ab** — mit Spaltenname und Zielsystem, vor dem ersten
   Schreiben. Bisher tat das nur SQL Server (und Oracle für die virtuelle Form);

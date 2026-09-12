@@ -10,6 +10,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.model.isSpatialGeometryIndex
+import dev.dmigrate.driver.ColumnGenerationTransition
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -28,6 +29,10 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  *   (MySQL ≥ 8.0).
  */
 internal object MysqlDiffTableOps {
+
+    private const val IDENTITY_CHANGE_NOT_SUPPORTED = "MYSQL_IDENTITY_CHANGE_NOT_SUPPORTED"
+
+    private const val COMPUTED_KIND_CHANGE_NOT_SUPPORTED = "MYSQL_COMPUTED_KIND_CHANGE_NOT_SUPPORTED"
 
     fun renderCreateTable(op: DiffOperation.CreateTable, ctx: MysqlDiffRenderContext) {
         val tableName = op.objectRef.rootName
@@ -289,18 +294,44 @@ internal object MysqlDiffTableOps {
      */
     fun renderAlterColumnGeneration(op: DiffOperation.AlterColumnGeneration, ctx: MysqlDiffRenderContext) {
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
-        val target = if (ctx.direction == MysqlRenderDirection.UP) op.after else op.before
-        val computed = target as? ColumnGeneration.Computed
-        if (computed == null) {
-            ctx.skip(
-                op,
-                "Operation ${op.id} would drop the computed expression of `$table`.`$column`. " +
-                    "Turning a generated column back into an ordinary one changes what the column IS, " +
-                    "not just how it is filled; do it manually.",
-            )
-            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
-            return
+        val up = ctx.direction == MysqlRenderDirection.UP
+        val from = if (up) op.before else op.after
+        val target = if (up) op.after else op.before
+        when (ColumnGenerationTransition.of(from, target)) {
+            ColumnGenerationTransition.IDENTITY -> {
+                ctx.skip(
+                    op,
+                    "Operation ${op.id} changes the identity of `$table`.`$column` — not a computed " +
+                        "expression. MySQL does that in place with `MODIFY COLUMN … AUTO_INCREMENT` as long " +
+                        "as the column is a key (measured against 9.7.2, both directions), but d-migrate does " +
+                        "not render identity changes: express the transition through the column type " +
+                        "(`identifier`) or run the statement yourself.",
+                    code = IDENTITY_CHANGE_NOT_SUPPORTED,
+                )
+                ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+                return
+            }
+            ColumnGenerationTransition.COMPUTED_ADDED, ColumnGenerationTransition.COMPUTED_DROPPED -> {
+                // Live gemessen gegen 9.7.2: MySQL lehnt BEIDE Richtungen mit
+                // derselben Meldung ab — „'Changing the STORED status' is not
+                // supported for generated columns". Ein `MODIFY COLUMN` traegt
+                // die ganze Deklaration, aber die Berechnung an- oder
+                // abzuschalten ist dem Server damit nicht erlaubt.
+                ctx.skip(
+                    op,
+                    "Operation ${op.id} would turn `$table`.`$column` " +
+                        "${if (target is ColumnGeneration.Computed) "into a generated column" else "back into an ordinary column"}. " +
+                        "MySQL refuses both directions in place — `MODIFY COLUMN` answers `'Changing the " +
+                        "STORED status' is not supported for generated columns` (measured against 9.7.2); " +
+                        "drop and recreate the column manually.",
+                    code = COMPUTED_KIND_CHANGE_NOT_SUPPORTED,
+                )
+                ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+                return
+            }
+            ColumnGenerationTransition.COMPUTED_EXPRESSION -> Unit
         }
+        val computed = target as ColumnGeneration.Computed
         val type = ctx.columnsOf(table)[column]?.type
         if (type == null) {
             ctx.skip(

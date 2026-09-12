@@ -1,48 +1,85 @@
 ---
 id: column-generation-diff-unmapped
-title: "Eine Aenderung an `generation` plant gar keine Operation"
+title: "Die Erzeugungsart einer Spalte aendern: gemeldet, aber nicht ausgefuehrt"
 status: open
 ---
 
-# Eine Aenderung an `generation` plant gar keine Operation
+# Die Erzeugungsart einer Spalte aendern
 
-## Befund
+> **Der urspruengliche Befund ist ueberholt** (2026-09-12): `ColumnDiff
+> .generation` wird sehr wohl zu einer Operation — `OperationMapper` bildet sie
+> auf `DiffOperation.AlterColumnGeneration` ab, seit dem Slice
+> [`generated-column-expression-dropped.md`](../done/generated-column-expression-dropped.md).
+> Was davon **ausgefuehrt** wird, ist der Berechnungs**ausdruck**; die uebrigen
+> Uebergaenge werden benannt abgelehnt. Dieser Eintrag fuehrt ab hier nur noch
+> die Restfläche — mit der Messung, die vorher fehlte.
 
-`ColumnDiff` fuehrt ein Feld `generation`, und `TableComparator` fuellt es
-(`TableComparator.kt`, `generationDiff`). `OperationMapper.mapColumnChange`
-liest davon aber nur `type`, `required` und `default` — **`cd.generation`
-wird nirgends zu einer `DiffOperation`**. Der einzige weitere Leser ist
-`RenameIntraObjectDeltaSynthesizer`, der es als Restfläche notiert
-(„column generation drift … — T5"), nicht als Operation.
+## Gemessen: welchen Uebergang welcher Server in place kann
 
-Folge: ein Soll-Schema, das eine Spalte von gewoehnlich auf
-`generation: identity` (oder umgekehrt, oder von `ALWAYS` auf `BY DEFAULT`)
-umstellt, **ohne** dabei den Typ zu aendern, plant nichts. `schema migrate`
-meldet einen leeren Plan, fuehrt nichts aus — und der Post-Compare meldet
-danach Drift, weil das Soll eben doch etwas anderes wollte.
+Alle fuenf Server einzeln gefragt (PostgreSQL 18.6, MySQL 9.7.2, Oracle 23,
+SQL Server 2025, SQLite ueber den echten Migrationspfad):
 
-Der Weg ueber den Typ funktioniert dagegen: `integer` →
-`identifier + auto_increment` erzeugt ein `AlterColumnType`, und die Renderer
-setzen es um (auf Oracle seit dem Tabellen-Neubau, siehe
-[`oracle-add-identity-requires-rebuild.md`](../done/oracle-add-identity-requires-rebuild.md)).
-Beide Schreibweisen meinen dasselbe — nur eine von beiden wird geplant.
+| Uebergang | PostgreSQL | MySQL | Oracle | SQL Server | SQLite |
+| --- | --- | --- | --- | --- | --- |
+| Ausdruck aendern (berechnet → berechnet) | `SET EXPRESSION` ab 17 ✅ | `MODIFY COLUMN` ✅ | `MODIFY` (virtuell, ohne Index) ✅ | Syntaxfehler | Neubau ✅ |
+| gewoehnlich → berechnet | „is not a generated column" | „'Changing the STORED status' is not supported" | `ORA-54026` | Syntaxfehler | — |
+| berechnet → gewoehnlich | `DROP EXPRESSION` **geht** | „'Changing the STORED status' is not supported" | `MODIFY (c <typ>)` **geht** | „Cannot alter column … because it is 'COMPUTED'" | — |
+| Identity `ALWAYS` ↔ `BY DEFAULT` | `SET GENERATED …` **geht** | (Modus gibt es nicht) | `MODIFY (c GENERATED … AS IDENTITY)` **geht** | ungemessen | Identity steckt im **Typ** |
+| Identity → gewoehnlich | `DROP IDENTITY` **geht** | `MODIFY c INT` **geht** (Schluesselspalte) | `MODIFY (c DROP IDENTITY)` **geht** | ungemessen | s. o. |
+| gewoehnlich → Identity | braucht vorher `NOT NULL` | nur als Schluesselspalte | `ORA-30673` | „Incorrect syntax near the keyword 'IDENTITY'" | s. o. |
 
-## Warum das nicht nebenbei zu beheben ist
+Die vierte und fuenfte Zeile sind der Kern der Restfläche: **drei Server koennen
+mehrere dieser Uebergaenge**, d-migrate rendert keinen davon.
 
-Es fehlt nicht nur die Zeile im Mapper, sondern die Operation selbst: es gibt
-keinen `DiffOperation`-Typ fuer „Erzeugungsart einer Spalte aendern". Der
-neu einzufuehrende Typ braucht
+**SQLite ist der Sonderfall.** Dort steckt die Identity im Spalten**typ**
+(`Identifier(autoIncrement = true)` → `INTEGER PRIMARY KEY AUTOINCREMENT`), nie
+in `generation`; der Reverse liefert sie dort nicht. Eine Identity ueber
+`generation` zu setzen beschreibt auf SQLite also etwas, das kein Neubau
+herstellen kann.
 
-- eine Umkehrung und ein Risikoprofil je Richtung (Identity **entfernen** ist
-  auf allen Dialekten leichter als sie hinzuzufuegen),
-- eine Entscheidung je Dialekt, ob er sie in-place kann (Oracle: nur das
-  Entfernen; SQL Server: gar nicht, dort erzwingt schon der Basistypwechsel
-  einen Neubau; PostgreSQL: `ADD/DROP GENERATED`),
-- und eine Antwort auf die Frage, wie sie sich zum bestehenden
-  `AlterColumnType` verhaelt, das denselben Uebergang heute schon ausdrueckt.
+## Behoben (2026-09-12)
+
+- **Drei falsche Meldungen.** Ein Identity-Uebergang fiel in denselben Zweig wie
+  ein Ausdruckswechsel und bekam eine Meldung ueber den *Berechnungsausdruck* —
+  auf PostgreSQL, MySQL und Oracle. Es ging weder um einen Ausdruck, noch konnten
+  die Server so wenig, wie die Meldung behauptete. Die Einteilung trifft jetzt
+  `ColumnGenerationTransition` an einer Stelle, die Antwort bleibt beim Dialekt.
+- **Zwei Behauptungen, die die Messung widerlegt hat.** „PostgreSQL cannot turn a
+  generated column into an ordinary one in place" und „Oracle has no `MODIFY`
+  that turns a generated column back into an ordinary one" — beide falsch;
+  `DROP EXPRESSION` bzw. `MODIFY (c <typ>)` laufen durch. Geblockt wird weiter
+  (der Uebergang ist ungebaut), aber die Meldung nennt jetzt den Befehl, den der
+  Server annimmt, damit ein Operator ihn selbst fahren kann.
+- **Ungueltige DDL.** „gewoehnlich → berechnet" rendert nicht mehr
+  `SET EXPRESSION`/`MODIFY … GENERATED`, was jeder der drei Server ablehnt,
+  sondern wird vorab benannt.
+- **Ein Tabellen-Neubau fuer nichts (SQLite).** Eine Identity-Aenderung lief als
+  Neubau durch — `CREATE TABLE …__dmg_rebuild_…`, `INSERT … SELECT`,
+  `DROP TABLE`, `RENAME` — und die neue Tabelle sah aus wie die alte; danach
+  meldete der Post-Compare Drift (Exit 5). Gemessen und abgestellt: der Fall
+  wird vor dem ersten Statement benannt abgelehnt, die Tabelle bleibt
+  unberuehrt.
+
+## Was offen bleibt
+
+**Die Uebergaenge ausfuehren, die die Server annehmen** — je Dialekt und je
+Richtung, nach der Tabelle oben. Zu klaeren wie beim Ausdrucksfall:
+
+- **Umkehrung und Risikoprofil je Richtung.** Identity zu entfernen ist
+  ueberall leichter als sie hinzuzufuegen; `DROP EXPRESSION` behaelt die
+  gespeicherten Werte als gewoehnliche Daten (PostgreSQL, gemessen) — ob das die
+  gewuenschte Semantik ist, ist eine Zusage, keine Mechanik.
+- **Das Verhaeltnis zu `AlterColumnType`.** Der Weg ueber den Typ
+  (`integer` → `identifier`) funktioniert heute und ist der dokumentierte;
+  beide Schreibweisen wuerden denselben Uebergang ausdruecken.
+- **Die Vorbedingung auf PostgreSQL.** `ADD GENERATED … AS IDENTITY` verlangt
+  `NOT NULL` vorher — also eine zweite Operation in derselben Anweisungsfolge,
+  mit allem, was Reihenfolge und Umkehrung daran kostet.
+- **SQL Server bleibt ungemessen** fuer die beiden Identity-Richtungen; dort ist
+  ohnehin ein Neubau der einzige Weg.
 
 ## Aktivierungsbedingung
 
-Ein belegter Bedarf, die Erzeugungsart **ohne** Typwechsel umzustellen — oder
-ein Nutzer, der die zweite Schreibweise waehlt und einen leeren Plan
-zurueckbekommt. Bis dahin ist der Weg ueber den Typ der dokumentierte.
+Unveraendert: ein belegter Bedarf, die Erzeugungsart **ohne** Typwechsel
+umzustellen. Neu ist, dass der Fall nicht mehr still ist — er endet mit einer
+benannten Meldung, die den Weg nennt, den der Server kann.

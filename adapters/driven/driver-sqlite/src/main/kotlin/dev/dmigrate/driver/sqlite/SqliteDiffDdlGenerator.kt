@@ -245,6 +245,15 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
      * planner could not locate the table's current/desired schema.
      */
     private fun categorize(op: DiffOperation): OpCategory = when (op) {
+        // SQLite kennt kein `ALTER COLUMN` — der Weg ist der Tabellen-Neubau,
+        // den dieser Dialekt ohnehin geht. Die neue Tabelle traegt den neuen
+        // Ausdruck, und die Spalte bleibt aus dem `INSERT` heraus: SQLite
+        // rechnet sie aus, sie laesst sich nicht beschreiben. Die Identity ist
+        // der Gegenfall: sie steckt hier im Spaltentyp, nicht in `generation`
+        // ([SqliteGenerationTransitions]).
+        is DiffOperation.AlterColumnGeneration ->
+            if (SqliteGenerationTransitions.isIdentityMatter(op)) OpCategory.UNSUPPORTED else OpCategory.REBUILD
+
         // Eine gespeicherte berechnete Spalte laesst sich nicht anhaengen
         // (gemessen: auf der gefuellten Tabelle scheitert es) — sie geht ueber
         // den Neubau, wie `SqliteRebuildPlanner.classify` sie auch einsortiert.
@@ -270,11 +279,6 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.AlterColumnType,
         is DiffOperation.AlterColumnNullability,
         is DiffOperation.AlterColumnDefault,
-        // SQLite kennt kein `ALTER COLUMN` — der Weg ist der Tabellen-Neubau,
-        // den dieser Dialekt ohnehin geht. Die neue Tabelle traegt den neuen
-        // Ausdruck, und die Spalte bleibt aus dem `INSERT` heraus: SQLite
-        // rechnet sie aus, sie laesst sich nicht beschreiben.
-        is DiffOperation.AlterColumnGeneration,
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,
         is DiffOperation.AddConstraint,
@@ -391,7 +395,26 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
+    /** Die Identity steckt auf SQLite im Spaltentyp, nicht in `generation`. */
+    private companion object {
+        const val IDENTITY_IS_PART_OF_THE_TYPE = "SQLITE_IDENTITY_IS_PART_OF_THE_TYPE"
+    }
+
     private fun markUnsupported(op: DiffOperation, ctx: SqliteDiffRenderContext) {
+        if (SqliteGenerationTransitions.isIdentityMatter(op)) {
+            val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+            ctx.skip(
+                op,
+                "Operation ${op.id} changes the identity of `$table`.`$column`. On SQLite the identity is " +
+                    "part of the column TYPE (`identifier`, rendered as `INTEGER PRIMARY KEY AUTOINCREMENT`) " +
+                    "and never of `generation` — the reverse does not report it there. A table rebuild would " +
+                    "copy the table without changing anything and the run would end in post-execute drift " +
+                    "(measured); express the transition through the column type instead.",
+                code = IDENTITY_IS_PART_OF_THE_TYPE,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
         ctx.skip(op, "Operation ${op::class.simpleName} is not in the first SQLite matrix.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }

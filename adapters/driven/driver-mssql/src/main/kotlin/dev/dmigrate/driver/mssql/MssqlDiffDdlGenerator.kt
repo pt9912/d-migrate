@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.driver.ColumnGenerationTransition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.DiffDdlGenerator
@@ -260,16 +261,37 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropMaterializedView,
         -> "SQL Server has no materialized views; the generate path degrades them to a plain view (W103)"
 
-        // Live gemessen gegen SQL Server 2025: `ALTER TABLE … ALTER COLUMN c AS (…)`
-        // ist ein Syntaxfehler — T-SQL kennt den Befehl nicht. Der einzige Weg
-        // ist `DROP COLUMN` + `ADD`. Der scheitert LAUT, wenn ein Index auf der
-        // Spalte liegt („The index 'x' is dependent on column 'c'"), aber eine
-        // Sicht darueber laesst er STILL zurueck: der Drop gelingt, und die
-        // Sicht bricht erst beim naechsten `SELECT`. Deshalb wird hier geblockt
-        // statt ausgewichen.
-        is DiffOperation.AlterColumnGeneration ->
-            "T-SQL has no `ALTER COLUMN … AS (…)`; the only route is dropping and recreating the column, " +
-                "which leaves a view over it silently broken"
+        // Live gemessen gegen SQL Server 2025, alle vier Uebergaenge einzeln:
+        // `ALTER COLUMN c AS (…)` ist ein Syntaxfehler („Incorrect syntax near
+        // the keyword 'AS'"), eine berechnete Spalte laesst sich nicht einmal
+        // in eine gewoehnliche aendern („Cannot alter column 'g' because it is
+        // 'COMPUTED'"), und IDENTITY nachzuruesten scheitert an der Syntax
+        // („Incorrect syntax near the keyword 'IDENTITY'"). Der einzige Weg ist
+        // `DROP COLUMN` + `ADD`; der scheitert LAUT an einem Index auf der
+        // Spalte, laesst aber eine Sicht darueber STILL zurueck — der Drop
+        // gelingt, und die Sicht bricht erst beim naechsten `SELECT`. Deshalb
+        // wird geblockt statt ausgewichen. Die Meldung nennt den Fall, der
+        // vorliegt: eine Identity-Aenderung hat mit dem Ausdruck nichts zu tun.
+        is DiffOperation.AlterColumnGeneration -> when (ColumnGenerationTransition.of(op.before, op.after)) {
+            ColumnGenerationTransition.IDENTITY ->
+                "this changes the column's identity, not a computed expression; T-SQL cannot add IDENTITY to " +
+                    "an existing column (`Incorrect syntax near the keyword 'IDENTITY'`, measured against " +
+                    "2025), and d-migrate does not render identity changes — express the transition through " +
+                    "the column type (`identifier`) instead"
+
+            ColumnGenerationTransition.COMPUTED_ADDED ->
+                "T-SQL has no `ALTER COLUMN … AS (…)` to make an ordinary column computed; the only route is " +
+                    "dropping and recreating the column, which leaves a view over it silently broken"
+
+            ColumnGenerationTransition.COMPUTED_DROPPED ->
+                "SQL Server refuses to alter a computed column at all (`Cannot alter column because it is " +
+                    "'COMPUTED'`, measured against 2025); the only route is dropping and recreating the " +
+                    "column, which leaves a view over it silently broken"
+
+            ColumnGenerationTransition.COMPUTED_EXPRESSION ->
+                "T-SQL has no `ALTER COLUMN … AS (…)`; the only route is dropping and recreating the column, " +
+                    "which leaves a view over it silently broken"
+        }
 
         else -> "no MSSQL rendering exists for this operation"
     }

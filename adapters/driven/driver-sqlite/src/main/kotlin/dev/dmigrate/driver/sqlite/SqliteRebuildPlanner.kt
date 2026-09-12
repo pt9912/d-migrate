@@ -527,14 +527,18 @@ internal object SqliteRebuildPlanner {
         is DiffOperation.AlterColumnType,
         is DiffOperation.AlterColumnNullability,
         is DiffOperation.AlterColumnDefault,
-        // SQLite kennt kein `ALTER COLUMN`; ein geaenderter Berechnungsausdruck
-        // laeuft wie jede andere Spaltenaenderung ueber den Neubau.
-        is DiffOperation.AlterColumnGeneration,
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,
         is DiffOperation.AddConstraint,
         is DiffOperation.DropConstraint,
         -> true
+        // SQLite kennt kein `ALTER COLUMN`; ein geaenderter Berechnungsausdruck
+        // laeuft wie jede andere Spaltenaenderung ueber den Neubau -- die
+        // Identity dagegen steckt hier im Spaltentyp und waere ein Neubau fuer
+        // nichts ([SqliteGenerationTransitions]). Renderer und Planer muessen
+        // sich hier einig sein, sonst blockt der Lauf mit
+        // `SQLITE_REBUILD_REQUIRED`, statt zu bauen.
+        is DiffOperation.AlterColumnGeneration -> !SqliteGenerationTransitions.isIdentityMatter(op)
         else -> false
     }
 
@@ -550,12 +554,12 @@ internal object SqliteRebuildPlanner {
         is DiffOperation.AlterColumnType,
         is DiffOperation.AlterColumnNullability,
         is DiffOperation.AlterColumnDefault,
-        is DiffOperation.AlterColumnGeneration,
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,
         is DiffOperation.AddConstraint,
         is DiffOperation.DropConstraint,
         -> true
+        is DiffOperation.AlterColumnGeneration -> !SqliteGenerationTransitions.isIdentityMatter(op)
         else -> false
     }
 

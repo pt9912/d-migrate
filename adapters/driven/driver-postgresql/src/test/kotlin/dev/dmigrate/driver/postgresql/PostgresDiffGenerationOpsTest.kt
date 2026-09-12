@@ -6,6 +6,7 @@ import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -15,6 +16,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 
 /**
  * Der Berechnungsausdruck einer Spalte, in place gesetzt — und die Faelle, in
@@ -80,7 +82,14 @@ class PostgresDiffGenerationOpsTest : FunSpec({
         result.diagnostics.single().message shouldContain "unknown (file-to-file run)"
     }
 
-    test("turning a computed column into an ordinary one is refused by name") {
+    /**
+     * Der Wortlaut hier war falsch und ist nachgemessen worden: PostgreSQL
+     * **kann** eine berechnete Spalte zurueckverwandeln (`DROP EXPRESSION`,
+     * gegen 18.6 belegt). Geblockt wird trotzdem — der Uebergang ist ungebaut —
+     * aber mit dem Befehl in der Meldung, damit der Anwender ihn selbst fahren
+     * kann.
+     */
+    test("turning a computed column into an ordinary one is refused, naming the command that does it") {
         val diff = SchemaDiff(
             tablesChanged = listOf(
                 TableDiff(
@@ -101,6 +110,71 @@ class PostgresDiffGenerationOpsTest : FunSpec({
         val result = render(PostgresServerVersion(18, 6), diff)
 
         result.statements.shouldBeEmpty()
-        result.diagnostics.single().message shouldContain "cannot turn a generated column into an ordinary one"
+        val message = result.diagnostics.single().message
+        message shouldContain "would drop the computed expression"
+        message shouldContain "DROP EXPRESSION"
+    }
+
+    /**
+     * Gemessen gegen 18.6: `SET EXPRESSION` auf einer gewoehnlichen Spalte
+     * antwortet „column … is not a generated column". Vorher rendert dieser
+     * Pfad genau das — ein Statement, das der Server ablehnt.
+     */
+    test("making an ordinary column computed is refused instead of rendering DDL the server rejects") {
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "order_line",
+                    columnsChanged = listOf(
+                        ColumnDiff(
+                            name = "line_total",
+                            generation = ValueChange(
+                                before = null,
+                                after = ColumnGeneration.Computed("q * p", stored = true),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val result = render(PostgresServerVersion(18, 6), diff)
+
+        result.statements.shouldBeEmpty()
+        val message = result.diagnostics.single().message
+        message shouldContain "would make the ordinary column"
+        message shouldContain "is not a generated column"
+    }
+
+    /**
+     * Eine Identity-Aenderung fiel in denselben Zweig und bekam eine Meldung
+     * ueber den *Berechnungsausdruck* — beides falsch: es gibt keinen, und
+     * PostgreSQL kann zwei dieser Uebergaenge sehr wohl in place.
+     */
+    test("an identity change is not reported as a computed-expression matter") {
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "counters",
+                    columnsChanged = listOf(
+                        ColumnDiff(
+                            name = "id",
+                            generation = ValueChange(
+                                before = null,
+                                after = ColumnGeneration.Identity(IdentityMode.BY_DEFAULT),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val result = render(PostgresServerVersion(18, 6), diff)
+
+        result.statements.shouldBeEmpty()
+        val message = result.diagnostics.single().message
+        message shouldContain "changes the identity of"
+        message shouldContain "DROP IDENTITY"
+        message shouldNotContain "would drop the computed expression"
     }
 })
