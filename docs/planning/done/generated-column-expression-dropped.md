@@ -436,7 +436,7 @@ festgenagelt, statt der Doku geglaubt.
 zunaechst nicht anlegen — zwei berechnete Spalten mit **demselben** Ausdruck
 sind dort `ORA-54015` („Duplicate column expression"), auf den uebrigen vier
 nicht. Das trifft nicht nur Tests:
-[`oracle-doppelter-generierungsausdruck.md`](../open/oracle-doppelter-generierungsausdruck.md).
+[`oracle-doppelter-generierungsausdruck.md`](../next/oracle-doppelter-generierungsausdruck.md).
 
 ## Abschluss (2026-09-12)
 
@@ -453,7 +453,7 @@ Mapper fuellt ihn.
 
 **Was ausdruecklich nicht mit geschlossen ist:**
 
-- [`berechnete-spalten-im-transferpfad.md`](../open/berechnete-spalten-im-transferpfad.md)
+- [`berechnete-spalten-im-transferpfad.md`](../next/berechnete-spalten-im-transferpfad.md)
   — die Ablehnung des Schreibpfads nennt einen Ausweg („Spalte aus
   Export/Transfer herausnehmen"), den ein **direkter** `data transfer` nicht
   hat: es gibt keinen Spaltenfilter. Ob das Auslassen der berechneten Spalte
