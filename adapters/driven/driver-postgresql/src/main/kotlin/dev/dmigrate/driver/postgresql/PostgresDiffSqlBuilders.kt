@@ -12,6 +12,7 @@ import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.PostgresServerVersion
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.metadata.EnumValueCheck
@@ -29,14 +30,15 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
 
     fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.POSTGRESQL)
 
-    fun columnLine(name: String, col: ColumnDefinition): String {
+    fun columnLine(name: String, col: ColumnDefinition, serverVersion: PostgresServerVersion? = null): String {
         // Dieselbe Form wie im generate-Pfad: eine berechnete Spalte traegt
-        // weder NOT NULL noch DEFAULT noch UNIQUE.
+        // weder NOT NULL noch DEFAULT noch UNIQUE. Die Speicherform haengt an
+        // der Serverversion (siehe PostgresComputedStorage).
         ComputedColumnClause.of(col)?.let { computed ->
             return listOf(
                 quote(name),
                 typeMapper.toSql(col.type),
-                ComputedColumnClause.clause(computed, "STORED"),
+                ComputedColumnClause.clause(computed, PostgresComputedStorage.suffix(computed, serverVersion)),
             ).joinToString(" ")
         }
         // Enum-Degradations-Slice (AP2): a `refType` enum references its native

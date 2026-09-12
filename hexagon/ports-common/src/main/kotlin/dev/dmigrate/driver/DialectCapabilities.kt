@@ -299,15 +299,22 @@ data class DialectCapabilities(
      */
     val namesIdentitySequences: Boolean = true,
     /**
-     * Ob der Dialekt eine **virtuelle** berechnete Spalte kennt — eine, deren
-     * Wert bei jedem Lesen neu berechnet statt gespeichert wird.
+     * Ob das **Ziel** eine virtuelle berechnete Spalte kennt — eine, deren Wert
+     * bei jedem Lesen neu berechnet statt gespeichert wird.
      *
-     * Vier der fuenf tun es und legen sie sogar als Vorgabe an. PostgreSQL
-     * nicht: dort ist `STORED` Pflicht, `VIRTUAL` ist ein Syntaxfehler (live
-     * gemessen). `ColumnGeneration.Computed.stored` ist dort also keine Wahl,
-     * sondern eine Konstante — und ein Vergleich, der die beiden Werte
-     * unterscheidet, meldete auf PostgreSQL bei jedem Round-Trip eine
-     * Aenderung, die niemand machen kann.
+     * **Die erste Faehigkeit, die nicht am Dialekt haengt, sondern an seiner
+     * Version.** Vier der fuenf koennen es in jeder zugesagten Version und
+     * legen die virtuelle Form sogar als Vorgabe an. PostgreSQL nicht — und
+     * zwar nicht durchgehend:
+     *
+     * | PostgreSQL | `VIRTUAL` | ohne Angabe |
+     * | --- | --- | --- |
+     * | 14 bis 17 | Syntaxfehler | `STORED` ist Pflichtwort |
+     * | ab 18 | gueltig (`attgenerated = 'v'`) | **virtuell** |
+     *
+     * Gemessen an 18.6. Wer diese Faehigkeit ohne Version erfragt, bekommt die
+     * Antwort fuer [MeasuredServerVersions] — siehe dort, warum optimistisch
+     * und nicht konservativ.
      */
     val supportsVirtualComputedColumns: Boolean = true,
 ) {
@@ -327,16 +334,41 @@ data class DialectCapabilities(
             "SET QUOTED_IDENTIFIER ON;",
         ).joinToString("\n")
 
-        fun forDialect(dialect: DatabaseDialect): DialectCapabilities = when (dialect) {
-            DatabaseDialect.POSTGRESQL -> postgresql()
-            DatabaseDialect.MYSQL -> mysql()
-            DatabaseDialect.SQLITE -> sqlite()
-            DatabaseDialect.MSSQL -> mssql()
-            DatabaseDialect.ORACLE -> oracle()
+        /**
+         * Die Faehigkeiten des Dialekts **ohne** bekannte Zielversion.
+         *
+         * Gleichbedeutend mit `forTarget(dialect, null)`: wo eine Faehigkeit an
+         * der Version haengt, antwortet sie fuer die aktuellste gemessene
+         * ([MeasuredServerVersions]). Wer das Ziel kennt, nimmt [forTarget] —
+         * dieser Einstieg bleibt fuer die Stellen, die es nicht koennen.
+         */
+        fun forDialect(dialect: DatabaseDialect): DialectCapabilities = forTarget(dialect, null)
+
+        /**
+         * Die Faehigkeiten des Ziels, **Version eingerechnet**.
+         *
+         * [serverVersion] ist die Auspraegung des Lesepfads; jede Faehigkeit
+         * faengt mit `as?` die von ihr erwartete ab. `null` heisst „unbekannt"
+         * — ein Dateiziel hat keine Version — und wird auf den Pin aus
+         * [MeasuredServerVersions] gehoben, nicht auf den konservativsten Wert.
+         */
+        fun forTarget(dialect: DatabaseDialect, serverVersion: ServerVersion?): DialectCapabilities {
+            val version = serverVersion ?: MeasuredServerVersions.of(dialect)
+            return when (dialect) {
+                DatabaseDialect.POSTGRESQL -> postgresql(version as? PostgresServerVersion)
+                DatabaseDialect.MYSQL -> mysql()
+                DatabaseDialect.SQLITE -> sqlite()
+                DatabaseDialect.MSSQL -> mssql()
+                DatabaseDialect.ORACLE -> oracle()
+            }
         }
 
-        private fun postgresql(): DialectCapabilities = DialectCapabilities(
-            supportsVirtualComputedColumns = false,
+        /** `VIRTUAL` gibt es ab dieser Hauptversion; darunter ist es ein Syntaxfehler. */
+        const val POSTGRES_VIRTUAL_COMPUTED_SINCE_MAJOR: Int = 18
+
+        private fun postgresql(version: PostgresServerVersion?): DialectCapabilities = DialectCapabilities(
+            supportsVirtualComputedColumns =
+                (version?.major ?: MeasuredServerVersions.POSTGRESQL.major) >= POSTGRES_VIRTUAL_COMPUTED_SINCE_MAJOR,
             supportsRawTextSandbox = true,
             supportsViews = true,
             supportsFunctions = true,

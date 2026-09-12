@@ -3,7 +3,7 @@ package dev.dmigrate.driver
 /**
  * E.1 Routine-Migration Slice C.1.a: structural MySQL server version.
  *
- * Used by [RoutineKindCapability.minServerVersion] to compare a
+ * Used by `RoutineKindCapability.minServerVersion` (ports-read) to compare a
  * declared floor against the live server reported by
  * `MysqlMetadataQueries.readServerVersion()` (driver-mysql).
  *

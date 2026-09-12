@@ -7,4 +7,10 @@
 
 dependencies {
     api("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
+
+    // Nur fuer die Spec, die den Faehigkeits-Pin gegen die Bilder haelt
+    // (`MeasuredServerVersionsPinTest`): waeren beide unabhaengig zu aendern,
+    // stuende der Default fuer „unbekannte Version" irgendwann fuer eine
+    // Version, gegen die nichts mehr laeuft.
+    testImplementation(project(":hexagon:ports-common"))
 }

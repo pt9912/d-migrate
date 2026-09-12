@@ -78,6 +78,7 @@ neuen Version.
 | W145 - W154 | Oracle-Generate: deklarierte Text-/Zeichenlaenge ueber dem VARCHAR2/CHAR-Limit → `CLOB` (W145); `time`-Spalte → `VARCHAR2(8)`-Text, kein natives Zeit-Typ (W146); `date`-Spalte → Oracle `DATE` mit Uhrzeitkomponente, Reverse liefert `datetime` (W147, INFO); `NUMBER`-Praezision > 38 gekappt (W148); `array`-Spalte → `JSON`, kein natives Array (W149); `gen_uuid`-Default → `RAWTOHEX(SYS_GUID())` ohne Bindestriche (W150, INFO); Identity-Generierung bzw. DEFAULT auf Identity-Spalte verworfen (W151); Index auf LOB-Schluesselspalte uebersprungen (W152); `ON DELETE SET DEFAULT` ohne Oracle-Aequivalent verworfen (W153); Text-Search-Konfiguration eines Volltext-Index verworfen — Oracle waehlt den Analyzer ueber eine benannte `CTX_DDL`-Lexer-Preference (W154) |
 | W155 | Oracle-Generate: partieller Index als voller Index angelegt (Oracle traegt kein Index-Praedikat) |
 | W156 - W157 | LIST-Partitionierung ohne LIST-Dialekt: aus einem `partition-mapping`-Overlay als RANGE gerendert, samt der Weitung, die das mit sich bringt (W156); ohne Overlay der Hinweis, woran ein solches zu binden waere (W157, INFO) |
+| W158 | PostgreSQL unter 18: eine virtuelle berechnete Spalte (`stored: false`) wurde als `STORED` gerendert — die virtuelle Form gibt es dort nicht |
 
 Neue Codes werden am Ende des jeweiligen Bereichs angefuegt.
 Luecken (z.B. E021-E051) sind reservierte Bereiche fuer kuenftige

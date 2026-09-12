@@ -10,6 +10,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.DialectCapabilities
+import dev.dmigrate.driver.ServerVersion
 import dev.dmigrate.core.model.PartitionTemporalLiteral
 
 /**
@@ -247,10 +248,16 @@ fun capabilityConstraintNameCanonicalizer(
     return { null }
 }
 
+/**
+ * [serverVersion] entscheidet mit: ob es eine virtuelle berechnete Spalte gibt,
+ * haengt bei PostgreSQL an der Version, nicht am Dialekt. Ohne bekannte Version
+ * gilt die aktuellste gemessene — ein Dateiziel hat keine.
+ */
 fun capabilityGenerationCanonicalizer(
     dialect: DatabaseDialect,
+    serverVersion: ServerVersion? = null,
 ): (ColumnGeneration?) -> ColumnGeneration? {
-    val capabilities = DialectCapabilities.forDialect(dialect)
+    val capabilities = DialectCapabilities.forTarget(dialect, serverVersion)
     val dropsSequenceName = !capabilities.namesIdentitySequences
     // Wo es keine virtuelle Form gibt, ist `stored` keine Wahl: der Server
     // legt die Spalte gespeichert an, gleich was dastand.

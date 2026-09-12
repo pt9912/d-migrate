@@ -279,3 +279,19 @@ entries:
       - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlIndexDdlHelper.kt"
         path_type: production
 
+
+  # W158 — die erste Faehigkeit, die an der Serverversion haengt statt am
+  # Dialekt: PostgreSQL kennt die virtuelle berechnete Spalte erst ab 18
+  # (gemessen an 18.6, `attgenerated = 'v'`). Gegen einen aelteren Server wird
+  # `stored: false` als `STORED` gerendert — das muss gesagt werden, sonst
+  # steht im Schema etwas anderes, als die Datenbank tut.
+  - code: W158
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresComputedColumnRenderTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresComputedStorage.kt"
+        path_type: production
+      - source: "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffComputedColumnOps.kt"
+        path_type: production

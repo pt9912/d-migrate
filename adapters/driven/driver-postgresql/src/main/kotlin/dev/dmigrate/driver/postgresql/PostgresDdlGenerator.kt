@@ -17,11 +17,19 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         quoteIdentifier = ::quoteIdentifier,
         typeMapper = typeMapper,
     )
+    /**
+     * Die Zielversion des laufenden `generate`-Aufrufs — bei einem Dateiziel
+     * `null`, dann gilt die aktuellste gemessene. Je Lauf gesetzt, wie der
+     * Indexnamen-Zaehler daneben auch.
+     */
+    private var currentServerVersion: PostgresServerVersion? = null
+
     private val columnConstraintHelper = PostgresColumnConstraintHelper(
         quoteIdentifier = ::quoteIdentifier,
         typeMapper = typeMapper,
         columnSql = ::columnSql,
         referentialActionSql = ::referentialActionSql,
+        serverVersion = { currentServerVersion },
     )
 
     // N8: index names are schema-global in PostgreSQL; the allocator
@@ -33,6 +41,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         options: DdlGenerationOptions,
     ): DdlResult {
         indexNameAllocator.reset()
+        currentServerVersion = options.postgresContext?.serverVersion
         return super.generate(schema, options)
     }
 
@@ -96,6 +105,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         // Columns — physische Ordinalreihenfolge (siehe inOrdinalOrder).
         for ((colName, col) in table.columns.inOrdinalOrder()) {
             columnLines += generateColumnSql(colName, col, schema, name)
+            PostgresComputedStorage.degradedNote(name, colName, col, currentServerVersion)?.let { notes += it }
         }
 
         // Inline foreign key constraints (non-circular, from column references)

@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`stored: false` überlebt auf PostgreSQL 18 bis in die Datenbank.** Bisher
+  nicht — und zwar gegen genau die Version, gegen die die Integrationssuite
+  läuft. `VIRTUAL` ist dort gültig und ohne Angabe sogar die Vorgabe
+  (`attgenerated = 'v'`, gemessen an 18.6), aber d-migrate hielt PostgreSQL
+  pauschal für einen Dialekt ohne virtuelle Form. Daraus wurde eine geschlossene
+  Kette: die Fähigkeits-Faltung nahm den Unterschied aus dem Vergleich, der
+  Renderer schrieb unbedingt `STORED`, der Server legte `'s'` an, und der Leser
+  las das korrekt zurück. Der Round-Trip war sauber, die Angabe des Autors weg —
+  kein Glied meldete etwas.
+
+  `DialectCapabilities` beantwortet die Frage jetzt **nach der Zielversion**
+  (`forTarget`), nicht mehr nur nach dem Dialekt. Ist die Version unbekannt — ein
+  Dateiziel hat keine —, gilt die neueste, gegen die d-migrate gemessen hat:
+  ein Skript, das auf einem aktuellen Server läuft und auf einem alten mit einem
+  klaren Syntaxfehler scheitert. Lautes Scheitern schlägt stille Degradation.
+  Wo die Version bekannt ist und die Form nicht existiert, wird sie degradiert
+  **und gemeldet** (`W158`).
+
+  Die Speicherform nachträglich zu wechseln blockt jetzt mit eigener Meldung:
+  `SET EXPRESSION` lässt die Spalte, wo sie ist, und der einzige andere Weg
+  löst sie und legt sie neu an.
+
 - **Ein Primärschlüssel erzeugt keinen Unterschied mehr, den niemand herstellen
   kann.** `schema compare` meldete `required: false -> true` an der PK-Spalte,
   wenn die Schemadatei `required` dort wegließ — der Release-Smoke verglich

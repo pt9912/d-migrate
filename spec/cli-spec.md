@@ -279,6 +279,7 @@ W200 - W299: Performance-Warnungen
 | W155 | Partial index created as a full index: the target dialect has no index predicate (Oracle) |
 | W156 | LIST partitioning rendered as RANGE from a `partition-mapping` overlay (SQL Server); the translated form accepts what LIST refused |
 | W157 | LIST partitioning is not expressible in the target dialect (E055) but a `partition-mapping` overlay resolves it; the note names the fingerprint to bind to |
+| W158 | PostgreSQL below 18: a virtual computed column (`stored: false`) was rendered as `STORED` — the virtual form does not exist there |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)
 

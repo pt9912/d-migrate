@@ -11,6 +11,12 @@ internal class PostgresColumnConstraintHelper(
     private val typeMapper: TypeMapper,
     private val columnSql: (String, String, ColumnDefinition, SchemaDefinition) -> String,
     private val referentialActionSql: (ReferentialAction) -> String,
+    /**
+     * Die Version des Ziels, wie sie der laufende `generate`-Aufruf kennt —
+     * `null` bei einem Dateiziel. Eine Funktion statt eines Wertes, weil der
+     * Helfer einmal gebaut und je Lauf benutzt wird.
+     */
+    private val serverVersion: () -> PostgresServerVersion? = { null },
 ) {
 
     fun generateColumnSql(
@@ -22,13 +28,14 @@ internal class PostgresColumnConstraintHelper(
         val type = col.type
 
         // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
-        // DEFAULT und UNIQUE sind dort keine Frage. PostgreSQL kennt nur die
-        // gespeicherte Form, `STORED` ist Pflicht.
+        // DEFAULT und UNIQUE sind dort keine Frage. Welche Speicherform
+        // dahintersteht, haengt bei PostgreSQL als einzigem Dialekt an der
+        // Serverversion (siehe PostgresComputedStorage).
         ComputedColumnClause.of(col)?.let { computed ->
             return listOf(
                 quoteIdentifier(colName),
                 typeMapper.toSql(type),
-                ComputedColumnClause.clause(computed, "STORED"),
+                ComputedColumnClause.clause(computed, PostgresComputedStorage.suffix(computed, serverVersion())),
             ).joinToString(" ")
         }
 

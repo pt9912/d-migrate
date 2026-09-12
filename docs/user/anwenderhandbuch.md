@@ -2427,9 +2427,17 @@ Zurücklesen wiederfinden.
   dem Zieldialekt gültig sein. Geprüft wird nur, was ohne SQL-Parser
   entscheidbar ist: dass ein Ausdruck dasteht, dass er sich nicht auf die
   Spalte bezieht, die er berechnet, und dass die genannten Spalten existieren.
-- **`stored: false` gibt es auf PostgreSQL nicht.** Dort wird immer
-  gespeichert; d-migrate rechnet das ein, damit ein Round-Trip die Spalte nicht
-  als geändert meldet.
+- **`stored: false` braucht auf PostgreSQL Version 18 oder neuer.** Bis 17 gibt
+  es die virtuelle Form dort nicht. Kennt d-migrate die Zielversion (also immer,
+  wenn es gegen eine Datenbank arbeitet), rendert es die Form, die diese Version
+  kann — und sagt **W158**, wenn es dafür `stored: false` zu `STORED` machen
+  musste. Ohne bekannte Zielversion, etwa bei `schema generate` in eine Datei,
+  gilt die neueste Version, die d-migrate gemessen hat: das Skript läuft dann
+  auf einem aktuellen Server und scheitert auf einem alten mit einem klaren
+  Syntaxfehler — lautes Scheitern statt stiller Umdeutung.
+- **Die Speicherform nachträglich zu wechseln**, geht auf keinem Dialekt in
+  place: das ändert, wo der Wert liegt, nicht wie er heißt. Der Lauf blockt mit
+  einer Meldung, die beide Formen nennt.
 - **`generation` und `default` schließen einander aus** — der Wert kommt aus
   dem Ausdruck.
 - **Den Ausdruck später zu ändern, geht nicht überall.** Wie bei einer Sicht

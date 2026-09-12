@@ -106,6 +106,45 @@ gemessenen Fall bauen, dann erst verbreitern.
 danach `attgenerated = 'v'`; dieselbe Spec gegen einen 17er-Pin bekommt
 `STORED` **und eine Meldung**, nicht stillschweigend.
 
+### A — gebaut (2026-09-12)
+
+`DialectCapabilities.forTarget(dialect, serverVersion)` steht neben
+`forDialect(dialect)`, das unverändert bleibt und `forTarget(d, null)` ruft —
+die 59 Aufrufstellen mussten deshalb nicht wandern.
+`supportsVirtualComputedColumns` ist die erste versionsabhängige Fähigkeit
+(PostgreSQL ab 18), und die eine Stelle, die sie produktiv liest
+(`TypeCanonicalizerWiring`), bekommt die Version durchgereicht.
+
+**Der Pin steht an einer Stelle und wird gegen die Testmatrix gehalten.**
+`MeasuredServerVersions` führt je Dialekt die neueste gemessene Version;
+`MeasuredServerVersionsPinTest` (im Modul `test:test-images`, läuft im normalen
+Build mit) hält sie gegen die Bilder, gegen die die Suite fährt. Wer ein Bild
+anhebt, hebt den Pin mit an — oder fällt auf. Damit trägt der Default die
+Testmatrix, statt von ihr abzuhängen.
+
+**Beim Bauen kam dazu, was die Kette sonst nur verschoben hätte:**
+
+- Der **Renderer** musste mit. Die Faltung allein wegzunehmen hätte aus stiller
+  Degradierung eine nicht konvergierende Migration gemacht: der Vergleich sähe
+  den Unterschied, der Renderer schriebe weiter `STORED`, und der Post-Compare
+  meldete Drift bei jedem Lauf. Beide Pfade (generate und migrate) setzen die
+  Speicherform jetzt nach der Zielversion.
+- **Die Speicherform zu wechseln** ist kein `SET EXPRESSION` — der Befehl lässt
+  die Spalte, wo sie ist. Virtuell ↔ gespeichert blockt deshalb mit eigener
+  Meldung, statt eine Anweisung zu erzeugen, die nichts tut.
+- **Vier Versionstypen sind nach `ports-common` gewandert** (`ServerVersion`
+  und die drei Ausprägungen). Sie lagen in `ports-read`, die Fähigkeitstabelle
+  liegt darunter — ohne den Umzug hätte `forTarget` sie nicht sehen können.
+  Dass beide Module dasselbe Paket benutzen, machte den Umzug importfrei.
+  Kosten: `ports-read` fiel damit unter die 90-Prozent-Schwelle, weil vier gut
+  abgedeckte Klassen es verließen. Geschlossen wurde das durch Tests für zwei
+  Typen, die **gar keine** hatten (`MysqlSequenceSupportNaming`,
+  `MssqlHashPartitionMode`) — nicht durch Absenken der Schwelle.
+
+Live belegt gegen PostgreSQL 18.6: `stored: false` landet als
+`attgenerated = 'v'`, der Reverse liest es als virtuell zurück, und ein zweiter
+Lauf plant nichts. Sabotage-geprüft, auch der Pin-Abgleich.
+
 ### B — Die Liste der versionsabhängigen Fähigkeiten, gemessen
 
 Nicht alle 25 sind es, und geschätzt wird nicht. Die Erhebung läuft gegen die

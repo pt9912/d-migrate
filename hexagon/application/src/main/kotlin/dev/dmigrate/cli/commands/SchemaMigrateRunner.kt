@@ -221,7 +221,8 @@ class SchemaMigrateRunner(
     private fun endpointFingerprints(prepared: SchemaMigratePrepared): EndpointFingerprints {
         val dialect = prepared.effectiveDialect
         val canonicalizeIndex = capabilityIndexCanonicalizer(dialect)
-        val canonicalizeGeneration = capabilityGenerationCanonicalizer(dialect)
+        val canonicalizeGeneration =
+            capabilityGenerationCanonicalizer(dialect, prepared.targetNormalized.serverVersion)
         val canonicalizePartitioning = capabilityPartitionCanonicalizer(dialect)
         val foldsAutoIncrement = capabilityFoldsAutoIncrementOntoIdentity(dialect)
         return EndpointFingerprints(
@@ -536,7 +537,9 @@ class SchemaMigrateRunner(
         val projection = TargetProjection(
             type = canonicalizeType,
             index = capabilityIndexCanonicalizer(prep.effectiveDialect),
-            generation = capabilityGenerationCanonicalizer(prep.effectiveDialect),
+            generation = capabilityGenerationCanonicalizer(
+                prep.effectiveDialect, prep.targetNormalized.serverVersion,
+            ),
             partitioning = capabilityPartitionCanonicalizer(prep.effectiveDialect),
             foldsAutoIncrementOntoIdentity =
                 DialectCapabilities.forDialect(prep.effectiveDialect).rendersAutoIncrementAsIdentity,
@@ -593,7 +596,9 @@ class SchemaMigrateRunner(
                 triggerPlanningContext = triggerPlanningContext,
                 canonicalizeType = canonicalizeType,
                 canonicalizeIndex = capabilityIndexCanonicalizer(prep.effectiveDialect),
-                canonicalizeGeneration = capabilityGenerationCanonicalizer(prep.effectiveDialect),
+                canonicalizeGeneration = capabilityGenerationCanonicalizer(
+                    prep.effectiveDialect, prep.targetNormalized.serverVersion,
+                ),
                 canonicalizePartitioning = capabilityPartitionCanonicalizer(prep.effectiveDialect),
                 foldsAutoIncrementOntoIdentity =
                     capabilityFoldsAutoIncrementOntoIdentity(prep.effectiveDialect),
