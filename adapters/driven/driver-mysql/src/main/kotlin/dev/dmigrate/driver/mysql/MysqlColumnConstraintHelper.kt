@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 /**
@@ -22,6 +23,10 @@ internal class MysqlColumnConstraintHelper(
         tableName: String,
         notes: MutableList<TransformationNote>,
     ): String = when {
+        // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
+        // DEFAULT und AUTO_INCREMENT sind dort keine Frage. MySQL kennt beide
+        // Speicherformen und nimmt ohne Angabe die virtuelle.
+        ComputedColumnClause.of(col) != null -> columnComputed(colName, col)
         col.generation is ColumnGeneration.Identity && supportsIdentityGeneration(col.type) ->
             columnGeneratedIdentity(colName, col)
         col.type is NeutralType.Identifier && (col.type as NeutralType.Identifier).autoIncrement ->
@@ -30,6 +35,15 @@ internal class MysqlColumnConstraintHelper(
         col.type is NeutralType.Geometry -> columnGeometry(colName, col, notes)
         col.type is NeutralType.FullText -> columnFullText(tableName, colName, col, schema, notes)
         else -> columnSql(tableName, colName, col, schema)
+    }
+
+    private fun columnComputed(colName: String, col: ColumnDefinition): String {
+        val computed = requireNotNull(ComputedColumnClause.of(col)) { "columnComputed called for a plain column" }
+        return listOf(
+            quoteIdentifier(colName),
+            typeMapper.toSql(col.type),
+            ComputedColumnClause.clause(computed, if (computed.stored) "STORED" else "VIRTUAL"),
+        ).joinToString(" ")
     }
 
     private fun supportsIdentityGeneration(type: NeutralType): Boolean =

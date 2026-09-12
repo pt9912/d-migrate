@@ -4,7 +4,6 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.DefaultValue
-import dev.dmigrate.driver.renderKey
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
@@ -12,7 +11,9 @@ import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
+import dev.dmigrate.driver.renderKey
 
 /**
  * Stateless SQL fragment builders for the MySQL diff renderer.
@@ -40,6 +41,17 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
             if (col.references == null && col.default !is DefaultValue.SequenceNextVal) {
                 return MysqlEnumColumnRenderer.inline(quote(name), col, values, typeMapper::toDefaultSql)
             }
+        }
+        // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
+        // DEFAULT und UNIQUE sind dort keine Frage. Ohne diesen Zweig legte der
+        // Migrate-Pfad sie als gewoehnliche Spalte an — der Generate-Pfad tat
+        // es richtig, und der Post-Compare meldete die Abweichung als Drift.
+        ComputedColumnClause.of(col)?.let { computed ->
+            return listOf(
+                quote(name),
+                typeMapper.toSql(col.type),
+                ComputedColumnClause.clause(computed, if (computed.stored) "STORED" else "VIRTUAL"),
+            ).joinToString(" ")
         }
         val parts = mutableListOf<String>()
         parts += quote(name)

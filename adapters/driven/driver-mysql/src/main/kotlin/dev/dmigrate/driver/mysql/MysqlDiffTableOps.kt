@@ -2,14 +2,16 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
-import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.inOrdinalOrder
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -270,6 +272,50 @@ internal object MysqlDiffTableOps {
         ctx.emit(
             op,
             "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN ${ctx.sql.quote(column)} ${ctx.sql.toSql(targetType)};",
+        )
+    }
+
+    /**
+     * Der Berechnungsausdruck einer Spalte, in place gesetzt.
+     *
+     * Live gemessen gegen MySQL 9.7.2: `MODIFY COLUMN … GENERATED ALWAYS AS
+     * (…)` laeuft, ein Index auf der Spalte und eine abhaengige Sicht
+     * ueberleben, und der gespeicherte Wert entsteht neu (3 × 7,00 → 42,00
+     * nach Verdopplung des Ausdrucks).
+     *
+     * `MODIFY COLUMN` ersetzt die **ganze** Spaltendeklaration, deshalb muss
+     * der Typ mit — den traegt die Operation nicht, er kommt aus der Seite,
+     * die diese Richtung liest.
+     */
+    fun renderAlterColumnGeneration(op: DiffOperation.AlterColumnGeneration, ctx: MysqlDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        val target = if (ctx.direction == MysqlRenderDirection.UP) op.after else op.before
+        val computed = target as? ColumnGeneration.Computed
+        if (computed == null) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} would drop the computed expression of `$table`.`$column`. " +
+                    "Turning a generated column back into an ordinary one changes what the column IS, " +
+                    "not just how it is filled; do it manually.",
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        val type = ctx.columnsOf(table)[column]?.type
+        if (type == null) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} changes the computed expression of `$table`.`$column`, but the column " +
+                    "is not in the schema this direction reads — MODIFY COLUMN needs its type.",
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        val suffix = if (computed.stored) "STORED" else "VIRTUAL"
+        ctx.emit(
+            op,
+            "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN ${ctx.sql.quote(column)} " +
+                "${ctx.sql.toSql(type)} ${ComputedColumnClause.clause(computed, suffix)};",
         )
     }
 

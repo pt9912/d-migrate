@@ -2,14 +2,15 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 import java.sql.Connection
-import dev.dmigrate.driver.metadata.GeneratedColumnNotes
 
 class MysqlSchemaReader(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
@@ -165,11 +166,11 @@ class MysqlSchemaReader(
             val isPkCol = colName in pkColumns
             val extra = (row["extra"] as? String) ?: ""
             val isAutoIncrement = extra.contains("auto_increment", ignoreCase = true)
-            // `extra` traegt "STORED GENERATED" bzw. "VIRTUAL GENERATED".
-            if (extra.contains("GENERATED", ignoreCase = true)) {
-                notes += GeneratedColumnNotes.expressionDropped(
-                    displayName, colName, row["generation_expression"] as? String,
-                )
+            val computed = mysqlComputedGeneration(extra, row["generation_expression"] as? String)
+            // Meldet der Server eine berechnete Spalte ohne Ausdruck, ist die
+            // Berechnung wirklich verloren — dann bleibt es bei der Meldung.
+            if (computed == null && extra.contains("GENERATED", ignoreCase = true)) {
+                notes += GeneratedColumnNotes.expressionDropped(displayName, colName, null)
             }
             val mapping = MysqlTypeMapping.mapColumn(MysqlTypeMapping.ColumnInput(
                 dataType = row["data_type"] as String,
@@ -197,7 +198,7 @@ class MysqlSchemaReader(
                 unique = unique,
                 uniqueConstraintName = if (unique) singleColUniqueNames[colName] else null,
                 default = defaultVal,
-                generation = mapping.generation,
+                generation = computed ?: mapping.generation,
                 // information_schema.columns.ordinal_position ist 1-basiert + dicht.
                 ordinal = (row["ordinal_position"] as? Number)?.toInt(),
             )
@@ -237,4 +238,19 @@ class MysqlSchemaReader(
             partitioning = MysqlPartitionReader.read(session, database, metaTable),
         )
     }
+}
+
+
+/**
+ * Die Berechnung einer MySQL-Spalte, aus dem, was `information_schema` fuehrt.
+ *
+ * `EXTRA` traegt "STORED GENERATED" bzw. "VIRTUAL GENERATED",
+ * `GENERATION_EXPRESSION` den Ausdruck in Serverform mit Backticks (gemessen
+ * auf 9.7.2: "(`q` * `price`)"). Ohne Ausdruck gibt es nichts zu tragen —
+ * dann meldet der Leser den Verlust, statt eine leere Berechnung zu erfinden.
+ */
+private fun mysqlComputedGeneration(extra: String, expression: String?): ColumnGeneration.Computed? {
+    if (!extra.contains("GENERATED", ignoreCase = true)) return null
+    val text = expression?.takeIf { it.isNotBlank() } ?: return null
+    return ColumnGeneration.Computed(text, stored = extra.contains("STORED", ignoreCase = true))
 }

@@ -210,6 +210,38 @@ Zwei Arbeitspunkte stehen:
    zweiter Lauf mit null Operationen, und der Server rechnet wirklich
    (`3 × 7.00 → 21.00`).
 
+## Gebaut (2026-09-12): die Aenderung wird ausgefuehrt, auf zwei Dialekten
+
+Der Befund unten ist behoben. `OperationMapper` bildet `generation` ab, es gibt
+`AlterColumnGeneration`, und ob sie ausfuehrbar ist, entscheidet der Renderer —
+er kennt Dialekt **und** Serverversion.
+
+- **PostgreSQL ab 17**: `ALTER COLUMN … SET EXPRESSION AS (…)`. Darunter ein
+  benannter Blocker statt `DROP` + `ADD`, das gemessen den Index
+  stillschweigend mitnimmt. Dafuer meldet der PG-Leser jetzt eine
+  Serverversion, der Render-Kontext traegt sie — dasselbe Muster, das MySQL und
+  Oracle schon hatten, und der erste konkrete Fall von
+  [`faehigkeiten-sind-versionsabhaengig.md`](faehigkeiten-sind-versionsabhaengig.md).
+- **MySQL**: Lese- und Schreibpfad. `information_schema` fuehrt beides
+  (`EXTRA` die Speicherform, `GENERATION_EXPRESSION` den Ausdruck in
+  Serverform); der Leser meldete das bisher als Verlust. Die Aenderung laeuft
+  ueber `MODIFY COLUMN … GENERATED ALWAYS AS (…)`.
+
+Live belegt auf PostgreSQL 18.6 und MySQL 9.7.2: der Ausdruck wird verdoppelt,
+und der Server rechnet danach 3 × 7,00 = **42,00** statt 21,00. Beide Specs
+sabotage-geprueft.
+
+**Dabei aufgefallen:** MySQL hat zwei Spalten-Renderer — einen fuer `generate`,
+einen fuer `migrate` (`MysqlDiffSqlBuilders.columnLine`). Nur den ersten zu
+lehren reichte nicht: der Migrate-Pfad legte die Spalte als gewoehnliche an,
+und der Post-Compare meldete die Abweichung als Drift. Wer einen der beiden
+aendert, prueft den anderen mit.
+
+**Offen bleiben die drei uebrigen Lesepfade** — SQLite (`PRAGMA table_info`
+blendet die Spalte aus, `table_xinfo` nicht), SQL Server und Oracle (dessen
+gespeicherte Form als DEFAULT zurueckkommt). Ihre Renderer sind entsprechend
+als „noch nicht" eingeordnet, jeweils mit dem gemessenen Grund am Fundort.
+
 ## Der Befund, der den Schnitt anhaelt: eine geaenderte Generation wird gar nicht geplant
 
 `OperationMapper.mapColumnChange` bildet genau drei Felder eines

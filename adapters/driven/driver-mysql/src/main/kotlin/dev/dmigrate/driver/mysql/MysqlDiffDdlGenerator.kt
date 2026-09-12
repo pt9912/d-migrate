@@ -139,6 +139,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.AlterColumnType,
         is DiffOperation.AlterColumnNullability,
         is DiffOperation.AlterColumnDefault,
+        is DiffOperation.AlterColumnGeneration,
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,
         is DiffOperation.AlterTablePartitions,
@@ -201,12 +202,6 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.RenameTrigger,
         is DiffOperation.RenameFunction,
         is DiffOperation.RenameProcedure,
-        // MySQL KANN den Ausdruck in place setzen (`MODIFY COLUMN … GENERATED
-        // ALWAYS AS (…)`, gemessen: Sicht und Index ueberleben). Wir tun es noch
-        // nicht — der MySQL-Lesepfad meldet berechnete Spalten gar nicht zurueck,
-        // eine Aenderung ist also nicht erkennbar und die Operation hier nicht
-        // erreichbar. Sie kommt mit dem Lesepfad, nicht davor.
-        is DiffOperation.AlterColumnGeneration,
         -> OpCategory.UNSUPPORTED
     }
 
@@ -221,6 +216,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnType -> MysqlDiffTableOps.renderAlterColumnType(op, ctx)
             is DiffOperation.AlterColumnNullability -> MysqlDiffTableOps.renderAlterColumnNullability(op, ctx)
             is DiffOperation.AlterColumnDefault -> MysqlDiffTableOps.renderAlterColumnDefault(op, ctx)
+            is DiffOperation.AlterColumnGeneration -> MysqlDiffTableOps.renderAlterColumnGeneration(op, ctx)
             is DiffOperation.AddPrimaryKey -> MysqlDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> MysqlDiffTableOps.renderDropPrimaryKey(op, ctx)
             is DiffOperation.AlterTablePartitions -> MysqlDiffPartitionOps.renderAlterTablePartitions(op, ctx)
