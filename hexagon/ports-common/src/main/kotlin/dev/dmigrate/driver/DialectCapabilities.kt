@@ -317,6 +317,41 @@ data class DialectCapabilities(
      * und nicht konservativ.
      */
     val supportsVirtualComputedColumns: Boolean = true,
+    /**
+     * Ob das Ziel den Berechnungsausdruck einer bestehenden Spalte **an der
+     * Stelle** aendern kann.
+     *
+     * PostgreSQL kann es ab 17 (`ALTER COLUMN … SET EXPRESSION`); darunter
+     * fuehrt der einzige Weg ueber Loesen und Neuanlegen, und der nimmt
+     * gemessen den Index der Spalte stillschweigend mit. MySQL kann es
+     * (`MODIFY COLUMN`), SQLite ueber den Tabellen-Neubau, Oracle nur fuer die
+     * virtuelle Form und nur ohne Index, SQL Server gar nicht.
+     *
+     * **Unbekannte Version heisst hier `false`** — anders als bei
+     * [supportsVirtualComputedColumns]. Der Grund steht bei
+     * [MeasuredServerVersions]: die optimistische Wahl ist dort richtig, wo
+     * die konservative etwas **anderes rendern** wuerde, als der Autor
+     * geschrieben hat. Hier rendert die konservative Wahl nichts, sie
+     * **verweigert** — mit benannter Meldung. Eine Verweigerung ist keine
+     * stille Umdeutung, und eine geratene Zusage waere auf jeder Version unter
+     * 17 falsch.
+     */
+    val supportsComputedExpressionInPlace: Boolean = false,
+    /**
+     * Ob das Ziel `DROP <objekt> IF EXISTS` kennt.
+     *
+     * Oracle ab der 23er-Linie; die uebrigen vier kennen die Klausel in jeder
+     * zugesagten Version. Gebraucht wird sie von den
+     * Ruecknahme-Anweisungen.
+     *
+     * **Unbekannte Version heisst hier `false`**, und zwar aus demselben Grund
+     * wie oben, nur von der anderen Seite: `IF EXISTS` hat **kein Autor
+     * verlangt**. Es ist eine Bequemlichkeit der Ruecknahme. Sie optimistisch
+     * zu unterstellen erzeugte auf einem 19er-Server einen Syntaxfehler fuer
+     * etwas, das niemand wollte — waehrend sie weggelassen nichts kostet, was
+     * jemand geschrieben hat.
+     */
+    val supportsDropIfExists: Boolean = true,
 ) {
     companion object {
         /**
@@ -349,24 +384,30 @@ data class DialectCapabilities(
          *
          * [serverVersion] ist die Auspraegung des Lesepfads; jede Faehigkeit
          * faengt mit `as?` die von ihr erwartete ab. `null` heisst „unbekannt"
-         * — ein Dateiziel hat keine Version — und wird auf den Pin aus
-         * [MeasuredServerVersions] gehoben, nicht auf den konservativsten Wert.
+         * — ein Dateiziel hat keine Version.
+         *
+         * **Was „unbekannt" bedeutet, entscheidet die Faehigkeit, nicht dieser
+         * Einstieg.** Es waere bequem, hier einmal den Pin aus
+         * [MeasuredServerVersions] einzusetzen und fertig zu sein — genau das
+         * stand hier zuerst, und es kippte `supportsDropIfExists` fuer
+         * Dateiziele still von „weglassen" auf „hinschreiben". Die Faehigkeiten
+         * der einen Klasse fragen den Pin selbst, die der anderen antworten
+         * konservativ; die beiden Klassen stehen bei [MeasuredServerVersions].
          */
-        fun forTarget(dialect: DatabaseDialect, serverVersion: ServerVersion?): DialectCapabilities {
-            val version = serverVersion ?: MeasuredServerVersions.of(dialect)
-            return when (dialect) {
-                DatabaseDialect.POSTGRESQL -> postgresql(version as? PostgresServerVersion)
+        fun forTarget(dialect: DatabaseDialect, serverVersion: ServerVersion?): DialectCapabilities =
+            when (dialect) {
+                DatabaseDialect.POSTGRESQL -> postgresql(serverVersion as? PostgresServerVersion)
                 DatabaseDialect.MYSQL -> mysql()
                 DatabaseDialect.SQLITE -> sqlite()
                 DatabaseDialect.MSSQL -> mssql()
-                DatabaseDialect.ORACLE -> oracle()
+                DatabaseDialect.ORACLE -> oracle(serverVersion as? OracleServerVersion)
             }
-        }
 
         /** `VIRTUAL` gibt es ab dieser Hauptversion; darunter ist es ein Syntaxfehler. */
         const val POSTGRES_VIRTUAL_COMPUTED_SINCE_MAJOR: Int = 18
 
         private fun postgresql(version: PostgresServerVersion?): DialectCapabilities = DialectCapabilities(
+            supportsComputedExpressionInPlace = version?.supportsSetExpression ?: false,
             supportsVirtualComputedColumns =
                 (version?.major ?: MeasuredServerVersions.POSTGRESQL.major) >= POSTGRES_VIRTUAL_COMPUTED_SINCE_MAJOR,
             supportsRawTextSandbox = true,
@@ -394,6 +435,7 @@ data class DialectCapabilities(
         )
 
         private fun mysql(): DialectCapabilities = DialectCapabilities(
+            supportsComputedExpressionInPlace = true,
             supportsViews = true,
             supportsFunctions = true,
             supportsProcedures = true,
@@ -409,6 +451,7 @@ data class DialectCapabilities(
         )
 
         private fun sqlite(): DialectCapabilities = DialectCapabilities(
+            supportsComputedExpressionInPlace = true,
             supportsViews = true,
             supportsFunctions = false,
             supportsProcedures = false,
@@ -486,7 +529,8 @@ data class DialectCapabilities(
             // bei MySQL die `PARTITION (name)`-Klausel, sind keine eigenstaendig
             // adressierbaren Relationen. namesFullTextIndexes=true: Oracle-Text-
             // Indizes (CONTEXT/CTXCAT) tragen anders als MSSQL einen Namen.
-        private fun oracle(): DialectCapabilities = DialectCapabilities(
+        private fun oracle(version: OracleServerVersion?): DialectCapabilities = DialectCapabilities(
+            supportsDropIfExists = version?.supportsDropIfExists ?: false,
             rendersViewRefreshSetting = true,
             supportsViews = true,
             supportsFunctions = true,

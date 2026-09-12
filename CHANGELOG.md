@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Eine Frage, eine Stelle: „kann das Ziel das?"** Die beiden letzten
+  versionsabhängigen Prädikate — PostgreSQLs `ALTER COLUMN … SET EXPRESSION`
+  (ab 17) und Oracles `DROP … IF EXISTS` (ab 23) — standen an den Versionstypen
+  und wurden von den Renderern selbst ausgerechnet. Sie stehen jetzt als
+  Fähigkeiten in `DialectCapabilities.forTarget`.
+
+  Dabei geklärt, was „unbekannte Zielversion" bedeutet: **nicht bei jeder
+  Fähigkeit dasselbe.** Wo die Fähigkeit entscheidet, wie die Angabe des Autors
+  gerendert wird (`stored: false`), gilt die neueste gemessene Version — denn
+  konservativ hieße dort, etwas anderes zu rendern als das Geschriebene. Wo sie
+  eine Bequemlichkeit oder eine Verweigerung entscheidet (`IF EXISTS`,
+  `SET EXPRESSION`), gilt die konservative Seite — denn optimistisch hieße
+  dort, einen Fehler für etwas zu erzeugen, das niemand verlangt hat. Für
+  Anwender ändert sich nichts; beide Vorgabewerte bleiben, wie sie waren.
+
 ### Added
 
 - **Das Preserve-Fenster ist auf allen fünf Dialekten belegt.** Gebaut war es

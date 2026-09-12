@@ -221,7 +221,7 @@ er kennt Dialekt **und** Serverversion.
   stillschweigend mitnimmt. Dafuer meldet der PG-Leser jetzt eine
   Serverversion, der Render-Kontext traegt sie — dasselbe Muster, das MySQL und
   Oracle schon hatten, und der erste konkrete Fall von
-  [`faehigkeiten-sind-versionsabhaengig.md`](faehigkeiten-sind-versionsabhaengig.md).
+  [`faehigkeiten-sind-versionsabhaengig.md`](../done/faehigkeiten-sind-versionsabhaengig.md).
 - **MySQL**: Lese- und Schreibpfad. `information_schema` fuehrt beides
   (`EXTRA` die Speicherform, `GENERATION_EXPRESSION` den Ausdruck in
   Serverform); der Leser meldete das bisher als Verlust. Die Aenderung laeuft

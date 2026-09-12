@@ -3,7 +3,9 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlDialectContext
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.PostgresServerVersion
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -75,7 +77,9 @@ internal object PostgresDiffComputedColumnOps {
             return
         }
         val version = (ctx.options.dialectContext as? DdlDialectContext.Postgres)?.serverVersion
-        if (version == null || !version.supportsSetExpression) {
+        // Eine Frage, eine Stelle — die Tabelle rechnet die Version ein und
+        // weiss, dass „unbekannt" hier die konservative Seite bedeutet.
+        if (!DialectCapabilities.forTarget(DatabaseDialect.POSTGRESQL, version).supportsComputedExpressionInPlace) {
             val seen = version?.let { "${it.major}.${it.minor}" } ?: "unknown (file-to-file run)"
             ctx.skip(
                 op,

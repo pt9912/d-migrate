@@ -13,6 +13,7 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.AbstractDdlGenerator
 import dev.dmigrate.driver.CircularFkEdge
 import dev.dmigrate.driver.DatabaseDialect
@@ -425,8 +426,17 @@ class OracleDdlGenerator private constructor(
     override fun invertStatement(stmt: DdlStatement, options: DdlGenerationOptions): DdlStatement? {
         val sql = stmt.sql.trim()
         OracleSpatialIndexDdl.invertedDrop(sql)?.let { return DdlStatement(it) }
-        val ifExists =
-            if (options.oracleContext?.serverVersion?.supportsDropIfExists == true) "IF EXISTS " else ""
+        // Eine Frage, eine Stelle: die Faehigkeitstabelle rechnet die
+        // Zielversion ein und weiss auch, was „unbekannt" hier heisst.
+        val ifExists = if (
+            DialectCapabilities
+                .forTarget(DatabaseDialect.ORACLE, options.oracleContext?.serverVersion)
+                .supportsDropIfExists
+        ) {
+            "IF EXISTS "
+        } else {
+            ""
+        }
         fun drop(keyword: String, objectKind: String): DdlStatement =
             DdlStatement("DROP $objectKind $ifExists${nameAfter(sql, keyword)};")
         return when {
