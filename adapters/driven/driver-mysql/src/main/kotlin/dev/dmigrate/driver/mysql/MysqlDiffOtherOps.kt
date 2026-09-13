@@ -10,7 +10,6 @@ import dev.dmigrate.driver.CheckPreflightGate
 import dev.dmigrate.driver.BitmapIndexFallbackNote
 import dev.dmigrate.driver.CoveringIndexDropNote
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.MysqlCheckEnforcementResolver
 import dev.dmigrate.driver.ViewQueryTransformer
 import dev.dmigrate.driver.asDiffDiagnostic
 import dev.dmigrate.driver.migration.MigrationBlockedReason

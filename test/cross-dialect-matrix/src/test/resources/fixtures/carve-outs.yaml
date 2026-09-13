@@ -91,7 +91,7 @@ carve_outs:
     reason: "MySQL CHECK rendering blocks with MYSQL_CHECK_ENFORCEMENT_UNKNOWN without --mysql-server-version. Sweep runner does not accept per-cell --mysql-server-version overrides."
     planRef: docs/planning/done-archive/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
     ownerTests:
-      - hexagon/ports-read/src/test/kotlin/dev/dmigrate/driver/MysqlCheckEnforcementResolverTest.kt
+      - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlCheckEnforcementResolverTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/CheckPreflightStageTest.kt
   - workstream: F.5
     dialect: "*"

@@ -17,7 +17,6 @@ import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
-import dev.dmigrate.driver.MysqlSequenceCanonicityGate
 import dev.dmigrate.driver.MysqlSequenceCanonicityKind
 import dev.dmigrate.driver.MysqlSequenceCanonicityStatus
 import dev.dmigrate.driver.migration.MigrationBlockedReason

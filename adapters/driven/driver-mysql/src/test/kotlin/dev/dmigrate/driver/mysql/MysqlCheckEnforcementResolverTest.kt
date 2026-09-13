@@ -1,5 +1,6 @@
-package dev.dmigrate.driver
+package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.MysqlServerVersion
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 

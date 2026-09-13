@@ -1,4 +1,6 @@
-package dev.dmigrate.driver
+package dev.dmigrate.driver.mysql
+
+import dev.dmigrate.driver.MysqlServerVersion
 
 /**
  * F.5 Sub-Slice C: per-server enforcement contract for MySQL / MariaDB

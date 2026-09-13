@@ -4,7 +4,6 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlNamedSequenceMode
-import dev.dmigrate.driver.MysqlSequenceCanonicityGate
 import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.mysqlContext
 import dev.dmigrate.driver.SequenceCapability

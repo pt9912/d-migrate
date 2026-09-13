@@ -1,5 +1,8 @@
-package dev.dmigrate.driver
+package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
+import dev.dmigrate.driver.MysqlSequenceCanonicityKind
+import dev.dmigrate.driver.MysqlSequenceCanonicityStatus
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
