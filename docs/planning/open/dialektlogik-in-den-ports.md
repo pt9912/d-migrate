@@ -29,7 +29,7 @@ selbst MySQL-spezifisch arbeitet:
 |---|---|
 | `MysqlSequenceCanonicityStage` | baut MySQL-Triggernamen, prüft das MySQL-Hilfstabellen-Format |
 | `SequencePreserveStage` | prüft die MySQL-Namenslisten auf Nichtleere |
-| `SqliteCastPreflightStage` | baut einen **MySQL**-Triggernamen |
+| `MigrationPreflightPlanner` | plant die MySQL-Sequenz-Kanonizität mit, samt Triggername |
 
 ## Warum das zählt
 
@@ -46,12 +46,32 @@ Dateien von selbst.
 
 ## Was zu klären ist
 
-1. Ob die drei MySQL-Stages (`MysqlSequenceCanonicityStage`,
-   der MySQL-Teil von `SequencePreserveStage`, der MySQL-Triggername in
-   `SqliteCastPreflightStage`) hinter einen Port gehören, den `driver-mysql`
+1. Ob die drei MySQL-Stellen (`MysqlSequenceCanonicityStage`,
+   der MySQL-Teil von `SequencePreserveStage`, der MySQL-Zweig von
+   `MigrationPreflightPlanner`) hinter einen Port gehören, den `driver-mysql`
    implementiert — analog zum Preserve-Restore.
-2. Ob `SqliteCastPreflightStage` einen MySQL-Triggernamen bauen darf. Das
-   sieht nach einem eigenen Befund aus und ist vor Punkt 1 zu prüfen.
+2. ~~Ob `SqliteCastPreflightStage` einen MySQL-Triggernamen bauen darf.~~
+   **Geprüft 2026-09-13 — kein eigener Befund; die Beobachtung war falsch
+   notiert.** Der Verdacht kam vom Dateinamen. `SqliteCastPreflightStage.kt`
+   führt **zwei** Objekte auf oberster Ebene, und das gleichnamige rührt
+   keinen fremden Dialekt an: es prüft `dialect != SQLITE` und steigt sonst
+   aus. Den MySQL-Triggernamen baut `MigrationPreflightPlanner`, der im selben
+   File wohnt und mit dem SQLite-Stage nichts zu tun hat — er plant **drei**
+   Vorprüfungen (SQLite-Cast, dialektübergreifendes CHECK,
+   MySQL-Sequenz-Kanonizität), jede hinter ihrem eigenen Dialekt-Gate.
+
+   Übrig bleibt eine Benennung, kein Defekt: ein allgemeiner Planer wohnt in
+   einer Datei, die nach einer seiner drei Aufgaben heißt. Sein MySQL-Zweig
+   ist derselbe Fall wie die Zeilen der Tabelle oben und gehört damit **in**
+   Punkt 1, nicht davor.
+
+   Mitgeprüft, weil genau dort ein Fehler wehgetan hätte: Planer und Renderer
+   bilden den Triggernamen über **dieselbe** Quelle — `MysqlSequenceNaming
+   .triggerName` im Treiber delegiert an `MysqlSequenceSupportNaming
+   .triggerName`. Die beiden können nicht auseinanderlaufen, das Gate
+   vergleicht also nie gegen einen Namen, den es nicht gibt. Was bleibt, ist
+   ein toter Parameter (`sequenceName`, per `@Suppress("UNUSED_PARAMETER")`
+   stillgestellt), den der Umbau mitnehmen kann.
 
 ## Berührte Stellen
 
@@ -61,3 +81,4 @@ Dateien von selbst.
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/MysqlSequenceCanonicityStage.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SequencePreserveStage.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SqliteCastPreflightStage.kt`
+  — wegen `MigrationPreflightPlanner` im selben File, nicht wegen des SQLite-Stage
