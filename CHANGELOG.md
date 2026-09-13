@@ -36,6 +36,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Wo eine Änderung nicht sicher ist, bleibt es bei der benannten Ablehnung —
   jetzt mit dem gemessenen Grund und dem Befehl, den der Server annimmt.
 
+- **Das Preserve-Fenster ist auf allen fünf Dialekten belegt.** Gebaut war es
+  überall; nachgemessen war es auf PostgreSQL, MySQL und SQLite. SQL Server und
+  Oracle haben jetzt dieselbe Abnahme — Probe, Executor und der Weg über
+  `schema migrate --execute`.
+
+  Zwei Voraussetzungen, die dabei zum ersten Mal belegt sind: SQL Server
+  braucht die Sequenz-Definition im Batch (`RESTART WITH` setzt den *nächsten*
+  Wert, also entscheiden Schrittweite und Schranken), und Oracles `DBMS_LOCK`
+  verlangt `GRANT EXECUTE ON SYS.DBMS_LOCK` — den nur SYS als SYSDBA vergeben
+  darf, nicht `system`. Fehlt er, meldet der Lauf das benannt, statt still auf
+  ein ungeschütztes Fenster zurückzufallen.
+
+- **Ein Preserve-Fenster, das nicht atomar ist, sagt es (`W159`).** Auf Oracle
+  committet jedes DDL implizit: niemand kommt im Fenster dazwischen, aber ein
+  Fehlschlag lässt stehen, was bis dahin lief. Das Modell trug diese
+  Unterscheidung seit jeher (`preserveWindowIsolation`) und wurde produktiv nie
+  gelesen — ein Betreiber bekam auf Oracle dasselbe Bild wie auf PostgreSQL.
+  Jetzt steht die Folge im Report, im Klartext. Gemessen, nicht hergeleitet:
+  die Abnahme führt im Fenster zwei Anweisungen aus, von denen die zweite
+  scheitert, und belegt, dass die erste steht.
+
+- **`--target-version` sagt, für welchen Server erzeugt wird** — auf
+  `schema generate` und `schema migrate`. Es entscheidet die
+  versionsabhängigen Fähigkeiten; ohne die Angabe gilt die neueste Version,
+  gegen die d-migrate gemessen hat. Bei einem Dateiziel gab es dafür bisher
+  keinen Weg: wer für PostgreSQL 16 erzeugte, bekam die Form für 18. Gegen eine
+  lebende Datenbank gewinnt die Angabe über die gelesene Version — sie sagt,
+  wofür das Skript gedacht ist, nicht, woraus gelesen wurde.
+
+  Nicht lesbar, oder für einen Dialekt ohne strukturelle Version (SQL Server,
+  SQLite): Exit 2 mit der erwarteten Schreibweise in der Meldung, statt einer
+  stillschweigend ignorierten Option.
+
+- **Berechnete Spalten (`GENERATED ALWAYS AS (…)`) sind Teil des neutralen
+  Modells.** `generation.type: computed` traegt Ausdruck und Speicherform
+  (`stored`); alle fuenf Dialekte lesen und schreiben sie. Bisher kam eine
+  solche Spalte als gewoehnliche zurueck (`R343`) — bei SQLite gar nicht
+  (`R367`), weil `PRAGMA table_info` sie ausblendet, und bei Oracle in der
+  materialisierten Form als gewoehnliche Spalte **mit DEFAULT**, was ein
+  `schema generate` in eine beschreibbare Spalte verwandelte.
+
+  Woher der Ausdruck kommt, ist je Server verschieden und gemessen:
+  PostgreSQL und MySQL fuehren ihn im Katalog (normalisiert), SQL Server in
+  `sys.computed_columns`, SQLite allein im abgelegten `CREATE TABLE`-Text
+  (wortgleich wie geschrieben), Oracle in `DATA_DEFAULT` — dort braucht nur die
+  Einordnung „materialisiert oder Default" einen Blick in
+  `DBMS_METADATA.GET_DDL`, und ohne dieses Recht wird sie gemeldet (`R369`)
+  statt geraten.
+
+  Das Wort fuer die Speicherform setzt d-migrate je Dialekt: PostgreSQL
+  `STORED` (Pflicht, die virtuelle Form gibt es dort nicht), MySQL und SQLite
+  `STORED`/`VIRTUAL`, Oracle `MATERIALIZED`/`VIRTUAL`, SQL Server `PERSISTED`
+  bzw. ohne Zusatz — dort auch ohne `GENERATED ALWAYS` und **ohne Typ**.
+
+- **Eine belegte Änderung des Ausdrucks wird angewandt**, nicht nur gemeldet.
+  Wie, hängt am Server — gemessen: PostgreSQL ab 17 `ALTER COLUMN … SET
+  EXPRESSION`, MySQL `MODIFY COLUMN`, SQLite über den Tabellen-Neubau (die
+  berechnete Spalte bleibt dabei aus der `INSERT`-Spaltenliste heraus, sonst
+  lehnt SQLite den ganzen Neubau ab), Oracle über `MODIFY` — dort aber nur für
+  die virtuelle Form und nur, solange kein Index auf der Spalte liegt.
+
+  Wo es keinen Weg in place gibt, blockt der Lauf mit dem gemessenen Grund
+  statt auszuweichen: PostgreSQL 16 (`DROP`+`ADD` nähme den Index still mit),
+  SQL Server (kein `ALTER COLUMN … AS (…)`; `DROP`+`ADD` ließe eine Sicht still
+  zerbrechen), Oracle materialisiert (`ORA-54060`) und Oracle mit Index
+  (`ORA-54022`). Ob eine Änderung überhaupt **feststeht**, entscheidet
+  weiterhin Herkunft oder Sandkasten (`W137`, wenn nicht entscheidbar).
+
+- **Eine gespeicherte berechnete Spalte lässt sich auf SQLite auch nicht
+  anhängen** — gemessen: `ADD COLUMN … STORED` gelingt auf der leeren Tabelle
+  und scheitert auf der gefüllten. Sie geht deshalb ebenfalls über den
+  Tabellen-Neubau.
+
+### Changed
+
+- **Eine Frage, eine Stelle: „kann das Ziel das?"** Die beiden letzten
+  versionsabhängigen Prädikate — PostgreSQLs `ALTER COLUMN … SET EXPRESSION`
+  (ab 17) und Oracles `DROP … IF EXISTS` (ab 23) — standen an den Versionstypen
+  und wurden von den Renderern selbst ausgerechnet. Sie stehen jetzt als
+  Fähigkeiten in `DialectCapabilities.forTarget`.
+
+  Dabei geklärt, was „unbekannte Zielversion" bedeutet: **nicht bei jeder
+  Fähigkeit dasselbe.** Wo die Fähigkeit entscheidet, wie die Angabe des Autors
+  gerendert wird (`stored: false`), gilt die neueste gemessene Version — denn
+  konservativ hieße dort, etwas anderes zu rendern als das Geschriebene. Wo sie
+  eine Bequemlichkeit oder eine Verweigerung entscheidet (`IF EXISTS`,
+  `SET EXPRESSION`), gilt die konservative Seite — denn optimistisch hieße
+  dort, einen Fehler für etwas zu erzeugen, das niemand verlangt hat. Für
+  Anwender ändert sich nichts; beide Vorgabewerte bleiben, wie sie waren.
+
 ### Fixed
 
 - **Eine Typänderung auf MySQL nimmt der Spalte nicht mehr ihre übrigen
@@ -146,48 +236,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Nachgemessen: Oracle ist damit allein — auf PostgreSQL, MySQL, SQL Server und
   SQLite kommt derselbe Index schon immer als Spaltenindex zurück.
 
-### Changed
-
-- **Eine Frage, eine Stelle: „kann das Ziel das?"** Die beiden letzten
-  versionsabhängigen Prädikate — PostgreSQLs `ALTER COLUMN … SET EXPRESSION`
-  (ab 17) und Oracles `DROP … IF EXISTS` (ab 23) — standen an den Versionstypen
-  und wurden von den Renderern selbst ausgerechnet. Sie stehen jetzt als
-  Fähigkeiten in `DialectCapabilities.forTarget`.
-
-  Dabei geklärt, was „unbekannte Zielversion" bedeutet: **nicht bei jeder
-  Fähigkeit dasselbe.** Wo die Fähigkeit entscheidet, wie die Angabe des Autors
-  gerendert wird (`stored: false`), gilt die neueste gemessene Version — denn
-  konservativ hieße dort, etwas anderes zu rendern als das Geschriebene. Wo sie
-  eine Bequemlichkeit oder eine Verweigerung entscheidet (`IF EXISTS`,
-  `SET EXPRESSION`), gilt die konservative Seite — denn optimistisch hieße
-  dort, einen Fehler für etwas zu erzeugen, das niemand verlangt hat. Für
-  Anwender ändert sich nichts; beide Vorgabewerte bleiben, wie sie waren.
-
-### Added
-
-- **Das Preserve-Fenster ist auf allen fünf Dialekten belegt.** Gebaut war es
-  überall; nachgemessen war es auf PostgreSQL, MySQL und SQLite. SQL Server und
-  Oracle haben jetzt dieselbe Abnahme — Probe, Executor und der Weg über
-  `schema migrate --execute`.
-
-  Zwei Voraussetzungen, die dabei zum ersten Mal belegt sind: SQL Server
-  braucht die Sequenz-Definition im Batch (`RESTART WITH` setzt den *nächsten*
-  Wert, also entscheiden Schrittweite und Schranken), und Oracles `DBMS_LOCK`
-  verlangt `GRANT EXECUTE ON SYS.DBMS_LOCK` — den nur SYS als SYSDBA vergeben
-  darf, nicht `system`. Fehlt er, meldet der Lauf das benannt, statt still auf
-  ein ungeschütztes Fenster zurückzufallen.
-
-- **Ein Preserve-Fenster, das nicht atomar ist, sagt es (`W159`).** Auf Oracle
-  committet jedes DDL implizit: niemand kommt im Fenster dazwischen, aber ein
-  Fehlschlag lässt stehen, was bis dahin lief. Das Modell trug diese
-  Unterscheidung seit jeher (`preserveWindowIsolation`) und wurde produktiv nie
-  gelesen — ein Betreiber bekam auf Oracle dasselbe Bild wie auf PostgreSQL.
-  Jetzt steht die Folge im Report, im Klartext. Gemessen, nicht hergeleitet:
-  die Abnahme führt im Fenster zwei Anweisungen aus, von denen die zweite
-  scheitert, und belegt, dass die erste steht.
-
-### Fixed
-
 - **`schema migrate` hält an, bevor ein Ausdruck aus einem fremden Dialekt an
   den Server geht.** Der generate-Pfad prüft rohen Ausdruckstext auf allen fünf
   Dialekten; der Migrationspfad tat es für PostgreSQL, MySQL und SQLite nicht —
@@ -201,22 +249,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   eine Anweisung gerät: CHECK-Ausdruck, Index-Prädikat, Ausdrucks-Schlüssel,
   Berechnung einer Spalte und Funktions-Default. Findet sich einer, blockt der
   Lauf (`E053`, Exit 8), und es ist nichts angewandt.
-
-### Added
-
-- **`--target-version` sagt, für welchen Server erzeugt wird** — auf
-  `schema generate` und `schema migrate`. Es entscheidet die
-  versionsabhängigen Fähigkeiten; ohne die Angabe gilt die neueste Version,
-  gegen die d-migrate gemessen hat. Bei einem Dateiziel gab es dafür bisher
-  keinen Weg: wer für PostgreSQL 16 erzeugte, bekam die Form für 18. Gegen eine
-  lebende Datenbank gewinnt die Angabe über die gelesene Version — sie sagt,
-  wofür das Skript gedacht ist, nicht, woraus gelesen wurde.
-
-  Nicht lesbar, oder für einen Dialekt ohne strukturelle Version (SQL Server,
-  SQLite): Exit 2 mit der erwarteten Schreibweise in der Meldung, statt einer
-  stillschweigend ignorierten Option.
-
-### Fixed
 
 - **Ein Funktions-Default aus einem fremden Dialekt landet nicht mehr in der
   DDL.** Die Spec führt `default: <funktion>` als *übersetzten Namen*; was ein
@@ -280,48 +312,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drei Projektionen standen damit gegeneinander.
 
   `schema migrate` war nie betroffen: sein Vergleich läuft ziel-bewusst.
-
-### Added
-
-- **Berechnete Spalten (`GENERATED ALWAYS AS (…)`) sind Teil des neutralen
-  Modells.** `generation.type: computed` traegt Ausdruck und Speicherform
-  (`stored`); alle fuenf Dialekte lesen und schreiben sie. Bisher kam eine
-  solche Spalte als gewoehnliche zurueck (`R343`) — bei SQLite gar nicht
-  (`R367`), weil `PRAGMA table_info` sie ausblendet, und bei Oracle in der
-  materialisierten Form als gewoehnliche Spalte **mit DEFAULT**, was ein
-  `schema generate` in eine beschreibbare Spalte verwandelte.
-
-  Woher der Ausdruck kommt, ist je Server verschieden und gemessen:
-  PostgreSQL und MySQL fuehren ihn im Katalog (normalisiert), SQL Server in
-  `sys.computed_columns`, SQLite allein im abgelegten `CREATE TABLE`-Text
-  (wortgleich wie geschrieben), Oracle in `DATA_DEFAULT` — dort braucht nur die
-  Einordnung „materialisiert oder Default" einen Blick in
-  `DBMS_METADATA.GET_DDL`, und ohne dieses Recht wird sie gemeldet (`R369`)
-  statt geraten.
-
-  Das Wort fuer die Speicherform setzt d-migrate je Dialekt: PostgreSQL
-  `STORED` (Pflicht, die virtuelle Form gibt es dort nicht), MySQL und SQLite
-  `STORED`/`VIRTUAL`, Oracle `MATERIALIZED`/`VIRTUAL`, SQL Server `PERSISTED`
-  bzw. ohne Zusatz — dort auch ohne `GENERATED ALWAYS` und **ohne Typ**.
-
-- **Eine belegte Änderung des Ausdrucks wird angewandt**, nicht nur gemeldet.
-  Wie, hängt am Server — gemessen: PostgreSQL ab 17 `ALTER COLUMN … SET
-  EXPRESSION`, MySQL `MODIFY COLUMN`, SQLite über den Tabellen-Neubau (die
-  berechnete Spalte bleibt dabei aus der `INSERT`-Spaltenliste heraus, sonst
-  lehnt SQLite den ganzen Neubau ab), Oracle über `MODIFY` — dort aber nur für
-  die virtuelle Form und nur, solange kein Index auf der Spalte liegt.
-
-  Wo es keinen Weg in place gibt, blockt der Lauf mit dem gemessenen Grund
-  statt auszuweichen: PostgreSQL 16 (`DROP`+`ADD` nähme den Index still mit),
-  SQL Server (kein `ALTER COLUMN … AS (…)`; `DROP`+`ADD` ließe eine Sicht still
-  zerbrechen), Oracle materialisiert (`ORA-54060`) und Oracle mit Index
-  (`ORA-54022`). Ob eine Änderung überhaupt **feststeht**, entscheidet
-  weiterhin Herkunft oder Sandkasten (`W137`, wenn nicht entscheidbar).
-
-- **Eine gespeicherte berechnete Spalte lässt sich auf SQLite auch nicht
-  anhängen** — gemessen: `ADD COLUMN … STORED` gelingt auf der leeren Tabelle
-  und scheitert auf der gefüllten. Sie geht deshalb ebenfalls über den
-  Tabellen-Neubau.
 
 ## [1.3.1] - 2026-09-11
 

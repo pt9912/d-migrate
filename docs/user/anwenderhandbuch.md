@@ -2461,9 +2461,11 @@ Zurücklesen wiederfinden.
   Syntaxfehler — lautes Scheitern statt stiller Umdeutung. Wer bewusst für einen
   älteren Server erzeugt, sagt es mit `--target-version 16`; dann steht dort
   `STORED` und die Meldung dazu.
-- **Die Speicherform nachträglich zu wechseln**, geht auf keinem Dialekt in
-  place: das ändert, wo der Wert liegt, nicht wie er heißt. Der Lauf blockt mit
-  einer Meldung, die beide Formen nennt.
+- **Die Speicherform nachträglich zu wechseln**, geht auf keinem Dialekt *in
+  place*: das ändert, wo der Wert liegt, nicht wie er heißt. Der Lauf blockt mit
+  einer Meldung, die beide Formen nennt — **außer auf SQLite**, wo jede
+  Spaltenänderung ohnehin über den Tabellen-Neubau läuft und die neue Form
+  einfach mitkommt.
 - **`generation` und `default` schließen einander aus** — der Wert kommt aus
   dem Ausdruck.
 - **Den Ausdruck später zu ändern, geht nicht überall.** Wie bei einer Sicht
@@ -2488,6 +2490,35 @@ Zurücklesen wiederfinden.
   nicht holen, ist eine `MATERIALIZED`-Spalte im Katalog nicht von einer
   gewöhnlichen mit `DEFAULT` zu unterscheiden. d-migrate rät dann nicht,
   sondern meldet **R369** und liest sie als gewöhnliche Spalte.
+- **Eine berechnete Spalte kann kein Import befüllen** — der Server rechnet sie
+  selbst, und alle fünf lehnen einen Wert dafür ab. Bringt eine Übertragung sie
+  mit, bricht der Lauf vorher mit Spaltenname und Zielsystem ab, siehe
+  [3.7](#37-daten-in-eine-datenbank-laden-import).
+
+**Aus einer berechneten Spalte wieder eine gewöhnliche machen — oder umgekehrt.**
+Das ändert, was die Spalte *ist*; entsprechend können es nur zwei Ziele:
+
+| Ziel | berechnet → gewöhnlich | gewöhnlich → berechnet |
+| --- | --- | --- |
+| PostgreSQL | `DROP EXPRESSION`; der gespeicherte Wert bleibt als Daten stehen | der Lauf blockt |
+| SQLite | Tabellen-Neubau; der gerechnete Wert wird übernommen | Tabellen-Neubau; der Server rechnet neu |
+| MySQL | der Lauf blockt | der Lauf blockt |
+| Oracle | der Lauf blockt — Oracle **nimmt** die Anweisung an und ändert nichts | der Lauf blockt |
+| SQL Server | der Lauf blockt | der Lauf blockt |
+
+**Den Autowert (`generation: identity`) nachträglich ändern.** Auch das hängt am
+Server, und die letzte Zeile ist die, auf die es meist ankommt:
+
+| Vorhaben | Was passiert |
+| --- | --- |
+| Modus `always` ↔ `by_default` | PostgreSQL und Oracle stellen ihn um; MySQL kennt keinen Modus |
+| Autowert **entfernen** | PostgreSQL, MySQL (Schlüsselspalte) und Oracle tun es; auf Oracle zieht d-migrate das `NOT NULL` nach, das der Server dabei mitnimmt |
+| Autowert **hinzufügen** | nur MySQL (Schlüsselspalte). PostgreSQL blockt: der neue Zähler begänne bei 1, und der nächste `INSERT` kollidierte mit dem Bestand. Oracle und SQL Server können es gar nicht |
+
+Auf PostgreSQL, MySQL und SQLite ist der Autowert Teil des **Spaltentyps**
+(`identifier` mit `auto_increment`); ein Reverse liefert ihn dort so, und dann ist
+die Typangabe der Weg. Nur Oracle führt ihn in `generation` — dort greifen die
+Zeilen oben auch für ein zurückgelesenes Schema.
 
 ---
 

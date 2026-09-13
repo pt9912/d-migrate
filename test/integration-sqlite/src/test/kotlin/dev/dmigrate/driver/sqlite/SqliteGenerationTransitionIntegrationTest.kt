@@ -143,6 +143,37 @@ class SqliteGenerationTransitionIntegrationTest : FunSpec({
     }
 
     /**
+     * **Die Speicherform** kann der Neubau ebenfalls wechseln — das Handbuch
+     * behauptete zuvor, das gehe „auf keinem Dialekt". In place stimmt das; auf
+     * SQLite ist der Neubau aber ohnehin der Weg, und er traegt die neue Form.
+     */
+    test("the storage form changes through the rebuild") {
+        newPool(
+            "CREATE TABLE counters (id INTEGER PRIMARY KEY, qty INTEGER NOT NULL, " +
+                "total INTEGER GENERATED ALWAYS AS (qty * 2) STORED)",
+        ).use { pool ->
+            val live = liveSchema(pool)
+            val col = live.tables.getValue("counters").columns.getValue("total")
+            val want = live.copy(
+                tables = live.tables.mapValues { (_, t) ->
+                    t.copy(
+                        columns = LinkedHashMap(t.columns).also {
+                            it["total"] = col.copy(
+                                generation = ColumnGeneration.Computed("qty * 2", stored = false),
+                            )
+                        },
+                    )
+                },
+            )
+
+            val (exit, lines) = migrate(pool, want)
+
+            withClue(lines.joinToString(" | ")) { exit shouldBe 0 }
+            tableSql(pool) shouldContain "GENERATED ALWAYS AS (qty * 2) VIRTUAL"
+        }
+    }
+
+    /**
      * Der Neubau kann den Kind-Wechsel: die Spalte verliert ihre Berechnung
      * und **behaelt den gerechneten Wert** als gewoehnliche Daten — er steht in
      * der `INSERT … SELECT`-Spaltenliste des Neubaus.
