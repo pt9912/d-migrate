@@ -51,6 +51,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         val rollbackResult: DdlResult = DdlResult(
             statements = listOf(DdlStatement("DROP TABLE users;")),
         ),
+        override val supportsDeferredForeignKeys: Boolean = false,
     ) : DdlGenerator {
         var generateCalls = 0
         var rollbackCalls = 0
@@ -87,6 +88,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         mysqlNamedSequences: String? = null,
         deterministic: Boolean = false,
         allowIncomplete: Boolean = false,
+        inlineForeignKeys: String? = null,
     ) = SchemaGenerateRequest(
         source = source,
         target = target,
@@ -101,6 +103,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         splitMode = splitMode,
         mysqlNamedSequences = mysqlNamedSequences,
         deterministic = deterministic,
+        inlineForeignKeys = inlineForeignKeys,
     )
 
     class StdoutCapture {
@@ -479,6 +482,49 @@ class SchemaGenerateRunnerTest : FunSpec({
         h.stderr.joined() shouldContain "Skipped procedure 'legacy_proc'"
         h.stderr.joined() shouldContain "W160"
         h.stderr.joined() shouldContain "--allow-incomplete"
+    }
+
+    // ─── inline-foreign-keys-mode.md ──────────────────────────────
+
+    test("inline_foreign_keys unset (or 'auto') keeps the existing split-driven behaviour") {
+        val h = harness()
+        h.generator = FakeGenerator(supportsDeferredForeignKeys = true)
+        h.runner().execute(request(splitMode = SplitMode.SINGLE)) shouldBe 0
+        h.generator.generateOptions?.deferForeignKeys shouldBe false
+
+        val h2 = harness()
+        h2.generator = FakeGenerator(supportsDeferredForeignKeys = true)
+        h2.runner().execute(request(splitMode = SplitMode.PRE_POST, output = Path.of("/tmp/out.sql"))) shouldBe 0
+        h2.generator.generateOptions?.deferForeignKeys shouldBe true
+
+        val h3 = harness()
+        h3.generator = FakeGenerator(supportsDeferredForeignKeys = true)
+        h3.runner().execute(request(splitMode = SplitMode.SINGLE, inlineForeignKeys = "auto")) shouldBe 0
+        h3.generator.generateOptions?.deferForeignKeys shouldBe false
+    }
+
+    test("inline_foreign_keys=always keeps FKs inline even with --split pre-post") {
+        val h = harness()
+        h.generator = FakeGenerator(supportsDeferredForeignKeys = true)
+        h.runner().execute(
+            request(splitMode = SplitMode.PRE_POST, output = Path.of("/tmp/out.sql"), inlineForeignKeys = "always"),
+        ) shouldBe 0
+        h.generator.generateOptions?.deferForeignKeys shouldBe false
+    }
+
+    test("inline_foreign_keys=never defers FKs even without --split pre-post") {
+        val h = harness()
+        h.generator = FakeGenerator(supportsDeferredForeignKeys = true)
+        h.runner().execute(request(splitMode = SplitMode.SINGLE, inlineForeignKeys = "never")) shouldBe 0
+        h.generator.generateOptions?.deferForeignKeys shouldBe true
+    }
+
+    test("inline_foreign_keys=never on a dialect without deferral support → exit 2, named") {
+        val h = harness()
+        h.generator = FakeGenerator(supportsDeferredForeignKeys = false)
+        h.runner().execute(request(inlineForeignKeys = "never")) shouldBe 2
+        h.stderr.joined() shouldContain "--inline-foreign-keys never is not supported"
+        h.generator.generateCalls shouldBe 0
     }
 
 })

@@ -48,6 +48,7 @@ class SchemaGenerateWiringTest : FunSpec({
         sqliteNamedSequences: String? = null,
         cliContext: CliContext = CliContext(quiet = true),
         partitionStorage: String? = null,
+        inlineForeignKeys: String? = null,
         configPath: Path? = null,
     ) = SchemaGenerateOptions(
         source = source,
@@ -62,6 +63,7 @@ class SchemaGenerateWiringTest : FunSpec({
         mysqlNamedSequences = mysqlNamedSequences,
         sqliteNamedSequences = sqliteNamedSequences,
         mssqlHashPartitions = null,
+        inlineForeignKeys = inlineForeignKeys,
         cliContext = cliContext,
         configPath = configPath,
     )
@@ -200,6 +202,47 @@ class SchemaGenerateWiringTest : FunSpec({
         } finally {
             deleteRecursively(output)
         }
+    }
+
+    // ─── inline-foreign-keys-mode.md: ddl.inline_foreign_keys / --inline-foreign-keys ──
+
+    fun inlineForeignKeysConfig(mode: String): Path {
+        val file = Files.createTempFile("dmigrate-generate-ifk-", ".yaml")
+        Files.writeString(file, "ddl:\n  inline_foreign_keys: $mode\n")
+        return file
+    }
+
+    test("ddl.inline_foreign_keys=never from the config file defers FKs without --split") {
+        val factory = RecordingSchemaGenerateFactory()
+
+        val exit = SchemaGenerateWiring.execute(
+            options(configPath = inlineForeignKeysConfig("never")),
+            factory,
+        )
+
+        exit shouldBe 0
+        factory.generators.single().generateOptions.single().deferForeignKeys shouldBe true
+    }
+
+    test("--inline-foreign-keys always beats a config file set to never") {
+        val factory = RecordingSchemaGenerateFactory()
+
+        val exit = SchemaGenerateWiring.execute(
+            options(inlineForeignKeys = "always", configPath = inlineForeignKeysConfig("never")),
+            factory,
+        )
+
+        exit shouldBe 0
+        factory.generators.single().generateOptions.single().deferForeignKeys shouldBe false
+    }
+
+    test("--inline-foreign-keys never on a dialect without deferral support exits 2") {
+        val factory = RecordingSchemaGenerateFactory(deferredForeignKeysSupported = false)
+
+        val exit = SchemaGenerateWiring.execute(options(inlineForeignKeys = "never"), factory)
+
+        exit shouldBe 2
+        factory.generators.single().generateCalls shouldBe 0
     }
 
     test("generate rollback writes rollback file and calls rollback generator") {

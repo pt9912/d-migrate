@@ -183,6 +183,47 @@ class DdlConfigResolverTest : FunSpec({
         ) shouldBe null
     }
 
+    // Anders als die uebrigen Schluessel steht inline_foreign_keys direkt
+    // unter ddl:, nicht unter einem Dialekt-Unterblock — er gilt fuer jedes
+    // Ziel gleich.
+    test("ddl.inline_foreign_keys is read from the top-level ddl block") {
+        val file = tempConfig(
+            """
+            ddl:
+              inline_foreign_keys: never
+            """.trimIndent()
+        )
+        resolverFor(file).resolve().inlineForeignKeys shouldBe "never"
+    }
+
+    test("a typo in inline_foreign_keys fails loudly instead of silently defaulting") {
+        val file = tempConfig(
+            """
+            ddl:
+              inline_foreign_keys: nver
+            """.trimIndent()
+        )
+        val ex = shouldThrow<ConfigResolveException> { resolverFor(file).resolve() }
+        ex.message!! shouldContain "ddl.inline_foreign_keys"
+        ex.message!! shouldContain "must be one of"
+    }
+
+    test("inline_foreign_keys precedence: CLI beats config, config beats unset") {
+        val file = tempConfig(
+            """
+            ddl:
+              inline_foreign_keys: always
+            """.trimIndent()
+        )
+        resolveEffectiveInlineForeignKeys(file, cliValue = "never") shouldBe "never"
+        resolveEffectiveInlineForeignKeys(file, cliValue = null) shouldBe "always"
+        resolveEffectiveInlineForeignKeys(
+            configPath = null,
+            cliValue = null,
+            preloaded = LoadedConfig(root = null, path = Path.of(".d-migrate.yaml")),
+        ) shouldBe null
+    }
+
     test("precedence: CLI beats config, config beats default") {
         val file = tempConfig(
             """

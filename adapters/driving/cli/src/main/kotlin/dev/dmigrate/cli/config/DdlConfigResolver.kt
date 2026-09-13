@@ -23,6 +23,15 @@ internal data class DdlConfig(
     val mysqlCharset: String? = null,
     /** `ddl.mysql.collation` — Standard-Kollation der erzeugten Tabellen. */
     val mysqlCollation: String? = null,
+    /**
+     * `ddl.inline_foreign_keys` — `auto` (Default, folgt `--split`), `always`
+     * (inline in `CREATE TABLE`) oder `never` (zurueckgestellt als `ALTER
+     * TABLE` nach allen Tabellen). Anders als die uebrigen Schluessel hier
+     * **nicht** dialekt-geschachtelt — er steht direkt unter `ddl:`, weil er
+     * fuer jedes Ziel dieselbe Bedeutung hat (auch wenn nicht jeder Dialekt
+     * jeden Wert umsetzen kann; das prueft der Runner, nicht der Resolver).
+     */
+    val inlineForeignKeys: String? = null,
 )
 
 /**
@@ -63,6 +72,10 @@ internal class DdlConfigResolver(
             mysqlEngine = readIdentifier(mysql, "engine", path),
             mysqlCharset = readIdentifier(mysql, "charset", path),
             mysqlCollation = readIdentifier(mysql, "collation", path),
+            inlineForeignKeys = readChoice(
+                ddl, "inline_foreign_keys", path, setOf("auto", "always", "never"),
+                qualifiedKey = "ddl.inline_foreign_keys",
+            ),
         )
     }
 
@@ -71,16 +84,16 @@ internal class DdlConfigResolver(
      * deshalb hier geprueft und nicht erst dort: leer oder mit Sonderzeichen ist
      * er kein Bezeichner, sondern eine Moeglichkeit, fremdes DDL einzuschleusen.
      */
-    private fun readIdentifier(block: Map<*, *>, key: String, source: Path): String? {
+    private fun readIdentifier(block: Map<*, *>, key: String, source: Path, qualifiedKey: String = "ddl.mssql.$key"): String? {
         if (!block.containsKey(key)) return null
         val raw = block[key]
         val value = (raw as? String)?.trim()
         if (value.isNullOrEmpty()) {
-            throw ConfigResolveException("ddl.mssql.$key in $source must be a non-empty string, got: $raw")
+            throw ConfigResolveException("$qualifiedKey in $source must be a non-empty string, got: $raw")
         }
         if (!value.all { it.isLetterOrDigit() || it == '_' || it == '-' }) {
             throw ConfigResolveException(
-                "ddl.mssql.$key in $source must be a plain identifier " +
+                "$qualifiedKey in $source must be a plain identifier " +
                     "(letters, digits, '_', '-'), got: $value",
             )
         }
@@ -93,12 +106,18 @@ internal class DdlConfigResolver(
      * nicht stillschweigend auf den Default fallen, sonst glaubte der Anwender,
      * die Emulation sei eingeschaltet.
      */
-    private fun readChoice(block: Map<*, *>, key: String, source: Path, allowed: Set<String>): String? {
+    private fun readChoice(
+        block: Map<*, *>,
+        key: String,
+        source: Path,
+        allowed: Set<String>,
+        qualifiedKey: String = "ddl.mssql.$key",
+    ): String? {
         if (!block.containsKey(key)) return null
         val value = (block[key] as? String)?.trim()?.lowercase()
         if (value == null || value !in allowed) {
             throw ConfigResolveException(
-                "ddl.mssql.$key in $source must be one of ${allowed.sorted().joinToString(", ")}, " +
+                "$qualifiedKey in $source must be one of ${allowed.sorted().joinToString(", ")}, " +
                     "got: ${block[key]}",
             )
         }
@@ -152,4 +171,20 @@ internal fun resolveEffectivePartitionStorage(
 ): String {
     val config = DdlConfigResolver(configPathFromCli = configPath, preloaded = preloaded).resolve()
     return cliValue ?: config.mssqlPartitionStorage ?: defaultStorage
+}
+
+/**
+ * Der effektive Fremdschluessel-Platzierungsmodus nach dem Merge
+ * **CLI-explizit > Config > Default**. `null` (weder CLI noch Config) heisst
+ * `auto` — der Runner leitet das Verhalten dann wie bisher aus `--split` ab;
+ * die Unterscheidung "nicht gesetzt" vs. "auf auto gesetzt" ist hier nicht
+ * noetig, weil beide dasselbe bewirken.
+ */
+internal fun resolveEffectiveInlineForeignKeys(
+    configPath: Path?,
+    cliValue: String?,
+    preloaded: LoadedConfig? = null,
+): String? {
+    val config = DdlConfigResolver(configPathFromCli = configPath, preloaded = preloaded).resolve()
+    return cliValue ?: config.inlineForeignKeys
 }

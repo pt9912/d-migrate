@@ -93,6 +93,14 @@ data class SchemaGenerateRequest(
     val sqliteNamedSequences: String? = null,
     val mssqlHashPartitions: String? = null,
     val deterministic: Boolean = false,
+    /**
+     * `ddl.inline_foreign_keys` / `--inline-foreign-keys`: `"auto"` (oder
+     * `null`) folgt weiterhin `splitMode`, `"always"` erzwingt Inline-FKs,
+     * `"never"` erzwingt Zurueckstellung. `"never"` auf einem Dialekt ohne
+     * [DdlGenerator.supportsDeferredForeignKeys] ist ein Nutzungsfehler
+     * (siehe [resolveDeferForeignKeys]).
+     */
+    val inlineForeignKeys: String? = null,
 )
 
 /**
@@ -197,10 +205,8 @@ class SchemaGenerateRunner(
         }
 
         val generator = generatorLookup(dialect)
-        // FKs als POST_DATA-ALTERs nur für Generatoren, die das umsetzen (PG, MSSQL).
-        val effectiveOptions = options.copy(
-            deferForeignKeys = request.splitMode == SplitMode.PRE_POST && generator.supportsDeferredForeignKeys,
-        )
+        val deferForeignKeys = resolveDeferForeignKeys(request, generator) ?: return 2
+        val effectiveOptions = options.copy(deferForeignKeys = deferForeignKeys)
         val generated = generator.generate(effectiveSchema, effectiveOptions)
         // Die Uebersetzung geschieht vor dem Generator; ohne diese Meldungen
         // saehe der Anwender nur RANGE-DDL fuer ein Schema, das LIST sagt.
@@ -480,6 +486,31 @@ class SchemaGenerateRunner(
         }
         return if (dialect == DatabaseDialect.MSSQL) OptionalMssqlHashMode(MssqlHashPartitionMode.ACTION_REQUIRED)
         else OptionalMssqlHashMode(null)
+    }
+
+    /**
+     * `inline_foreign_keys` -> `deferForeignKeys`. `null`/`"auto"` folgt
+     * weiterhin `splitMode` (heutiges Verhalten, unveraendert) --
+     * `"always"`/`"never"` sind additiv. `"never"` auf einem Dialekt ohne
+     * [DdlGenerator.supportsDeferredForeignKeys] (MySQL, SQLite -- kein
+     * Deferred-Constraint-Konzept) ist ein Nutzungsfehler, kein stilles
+     * Ignorieren -- sonst glaubte der Aufrufer, FKs seien zurueckgestellt.
+     */
+    private fun resolveDeferForeignKeys(request: SchemaGenerateRequest, generator: DdlGenerator): Boolean? {
+        val mode = request.inlineForeignKeys ?: "auto"
+        if (mode == "never" && !generator.supportsDeferredForeignKeys) {
+            printError(
+                "--inline-foreign-keys never is not supported for this target: it has no deferred/ALTER-based " +
+                    "foreign-key form. Use 'auto' or 'always', or omit the setting.",
+                request.source.toString(),
+            )
+            return null
+        }
+        return when (mode) {
+            "always" -> false
+            "never" -> true
+            else -> request.splitMode == SplitMode.PRE_POST && generator.supportsDeferredForeignKeys
+        }
     }
 
     private fun validateSplitModePreflight(request: SchemaGenerateRequest): Int? {

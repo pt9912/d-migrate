@@ -332,7 +332,12 @@ CREATE TABLE "customers" (
 - Lassen Sie `--output` weg, erscheint das SQL direkt auf dem Bildschirm.
 - Enthält Ihr Schema Trigger oder Funktionen und Sie möchten erst Daten laden,
   bevor diese aktiv werden, teilen Sie die Ausgabe mit `--split pre-post` (siehe
-  [3.7, Hinweise](#37-daten-in-eine-datenbank-laden-import)).
+  [3.7, Hinweise](#37-daten-in-eine-datenbank-laden-import)). Das stellt Fremdschlüssel
+  auf PostgreSQL/SQL Server/Oracle automatisch zurück (`ALTER TABLE` nach allen
+  Tabellen statt inline in `CREATE TABLE`) — unabhängig davon können Sie das mit
+  `--inline-foreign-keys always`/`never` auch losgelöst vom Split-Modus erzwingen
+  (Default `auto`, folgt `--split` wie bisher). Auf MySQL/SQLite gibt es keine
+  zurückgestellte Form; `never` bricht dort ab.
 - Wenn der Bericht Codes wie `E056` (Sequenzen) oder Warnungen enthält, sehen
   Sie in [3.12](#312-sequenzenautowerte-korrekt-mitnehmen) bzw.
   [Anhang D](#anhang-d--fehler--und-warnungscodes) nach.

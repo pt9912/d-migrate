@@ -1,12 +1,12 @@
 # Tracker: der `ddl:`-Konfigurationsblock wird nicht gelesen
 
-> **Status:** Teilweise umgesetzt (2026-09-13) — Leser steht, **fünf von acht**
+> **Status:** Teilweise umgesetzt (2026-09-13) — Leser steht, **sechs von acht**
 > Schlüsseln sind verdrahtet, zwei weitere als Spec-Dopplung entfernt statt
-> gebaut. Drei bleiben offen, je als eigener [`next/`](../next/)-Plan.
+> gebaut. Zwei bleiben offen, je als eigener [`next/`](../next/)-Plan.
 > **Trigger:** Beim Verdrahten von `--partition-storage` (SQL-Server-Filegroup)
 > fiel auf, dass es für Generierungsoptionen zwar eine Konfigurationsfläche in
 > der Spec gibt, aber keinen Leser im Code.
-> **Aktivierungsbedingung:** erfüllt für die drei restlichen Schlüssel — siehe
+> **Aktivierungsbedingung:** erfüllt für die zwei restlichen Schlüssel — siehe
 > die verlinkten `next/`-Pläne.
 
 ## Befund
@@ -85,16 +85,21 @@ erzeugt stillschweigend anderes DDL als der Lauf davor.
    dieselben zwei Werte — aus `connection-config-spec.md` entfernt, mit
    Verweis auf §1.5.
 
-7. **Offen: die restlichen drei.** Bei jedem ist das Lesen der letzte Schritt,
-   nicht der erste — die Fähigkeit selbst existiert noch nicht:
+7. **Die restlichen drei:**
 
+   - ~~**`inline_foreign_keys`**~~ — **erledigt 2026-09-13.** War kleiner als
+     gescoped: `DdlGenerationOptions.deferForeignKeys` existierte bereits und
+     war in PostgreSQL/MSSQL/Oracle bereits implementiert, nur nie
+     unabhängig von `--split pre-post` erreichbar. `--inline-foreign-keys`
+     bzw. `ddl.inline_foreign_keys` (`auto`/`always`/`never`) legt ihn jetzt
+     direkt offen; `never` auf MySQL/SQLite (kein Deferred-Constraint-Konzept)
+     bricht mit Exit 2. Details:
+     [`inline-foreign-keys-mode.md`](../done/inline-foreign-keys-mode.md).
    - **`include_comments`** — nirgends wird ein `COMMENT` gerendert.
      Scope: [`ddl-comment-rendering.md`](../next/ddl-comment-rendering.md).
    - **`postgresql.default_schema`** — es gibt keinen PostgreSQL-Renderkontext
      für ein Ziel-Schema. Scope:
      [`postgresql-default-schema-context.md`](../next/postgresql-default-schema-context.md).
-   - **`inline_foreign_keys`** — nur die Spec-Zeile, keine Implementierung.
-     Scope: [`inline-foreign-keys-mode.md`](../next/inline-foreign-keys-mode.md).
 
 ## Gelernt
 

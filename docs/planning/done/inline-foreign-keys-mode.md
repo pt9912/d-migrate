@@ -89,8 +89,9 @@ Verhalten, `always`/`never` sind rein additiv.
 
 - `ddl.inline_foreign_keys: never` erzwingt zurückgestellte FKs auf
   PostgreSQL/MSSQL/Oracle, unabhängig vom Split-Modus.
-- `ddl.inline_foreign_keys: never` auf MySQL/SQLite bricht mit Exit 7 und
-  einer Meldung, die den Dialekt nennt.
+- `ddl.inline_foreign_keys: never` auf MySQL/SQLite bricht mit einer
+  Meldung, die den Dialekt nennt (siehe Closure: Exit 2, nicht 7 wie hier
+  skizziert — Begründung dort).
 - Ohne den Schlüssel: unverändertes Verhalten (`AUTO`, an `--split-mode`
   gekoppelt, wie heute).
 
@@ -99,3 +100,43 @@ Verhalten, `always`/`never` sind rein additiv.
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunner.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/DdlConfigResolver.kt`
 - ggf. `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateCommand.kt`
+
+## Closure (2026-09-13)
+
+Wie im Scope vermutet: der Schnitt war kleiner als "neue Rendering-Faehigkeit
+bauen" — `deferForeignKeys` stand bereits in `DdlGenerationOptions` und war
+bereits in PostgreSQL/MSSQL/Oracle implementiert, nur nicht direkt
+konfigurierbar.
+
+**Umgesetzt:**
+
+- `DdlConfigResolver`: `ddl.inline_foreign_keys` (`auto`/`always`/`never`),
+  **nicht** dialekt-geschachtelt gelesen (anders als `mssql.*`/`mysql.*`) —
+  `readIdentifier`/`readChoice` dafuer generalisiert (nahmen bisher
+  `ddl.mssql.` als festen Praefix an; jetzt ein `qualifiedKey`-Parameter,
+  Default unveraendert fuer die bestehenden Aufrufstellen).
+- `--inline-foreign-keys` CLI-Flag (`.choice("auto","always","never")`,
+  Muster wie `--mssql-hash-partitions`).
+- `SchemaGenerateRunner.resolveDeferForeignKeys`: `null`/`"auto"` unveraendert
+  `splitMode`-getrieben; `"always"`/`"never"` sind additiv; `"never"` ohne
+  `generator.supportsDeferredForeignKeys` (MySQL, SQLite) -> **Exit 2**, nicht
+  Exit 7 wie urspruenglich skizziert — die Config-Validierung (Wertebereich)
+  laeuft bereits im Resolver (Exit 7 bei Tippfehler); diese Pruefung ist eine
+  **Dialekt**-Kompatibilitaetspruefung, die erst nach dem Generator-Lookup in
+  `execute()` moeglich ist (dort, wo `resolveMssqlHashMode`/`resolveSqliteSeqMode`
+  denselben Fall — Wert nur fuer einen Dialekt sinnvoll — ebenfalls mit Exit 2
+  behandeln). `hexagon/application` kann zudem keine `ConfigResolveException`
+  werfen (Schicht-Grenze, die CLI-Adapter-Exception liegt in
+  `adapters/driving/cli`).
+
+**Verifiziert:** neue Tests in `DdlConfigResolverTest` (Lesen, Tippfehler,
+Praezedenz), `SchemaGenerateRunnerTest` (alle drei Modi + Dialekt-Ablehnung,
+sabotage-verifiziert), `SchemaGenerateWiringTest` (Config-Datei- und
+CLI-Praezedenz end-to-end, ein Sabotage-Lauf zusaetzlich). Ganzer Repo-Build
+einmal ohne `MODULES` (oeffentliche `SchemaGenerateRequest`-Signatur
+geaendert; einzige weitere Aufrufstelle ist eine Integrationsspec, die per
+Default-Parameter unberuehrt blieb).
+
+**Nicht Teil dieses Schnitts:** `schema migrate` kennt `inline_foreign_keys`
+nicht — die Spec-Zeile und der Scope waren durchgehend auf `schema generate`
+bezogen.

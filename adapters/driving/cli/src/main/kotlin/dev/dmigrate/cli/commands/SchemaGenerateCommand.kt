@@ -76,6 +76,12 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
             "that runs on a current server and fails loudly on an older one, rather than quietly meaning " +
             "something else than what you wrote.",
     )
+    val inlineForeignKeys by option(
+        "--inline-foreign-keys",
+        help = "Foreign-key placement: 'auto' (default, follows --split), 'always' inline in CREATE TABLE, " +
+            "'never' deferred to a separate ALTER TABLE after all tables (PostgreSQL/MSSQL/Oracle only — " +
+            "MySQL/SQLite have no deferred-constraint form and reject 'never').",
+    ).choice("auto", "always", "never")
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -95,6 +101,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
                 mysqlNamedSequences = mysqlNamedSequences,
                 sqliteNamedSequences = sqliteNamedSequences,
                 mssqlHashPartitions = mssqlHashPartitions,
+                inlineForeignKeys = inlineForeignKeys,
                 migrationOverlays = migrationOverlays,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,

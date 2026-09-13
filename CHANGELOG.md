@@ -87,6 +87,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nächsten Lesen des eigenen Manifests. Derselbe Fund, dieselbe Ursache: kein
   Test deckte je alle `NeutralType`-Varianten durch den Manifest-Rundlauf ab.
 
+### Added
+
+- **`schema generate --inline-foreign-keys auto|always|never`** (auch als
+  `ddl.inline_foreign_keys` konfigurierbar) legt die Fremdschlüssel-Platzierung
+  direkt offen, statt sie nur indirekt über `--split pre-post` zu steuern.
+  Der zugrundeliegende Schalter (`deferForeignKeys`) existierte bereits und
+  war in PostgreSQL, SQL Server und Oracle bereits implementiert — er war nur
+  nie unabhängig vom Split-Modus erreichbar. `always` erzwingt Inline-FKs,
+  `never` erzwingt Zurückstellung, `auto` (Default) verhält sich wie bisher.
+  MySQL und SQLite kennen keine zurückgestellte Fremdschlüssel-Form; `never`
+  bricht dort mit Exit 2 ab statt still zu ignorieren.
+
 ## [1.4.0] - 2026-09-13
 
 ### Added
