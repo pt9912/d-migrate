@@ -399,27 +399,21 @@ Smokes nur als Dateierzeugung, nicht als Runtime-Ausführung validiert.
 
 ### 3.5 Coverage- und Workflow-Abgleich
 
-Drei CI-Workflows tragen den Release:
+Zwei CI-Workflows tragen den Release:
 
 - [`.github/workflows/build.yml`](../../.github/workflows/build.yml) — Build, Tests, Coverage-Verify,
   Release-Asset-Upload als Workflow-Artefakt
 - [`.github/workflows/release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) — GitHub-Release-Publikation,
   `homebrew-releaser`-Push in den Tap `pt9912/homebrew-d-migrate`,
   macOS-Smoke über `verify-homebrew`
-- [`.github/workflows/verify-homebrew-formula.yml`](../../.github/workflows/verify-homebrew-formula.yml) — macOS-Verifikation der
-  repo-lokalen Formula nach einer Änderung an
-  [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb)
 
 Vor jedem Release prüfen:
 
 - deckt `koverVerify` weiterhin alle aktuellen JVM-Module ab?
 - baut der Tag-Workflow `:adapters:driving:cli:assembleReleaseAssets`?
 - lädt der Tag-Workflow das Artefakt `release-assets` hoch?
-- bleibt der `homebrew-releaser`-`install:`-Block in
-  [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) deckungsgleich mit
-  [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb)?
-- ist der `verify-homebrew`-Job in [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) und der
-  `verify-homebrew-formula`-Workflow unverändert einsatzbereit?
+- ist der `verify-homebrew`-Job in [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)
+  unverändert einsatzbereit?
 
 ```bash
 # Achtung: `koverVerify` und `assembleReleaseAssets` stehen NICHT woertlich in
@@ -489,8 +483,6 @@ identifizieren. Befehle und jq-Filter: siehe
   und ein vergessener Bump fällt auf
 - [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md) und [`docs/user/releasing.md`](releasing.md) auf den
   tatsächlichen Vertrag prüfen
-- [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) muss ZIP-basierte Installation, Java 21 und
-  `bin/d-migrate`-Link konsistent beschreiben
 - Seit der Versions-Quelle-Zentralisierung (2026-06-03) liest der
   gesamte Produktiv- und Test-Pfad seine Version über
   `dev.dmigrate.core.version.VersionInfo.PRODUCT_VERSION` aus
@@ -594,7 +586,7 @@ gesetzt (Fork, abgelaufenes oder rotiertes Token), überspringt der Tag-Build di
 Docker-Hub-Schritte mit einer Notice, statt rot zu werden — ein Zusatzkanal soll
 keinen Release blockieren. Kehrseite: **ein stillschweigend übersprungener Push
 fällt nicht auf**, deshalb steht der Docker-Hub-Pull fest in der
-Verifikationsliste ([4.7](#47-verifikation-des-releases)).
+Verifikationsliste ([4.6](#46-verifikation-des-releases)).
 
 Einrichtung von Grund auf — nur nötig, falls Konto, Repository oder Token neu
 aufgesetzt werden müssen:
@@ -654,7 +646,7 @@ Zur Einordnung:
   finalisieren. **Windows bleibt best-effort** — `fail-fast` ist aus, ein rotes Windows-Leg bricht
   das andere nicht ab, sein fehlendes Asset ist zulässig und der Release selbst bleibt gültig.
   Für macOS gibt es kein Native-Leg mehr ([ADR 0044](../adr/0044-kein-macos-native-binary.md)). Deshalb steht die Asset-Liste in der Verifikation
-  ([4.7](#47-verifikation-des-releases)).
+  ([4.6](#46-verifikation-des-releases)).
 
 Der Workflow lässt sich auch ohne Tag starten (`workflow_dispatch`), etwa um
 das Rezept gegen `main` zu prüfen. Solche Läufe hängen nichts an ein
@@ -811,82 +803,7 @@ else
 fi
 ```
 
-### 4.6 Homebrew-Formula auf finale URL und SHA bringen
-
-Die Formula unter [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) muss auf das publizierte ZIP
-zeigen:
-
-- URL: `https://github.com/pt9912/d-migrate/releases/download/vX.Y.Z/d-migrate-X.Y.Z.zip`
-- SHA256: aus dem tatsächlich publizierten Release-Asset (siehe unten)
-- Installation bleibt launcherbasiert unter `libexec`
-- `bin/d-migrate` bleibt der Nutzer-Einstieg
-- Java 21 bleibt explizit deklariert
-
-**Zwei verschiedene Artefakte — nicht verwechseln:**
-
-- Die **Tap-Formula** (`pt9912/homebrew-d-migrate`, der echte `brew install`-Kanal)
-  wird von `homebrew-releaser` erzeugt und zeigt auf `d-migrate-X.Y.Z-homebrew.tar.gz`
-  mit einer **automatisch** berechneten SHA — die ist immer self-konsistent, hier
-  ist **nichts** von Hand zu pflegen.
-- Das **Repo-Template** [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb)
-  (nur Referenz + Input für `verify-homebrew-formula.yml`) zeigt auf `d-migrate-X.Y.Z.zip`
-  und trägt eine **manuell** gepflegte SHA. Nur diese ist unten gemeint.
-
-ZIP-SHA **aus dem tatsächlich publizierten Release-Asset** ziehen — nicht
-aus `./release-assets/*.sha256`: der `build.yml`-Workflow lädt sein eigenes
-Artefakt mit eigener SHA hoch, während der publizierte ZIP aus dem
-separaten [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)-Lauf stammt und daher eine andere SHA hat.
-
-> **⚠️ SHA erst nach dem *finalen* grünen `release-homebrew.yml`-Lauf ziehen.**
-> Ein **Re-Run** dieses Workflows (z. B. nach einer `HOMEBREW_TAP_GITHUB_TOKEN`-
-> Rotation) baut die Release-Assets **neu und ersetzt sie** — ZIPs sind nicht
-> bit-reproduzierbar, also ändert sich die `.zip`-SHA bei jedem Lauf. Eine SHA
-> aus einem früheren Lauf führt zu `Formula reports different checksum` in
-> `verify-homebrew-formula.yml`. Immer den letzten Stand ziehen (die
-> Download-URL ist autoritativ):
-
-```bash
-curl -sL "https://github.com/pt9912/d-migrate/releases/download/vX.Y.Z/d-migrate-X.Y.Z.zip" \
-  | sha256sum
-```
-
-Nach dem Publish muss die Formula auf einem Host mit `brew` real verifiziert
-werden. Modernes Homebrew lehnt `brew install --formula <path.rb>` ab und
-verlangt, dass die Formula in einem Tap liegt — deshalb über einen lokalen
-Ephemeral-Tap installieren (derselbe Mechanismus, den der Workflow
-[`verify-homebrew-formula.yml`](../../.github/workflows/verify-homebrew-formula.yml) benutzt):
-
-```bash
-brew tap-new local/d-migrate-verify --no-git
-TAP_DIR="$(brew --repository local/d-migrate-verify)"
-mkdir -p "${TAP_DIR}/Formula"
-cp packaging/homebrew/d-migrate.rb "${TAP_DIR}/Formula/d-migrate.rb"
-# Homebrew 5.0 verweigert Install aus Fremd-Taps ohne explizites Vertrauen
-# ("Refusing to load formula ... from untrusted tap"). Tap vor dem Install
-# vertrauen — genau das schlägt `brew` bei Verweigerung selbst vor.
-brew trust local/d-migrate-verify
-brew install local/d-migrate-verify/d-migrate
-d-migrate --help
-```
-
-Alternativ über den veröffentlichten Tap (bestätigt zusätzlich die
-`homebrew-releaser`-Pipeline):
-
-```bash
-brew tap pt9912/d-migrate https://github.com/pt9912/homebrew-d-migrate
-brew trust pt9912/d-migrate   # Homebrew 5.0: Fremd-Tap vor Install vertrauen
-brew install d-migrate
-d-migrate --help
-```
-
-> **Hinweis für Endnutzer:** Auch beim `brew install` aus dem veröffentlichten
-> Tap verlangt Homebrew 5.0 vorab `brew trust pt9912/d-migrate`. Das gehört in
-> die Installationsanleitung (README / Guide), nicht nur in die Release-Doku.
-
-Wenn die Formula-Änderung nicht bereits im Release-Branch vorbereitet wurde,
-anschließend als verifizierten Repo-Stand nachziehen.
-
-### 4.7 Verifikation des Releases
+### 4.6 Verifikation des Releases
 
 - [ ] GitHub-Release ist sichtbar unter `https://github.com/pt9912/d-migrate/releases/tag/vX.Y.Z`
 - [ ] GitHub-Release enthält ZIP, TAR, Fat JAR und SHA256
@@ -904,7 +821,8 @@ anschließend als verifizierten Repo-Stand nachziehen.
       `docker pull pt9912/d-migrate:X.Y.Z` und `docker run --rm pt9912/d-migrate:X.Y.Z --help`.
       Schlägt der Pull fehl, wurde der Push still übersprungen (Secret) — Tag-Build-Log
       auf die Notice prüfen
-- [ ] Homebrew-Formula installiert und startet `d-migrate --help`
+- [ ] `verify-homebrew`-Job des Tag-Builds grün — er installiert aus dem publizierten
+      Tap und smoked gegen die **Tag**-Version
 - [ ] **`linux-x64`-Native-Asset ([4.3.2](#432-native-image-binaries)) hängt am Release** (Gate,
       Frage 6 = Hybrid) — **fehlt es, den Release NICHT finalisieren** (`attach-release`-Job ist rot).
       Windows ist best-effort, je mit `.sha256`:
@@ -929,10 +847,10 @@ anschließend als verifizierten Repo-Stand nachziehen.
   ```
 - [ ] CI ist auf `main` und auf dem Tag grün
 
-### 4.8 Vorabversionen (Release Candidates / Prereleases)
+### 4.7 Vorabversionen (Release Candidates / Prereleases)
 
 Ein Release Candidate (z. B. `1.0.0-RC1` vor `1.0.0`) durchläuft denselben Ablauf
-(§4.1–§4.6, §4.8), aber die Pipeline behandelt ihn **automatisch** als Prerelease.
+(4.1–4.5, 4.7), aber die Pipeline behandelt ihn **automatisch** als Prerelease.
 Erkannt wird das an der SemVer-Regel „die Version enthält ein `-`" (Tag `vX.Y.Z-RCn`).
 
 **Versionierung.** In [`build.gradle.kts`](../../build.gradle.kts) (`defaultProjectVersion`):
@@ -950,7 +868,7 @@ Post-Release (§5) zurück auf die nächste Vorab-Entwicklungsversion, z. B.
   als „Latest release".
 - **Kein Homebrew-Tap-Update** und **kein `verify-homebrew`** — Homebrew trackt nur Stable.
 
-**Folge:** Die Homebrew-Schritte (§4.7) **entfallen** beim RC. Bei der Verifikation (§4.8) die
+**Folge:** Der Homebrew-Punkt der Verifikation (4.6) **entfaellt** beim RC. Dort die
 **versionierten** Image-Tags ziehen (nicht `:latest`) — GHCR und Docker Hub —, den Homebrew-Punkt
 überspringen und prüfen, dass der GitHub-Release als Prerelease markiert ist. RC-Nutzer beziehen
 die Vorabversion über das versionierte GHCR-Tag bzw. den GitHub-Prerelease.
@@ -974,12 +892,10 @@ Danach:
 | [`build.gradle.kts`](../../build.gradle.kts)                | `version = "X.Y.Z"` → nächste Entwicklungsversion, z.B. `"X.(Y+1).0-SNAPSHOT"`                                                       |
 | [`CHANGELOG.md`](../../CHANGELOG.md)                    | Neuen leeren `## [Unreleased]`-Block einfügen                                                                                        |
 | [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md)                 | Falls bereits geplant: nächsten Milestone als „in Arbeit" markieren                                                                  |
-| [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) | verifizierten URL-/SHA-Stand des zuletzt publizierten Releases nachziehen, falls die Formula erst nach dem Publish finalisiert wurde |
 | `docs/implementation-plan-<version>.md` | Optional: neuen Plan für nächste Minor-Version anlegen                                                                               |
 
 ```bash
 git add build.gradle.kts CHANGELOG.md docs/planning/in-progress/roadmap.md
-git add packaging/homebrew/d-migrate.rb
 git commit -m "Bump version to X.(Y+1).0-SNAPSHOT for next development cycle"
 git push origin main
 ```
@@ -1039,7 +955,7 @@ korrupte Image dort gar nicht — dann ist nur GHCR zu bereinigen.
 
 1. **Nicht** den Tag verschieben — das verändert die Identität des Releases
 2. Hotfix-Branch von `main` aus erstellen, Fix mergen
-3. Neuen Patch-Release `X.Y.(Z+1)` erstellen (Schritte 4.1 – 4.6 wiederholen)
+3. Neuen Patch-Release `X.Y.(Z+1)` erstellen (Schritte 4.1 – 4.5 wiederholen)
 4. Im GitHub-Release-Body von `vX.Y.Z` einen Hinweis auf den Hotfix ergänzen
 5. Prüfen, ob `homebrew-releaser` bereits die fehlerhafte Version in den
    Tap `pt9912/homebrew-d-migrate` gepusht hat — falls ja, wird der
@@ -1058,9 +974,10 @@ Tag-Commits**, nicht den aktuellen. Da der Tag nicht verschoben werden darf
   die Distribution live; ein rein am `verify-homebrew`-Smoke gescheiterter Lauf
   ist **kosmetisch** — der Workflow-Fix greift ab dem nächsten Tag.
 - Zur *manuellen* Bestätigung, dass die publizierte Version wirklich
-  installierbar ist, den `verify-homebrew-formula.yml`-Pfad auf dem
-  Post-Release-Commit heranziehen (läuft mit dem gefixten Workflow) oder lokal
-  per Ephemeral-Tap (§4.7) verifizieren.
+  installierbar ist, lokal aus dem **publizierten** Tap installieren:
+  `brew tap pt9912/d-migrate`, `brew trust pt9912/d-migrate`,
+  `brew install d-migrate`, dann `d-migrate --version` gegen die Tag-Version
+  halten — derselbe Weg, den der Job selbst geht.
 
 ---
 
@@ -1081,8 +998,7 @@ Für jeden Release abhaken:
 - [ ] CHANGELOG `[Unreleased]` reviewed
 - [ ] [`docs/user/guide.md`](guide.md), [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md) und [`docs/user/releasing.md`](releasing.md) auf aktuellem Funktionsstand
 - [ ] `koverVerify`, `assembleReleaseAssets` und `release-assets` sind im Workflow korrekt verdrahtet
-- [ ] `verify-homebrew` (in [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)) und [`verify-homebrew-formula.yml`](../../.github/workflows/verify-homebrew-formula.yml) sind unverändert verdrahtet
-- [ ] `homebrew-releaser`-`install:`-Block in [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) entspricht [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb)
+- [ ] `verify-homebrew` (in [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)) ist unverändert verdrahtet
 - [ ] `VersionInfo.PRODUCT_VERSION` liefert die neue Version (kein
       `getVersion()`-Hardcode mehr; das `processResources`-Filtering
       in [`hexagon/core/build.gradle.kts`](../../hexagon/core/build.gradle.kts)
@@ -1116,10 +1032,8 @@ Für jeden Release abhaken:
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
 - [ ] Image-Smoke-Test gegen `pt9912/d-migrate:X.Y.Z` (Docker Hub) ok
 - [ ] Natives Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z-native` ok (`--help`, `schema validate --source`)
-- [ ] **Runtime-Eigenschaften am PUBLIZIERTEN Image geprüft** ([4.7](#47-verifikation-des-releases)) — non-root und `mod_spatialite`, für JVM- **und** natives Image
-- [ ] [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht
+- [ ] **Runtime-Eigenschaften am PUBLIZIERTEN Image geprüft** ([4.6](#46-verifikation-des-releases)) — non-root und `mod_spatialite`, für JVM- **und** natives Image
 - [ ] `verify-homebrew`-Job des Tag-Builds grün (macOS-Install aus dem Tap)
-- [ ] `verify-homebrew-formula`-Workflow auf dem Post-Release-Commit grün (macOS-Install aus der repo-lokalen Formula)
 
 **Post-Release**
 - [ ] [`build.gradle.kts`](../../build.gradle.kts) zurück auf nächste SNAPSHOT-Version (z.B. `X.(Y+1).0-SNAPSHOT`)
@@ -1135,7 +1049,5 @@ Für jeden Release abhaken:
 - [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md) — Milestone-Übersicht
 - [`.github/workflows/build.yml`](../../.github/workflows/build.yml) — Build/Test/Coverage/Release-Assets-CI
 - [`.github/workflows/release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) — GitHub-Release + Homebrew-Tap-Publikation + macOS-Verify
-- [`.github/workflows/verify-homebrew-formula.yml`](../../.github/workflows/verify-homebrew-formula.yml) — macOS-Verifikation der repo-lokalen Homebrew-Formula
-- [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) — Homebrew-Formula-Template
 - [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - [Semantic Versioning 2.0](https://semver.org/spec/v2.0.0.html)

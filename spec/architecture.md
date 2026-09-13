@@ -1216,11 +1216,11 @@ Distribution-Formate:
    → Für CI/CD-Pipelines und Nutzer ohne JDK
 
 3. Homebrew-Basis
-   → Formula im Repository unter `packaging/homebrew/d-migrate.rb`
-   → Konsumiert das publizierte GitHub-Release-ZIP
-   → Verifikation nach Publish über einen ephemeren Tap:
-     brew tap-new <lokal>/<name> --no-git, Formula hineinkopieren, brew trust, brew install <lokal>/<name>/d-migrate
-     (ein Pfad-Aufruf `brew install --formula <datei>.rb` wird von Homebrew abgelehnt)
+   → Tap `pt9912/homebrew-d-migrate`, Formula erzeugt von `homebrew-releaser`
+   → Konsumiert den Homebrew-Tarball des publizierten GitHub-Releases; die Prüfsumme rechnet der Erzeuger aus
+   → Verifikation nach Publish gegen den **publizierten** Tap, mit der Sollversion aus dem Tag:
+     brew tap pt9912/d-migrate, brew trust, brew install d-migrate
+   → Kein Formula-Duplikat im Repository: eine zweite, von Hand gepflegte Fassung kann veralten, ohne dass es auffällt
 
 4. Native Binaries (GraalVM Native Image)
    → Eigenständige, Java-freie Binaries für Linux und Windows, am GitHub-Release

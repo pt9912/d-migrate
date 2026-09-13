@@ -74,6 +74,9 @@ jobs:
           commit_owner: github-actions[bot]
           commit_email: 41898282+github-actions[bot]@users.noreply.github.com
           depends_on: '"openjdk@21"'
+          # Homebrew strippt beim Entpacken das einzelne Top-Level-Verzeichnis,
+          # `d-migrate-X.Y.Z/bin` und `lib/` landen also direkt im cwd. Alles
+          # nach libexec, der Nutzer-Einstieg ist ein Launcher in bin/.
           install: |
             libexec.install Dir["*"]
             (bin/"d-migrate").write_env_script(

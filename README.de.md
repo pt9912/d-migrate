@@ -326,10 +326,9 @@ brew install d-migrate
 Unter macOS ist das der empfohlene Weg, weil es dort kein natives Binary
 gibt ([ADR 0044](docs/adr/0044-kein-macos-native-binary.md)).
 
-Die Formula wird in diesem Repository mitgeführt und pro Release
-über
-[`.github/workflows/verify-homebrew-formula.yml`](.github/workflows/verify-homebrew-formula.yml)
-verifiziert.
+Die Formula entsteht bei jedem stabilen Release für den Tap und wird
+anschließend aus dem publizierten Tap heraus installiert und geprüft — gegen
+die Version, die der Tag nennt, nicht gegen eine irgendwo notierte.
 
 ### Aus Quellcode bauen
 
@@ -507,7 +506,6 @@ Tool-Export und Profiling. Die Tabelle sagt, was je Dialekt eigen ist.
 ├── scripts/                       ← verify-doc-refs.sh, solid-suppression-gate.sh,
 │                                    test-integration-docker.sh, Kover-Utilities
 ├── ledger/                        ← Suppression- und Quality-Ledger
-├── packaging/homebrew/            ← Homebrew-Formula (d-migrate.rb)
 ├── spec/                          ← normative Spezifikationen (deutsch): lastenheft, architecture,
 │                                    design, cli-spec, neutral-model-spec,
 │                                    ddl-generation-rules, mcp-server, schema-reference,

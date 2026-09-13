@@ -309,9 +309,9 @@ releases only — release candidates never move it.
 On macOS this is the recommended path, because there is no native macOS
 binary ([ADR 0044](docs/adr/0044-kein-macos-native-binary.md)).
 
-The formula is maintained in this repository and verified per release
-via
-[`.github/workflows/verify-homebrew-formula.yml`](.github/workflows/verify-homebrew-formula.yml).
+The formula is generated for the tap on every stable release and then
+verified by installing it from the published tap — against the version the
+tag names, not one written down somewhere.
 
 ### Build from source
 
@@ -488,7 +488,6 @@ export and profiling. The table says what is specific to each.
 ├── scripts/                       ← verify-doc-refs.sh, solid-suppression-gate.sh,
 │                                    test-integration-docker.sh, kover utilities
 ├── ledger/                        ← suppression and quality ledgers
-├── packaging/homebrew/            ← Homebrew formula (d-migrate.rb)
 ├── spec/                          ← normative specs (German): lastenheft, architecture,
 │                                    design, cli-spec, neutral-model-spec,
 │                                    ddl-generation-rules, mcp-server, schema-reference,

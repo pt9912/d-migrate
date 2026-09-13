@@ -260,7 +260,7 @@ jobs:
 
       # Die Repository-Beschreibung auf Docker Hub ist sonst nur im Web-UI gepflegt und driftet
       # unweigerlich vom Repo weg. Quelle ist packaging/dockerhub/overview.md (reviewbar,
-      # versioniert) — dieselbe Rolle, die packaging/homebrew/d-migrate.rb fuer den Tap spielt.
+      # versioniert).
       #
       # Docker Hub hat DREI getrennte Felder; welches woher kommt, steht in
       # packaging/dockerhub/README.md — inklusive der Kategorie, die diese Action NICHT

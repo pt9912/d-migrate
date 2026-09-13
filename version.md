@@ -28,7 +28,7 @@ wandert im selben Schritt mit (siehe `.d-check.yml`, Modul `versions`).
 
 Welche Version `:latest`, der Homebrew-Tap und ein `docker pull` ohne Tag liefern, steht
 nicht hier: Vorabversionen bewegen diese Zeiger bewusst nicht
-([`releasing.md` 4.9](docs/user/releasing.md)). Die Spalte **Art** im Verlauf macht
+([`releasing.md` 4.7](docs/user/releasing.md#47-vorabversionen-release-candidates--prereleases)). Die Spalte **Art** im Verlauf macht
 sichtbar, welches der jüngste Stable-Eintrag ist.
 
 ## Verlauf

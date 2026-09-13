@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Die Homebrew-Formula wird nicht mehr doppelt geführt.** Im Repo lag ein
+  zweites, von Hand gepflegtes Template neben der Formula, die
+  `homebrew-releaser` für den Tap erzeugt — und ein eigener Workflow prüfte es.
+  Der prüfte allerdings gegen sich selbst: Version und Prüfsumme las er aus der
+  Datei und verglich die installierte CLI mit genau dieser Version. Eine
+  Formula, die auf ein älteres, noch existierendes Release zeigt, ist damit in
+  sich stimmig — und der Lauf grün. Beim 1.4.0-Cut stand das Template auf
+  1.1.0; 1.2.0, 1.3.0 und 1.3.1 waren ohne Anpassung vergangen, der Gate in
+  jedem dieser Releases grün.
+
+  Der `brew install`-Weg war nie betroffen: der Tap trägt seine eigene,
+  automatisch berechnete Prüfsumme. Und geprüft wird er ohnehin schärfer — der
+  Job `verify-homebrew` nimmt die Sollversion aus dem **Tag**, wartet auf den
+  Tap-Commit und installiert aus dem publizierten Tap. Der `install:`-Block der
+  beiden Fassungen war byte-identisch; das Template war also auch dort keine
+  Quelle, sondern eine Kopie. Es entfällt samt seinem Workflow und dem
+  zugehörigen Handarbeits-Schritt der Release-Doku.
+
 ## [1.4.0] - 2026-09-13
 
 ### Added
