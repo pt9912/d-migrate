@@ -48,6 +48,8 @@ neuen Version.
 | E060 | Split-Diagnostik (Phasenkonflikt); SQLite-helper_table-Rollback zusätzlich: ATTACHed Datenbanken detektiert |
 | E061 - E065 | Cross-Dialect-Partitionierung PG↔MySQL↔Oracle: Grenze, die der Zieldialekt nicht exakt ausdrücken kann (Non-UTC-Offset; Oracle zusätzlich Bruchteilsekunden) — jeweils Shift, nicht abbildbarer Schlüsseltyp (Oracle zusätzlich: LOB `ORA-14135`, `TIMESTAMP WITH TIME ZONE` `ORA-03001`), LIST-DEFAULT-Verwurf (Transfer-Verlust), nicht hebbarer UNIQUE-Partition-Index, FK auf partitionierter Tabelle |
 | E066 | MSSQL: mehr als ein Index beansprucht die Ablage der Tabelle (SQL Server erlaubt genau einen clustered Index; welcher gemeint ist, ist nicht entscheidbar — `clustered` an den übrigen entfernen) |
+| E073 | Oracle: zwei berechnete Spalten derselben Tabelle mit identischem (getrimmten) Ausdruckstext (`ORA-54015`), unabhängig von `VIRTUAL`/`MATERIALIZED` |
+| E074 | Oracle: ein Ausdrucks-Index und ein gewöhnlicher Index auf einer berechneten Spalte mit demselben Ausdruck sind derselbe Index (`ORA-01408`) |
 | E120 - E121 | Erweiterte Validierung (Trigger, Views) |
 | E122 - E123 | Sequence-Default-Validierung |
 | E124 | Support-Namenskollision |

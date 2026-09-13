@@ -2499,6 +2499,17 @@ Zurücklesen wiederfinden.
   nicht holen, ist eine `MATERIALIZED`-Spalte im Katalog nicht von einer
   gewöhnlichen mit `DEFAULT` zu unterscheiden. d-migrate rät dann nicht,
   sondern meldet **R369** und liest sie als gewöhnliche Spalte.
+- **Oracle lehnt zwei berechnete Spalten mit demselben Ausdruckstext ab**
+  (`ORA-54015`) — egal ob beide `VIRTUAL`, beide `MATERIALIZED` oder gemischt.
+  `schema generate`/`schema migrate` prüfen das vorab (**E073**) und nennen
+  beide Spalten, statt erst am Server zu scheitern. Die Prüfung ist bewusst
+  nur textuell (getrimmt): vertauschte Operanden, andere Groß-/Kleinschreibung
+  bei Funktionsnamen oder zusätzliche Klammern erkennt sie nicht als
+  Duplikat, obwohl Oracle selbst sie ablehnt — diese Fälle kommen dann als
+  `ORA-54015` vom Server zurück, mit der fehlgeschlagenen Anweisung im
+  Bericht. Hängt an der Spalte zusätzlich ein Ausdrucks-Index mit demselben
+  Text **und** ein gewöhnlicher Index auf der Spalte selbst, meldet d-migrate
+  vorab **E074** (`ORA-01408`) — für Oracle ist das derselbe Index zweimal.
 - **Eine berechnete Spalte kann kein Import befüllen** — der Server rechnet sie
   selbst, und alle fünf lehnen einen Wert dafür ab. Bringt eine Übertragung sie
   mit, bricht der Lauf vorher mit Spaltenname und Zielsystem ab, siehe

@@ -54,6 +54,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Zwei berechnete Oracle-Spalten mit demselben Ausdruckstext scheiterten
+  erst am Server, mitten in der Anweisungsfolge.** Oracle lehnt zwei
+  berechnete Spalten derselben Tabelle mit identischem (getrimmten)
+  Ausdruckstext ab (`ORA-54015`) — gemessen unabhängig davon, ob beide
+  `VIRTUAL`, beide `MATERIALIZED` oder gemischt sind. Da Oracle DDL implizit
+  committet, ließ ein Abbruch mitten in der Folge vorige Anweisungen
+  angewandt stehen. `schema generate` und `schema migrate` prüfen das jetzt
+  vorab (textuell, nicht normalisiert) und brechen mit `E073` ab, bevor die
+  erste Anweisung läuft. Derselbe Fund brachte eine zweite, verwandte
+  Ablehnung zutage: ein Ausdrucks-Index und ein gewöhnlicher Index auf einer
+  berechneten Spalte mit demselben Ausdruck sind für Oracle derselbe Index
+  (`ORA-01408`) — jetzt ebenfalls vorab geprüft (`E074`).
+
 - **Ein `data transfer` in eine Tabelle mit berechneter Zielspalte konnte nie
   durchlaufen.** `TransferExecutor` baute jeden Chunk aus der vollständigen
   Zielspaltenliste — unabhängig davon, ob die Quelle die Spalte überhaupt

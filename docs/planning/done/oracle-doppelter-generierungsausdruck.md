@@ -124,3 +124,65 @@ Kein externer Trigger noetig — der Fall ist gemessen und trifft jeden
 PG→Oracle-Transfer eines Schemas, das dieselbe Rechnung zweimal fuehrt. Reihung
 gegenueber den uebrigen `next/`-Plaenen ist eine Prioritaetsfrage, keine
 Vorbedingung.
+
+## Closure (2026-09-13)
+
+Weg A gebaut, mit einer wichtigen Korrektur aus der P0-Nachmessung: die
+Faelle sind **nicht** je Speicherform getrennt — VIRTUAL/MATERIALIZED
+gemischt kollidiert genauso wie zwei gleiche.
+
+**P0 nachgemessen (live gegen Oracle 23, Scratch-Test, danach entfernt):**
+
+| Fall | Ergebnis |
+| --- | --- |
+| `+`-Operator, identisch | `ORA-54015` |
+| Funktionsnamens-Grossschreibung (`UPPER`/`upper`) | `ORA-54015` — normalisiert |
+| zusaetzliche Klammern | `ORA-54015` — normalisiert |
+| `CAST`, identisch | `ORA-54015` |
+| **gemischt: eine VIRTUAL, eine MATERIALIZED, gleicher Text** | **`ORA-54015`** — widerlegt die im Befund unterstellte Trennung |
+| `ORA-01408` mit MATERIALIZED statt VIRTUAL | **`ORA-01408`** — gilt auch dort |
+
+Die Pruefung (`OracleComputedExpressionDuplication`) unterscheidet deshalb
+nicht nach `stored`.
+
+**P1 — `schema generate`:** `OraclePreGenerationValidator` (neuer
+`PreGenerationValidator`-Hook, Muster wie `SqlitePreGenerationValidator`),
+prueft E073 (Ausdrucks-Duplikat) und E074 (Index-Kollision) fuer die ganze
+Zieltabelle.
+
+**P2 — `schema migrate`:** `OracleDiffTableOps.renderCreateTable`/
+`renderAddColumn`/`renderAlterColumnGeneration` pruefen E073 an der jeweils
+betroffenen Spalte (nicht der ganzen Tabelle — ein vorbestehendes,
+unberuehrtes Duplikat waere kein Befund dieser Operation).
+
+**P3 — Index-Kollision auf dem Migrate-Pfad:** `OracleDiffObjectOps
+.emitCreateIndex` (gemeinsamer Renderer fuer `AddIndex` und die
+Down-Richtung von `DropIndex`) prueft E074 fuer den neu hinzukommenden
+Index, in beide Richtungen (neuer Spalten-Index kollidiert mit
+bestehendem Ausdrucks-Index, oder umgekehrt).
+
+**P4 — Serverfehler benannt (residuale, nur-normalisierte Faelle):** kein
+neuer Code noetig. `SchemaMigrateExecutionStage`s bestehender
+Catch-Block wickelt **jede** `SQLException` waehrend `--execute` bereits in
+`ExecutionTrace.executionError` (redigiert, mit `lastStatementOperationIds`)
+statt eines rohen Stacktraces — das deckt den Fall, den die textuelle
+Vorabpruefung bewusst nicht faengt (kommutativ vertauschte Operanden u. ae.),
+ohne Oracle-spezifischen Sonderbau. Live belegt ueber die P0-Messung (jede
+Zeile der Tabelle oben kam als echte `SQLException` mit `errorCode`
+zurueck, genau die Form, die der bestehende Catch-Block abfaengt) und
+Codelesen des bestehenden Mechanismus — keine dedizierte neue
+End-to-End-Integrationsspec dafuer gebaut, da der Mechanismus bereits
+dialektunabhaengig existiert und getestet ist.
+
+**Verifiziert:** `OracleComputedExpressionDuplicationTest` (reine
+Erkennungslogik), `OraclePreGenerationValidatorTest` (P1),
+`OracleComputedExpressionDuplicationMigrateTest` (P2/P3, inkl. zweier
+Regressions-Gegenproben mit unterschiedlichen Ausdruecken/ohne Kollision).
+Zwei Sabotagen durchgefuehrt und zurueckgenommen (Validator- und
+Migrate-Pfad-Check je einmal neutralisiert, beide Male brach der jeweilige
+Test).
+
+**Nicht Teil dieses Schnitts** (wie im Scope abgegrenzt): semantische
+Ausdrucks-Normalisierung (Weg B, haengt an
+[`check-ausdruck-analyse-per-parser.md`](../open/check-ausdruck-analyse-per-parser.md));
+die vier anderen Dialekte (sie kennen die Einschraenkung nicht).

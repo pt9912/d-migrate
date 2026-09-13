@@ -436,7 +436,7 @@ festgenagelt, statt der Doku geglaubt.
 zunaechst nicht anlegen — zwei berechnete Spalten mit **demselben** Ausdruck
 sind dort `ORA-54015` („Duplicate column expression"), auf den uebrigen vier
 nicht. Das trifft nicht nur Tests:
-[`oracle-doppelter-generierungsausdruck.md`](../next/oracle-doppelter-generierungsausdruck.md).
+[`oracle-doppelter-generierungsausdruck.md`](oracle-doppelter-generierungsausdruck.md).
 
 ## Abschluss (2026-09-12)
 

@@ -218,6 +218,26 @@ am Server — gemessen, nicht der Doku entnommen:
 | Oracle | `MODIFY (… GENERATED ALWAYS AS (…) VIRTUAL)` | nur virtuell **und** ohne Index (`ORA-54022`); materialisiert nie (`ORA-54060`) |
 | SQL Server | — | blockt; T-SQL kennt kein `ALTER COLUMN … AS (…)`, und `DROP`+`ADD` lässt eine Sicht darüber still zerbrechen |
 
+**Oracle-Sonderfall: doppelter Ausdruckstext.** Zwei berechnete Spalten
+derselben Tabelle mit identischem (getrimmten) Ausdruckstext lehnt Oracle mit
+`ORA-54015` ab — gemessen unabhängig davon, ob beide `VIRTUAL`, beide
+`MATERIALIZED` oder gemischt sind. Kein anderer Dialekt kennt diese
+Einschränkung. `schema generate` und `schema migrate` prüfen das **textuell**
+(getrimmt, sonst wortgleich) vorab und brechen mit `E073` ab, bevor die erste
+Anweisung läuft — Oracle committet DDL implizit, ein Abbruch mitten in der
+Folge ließe vorige Anweisungen angewandt stehen. Die Prüfung normalisiert
+nicht: Operanden-Reihenfolge, Funktionsnamens-Großschreibung oder
+zusätzliche Klammern erkennt sie nicht als gleich, obwohl Oracle sie selbst
+als Duplikat ablehnt (live gemessen) — diese Fälle laufen bis zum Server
+durch und kommen von dort als `ORA-54015` zurück.
+
+**Oracle-Sonderfall: Index-Kollision.** Ein Ausdrucks-Index mit demselben
+Text wie eine berechnete Spalte lässt sich anlegen; ein zweiter, gewöhnlicher
+Index direkt auf dieser Spalte scheitert danach mit `ORA-01408` ("such
+column list already indexed") — für Oracle ist die berechnete Spalte intern
+derselbe Ausdruck wie der Index. Gemessen auch für `MATERIALIZED`. Vorab
+geprüft, `E074`.
+
 **Die Erzeugungsart einer Spalte ändern** — berechnet ↔ gewöhnlich, Identity
 hinzufügen, entfernen oder ihren Modus wechseln. Auch das hängt am Server, und
 auch hier gilt: gemessen, nicht angenommen.

@@ -56,6 +56,16 @@ internal object OracleDiffTableOps {
         val schema = ctx.schemaForDirection()
             ?: return blockMissingSchema(op, ctx, "rendering the columns of '$tableName'")
         val table = op.table
+        // oracle-doppelter-generierungsausdruck.md: vor der ersten Anweisung
+        // pruefen, nicht erst am Server scheitern -- Oracle committet DDL
+        // implizit, ein Abbruch mitten in der Folge liesse vorige Anweisungen
+        // angewandt stehen.
+        OracleComputedExpressionDuplication.duplicateGroups(table).firstOrNull()
+            ?.let { return OracleComputedExpressionDuplication.blockDuplicateExpression(op, ctx, tableName, it) }
+        table.columns.entries.firstOrNull { (name, col) ->
+            val computed = col.generation as? ColumnGeneration.Computed ?: return@firstOrNull false
+            OracleComputedExpressionDuplication.collidesWithExpressionIndex(table, name, computed.expression)
+        }?.let { (name, _) -> return OracleComputedExpressionDuplication.blockIndexCollision(op, ctx, tableName, name) }
         val notes = mutableListOf<TransformationNote>()
         val unkeyableColumns = table.columns.filterValues { typeMapper.isUnkeyable(it.type) }.keys
         val lines = mutableListOf<String>()
@@ -235,6 +245,14 @@ internal object OracleDiffTableOps {
         }
         val schema = ctx.schemaForDirection()
             ?: return blockMissingSchema(op, ctx, "rendering column '$table.$column'")
+        (op.column.generation as? ColumnGeneration.Computed)?.let { computed ->
+            val siblings = schema.tables[table]?.let {
+                OracleComputedExpressionDuplication.duplicateSiblings(it, column, computed.expression)
+            }.orEmpty()
+            if (siblings.isNotEmpty()) {
+                return OracleComputedExpressionDuplication.blockDuplicateExpression(op, ctx, table, (siblings + column).sorted())
+            }
+        }
         val notes = mutableListOf<TransformationNote>()
         val decl = columnHelper.generateColumnSql(table, column, op.column, schema, notes)
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD ($decl);")
@@ -438,6 +456,14 @@ internal object OracleDiffTableOps {
             )
             ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
             return
+        }
+        // oracle-doppelter-generierungsausdruck.md: der neue Ausdruck darf
+        // keinen bestehenden Geschwister-Ausdruck derselben Tabelle treffen.
+        val duplicateSiblings = ctx.schemaForDirection()?.tables?.get(table)?.let {
+            OracleComputedExpressionDuplication.duplicateSiblings(it, column, computed.expression)
+        }.orEmpty()
+        if (duplicateSiblings.isNotEmpty()) {
+            return OracleComputedExpressionDuplication.blockDuplicateExpression(op, ctx, table, (duplicateSiblings + column).sorted())
         }
         // Beide Ausdrucksformen: der Index kann noch den alten nennen.
         val expressions = setOfNotNull(

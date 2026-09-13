@@ -5,6 +5,7 @@ import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.NeutralTypeCanonicalizer
+import dev.dmigrate.driver.PreGenerationValidator
 import dev.dmigrate.driver.SchemaReader
 import dev.dmigrate.driver.ServerVersion
 import dev.dmigrate.driver.StructuralTransferTypeCompatibility
@@ -34,6 +35,7 @@ class OracleDriver : DatabaseDriver {
     override fun schemaReader(): SchemaReader = OracleSchemaReader()
     override fun tableLister(): TableLister = OracleTableLister()
     override fun ddlGenerator(): DdlGenerator = OracleDdlGenerator()
+    override fun preGenerationValidator(): PreGenerationValidator = OraclePreGenerationValidator
     override fun dataReader(): DataReader = dataReader(null)
 
     /** LN-005: `pipeline.fetch_size`/`--fetch-size` erreicht den Reader über diese Naht. */

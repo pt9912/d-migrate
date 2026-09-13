@@ -207,3 +207,41 @@ entries:
       - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlDiffObjectOps.kt"
         path_type: production
 
+  # E073 — oracle-doppelter-generierungsausdruck.md: zwei berechnete Spalten
+  # derselben Tabelle mit identischem (getrimmten) Ausdruckstext scheitern auf
+  # Oracle mit ORA-54015, egal ob VIRTUAL/MATERIALIZED oder gemischt (live
+  # gemessen). Gefangen vor der ersten Anweisung: `schema generate`
+  # (PreGenerationValidator) und `schema migrate` (CreateTable/AddColumn/
+  # AlterColumnGeneration) — Oracle committet DDL implizit, ein Abbruch
+  # mitten in der Folge liesse vorige Anweisungen angewandt stehen.
+  - code: E073
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-oracle/src/test/kotlin/dev/dmigrate/driver/oracle/OraclePreGenerationValidatorTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-oracle/src/main/kotlin/dev/dmigrate/driver/oracle/OracleComputedExpressionDuplication.kt"
+        path_type: production
+      - source: "adapters/driven/driver-oracle/src/main/kotlin/dev/dmigrate/driver/oracle/OraclePreGenerationValidator.kt"
+        path_type: production
+      - source: "adapters/driven/driver-oracle/src/main/kotlin/dev/dmigrate/driver/oracle/OracleDiffTableOps.kt"
+        path_type: production
+
+  # E074 — dieselbe Quelle wie E073: ein Ausdrucks-Index und ein gewoehnlicher
+  # Index auf einer berechneten Spalte mit demselben Ausdruck sind fuer Oracle
+  # intern derselbe Index (ORA-01408, "such column list already indexed"),
+  # auch bei MATERIALIZED (live gemessen). Gefangen in `schema generate`
+  # sowie `schema migrate` (CreateTable/AddIndex).
+  - code: E074
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-oracle/src/test/kotlin/dev/dmigrate/driver/oracle/OraclePreGenerationValidatorTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-oracle/src/main/kotlin/dev/dmigrate/driver/oracle/OracleComputedExpressionDuplication.kt"
+        path_type: production
+      - source: "adapters/driven/driver-oracle/src/main/kotlin/dev/dmigrate/driver/oracle/OraclePreGenerationValidator.kt"
+        path_type: production
+      - source: "adapters/driven/driver-oracle/src/main/kotlin/dev/dmigrate/driver/oracle/OracleDiffObjectOps.kt"
+        path_type: production
+

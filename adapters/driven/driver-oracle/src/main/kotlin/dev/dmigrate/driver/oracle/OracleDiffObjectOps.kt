@@ -200,6 +200,21 @@ internal object OracleDiffObjectOps {
                 "ORACLE_TABLE_NOT_IN_SCHEMA",
                 MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
             )
+        // oracle-doppelter-generierungsausdruck.md (E074): ein Ausdrucks-Index
+        // und ein gewoehnlicher Index auf einer berechneten Spalte mit
+        // demselben Ausdruck sind fuer Oracle derselbe Index (ORA-01408).
+        if (OracleComputedExpressionDuplication.indexCollides(tableDef, index)) {
+            return blockConstraint(
+                op, ctx,
+                "Index '${indexBuilder.effectiveName(table, index)}' on '$table' collides with another index " +
+                    "over the same computed-column expression. Oracle treats an expression index and a plain " +
+                    "index on a computed column carrying that expression as the same index and refuses the " +
+                    "second one with ORA-01408 (\"such column list already indexed\", measured against 23). " +
+                    "Drop one of the two indexes.",
+                OracleComputedExpressionDuplication.EXPRESSION_INDEX_COLLISION,
+                MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
+            )
+        }
         val stmt = indexBuilder.render(table, tableDef, index, unkeyableColumns(tableDef))
         if (stmt.sql.isBlank()) {
             // Leeres SQL heisst: der Index ist nicht renderbar (E057 Volltext,
