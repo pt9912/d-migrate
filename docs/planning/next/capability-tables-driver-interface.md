@@ -43,23 +43,70 @@ aufgelöst, nicht mehr über eine statische Tabelle mit Dialekt-Switch.
 `XCapabilityDefaults.forDialect(dialect)` auf
 `DatabaseDriverRegistry.get(dialect).xCapability()`.
 
-## Offene Designfrage vor Sub-Slice-Schnitt
+## Designfrage vor Sub-Slice-Schnitt — **gemessen 2026-09-13**
 
-**Registry-Verfügbarkeit in jedem Aufrufkontext.** Heute funktionieren die
-statischen Tabellen unabhängig davon, welche Adapter-JARs auf dem
-Klassenpfad liegen (reine Compile-Time-Daten). Die Registry ist
-ServiceLoader-befüllt und hängt vom Klassenpfad zur Laufzeit ab — CLI/MCP
-binden alle fünf Adapter ein, aber Unit-Tests, die eine Capability-Tabelle
-heute direkt mocken/abfragen (ohne einen Treiber zu registrieren), müssten
-auf eine Registry-Registrierung umgestellt werden. Vor Beginn zu klären:
-bleibt das für alle betroffenen Testsuiten praktikabel, oder braucht es
-zusätzlich eine leichte "Capability-only"-Auflösung ohne volle
-Treiber-Registrierung?
+Die Frage lautete: bleibt die Registry in jedem Aufrufkontext verfügbar, oder
+braucht es zusätzlich eine leichte „Capability-only"-Auflösung ohne volle
+Treiber-Registrierung? Gemessen über `^import` (Textvorkommen zählen KDoc mit
+und überschätzten den Bestand um die Hälfte):
+
+| | produktiv | Test |
+|---|---|---|
+| `DialectCapabilities` | 14 (9 `hexagon/application`) | 2 |
+| `SequenceCapabilityDefaults` | 3 | 1 |
+| `RoutineCapabilityDefaults` | 1 | 2 |
+| `TriggerCapabilityDefaults` | 1 | 0 |
+| `SpatialProfilePolicy` | 5 (4 `hexagon/application`) | 0 |
+
+Die Zeilensumme (24) doppelt: zwei Dateien fragen mehr als eine Tabelle.
+Eindeutig sind es **22 produktive Dateien**, davon **14 in
+`hexagon/application`**, und **5 Testdateien**.
+
+**Zur Laufzeit kein Blocker.** Beide Einstiegspunkte rufen
+`RuntimeBootstrap.initialize()`, bevor irgendein Kommando läuft — `Main.kt`
+für die CLI, `McpServerBootstrap`/`DataRunnerWorkers` für MCP —, und
+`RuntimeBootstrap` ist die **einzige** produktive Stelle, die
+`DatabaseDriverRegistry.loadAll()` aufruft. Die Sorge im Trigger („oft, bevor
+überhaupt eine Verbindung/ein Treiber existiert") vermengt zwei Dinge: die
+Registry hängt nicht an einer Verbindung, sie wird beim Start gefüllt. Eine
+Preflight-Frage aus dem eingetippten Dialektnamen bleibt beantwortbar.
+
+**Im Test schon.** `hexagon/application` trägt **14 der 22** produktiven
+Dateien, und sein Test-Klassenpfad führt `driver-common`, aber **keinen**
+konkreten Treiber — das ist kein Versehen, sondern die Schichtregel. Nach dem
+Umbau bräuchte jeder dieser Tests einen registrierten `DatabaseDriver` für den
+geprüften Dialekt. Eine `testFixtures`-Attrappe dafür **gibt es heute nicht**;
+die Suche über alle `testFixtures`-Quellen findet keine.
+
+**Der schwerere Punkt ist nicht die Verfügbarkeit, sondern die Form der
+Registry.** `DatabaseDriverRegistry` ist ein global veränderlicher Singleton
+mit `register`/`loadAll`/`clear`, und `get()` **wirft**, wenn nichts
+registriert ist. Heute ist `DialectCapabilities.forTarget(dialect)` eine reine
+Funktion: sie kann nicht scheitern und hängt von nichts ab. Danach hinge jede
+Fähigkeitsfrage an geteiltem, ordnungsabhängigem Zustand — 59 Testdateien
+fassen die Registry bereits an, inklusive `clear()`, und Tests eines Moduls
+teilen sich eine JVM.
+
+**Antwort: ja, es braucht die leichte Auflösung.** Nicht als Bequemlichkeit,
+sondern damit eine Frage, die heute nicht scheitern kann, es auch danach nicht
+kann. Zwei Teile:
+
+1. Eine Auflösung, die Capabilities liefert, ohne einen vollen Treiber zu
+   verlangen — und die bei unbekanntem Dialekt eine Antwort gibt statt zu
+   werfen.
+2. Eine `testFixtures`-Attrappe (`DatabaseDriver` mit reinen
+   Capability-Rückgaben), damit `hexagon/application`-Tests einen Stub
+   registrieren, statt Adapter auf ihren Klassenpfad zu ziehen.
+
+Ohne beides verschiebt der Umbau einen reinen Wert in einen Zustand — und
+tauscht eine `when (dialect)`-Tabelle gegen eine Klasse von Testfehlern, die
+es heute nicht gibt.
 
 ## Scope-Skizze
 
-1. **P0 — Designfrage klären** (siehe oben) + Interface-Erweiterung
-   entwerfen (fünf neue `DatabaseDriver`-Methoden, mit sinnvollen
+1. **P0 — Designfrage geklärt** (siehe oben; 2026-09-13). Bleibt: die
+   Capability-only-Auflösung und die `testFixtures`-Attrappe entwerfen, dann
+   die Interface-Erweiterung (fünf neue `DatabaseDriver`-Methoden, mit sinnvollen
    Default-Implementierungen wo möglich, um nicht jeden `*Driver` sofort
    vollständig anfassen zu müssen).
 2. **P1 — Je Dialekt verdrahten.** Fünf `*Driver`-Klassen um die neuen
