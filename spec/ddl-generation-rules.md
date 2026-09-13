@@ -57,6 +57,13 @@ stabilen, nicht zeitabhängigen Metadaten sichtbar.
   `--deterministic` weiterhin die Output-Policy; der stabile Zeitwert wird
   nicht als volatile Provenienz ausgegeben.
 
+**`ddl.include_comments`** (Default `true`, kein CLI-Flag — der Header
+beschreibt das Ziel, nicht den einzelnen Aufruf, dieselbe Ebene wie
+`ddl.mysql.engine`): `false` lässt `schema generate` den Header-Block
+vollständig weg, für alle fünf Dialekte. Betrifft nur diesen Kommentarblock,
+kein SQL-`COMMENT ON TABLE/COLUMN` — das neutrale Modell trägt keine
+Objekt-Kommentare.
+
 ### 1.3 Encoding
 
 - Generierte Dateien sind immer **UTF-8** ohne BOM

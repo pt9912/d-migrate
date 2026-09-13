@@ -212,6 +212,35 @@ class SchemaGenerateWiringTest : FunSpec({
         return file
     }
 
+    // ─── ddl-comment-rendering.md: ddl.include_comments (no CLI flag) ────
+
+    fun includeCommentsConfig(value: Boolean): Path {
+        val file = Files.createTempFile("dmigrate-generate-comments-", ".yaml")
+        Files.writeString(file, "ddl:\n  include_comments: $value\n")
+        return file
+    }
+
+    test("ddl.include_comments=false reaches the generation options") {
+        val factory = RecordingSchemaGenerateFactory()
+
+        val exit = SchemaGenerateWiring.execute(
+            options(configPath = includeCommentsConfig(false)),
+            factory,
+        )
+
+        exit shouldBe 0
+        factory.generators.single().generateOptions.single().includeComments shouldBe false
+    }
+
+    test("without ddl.include_comments the default stays true") {
+        val factory = RecordingSchemaGenerateFactory()
+
+        val exit = SchemaGenerateWiring.execute(options(), factory)
+
+        exit shouldBe 0
+        factory.generators.single().generateOptions.single().includeComments shouldBe true
+    }
+
     test("ddl.inline_foreign_keys=never from the config file defers FKs without --split") {
         val factory = RecordingSchemaGenerateFactory()
 

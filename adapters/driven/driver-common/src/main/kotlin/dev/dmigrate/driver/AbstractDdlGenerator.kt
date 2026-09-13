@@ -20,7 +20,7 @@ abstract class AbstractDdlGenerator(
         val blockedTables = mutableSetOf<String>()
 
         // ─── PRE_DATA (default phase) ────────────────────────────
-        statements += generateHeader(schema, options)
+        if (options.includeComments) statements += generateHeader(schema, options)
         statements += generateCustomTypes(schema.customTypes, skipped)
 
         var preSkipCount = skipped.size

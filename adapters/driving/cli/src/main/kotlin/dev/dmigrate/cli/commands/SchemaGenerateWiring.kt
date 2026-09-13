@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.resolveEffectiveHashPartitions
+import dev.dmigrate.cli.config.resolveEffectiveIncludeComments
 import dev.dmigrate.cli.config.resolveEffectiveInlineForeignKeys
 import dev.dmigrate.cli.config.resolveEffectiveMysqlTableOptions
 import dev.dmigrate.driver.MysqlTableOptions
@@ -53,6 +54,7 @@ private data class EffectiveDdlSettings(
     val hashPartitions: String?,
     val mysqlTableOptions: MysqlTableOptions = MysqlTableOptions(),
     val inlineForeignKeys: String? = null,
+    val includeComments: Boolean = true,
 )
 
 internal data class SchemaGenerateWiringBundle(
@@ -131,6 +133,9 @@ internal object SchemaGenerateWiring {
             // jedes Ziel gleich, ob der Dialekt ihn umsetzen kann, prueft der
             // Runner (dort ist die Generator-Faehigkeit bekannt).
             val inlineForeignKeys = resolveEffectiveInlineForeignKeys(options.configPath, options.inlineForeignKeys)
+            // ddl.include_comments ebenso wenig dialekt-geschachtelt: der
+            // Header-Kommentar existiert fuer alle fuenf Dialekte gleich.
+            val includeComments = resolveEffectiveIncludeComments(options.configPath)
             when {
                 options.target.equals("mssql", ignoreCase = true) -> EffectiveDdlSettings(
                     partitionStorage = resolveEffectivePartitionStorage(
@@ -140,16 +145,19 @@ internal object SchemaGenerateWiring {
                         options.configPath, options.mssqlHashPartitions,
                     ),
                     inlineForeignKeys = inlineForeignKeys,
+                    includeComments = includeComments,
                 )
                 options.target.equals("mysql", ignoreCase = true) -> EffectiveDdlSettings(
                     partitionStorage = options.partitionStorage,
                     hashPartitions = options.mssqlHashPartitions,
                     mysqlTableOptions = resolveEffectiveMysqlTableOptions(options.configPath),
                     inlineForeignKeys = inlineForeignKeys,
+                    includeComments = includeComments,
                 )
                 else -> EffectiveDdlSettings(
                     options.partitionStorage, options.mssqlHashPartitions,
                     inlineForeignKeys = inlineForeignKeys,
+                    includeComments = includeComments,
                 )
             }
         } catch (e: ConfigResolveException) {
@@ -175,6 +183,7 @@ internal object SchemaGenerateWiring {
             sqliteNamedSequences = options.sqliteNamedSequences,
             mssqlHashPartitions = ddl.hashPartitions,
             inlineForeignKeys = ddl.inlineForeignKeys,
+            includeComments = ddl.includeComments,
             targetVersion = options.targetVersion,
             deterministic = options.deterministic,
             migrationOverlays = MigrationOverlayFileLoader.load(options.migrationOverlays),

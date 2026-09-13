@@ -84,3 +84,40 @@ Vorbild für alle künftigen Boolean-Config-Schlüssel gälte.
 - `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/DdlGenerationOptions.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/DdlConfigResolver.kt`
+
+## Closure (2026-09-13)
+
+Weg 2 umgesetzt (kein CLI-Flag, nur Config → Default), wie empfohlen — spart
+die Boolean-Tri-State-Loesung, die sonst als erstes Vorbild fuer kuenftige
+Boolean-Config-Schluessel gegolten haette.
+
+**Umgesetzt:**
+
+- `DdlGenerationOptions.includeComments: Boolean = true`.
+- `AbstractDdlGenerator.generate()`: `generateHeader()`-Aufruf hinter
+  `if (options.includeComments)`.
+- `DdlConfigResolver`: neuer `readBoolean`-Helfer (SnakeYAML liest
+  `true`/`false` bereits als `kotlin.Boolean`; alles andere bricht ab statt
+  still auf den Default zu fallen), `ddl.include_comments` als
+  Top-Level-Schluessel (nicht dialekt-geschachtelt, wie
+  `inline_foreign_keys`).
+- `SchemaGenerateWiring`/`SchemaGenerateRunner`: `includeComments` von der
+  Config bis in `DdlGenerationOptions` durchgereicht — kein CLI-Flag, also
+  kein neues Feld auf `SchemaGenerateOptions`/`SchemaGenerateCommand`.
+- `spec/ddl-generation-rules.md` §1.2 (normative Stelle fuer den Header)
+  ergaenzt statt `spec/cli-spec.md` — passend zu `ddl.mysql.engine` &Co.,
+  die dort ebenfalls nicht als CLI-Flag-Zeile stehen.
+
+**Bewusst nicht ergaenzt:** ein eigener Anwenderhandbuch-Abschnitt (anders
+als im urspruenglichen Scope skizziert). Gemessen an `ddl.mysql.engine`/
+`charset`/`collation` — denselben reinen Ziel-Beschreibungs-Schluesseln ohne
+CLI-Gegenstueck — hat keiner von ihnen eine eigene Anwenderhandbuch-Stelle;
+nur CLI-Flags bekommen dort Hinweise. `include_comments` bricht dieses
+Muster nicht.
+
+**Verifiziert:** `AbstractDdlGeneratorTest` (Header da/weg, beide Faelle),
+`DdlConfigResolverTest` (Lesen, Typfehler, Praezedenz), `SchemaGenerateWiringTest`
+(Config-Wert erreicht `DdlGenerationOptions`, Default ohne Config bleibt
+`true`). Zwei Sabotagen durchgefuehrt und zurueckgenommen (Guard in
+`AbstractDdlGenerator` und Resolver-Aufruf in der Wiring je einmal
+neutralisiert, beide Male brach der jeweilige Test).

@@ -224,6 +224,45 @@ class DdlConfigResolverTest : FunSpec({
         ) shouldBe null
     }
 
+    test("ddl.include_comments is read from the top-level ddl block") {
+        val file = tempConfig(
+            """
+            ddl:
+              include_comments: false
+            """.trimIndent()
+        )
+        resolverFor(file).resolve().includeComments shouldBe false
+    }
+
+    test("a non-boolean include_comments fails loudly instead of silently defaulting") {
+        val file = tempConfig(
+            """
+            ddl:
+              include_comments: "nope"
+            """.trimIndent()
+        )
+        val ex = shouldThrow<ConfigResolveException> { resolverFor(file).resolve() }
+        ex.message!! shouldContain "ddl.include_comments"
+        ex.message!! shouldContain "must be true or false"
+    }
+
+    test("include_comments: no config value -> effective default true") {
+        resolveEffectiveIncludeComments(
+            configPath = null,
+            preloaded = LoadedConfig(root = null, path = Path.of(".d-migrate.yaml")),
+        ) shouldBe true
+    }
+
+    test("include_comments: config value wins over the default") {
+        val file = tempConfig(
+            """
+            ddl:
+              include_comments: false
+            """.trimIndent()
+        )
+        resolveEffectiveIncludeComments(file) shouldBe false
+    }
+
     test("precedence: CLI beats config, config beats default") {
         val file = tempConfig(
             """
