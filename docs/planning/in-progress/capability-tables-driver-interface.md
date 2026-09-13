@@ -1,6 +1,6 @@
 # Capability-Tabellen ans `DatabaseDriver`-Interface statt statischer Tabellen im Hexagon
 
-> **Status:** In Arbeit seit 2026-09-13 (P0 gemessen, P1–P3 gebaut).
+> **Status:** In Arbeit seit 2026-09-13 (P0 gemessen, P1–P5 gebaut; alle fünf Tabellen verschoben).
 > **Trigger:** Beim Oracle-Slice-2-Bau fiel auf, dass fünf statische
 > Objekte in `hexagon/ports-common`/`hexagon/ports-read`
 > (`DialectCapabilities`, `SequenceCapabilityDefaults`,
@@ -141,6 +141,52 @@ Attrappe mit erfundenen Werten wäre die schlechtere Wahl gewesen: dann prüften
 dialektabhängige Tests gegen Fantasie statt gegen den Dialekt.
 `DialectCapabilityLookup.register(...)` gibt es trotzdem — für Tests, die
 bewusst eine abweichende Antwort setzen wollen.
+
+## Die zweite Scheibe: die vier übrigen Tabellen
+
+`SequenceCapabilityDefaults`, `RoutineCapabilityDefaults`,
+`TriggerCapabilityDefaults` und `SpatialProfilePolicy` sind denselben Weg
+gegangen — mit **einer** Abweichung, die der Modulgraph erzwang.
+
+Ihre Werttypen (`SequenceCapability`, `EffectiveRoutineCapability`,
+`TriggerCapability`, `SpatialProfile`) wohnen in `ports-read`.
+`DialectCapabilityProvider` liegt in `ports-common` und kann sie nicht sehen.
+Ein Port gehört dahin, wo seine Sprache wohnt; die Alternative wäre gewesen,
+vier Werttypen nach unten zu schieben, nur damit eine Schnittstelle sie nennen
+kann. Deshalb ein **zweiter** Port, `DialectReadCapabilityProvider`, in
+`ports-read` — der **erbt** vom ersten, sodass ein Anbieter alle Fragen seines
+Dialekts beantwortet und `dialect` nur einmal deklariert ist. Dieselbe Klasse
+je Treibermodul steht unter beiden `META-INF/services`-Namen.
+
+Nicht auf `DatabaseDriver` gelegt, anders als der Entwurf es für alle fünf
+vorsah: kein Aufrufer fragt heute eine Treiber**instanz** danach, und vier
+weitere abstrakte Methoden hätten dieselben 18 Attrappen wieder gebrochen. Das
+Treiber**modul** liefert sie, und das ist, was das Akzeptanzkriterium meint.
+
+**`routineCapability` nimmt die Version**, weil `MYSQL` für zwei Server steht:
+Oracle MySQL kennt `CREATE OR REPLACE FUNCTION` nicht, MariaDB schon. Das
+ehemalige `forMysqlServerVersion` ist damit kein Sonderweg mehr, sondern
+derselbe Aufruf mit einem Argument.
+
+**Belegt.** Je Treibermodul eine Spec, die prüft, was still brechen kann: dass
+der `ServiceLoader` den Anbieter unter **seinem** Dialekt findet (ein
+vertauschter Service-Eintrag fällt sonst nirgends auf — die Antworten wären
+plausibel, nur für den falschen Server) und dass er alle vier Fragen
+beantwortet. Alle fünf sind über eine absichtlich falsche Zusicherung als
+laufend belegt.
+
+## Was übrig bleibt
+
+Nach beiden Scheiben tragen `ports-common` und `ports-read` **keine**
+Capability-Tabelle mehr. Drei `when (dialect)` stehen dort noch, und keines
+ist eine:
+
+- `SqlIdentifiers` — Quoting, vom Plan ausdrücklich als Syntax ausgenommen.
+- `TargetServerVersionParser` — liest je Dialekt eine Versionsangabe. Eine
+  Zuordnung, keine Fähigkeit.
+- `MeasuredServerVersions.of` — hält fest, gegen welche Version gemessen
+  wurde. Das ist ein Messprotokoll und gehört nicht in den Treiber, der davon
+  handelt.
 
 ## Was dabei auffiel, aber nicht dazugehört
 

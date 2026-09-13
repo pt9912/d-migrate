@@ -19,24 +19,10 @@ package dev.dmigrate.driver
  */
 object TriggerCapabilityDefaults {
 
-    private val PostgreSQL = TriggerCapability(enabled = true, minPostgresMajorVersion = 14)
-    private val MySQL = TriggerCapability(enabled = false)
-    private val SQLite = TriggerCapability(enabled = false)
-
-    // Drop+Create ist auch fuer T-SQL immer gueltig; ob der Renderer
-    // `CREATE OR ALTER TRIGGER` (2016 SP1+) nutzt, entscheidet der
-    // Trigger-Slice (docs/planning/in-progress/mssql-dialect-scoping.md, Slice 9).
-    private val Mssql = TriggerCapability(enabled = false)
-
-    // Oracle unterstuetzt CREATE OR REPLACE TRIGGER nativ und unversioniert
-    // (anders als PG erst ab 14, und anders als MySQL/SQLite gar nicht).
-    private val Oracle = TriggerCapability(enabled = true)
-
-    fun forDialect(dialect: DatabaseDialect): TriggerCapability = when (dialect) {
-        DatabaseDialect.POSTGRESQL -> PostgreSQL
-        DatabaseDialect.MYSQL -> MySQL
-        DatabaseDialect.SQLITE -> SQLite
-        DatabaseDialect.MSSQL -> Mssql
-        DatabaseDialect.ORACLE -> Oracle
-    }
+    /**
+     * Duenne Weiterleitung an [DialectReadCapabilityLookup]; die Werte liegen
+     * im Treibermodul des jeweiligen Dialekts.
+     */
+    fun forDialect(dialect: DatabaseDialect): TriggerCapability =
+        DialectReadCapabilityLookup.forDialect(dialect).triggerCapability()
 }

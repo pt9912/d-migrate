@@ -417,23 +417,13 @@ enum class SqliteNamedSequenceMode(val cliName: String) {
  */
 object SpatialProfilePolicy {
 
-    fun defaultFor(dialect: DatabaseDialect): SpatialProfile = when (dialect) {
-        DatabaseDialect.POSTGRESQL -> SpatialProfile.POSTGIS
-        DatabaseDialect.MYSQL -> SpatialProfile.NATIVE
-        DatabaseDialect.SQLITE -> SpatialProfile.NONE
-        // SQL Server: native `geometry`-Spalten (spec/ddl-generation-rules.md, Spatial).
-        DatabaseDialect.MSSQL -> SpatialProfile.NATIVE
-        // Oracle: natives SDO_GEOMETRY, wie SQL Server (spec/ddl-generation-rules.md, Spatial).
-        DatabaseDialect.ORACLE -> SpatialProfile.NATIVE
-    }
+    /** Weiterleitung; der Wert liegt im Treibermodul des Dialekts. */
+    fun defaultFor(dialect: DatabaseDialect): SpatialProfile =
+        DialectReadCapabilityLookup.forDialect(dialect).defaultSpatialProfile()
 
-    fun allowedFor(dialect: DatabaseDialect): Set<SpatialProfile> = when (dialect) {
-        DatabaseDialect.POSTGRESQL -> setOf(SpatialProfile.POSTGIS, SpatialProfile.NONE)
-        DatabaseDialect.MYSQL -> setOf(SpatialProfile.NATIVE, SpatialProfile.NONE)
-        DatabaseDialect.SQLITE -> setOf(SpatialProfile.SPATIALITE, SpatialProfile.NONE)
-        DatabaseDialect.MSSQL -> setOf(SpatialProfile.NATIVE, SpatialProfile.NONE)
-        DatabaseDialect.ORACLE -> setOf(SpatialProfile.NATIVE, SpatialProfile.NONE)
-    }
+    /** Weiterleitung; die Menge liegt im Treibermodul des Dialekts. */
+    fun allowedFor(dialect: DatabaseDialect): Set<SpatialProfile> =
+        DialectReadCapabilityLookup.forDialect(dialect).allowedSpatialProfiles()
 
     /**
      * Resolves the effective spatial profile from a raw CLI string and dialect.

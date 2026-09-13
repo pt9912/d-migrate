@@ -1,6 +1,6 @@
 package dev.dmigrate.driver.mysql
 
-import dev.dmigrate.driver.DialectCapabilityProvider
+import dev.dmigrate.driver.DialectReadCapabilityProvider
 
 /**
  * ServiceLoader-Einstieg fuer [MysqlCapabilities].
@@ -14,4 +14,4 @@ import dev.dmigrate.driver.DialectCapabilityProvider
  * Die Antworten stehen weiterhin in [MysqlCapabilities]; diese Klasse reicht sie
  * per Delegation durch und traegt selbst keine.
  */
-class MysqlCapabilityProvider : DialectCapabilityProvider by MysqlCapabilities
+class MysqlCapabilityProvider : DialectReadCapabilityProvider by MysqlCapabilities

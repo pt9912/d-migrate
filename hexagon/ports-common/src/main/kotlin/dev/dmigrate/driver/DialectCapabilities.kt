@@ -4,9 +4,14 @@ package dev.dmigrate.driver
  * Declares which schema object types a target dialect can natively
  * generate, rewrite, or must skip/flag as manual action.
  *
- * Resolved per [DatabaseDialect] via [DialectCapabilities.forDialect].
- * Generators consume this to make consistent generate/skip/action-required
- * decisions without scattered `when (dialect)` checks.
+ * Reiner Werttyp. **Die Antworten stehen nicht hier**, sondern je Dialekt im
+ * Treibermodul; [forDialect] und [forTarget] leiten nur an
+ * [DialectCapabilityLookup] weiter.
+ *
+ * Was hier steht, ist die Begruendung: die KDoc jedes Feldes sagt, warum es
+ * fuer welchen Dialekt so steht wie es steht — und zwar **vergleichend**, mit
+ * allen fuenf Antworten nebeneinander. Genau das waere verloren, wenn die
+ * Begruendung mit den Werten in die Treiber gewandert waere.
  */
 data class DialectCapabilities(
     val supportsViews: Boolean,

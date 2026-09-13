@@ -23,50 +23,17 @@ package dev.dmigrate.driver
  */
 object RoutineCapabilityDefaults {
 
-    private val PostgreSQL = EffectiveRoutineCapability.Valid(
-        function = RoutineKindCapability(enabled = true, minServerVersion = null),
-        procedure = RoutineKindCapability(enabled = true, minServerVersion = null),
-    )
+    /**
+     * Duenne Weiterleitung an [DialectReadCapabilityLookup]; die Werte liegen
+     * im Treibermodul des jeweiligen Dialekts.
+     */
+    fun forDialect(dialect: DatabaseDialect): EffectiveRoutineCapability.Valid =
+        DialectReadCapabilityLookup.forDialect(dialect).routineCapability(null)
 
-    private val OracleMySQL = EffectiveRoutineCapability.Valid(
-        function = RoutineKindCapability(enabled = false, minServerVersion = null),
-        procedure = RoutineKindCapability(enabled = false, minServerVersion = null),
-    )
-
-    private val MariaDB = EffectiveRoutineCapability.Valid(
-        function = RoutineKindCapability(enabled = true, minServerVersion = null),
-        procedure = RoutineKindCapability(enabled = true, minServerVersion = null),
-    )
-
-    private val SQLite = EffectiveRoutineCapability.Valid(
-        function = RoutineKindCapability(enabled = false, minServerVersion = null),
-        procedure = RoutineKindCapability(enabled = false, minServerVersion = null),
-    )
-
-    // Konservativ wie Oracle MySQL: Drop+Create-Fallback ist fuer T-SQL immer
-    // gueltig; ob der Renderer `CREATE OR ALTER` (2016 SP1+) nutzt, entscheidet
-    // der Routinen-Slice (docs/planning/in-progress/mssql-dialect-scoping.md,
-    // Slice 9).
-    private val Mssql = EffectiveRoutineCapability.Valid(
-        function = RoutineKindCapability(enabled = false, minServerVersion = null),
-        procedure = RoutineKindCapability(enabled = false, minServerVersion = null),
-    )
-
-    // Oracle unterstuetzt CREATE OR REPLACE FUNCTION/PROCEDURE nativ (anders
-    // als MySQL/MSSQL) -- kein Drop+Create-Fallback noetig.
-    private val OracleDb = EffectiveRoutineCapability.Valid(
-        function = RoutineKindCapability(enabled = true, minServerVersion = null),
-        procedure = RoutineKindCapability(enabled = true, minServerVersion = null),
-    )
-
-    fun forDialect(dialect: DatabaseDialect): EffectiveRoutineCapability.Valid = when (dialect) {
-        DatabaseDialect.POSTGRESQL -> PostgreSQL
-        DatabaseDialect.MYSQL -> OracleMySQL
-        DatabaseDialect.SQLITE -> SQLite
-        DatabaseDialect.MSSQL -> Mssql
-        DatabaseDialect.ORACLE -> OracleDb
-    }
-
+    /**
+     * Die MySQL-Familie, Version eingerechnet: `MYSQL` steht fuer Oracle MySQL
+     * **und** MariaDB, und nur eine von beiden kennt `CREATE OR REPLACE`.
+     */
     fun forMysqlServerVersion(version: MysqlServerVersion?): EffectiveRoutineCapability.Valid =
-        if (version?.isMariaDb == true) MariaDB else OracleMySQL
+        DialectReadCapabilityLookup.forDialect(DatabaseDialect.MYSQL).routineCapability(version)
 }

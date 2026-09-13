@@ -1,6 +1,6 @@
 package dev.dmigrate.driver.oracle
 
-import dev.dmigrate.driver.DialectCapabilityProvider
+import dev.dmigrate.driver.DialectReadCapabilityProvider
 
 /**
  * ServiceLoader-Einstieg fuer [OracleCapabilities].
@@ -14,4 +14,4 @@ import dev.dmigrate.driver.DialectCapabilityProvider
  * Die Antworten stehen weiterhin in [OracleCapabilities]; diese Klasse reicht sie
  * per Delegation durch und traegt selbst keine.
  */
-class OracleCapabilityProvider : DialectCapabilityProvider by OracleCapabilities
+class OracleCapabilityProvider : DialectReadCapabilityProvider by OracleCapabilities

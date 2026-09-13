@@ -1,6 +1,6 @@
 package dev.dmigrate.driver.mssql
 
-import dev.dmigrate.driver.DialectCapabilityProvider
+import dev.dmigrate.driver.DialectReadCapabilityProvider
 
 /**
  * ServiceLoader-Einstieg fuer [MssqlCapabilities].
@@ -14,4 +14,4 @@ import dev.dmigrate.driver.DialectCapabilityProvider
  * Die Antworten stehen weiterhin in [MssqlCapabilities]; diese Klasse reicht sie
  * per Delegation durch und traegt selbst keine.
  */
-class MssqlCapabilityProvider : DialectCapabilityProvider by MssqlCapabilities
+class MssqlCapabilityProvider : DialectReadCapabilityProvider by MssqlCapabilities

@@ -1,6 +1,6 @@
 package dev.dmigrate.driver.sqlite
 
-import dev.dmigrate.driver.DialectCapabilityProvider
+import dev.dmigrate.driver.DialectReadCapabilityProvider
 
 /**
  * ServiceLoader-Einstieg fuer [SqliteCapabilities].
@@ -14,4 +14,4 @@ import dev.dmigrate.driver.DialectCapabilityProvider
  * Die Antworten stehen weiterhin in [SqliteCapabilities]; diese Klasse reicht sie
  * per Delegation durch und traegt selbst keine.
  */
-class SqliteCapabilityProvider : DialectCapabilityProvider by SqliteCapabilities
+class SqliteCapabilityProvider : DialectReadCapabilityProvider by SqliteCapabilities

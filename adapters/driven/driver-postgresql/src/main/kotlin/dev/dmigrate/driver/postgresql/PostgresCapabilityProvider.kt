@@ -1,6 +1,6 @@
 package dev.dmigrate.driver.postgresql
 
-import dev.dmigrate.driver.DialectCapabilityProvider
+import dev.dmigrate.driver.DialectReadCapabilityProvider
 
 /**
  * ServiceLoader-Einstieg fuer [PostgresCapabilities].
@@ -14,4 +14,4 @@ import dev.dmigrate.driver.DialectCapabilityProvider
  * Die Antworten stehen weiterhin in [PostgresCapabilities]; diese Klasse reicht sie
  * per Delegation durch und traegt selbst keine.
  */
-class PostgresCapabilityProvider : DialectCapabilityProvider by PostgresCapabilities
+class PostgresCapabilityProvider : DialectReadCapabilityProvider by PostgresCapabilities
