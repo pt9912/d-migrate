@@ -5,8 +5,10 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ColumnGenerationTransition
 import dev.dmigrate.core.model.IdentityMode
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.PostgresServerVersion
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -25,8 +27,6 @@ internal object PostgresDiffComputedColumnOps {
     private const val COMPUTED_SET_EXPRESSION_UNSUPPORTED = "POSTGRES_COMPUTED_SET_EXPRESSION_UNSUPPORTED"
 
     private const val COMPUTED_ADD_NOT_SUPPORTED = "POSTGRES_COMPUTED_ADD_NOT_SUPPORTED"
-
-    private const val IDENTITY_ADD_WOULD_COLLIDE = "POSTGRES_IDENTITY_ADD_WOULD_COLLIDE"
 
     private const val IDENTITY_FROM_COMPUTED_NOT_SUPPORTED = "POSTGRES_IDENTITY_FROM_COMPUTED_NOT_SUPPORTED"
 
@@ -157,12 +157,30 @@ internal object PostgresDiffComputedColumnOps {
      * | `ALWAYS` ↔ `BY DEFAULT` | `SET GENERATED …`, Werte und Sequenz bleiben |
      * | Identity → gewoehnlich | `DROP IDENTITY`, Werte bleiben, Sequenz wird entfernt |
      * | berechnet ↔ Identity | `SET EXPRESSION` scheitert („is not a generated column") |
-     * | gewoehnlich → Identity | **laeuft** — aber die neue Sequenz beginnt bei 1, und der naechste `INSERT` kollidiert mit dem Bestand (`duplicate key value violates unique constraint`) |
+     * | gewoehnlich → Identity | drei Anweisungen: `SET NOT NULL`, `ADD GENERATED … AS IDENTITY`, Sequenz-Nachziehung |
      *
-     * Der letzte Fall waere eine Migration, die die Tabelle still unbrauchbar
-     * zuruecklaesst; deshalb wird er benannt abgelehnt statt gerendert. Ihn
-     * sauber zu fahren braeuchte ein Nachziehen der Sequenz auf `max(spalte)`,
-     * also eine Datenanweisung im DDL-Plan — eine eigene Entscheidung.
+     * Der letzte Fall braucht drei Schritte statt einem, live an 18.6 gemessen:
+     *
+     * 1. `SET NOT NULL` — PostgreSQL verlangt das vor `ADD GENERATED`
+     *    (`column "x" … must be declared NOT NULL before identity can be
+     *    added`); auf einer bereits `NOT NULL`-Spalte ist es ein
+     *    folgenloses No-op, kein Fehler.
+     * 2. `ADD GENERATED … AS IDENTITY` — legt die Sequenz an, die bei 1
+     *    beginnt.
+     * 3. Die Sequenz auf den Bestand nachziehen, sonst kollidiert der
+     *    naechste `INSERT` (`duplicate key value violates unique
+     *    constraint`, sofern ein Unique-/PK-Constraint existiert — sonst
+     *    entstehen still doppelte IDs, was schlimmer ist). Dritter Schritt:
+     *    `setval(pg_get_serial_sequence(...), GREATEST(COALESCE(max(spalte), 1), 1),
+     *    max(spalte) IS NOT NULL AND max(spalte) >= 1)`. `GREATEST`/das
+     *    `is_called`-Flag decken zwei live gemessene Randfaelle ab, die ein
+     *    blosses `setval(..., max(spalte))` nicht abdeckt: eine leere
+     *    Tabelle (`max` ist `NULL`, `COALESCE` faengt das) und ausschliesslich
+     *    negative Bestandswerte (`setval` mit einem Wert unter `MINVALUE` (1)
+     *    scheitert mit `value … is out of bounds`; `GREATEST` haelt den Wert
+     *    bei 1, `is_called = false` laesst den naechsten `INSERT` dort
+     *    beginnen — kollisionsfrei, weil negative Bestandswerte nie mit
+     *    aufsteigenden IDs ab 1 ueberlappen).
      */
     private fun renderIdentityTransition(
         op: DiffOperation.AlterColumnGeneration,
@@ -186,18 +204,7 @@ internal object PostgresDiffComputedColumnOps {
                 "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} DROP IDENTITY;",
             )
 
-            targetIdentity != null -> {
-                ctx.skip(
-                    op,
-                    "Operation ${op.id} would make `$table`.`$column` an identity column. PostgreSQL " +
-                        "accepts the statement, but the new sequence starts at 1 — the next `INSERT` then " +
-                        "collides with the rows already there (`duplicate key value violates unique " +
-                        "constraint`, measured against 18.6). Set the identity up yourself and reseed its " +
-                        "sequence to `max($column)`, or express the column through the type (`identifier`).",
-                    code = IDENTITY_ADD_WOULD_COLLIDE,
-                )
-                ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
-            }
+            targetIdentity != null -> renderIdentityAdd(op, ctx, table, column, targetIdentity)
 
             else -> {
                 ctx.skip(
@@ -211,6 +218,38 @@ internal object PostgresDiffComputedColumnOps {
                 ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
             }
         }
+    }
+
+    /**
+     * Gewoehnliche Spalte → Identity: drei Anweisungen fuer eine Operation,
+     * vertraglich zulaessig (Oracle-Muster, `renderIdentityTransition`
+     * DROP IDENTITY + folgendes NOT NULL). `SET NOT NULL` ist auf einer
+     * bereits `NOT NULL`-Spalte ein No-op; die Formel im dritten Schritt ist
+     * im KDoc oben hergeleitet.
+     */
+    private fun renderIdentityAdd(
+        op: DiffOperation.AlterColumnGeneration,
+        ctx: PostgresDiffRenderContext,
+        table: String,
+        column: String,
+        targetIdentity: ColumnGeneration.Identity,
+    ) {
+        val quotedTable = ctx.sql.quote(table)
+        val quotedColumn = ctx.sql.quote(column)
+        ctx.emit(op, "ALTER TABLE $quotedTable ALTER COLUMN $quotedColumn SET NOT NULL;")
+        ctx.emit(
+            op,
+            "ALTER TABLE $quotedTable ALTER COLUMN $quotedColumn " +
+                "ADD GENERATED ${identityWord(targetIdentity)} AS IDENTITY;",
+        )
+        val tableLiteral = SqlIdentifiers.quoteStringLiteral(quotedTable, DatabaseDialect.POSTGRESQL)
+        val columnLiteral = SqlIdentifiers.quoteStringLiteral(column, DatabaseDialect.POSTGRESQL)
+        ctx.emit(
+            op,
+            "SELECT setval(pg_get_serial_sequence($tableLiteral, $columnLiteral), " +
+                "GREATEST(COALESCE(m, 1), 1), m IS NOT NULL AND m >= 1) " +
+                "FROM (SELECT max($quotedColumn) AS m FROM $quotedTable) s;",
+        )
     }
 
     private fun identityWord(identity: ColumnGeneration.Identity): String =

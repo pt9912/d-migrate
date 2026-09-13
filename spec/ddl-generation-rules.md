@@ -284,7 +284,17 @@ auch hier gilt: gemessen, nicht angenommen.
 | gewöhnlich → berechnet | blockt (`is not a generated column`) | blockt (dieselbe Meldung) | Tabellen-Neubau; die Spalte bleibt aus dem `INSERT` und wird gerechnet | blockt (`ORA-54026`) | blockt (Syntaxfehler) |
 | Identity-Modus (`always` ↔ `by_default`) | `ALTER COLUMN … SET GENERATED …` | — (MySQL kennt keinen Modus) | — (Identity steckt im Typ) | `MODIFY (… GENERATED … AS IDENTITY)` | blockt (Syntaxfehler) |
 | Identity entfernen | `DROP IDENTITY` | `MODIFY COLUMN …` ohne `AUTO_INCREMENT` (Schlüsselspalte) | — (Identity steckt im Typ) | `MODIFY (… DROP IDENTITY)`, **plus** `NOT NULL`, das Oracle sonst mitnimmt | blockt: `ALTER COLUMN` läuft, lässt `IsIdentity` aber stehen |
-| Identity hinzufügen | blockt: die neue Sequenz beginnt bei 1 und der nächste `INSERT` kollidiert | `MODIFY COLUMN … AUTO_INCREMENT` (nur Schlüsselspalte; der Zähler setzt über dem Bestand auf) | — | blockt (`ORA-30673`) | blockt (Syntaxfehler) |
+| Identity hinzufügen | `SET NOT NULL` + `ADD GENERATED … AS IDENTITY` + Sequenz-Nachzug (drei Anweisungen) | `MODIFY COLUMN … AUTO_INCREMENT` (nur Schlüsselspalte; der Zähler setzt über dem Bestand auf) | — | blockt (`ORA-30673`) | blockt (Syntaxfehler) |
+
+**PostgreSQL: Identity hinzufügen braucht drei Anweisungen.** Die neue
+Sequenz beginnt bei 1; ohne Nachzug kollidiert der nächste `INSERT` mit dem
+Bestand. `SET NOT NULL` geht voran (Server-Voraussetzung, auf einer bereits
+`NOT NULL`-Spalte folgenlos), danach `ADD GENERATED … AS IDENTITY`, danach
+`setval(pg_get_serial_sequence(…), GREATEST(COALESCE(max(spalte), 1), 1),
+max(spalte) IS NOT NULL AND max(spalte) >= 1)` — `GREATEST`/`COALESCE`
+decken die leere Tabelle (`max` ist `NULL`) und ausschließlich negative
+Bestandswerte (unter der Sequenz-`MINVALUE` 1) ab, ohne dass `setval`
+scheitert.
 
 Zwei Regeln stecken darin, die über die Tabelle hinausgehen:
 

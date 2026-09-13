@@ -133,6 +133,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `schema generate`; `schema migrate` rendert Bezeichner weiterhin
   unqualifiziert.
 
+- **`schema migrate` macht auf PostgreSQL eine gewöhnliche Spalte zur
+  Identity-Spalte**, statt den Übergang wegen der kollidierenden Sequenz
+  abzulehnen. Drei Anweisungen für eine Operation: `SET NOT NULL` (No-op,
+  falls schon gesetzt), `ADD GENERATED … AS IDENTITY`, dann ein
+  `setval`-Nachzug der neuen Sequenz auf den Bestand — leere Tabellen und
+  ausschließlich negative Bestandswerte eingeschlossen, ohne dass `setval`
+  an der Sequenz-`MINVALUE` scheitert.
+
 ## [1.4.0] - 2026-09-13
 
 ### Added

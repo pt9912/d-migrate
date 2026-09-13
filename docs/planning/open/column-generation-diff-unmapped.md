@@ -26,7 +26,7 @@ SQL Server 2025, SQLite ueber den echten Migrationspfad):
 | berechnet → gewoehnlich | `DROP EXPRESSION` **geht** | „'Changing the STORED status' is not supported" | `MODIFY (c <typ>)` **geht** | „Cannot alter column … because it is 'COMPUTED'" | — |
 | Identity `ALWAYS` ↔ `BY DEFAULT` | `SET GENERATED …` **geht** | (Modus gibt es nicht) | `MODIFY (c GENERATED … AS IDENTITY)` **geht** | ungemessen | Identity steckt im **Typ** |
 | Identity → gewoehnlich | `DROP IDENTITY` **geht** | `MODIFY c INT` **geht** (Schluesselspalte) | `MODIFY (c DROP IDENTITY)` **geht** | ungemessen | s. o. |
-| gewoehnlich → Identity | braucht vorher `NOT NULL` | nur als Schluesselspalte | `ORA-30673` | „Incorrect syntax near the keyword 'IDENTITY'" | s. o. |
+| gewoehnlich → Identity | braucht vorher `NOT NULL`, danach **geht** (`ADD GENERATED … AS IDENTITY`)¹ | nur als Schluesselspalte | `ORA-30673` | „Incorrect syntax near the keyword 'IDENTITY'" | s. o. |
 
 Die vierte und fuenfte Zeile sind der Kern der Restfläche: **drei Server koennen
 mehrere dieser Uebergaenge**, d-migrate rendert keinen davon.
@@ -76,7 +76,7 @@ Anweisung ist noch keine wirksame.
 | gewoehnlich → berechnet | blockt | blockt | **Neubau** (wird gerechnet) | blockt (`ORA-54026`) | blockt |
 | Identity-Modus | **`SET GENERATED …`** | — | — | **`MODIFY … AS IDENTITY`** | blockt |
 | Identity entfernen | **`DROP IDENTITY`** | **`MODIFY COLUMN`** (Schluessel) | — | **`MODIFY … DROP IDENTITY`** + `NOT NULL` | blockt |
-| Identity hinzufuegen | blockt (Sequenz kollidiert) | **`MODIFY … AUTO_INCREMENT`** (Schluessel) | — | blockt (`ORA-30673`) | blockt |
+| Identity hinzufuegen | **`SET NOT NULL` + `ADD GENERATED … AS IDENTITY` + `setval`-Nachzug**¹ | **`MODIFY … AUTO_INCREMENT`** (Schluessel) | — | blockt (`ORA-30673`) | blockt |
 
 Drei Dinge, die die Messung erzwungen hat:
 
@@ -110,10 +110,8 @@ Primaerschluessel.
 
 ## Was offen bleibt
 
-- **PostgreSQLs `ADD GENERATED … AS IDENTITY` sauber fahren.** Es braeuchte ein
-  Nachziehen der Sequenz auf `max(spalte)` — eine **Daten**anweisung im
-  DDL-Plan, und damit eine eigene Entscheidung (sie beruehrt denselben
-  Sequenzstand, um den sich das Preserve-Fenster kuemmert).
+- ~~**PostgreSQLs `ADD GENERATED … AS IDENTITY` sauber fahren.**~~ —
+  **erledigt 2026-09-13**, siehe unten.
 - **Der Kind-Wechsel auf MySQL, Oracle und SQL Server.** Alle drei lehnen ihn in
   place ab; der Weg waere ein Spaltentausch mit Datenkopie, also ein eigener
   Operationstyp mit eigenem Risikoprofil.
@@ -152,3 +150,34 @@ Code, sondern an den Server-Versionen selbst (PostgreSQL 18.6, MySQL 9.7.2,
 Oracle 23, SQL Server 2025) — ohne Versionswechsel keine neue Messung noetig.
 Fuer MSSQL gibt es keine eigene Integrationsspec: die Zeile „blockt" ist die
 Abwesenheit eines Renderer-Zweigs, kein Live-Verhalten, das driften koennte.
+
+## Gebaut 2026-09-13: PostgreSQL `ADD GENERATED … AS IDENTITY`
+
+¹ Der bis dahin geblockte Uebergang „gewoehnlich → Identity" rendert jetzt.
+Live gegen 18.6 gemessen, drei Anweisungen fuer eine Operation
+(`PostgresDiffComputedColumnOps.renderIdentityAdd`):
+
+1. `ALTER TABLE … ALTER COLUMN … SET NOT NULL` — PostgreSQL verlangt das vor
+   `ADD GENERATED` (`column "x" … must be declared NOT NULL before identity
+   can be added`, live gemessen); auf einer bereits `NOT NULL`-Spalte ist es
+   ein folgenloses No-op.
+2. `ALTER TABLE … ALTER COLUMN … ADD GENERATED { ALWAYS | BY DEFAULT } AS
+   IDENTITY` — legt die Sequenz an, die bei 1 beginnt.
+3. Die Sequenz auf den Bestand nachziehen:
+   `setval(pg_get_serial_sequence(…), GREATEST(COALESCE(max(spalte), 1), 1),
+   max(spalte) IS NOT NULL AND max(spalte) >= 1)`. Zwei live gemessene
+   Randfaelle, die ein blosses `setval(…, max(spalte))` nicht abdeckt:
+   - **leere Tabelle** — `max` ist `NULL`, `COALESCE` faengt das ab
+     (Sequenz startet bei 1, `is_called = false`).
+   - **ausschliesslich negative Bestandswerte** — `setval` mit einem Wert
+     unter `MINVALUE` (1) scheitert mit `value … is out of bounds`;
+     `GREATEST` haelt den Wert bei 1, `is_called = false` laesst den
+     naechsten `INSERT` dort beginnen. Kollisionsfrei, weil negative
+     Bestandswerte nie mit aufsteigenden IDs ab 1 ueberlappen.
+
+Die urspruengliche Ablehnung (`IDENTITY_ADD_WOULD_COLLIDE`) entfaellt
+ersatzlos — der Uebergang braucht keinen manuellen Eingriff mehr.
+
+**Nicht angefasst:** die beiden verbleibenden Punkte in „Was offen bleibt"
+(Kind-Wechsel auf MySQL/Oracle/SQL Server, Verhaeltnis zu `AlterColumnType`)
+— ausserhalb des hier gepruften Bedarfs.
