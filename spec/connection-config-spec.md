@@ -414,6 +414,11 @@ i18n:
 #   bleiben davon unberuehrt.
 
 # ── DDL-Generierung ───────────────────────────
+# `foreign_keys`/`journal_mode` fuer SQLite stehen NICHT hier: sie sind
+# Verbindungsparameter, nicht Generierungsoptionen, und schon als solche
+# spezifiziert und verdrahtet -- §1.5 oben (`sqlite://…?journal_mode=…`,
+# `JdbcUrlBuilder.defaultParams()`/`config.params`). Ein zweiter Weg unter
+# `ddl:` fuer dieselben zwei Werte war Spec-Dopplung ohne Konsumenten.
 ddl:
   inline_foreign_keys: auto          # auto | always | never
   include_comments: true             # Header-Kommentar in DDL
@@ -421,9 +426,6 @@ ddl:
     engine: InnoDB                   # Default Storage Engine
     charset: utf8mb4                 # Default Charset
     collation: utf8mb4_unicode_ci    # Default Collation
-  sqlite:
-    foreign_keys: true               # PRAGMA foreign_keys = ON
-    journal_mode: wal                # WAL-Modus
   postgresql:
     default_schema: public           # Standard-Schema
   mssql:

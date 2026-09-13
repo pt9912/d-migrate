@@ -1,27 +1,30 @@
 # Tracker: der `ddl:`-Konfigurationsblock wird nicht gelesen
 
-> **Status:** Teilweise umgesetzt (2026-08-28) — Leser steht, **zwei von zehn**
-> Schlüsseln sind verdrahtet. Der Rest bleibt offen.
+> **Status:** Teilweise umgesetzt (2026-09-13) — Leser steht, **fünf von acht**
+> Schlüsseln sind verdrahtet, zwei weitere als Spec-Dopplung entfernt statt
+> gebaut. Drei bleiben offen, je als eigener [`next/`](../next/)-Plan.
 > **Trigger:** Beim Verdrahten von `--partition-storage` (SQL-Server-Filegroup)
 > fiel auf, dass es für Generierungsoptionen zwar eine Konfigurationsfläche in
 > der Spec gibt, aber keinen Leser im Code.
-> **Aktivierungsbedingung:** Wird priorisiert → `next/`-Plan; sonst
-> Trigger-Watch.
+> **Aktivierungsbedingung:** erfüllt für die drei restlichen Schlüssel — siehe
+> die verlinkten `next/`-Pläne.
 
 ## Befund
 
 [`connection-config-spec.md`](../../../spec/connection-config-spec.md)
-beschreibt einen `ddl:`-Block mit Dialekt-Unterblöcken:
+beschrieb einen `ddl:`-Block mit Dialekt-Unterblöcken:
 
 ```yaml
 ddl:
   inline_foreign_keys: auto
   include_comments: true
   mysql:      { engine: InnoDB, charset: utf8mb4, collation: utf8mb4_unicode_ci }
-  sqlite:     { foreign_keys: true, journal_mode: wal }
   postgresql: { default_schema: public }
   mssql:      { partition_storage: PRIMARY }
 ```
+
+(Ursprünglich mit einem `sqlite: { foreign_keys, journal_mode }`-Unterblock —
+entfernt, siehe Arbeitspaket 6 unten.)
 
 **Stand nach dem ersten Schritt:** `DdlConfigResolver` liest den Block, und
 `ddl.mssql.partition_storage` wirkt auf `schema generate --target mssql`
@@ -31,11 +34,12 @@ Seit 7d wird zusätzlich `ddl.mssql.hash_partitions` gelesen — er bekam mit de
 HASH-Emulation seinen Konsumenten und wirkt auf `schema generate` **und**
 `schema migrate`.
 
-Die übrigen acht Schlüssel — `inline_foreign_keys`, `include_comments`, die
-drei MySQL-Werte, die zwei SQLite-Werte und `postgresql.default_schema` —
-werden weiterhin **nicht** gelesen. Sie sind heute nur über CLI-Flags erreichbar,
-soweit sie überhaupt existieren; `include_comments` und
-`postgresql.default_schema` haben nicht einmal das.
+Die übrigen sechs Schlüssel — `inline_foreign_keys`, `include_comments`, die
+drei MySQL-Werte und `postgresql.default_schema` — wurden zum Zeitpunkt dieses
+Befunds **nicht** gelesen (die drei MySQL-Werte sind seither verdrahtet, siehe
+Arbeitspaket 5). Sie waren nur über CLI-Flags erreichbar, soweit sie
+überhaupt existierten; `include_comments` und `postgresql.default_schema`
+hatten nicht einmal das.
 
 Als Zielbild ist das korrekt — die Spec beschreibt, wohin es geht. Der Punkt
 dieses Tickets ist, dass die Umsetzung nirgends terminiert ist: weder Slice noch
@@ -69,18 +73,28 @@ erzeugt stillschweigend anderes DDL als der Lauf davor.
    `DdlDialectContext.MySql.tableOptions`, mit denselben Vorgaben. Ein CLI-Flag
    gibt es nicht — sie beschreiben das Ziel.
 
-6. **Offen: die restlichen fünf.** Nachgemessen zerfallen sie in zwei Gruppen,
-   und keine davon ist „einen Schlüssel lesen":
+6. ~~`sqlite.foreign_keys` und `sqlite.journal_mode` einordnen.~~ —
+   **erledigt 2026-09-13, durch Entfernen statt Bauen.** Gemessen: beide
+   Werte sind bereits Verbindungsparameter, spezifiziert **und verdrahtet** —
+   [`connection-config-spec.md`](../../../spec/connection-config-spec.md) §1.5
+   (`sqlite://…?journal_mode=…&foreign_keys=…`), `SqliteJdbcUrlBuilder
+   .defaultParams()`, überschreibbar über `config.params`
+   (`JdbcUrlBuilder.buildJdbcUrl` mergt `defaultParams()` → `sslParams()` →
+   `config.params`, spätere gewinnen). Der `ddl.sqlite.*`-Unterblock war keine
+   fehlende Fähigkeit, sondern eine zweite, nie konsumierte Spec-Stelle für
+   dieselben zwei Werte — aus `connection-config-spec.md` entfernt, mit
+   Verweis auf §1.5.
 
-   - **Die Einstellung existiert noch gar nicht** — `include_comments`
-     (nirgends wird ein `COMMENT` gerendert), `postgresql.default_schema` (es
-     gibt keinen PostgreSQL-Renderkontext) und `inline_foreign_keys` (nur die
-     Spec-Zeile, keine Implementierung). Hier ist das Lesen der letzte Schritt,
-     nicht der erste.
-   - **Vermutlich am falschen Ort** — `sqlite.foreign_keys` und
-     `sqlite.journal_mode` sind Verbindungs-PRAGMAs, keine
-     Generierungsoptionen. Ob sie unter `ddl:` gehören oder zur
-     Verbindungsbeschreibung, ist eine Spec-Frage und vor dem Bauen zu klären.
+7. **Offen: die restlichen drei.** Bei jedem ist das Lesen der letzte Schritt,
+   nicht der erste — die Fähigkeit selbst existiert noch nicht:
+
+   - **`include_comments`** — nirgends wird ein `COMMENT` gerendert.
+     Scope: [`ddl-comment-rendering.md`](../next/ddl-comment-rendering.md).
+   - **`postgresql.default_schema`** — es gibt keinen PostgreSQL-Renderkontext
+     für ein Ziel-Schema. Scope:
+     [`postgresql-default-schema-context.md`](../next/postgresql-default-schema-context.md).
+   - **`inline_foreign_keys`** — nur die Spec-Zeile, keine Implementierung.
+     Scope: [`inline-foreign-keys-mode.md`](../next/inline-foreign-keys-mode.md).
 
 ## Gelernt
 
