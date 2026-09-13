@@ -62,6 +62,71 @@ Dialekt an den Server geht: `E053`, Exit 8, nichts angewandt. Derselbe Code,
 derselbe Ausdruck, dieselbe Prüfung — und je nach Kommando der eine Ausgang
 oder der andere. Vor 1.4.0 schwiegen beide konsistent.
 
+## P0-Erhebung (2026-09-13): die Stufe ist im Code umstritten, nicht nur unbestimmt
+
+Beim Durchgehen der Emissionsstellen kam eine **vierte** Einstufung dazu, die
+oben fehlte — und sie ist die unangenehmste, weil sie ausdrücklich getroffen
+wurde.
+
+`TransformationNoteDiagnostics` (in `driver-common`) bildet jede
+`ACTION_REQUIRED`-Notiz auf eine **`WARNING`**-Diagnose ab, wenn derselbe
+Hinweis im Migrationspfad geführt wird. Die KDoc begründet das:
+
+> `ACTION_REQUIRED` wird bewusst zu `WARNING`: die Diagnose-Ebene des Diffs
+> kennt keine dritte Stufe, und ein Blocker wäre sie nicht — **das Statement
+> entsteht ja.**
+
+Damit stehen zwei Lesarten live nebeneinander, jede an ihrem Ort konsequent:
+
+- **(A)** „das Ergebnis trägt nicht, was die Eingabe verlangt" — die Lesart des
+  MCP-Handlers (`severity: error`, KDoc: „clients should treat it as
+  blocking") und des Code-Ledgers (`level: error`).
+- **(B)** „etwas braucht deine Aufmerksamkeit, aber der Lauf hat seine Arbeit
+  getan" — die Lesart der Diff-Diagnosen.
+
+Dieser Slice wählt (A). Das heißt: die Entscheidung in
+`TransformationNoteDiagnostics` wird **umgedreht**, nicht übergangen, und ihr
+Argument gehört beantwortet.
+
+**Gemessen ist es halb falsch.** „Das Statement entsteht ja" stimmt für die
+Tabelle — aber nicht für das Objekt, um das es geht. Im Repro oben erzeugt die
+CHECK-Constraint `ck_quantity` **gar kein** Statement; das Wort `CHECK` kommt
+in der Ausgabe nur im Kommentar vor. Für die berechnete Spalte stimmt es
+ebenfalls nur halb: die Spalte entsteht, aber als gewöhnliche, beschreibbare.
+
+## Der Nebenbefund, der ein besserer Hebel sein könnte
+
+Derselbe Report sagt:
+
+```
+  action_required: 2
+  skipped_objects: 0
+```
+
+Die Constraint **wurde** übersprungen und zählt trotzdem nicht als
+übersprungenes Objekt. `ManualActionRequired` kann beides erzeugen —
+`toNote()` und `toSkipped()` —, und der Generate-Pfad nimmt hier nur die
+Notiz.
+
+Das ist womöglich der genauere Hebel als die Notiz-Stufe: ein
+`SkippedObject` sagt „dieses Objekt kam nicht in die Ausgabe" und ist damit
+genau die Aussage, auf die eine Ausgangsregel gehören würde. Der MCP-Handler
+stuft `SkippedObject` **schon heute** als `error` ein, mit derselben
+KDoc-Zusage („the object did not make it into the DDL"). Vor P1 ist deshalb zu
+entscheiden:
+
+- **Weg α:** Ausgangsregel an der Notiz-Stufe (`action_required`), wie oben
+  beschrieben.
+- **Weg β:** Ausgangsregel an „wurde etwas übersprungen?", und die
+  Emissionsstellen, die ein Objekt fallen lassen, erzeugen zusätzlich das
+  `SkippedObject`, das ihnen fehlt.
+
+β ist genauer — es trennt „ein Objekt fehlt" von „ein Hinweis liegt an" —
+und behebt nebenbei einen falschen Zähler. α ist kleiner. Die Erhebung der
+Emissionsstellen (P0, Arbeitspaket 1) muss die Frage ohnehin beantworten: für
+jede Stelle ist zu sagen, ob sie ein Objekt fallen lässt oder nur einen
+Hinweis anhängt. Wer das erhoben hat, hat β fast schon gebaut.
+
 ## Ziel
 
 `action_required` bekommt eine Bedeutung im Vertrag, und der Ausgang folgt
@@ -118,12 +183,14 @@ Migrationsbeispiel, wie beim Bind-Mount-Wechsel in RC3.
 ## Scope-Skizze
 
 1. **P0 — Vertrag zuerst.** Die drei Stufen-Definitionen und die Ausgangsregel
-   in `spec/cli-spec.md` 2.1; der Vertragstext von Exit 8 verallgemeinert.
-   Erhebung dazu: **welche Codes emittieren heute `action_required`** und
-   trifft die Definition („das Ergebnis trägt nicht, was die Eingabe
-   verlangt") auf jeden einzelnen zu? Wo nicht, ist der Code falsch eingestuft
-   und wird zur Warnung — das ist Teil dieses Arbeitspakets, nicht ein
-   Nachzügler.
+   in `spec/cli-spec.md` 2.1; der Vertragstext von Exit 8 verallgemeinert; die
+   Entscheidung α/β oben.
+   Erhebung dazu: **welche Codes emittieren heute `action_required`**, trifft
+   die Definition auf jeden zu, und **lässt die Stelle ein Objekt fallen oder
+   hängt sie nur einen Hinweis an?** Wo die Definition nicht trifft, ist der
+   Code falsch eingestuft und wird zur Warnung. Angefangen: 17 Emissionsstellen
+   in acht Modulen, der Schwerpunkt bei SQLite (9) — die Einzelbewertung steht
+   aus.
 2. **P1 — Ausgang in der CLI.** Eine Stelle, durch die der Ausgang von
    `schema generate` entsteht; `--allow-incomplete` samt Report-Vermerk.
 3. **P2 — MCP nachziehen.** `isError` aus derselben Regel, nicht aus einer
