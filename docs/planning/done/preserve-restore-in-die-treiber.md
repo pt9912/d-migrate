@@ -75,4 +75,4 @@ Drei MySQL-Regelobjekte (`MysqlSequenceSupportNaming`,
 `MysqlCheckEnforcementResolver`, `MysqlSequenceCanonicityGate`) bleiben in
 `hexagon/ports-read`, weil drei Stages der Anwendungsschicht sie benutzen.
 Eigenes Ticket:
-[`open/dialektlogik-in-den-ports.md`](../open/dialektlogik-in-den-ports.md).
+[`next/mysql-sequenz-kanonizitaet-hinter-einen-port.md`](../next/mysql-sequenz-kanonizitaet-hinter-einen-port.md).
