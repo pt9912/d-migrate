@@ -46,28 +46,49 @@ Die Folge ist deshalb kein Anwenderschaden, sondern ein Gate ohne
 Aussage — und eine Datei im Repo, die drei Releases lang etwas Falsches
 über den eigenen Stand sagte.
 
-## Was zu klären ist
+## Was der echte Kanal schon absichert (gemessen 2026-09-13)
 
-Drei Wege, die sich ausschließen; die Entscheidung gehört dem Eigner,
-weil sie die Rolle des Templates festlegt:
+Die Frage, ob `verify-homebrew-formula.yml` etwas trägt, das sonst niemand
+trägt, ist beantwortet: **nein.** `release-homebrew.yml` hat einen eigenen
+Job `verify-homebrew`, und der prüft strikt mehr:
 
-1. **Gate schärfen**: die Formula-Version gegen den neuesten
-   veröffentlichten Release-Tag prüfen und rot werden, wenn sie
-   zurückhängt. Macht die Handarbeit aus 4.6 erzwingbar, statt sie zu
-   erinnern.
-2. **Handarbeit abschaffen**: Version und SHA im Post-Release-Schritt
-   maschinell nachziehen (dieselbe Quelle, aus der 4.6 die SHA zieht —
-   die Download-URL). Der Gate bleibt, wie er ist, und hat dann wieder
-   eine Aussage.
-3. **Template aufgeben**: wenn der Tap der einzige echte Kanal ist,
-   braucht das Repo keine zweite, manuell gepflegte Formula. Dann
-   entfallen 4.6 und der Workflow.
+| | `verify-homebrew-formula.yml` | `release-homebrew.yml` Job `verify-homebrew` |
+| --- | --- | --- |
+| Woher die Sollversion kommt | aus der Formula selbst | aus dem **Tag** (`VERSION="${TAG#v}"`) |
+| Was installiert wird | Repo-Template im Ephemeral-Tap | der **publizierte Tap** (`brew install d-migrate`) |
+| Wartet auf den Tap-Commit | nein | ja, 6 × 20 s, sonst rot |
+| Aussage bei veralteter Formula | grün | rot |
 
-Weg 2 und 3 sind die ehrlichen; Weg 1 härtet den Zustand, den 2 oder 3
-beseitigen würden. Vorher zu klären ist, was
-`verify-homebrew-formula.yml` überhaupt absichern soll, das
-`homebrew-releaser` nicht schon absichert — dieselbe Frage wie bei jedem
-Gate, das eine Zusage trägt, die ein anderer Pfad auch trägt.
+Der zweite Job ist nicht selbstbezüglich: die Sollversion kommt aus dem Tag,
+nicht aus einer Datei, die mitwandern kann. Am Tag `v1.4.0` ist er gelaufen
+und in **jedem** Schritt grün — Warten auf den Tap-Commit, `brew install` aus
+dem publizierten Tap, Smoke gegen die Tag-Version
+([Run 34742498270](https://github.com/pt9912/d-migrate/actions/runs/34742498270)).
+
+Damit prüft der echte `brew install`-Kanal sich bereits gegen die richtige
+Quelle, und zwar bei jedem Stable-Tag.
+
+## Was zu entscheiden ist
+
+Die Messung oben nimmt einem der drei denkbaren Wege die Grundlage:
+
+1. **Gate schärfen** (Formula-Version gegen den neuesten Release-Tag prüfen) —
+   dupliziert damit nur, was `verify-homebrew` schon tut, und härtet einen
+   Zustand, den Weg 3 beseitigt.
+2. **Handarbeit maschinell nachziehen** (Version + SHA im Post-Release-Schritt
+   setzen) — behebt das Veralten, lässt aber die Frage offen, wofür das
+   Template dann noch da ist.
+3. **Template aufgeben** — `packaging/homebrew/d-migrate.rb`,
+   `verify-homebrew-formula.yml` und Schritt 4.6 der Release-Doku entfallen.
+   Die Messung zeigt: es geht dabei keine Zusicherung verloren.
+
+Weg 3 ist der von der Messung getragene. Zu prüfen bleibt vor dem Löschen
+**eine** Sache: der `install:`-Block steht doppelt — einmal im Template, einmal
+inline in `release-homebrew.yml` (Zeilen 77–81). Verglichen werden die beiden
+von nichts; das Template ist also auch heute keine Quelle, sondern eine Kopie.
+Wer es löscht, verliert keine geprüfte Zusage — aber die zweite Lesart der
+Install-Logik, die beim letzten Abgleich vor 1.0.0 von Hand herangezogen wurde.
+Ob das ein Verlust ist, ist die eigentliche Eignerfrage.
 
 ## Sofortmaßnahme (erledigt)
 
