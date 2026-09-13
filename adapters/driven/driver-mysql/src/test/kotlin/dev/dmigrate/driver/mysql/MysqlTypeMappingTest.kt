@@ -190,6 +190,44 @@ class MysqlTypeMappingTest : FunSpec({
     }
     test("parseDefault integer") { MysqlTypeMapping.parseDefault("42", NeutralType.Integer) shouldBe DefaultValue.NumberLiteral(42L) }
 
+    // ── Literal oder Ausdruck? Das sagt `EXTRA`, nicht der Text ──
+    //
+    // Gemessen an MySQL 9.7.2: ein String-Default kommt OHNE Anfuehrungszeichen
+    // zurueck, ein Ausdrucks-Default traegt `EXTRA = DEFAULT_GENERATED`.
+
+    test("an unquoted text default is a string, not a function call") {
+        MysqlTypeMapping.parseDefault("x", NeutralType.Text()) shouldBe DefaultValue.StringLiteral("x")
+    }
+
+    /**
+     * Der Fall, der es zur Korrektheitsfrage macht: ein Zeichenketten-Literal,
+     * das wie ein Aufruf aussieht. Als `FunctionCall` gelesen wuerde es im Ziel
+     * ausgefuehrt statt eingesetzt.
+     */
+    test("a string default that looks like a function stays a string") {
+        MysqlTypeMapping.parseDefault("UPPER(a)", NeutralType.Text()) shouldBe
+            DefaultValue.StringLiteral("UPPER(a)")
+    }
+
+    test("with the DEFAULT_GENERATED flag the same text is an expression") {
+        MysqlTypeMapping.parseDefault("uuid()", NeutralType.Uuid, isExpression = true) shouldBe
+            DefaultValue.FunctionCall("uuid()")
+        MysqlTypeMapping.parseDefault("(1 + 2)", NeutralType.Integer, isExpression = true) shouldBe
+            DefaultValue.FunctionCall("(1 + 2)")
+    }
+
+    test("the type decides the literal kind: a digit string in a text column is a string") {
+        MysqlTypeMapping.parseDefault("7", NeutralType.Text()) shouldBe DefaultValue.StringLiteral("7")
+        MysqlTypeMapping.parseDefault("7", NeutralType.Integer) shouldBe DefaultValue.NumberLiteral(7L)
+    }
+
+    test("CURRENT_TIMESTAMP stays a function call, flag or not") {
+        MysqlTypeMapping.parseDefault("CURRENT_TIMESTAMP", NeutralType.DateTime(), isExpression = true) shouldBe
+            DefaultValue.FunctionCall("current_timestamp")
+        MysqlTypeMapping.parseDefault("CURRENT_TIMESTAMP", NeutralType.DateTime()) shouldBe
+            DefaultValue.FunctionCall("current_timestamp")
+    }
+
     // ── Param type mapping ──────────────────────
 
     test("param int") { MysqlTypeMapping.mapParamType("int") shouldBe "integer" }

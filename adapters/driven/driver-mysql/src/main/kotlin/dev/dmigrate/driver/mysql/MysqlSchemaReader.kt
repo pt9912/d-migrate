@@ -190,7 +190,11 @@ class MysqlSchemaReader(
             val unique = if (isPkCol) false else colName in singleColUnique
 
             val defaultVal = if (isAutoIncrement) null
-            else MysqlTypeMapping.parseDefault(row["column_default"] as? String, neutralType)
+            else MysqlTypeMapping.parseDefault(
+                row["column_default"] as? String,
+                neutralType,
+                isExpression = MysqlGeneratedColumns.isDefaultExpression(extra),
+            )
 
             columns[colName] = ColumnDefinition(
                 type = neutralType,

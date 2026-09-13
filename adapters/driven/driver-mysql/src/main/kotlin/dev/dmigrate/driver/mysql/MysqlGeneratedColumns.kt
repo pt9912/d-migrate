@@ -16,10 +16,22 @@ internal object MysqlGeneratedColumns {
 
     fun isGenerated(extra: String): Boolean = isVirtual(extra) || isStored(extra)
 
+    /**
+     * Ist der Default dieser Spalte ein **Ausdruck** und kein Literal?
+     *
+     * Dasselbe Feld, andere Frage: `DEFAULT_GENERATED` steht fuer einen
+     * Default-Ausdruck (`CURRENT_TIMESTAMP`, `(UUID())`, `(1 + 2)`). Fehlt es,
+     * ist `COLUMN_DEFAULT` ein Literal — auch wenn es wie ein Aufruf aussieht
+     * (`\'UPPER(a)\'`).
+     */
+    fun isDefaultExpression(extra: String): Boolean = extra.contains(DEFAULT_GENERATED, ignoreCase = true)
+
     fun isStored(extra: String): Boolean = extra.contains(STORED, ignoreCase = true)
 
     private fun isVirtual(extra: String): Boolean = extra.contains(VIRTUAL, ignoreCase = true)
 
     private const val STORED = "STORED GENERATED"
     private const val VIRTUAL = "VIRTUAL GENERATED"
+
+    private const val DEFAULT_GENERATED = "DEFAULT_GENERATED"
 }

@@ -297,6 +297,22 @@ Besonderheiten:
 - Immer `ENGINE=InnoDB` (FK-Support)
 - Immer `DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
 
+**`MODIFY COLUMN` traegt die ganze Deklaration.** MySQL kennt kein
+`ALTER COLUMN` fuer Typ oder Berechnung; jede solche Aenderung laeuft ueber
+`MODIFY COLUMN`, und der Befehl **ersetzt** die Spaltendeklaration. Was nicht
+mitgenannt wird, ist danach weg — gemessen an 9.7.2: `NOT NULL`, der `DEFAULT`
+und `AUTO_INCREMENT`. Gerendert wird deshalb die vollstaendige Deklaration der
+Zielseite; inline `REFERENCES` und `UNIQUE` bleiben draussen, weil FK und Index
+eigene Objekte sind, die ein `MODIFY` nicht anfasst.
+
+**Literal oder Ausdruck entscheidet `EXTRA`, nicht der Text.** MySQL gibt einen
+Zeichenketten-Default **ohne** Anfuehrungszeichen zurueck (`DEFAULT 'x'` steht
+in `COLUMN_DEFAULT` als `x`); ein Ausdrucks-Default traegt zusaetzlich
+`EXTRA = DEFAULT_GENERATED`. Am Text allein ist beides nicht zu unterscheiden,
+und die Verwechslung ist keine Kosmetik: aus dem Literal `'UPPER(a)'` wuerde
+sonst ein Aufruf, den das Ziel **ausfuehrt**. Welche Art von Literal es ist,
+sagt der Spaltentyp — `'7'` in einer Textspalte ist eine Zeichenkette.
+
 ### 3.5 SQLite
 
 ```sql

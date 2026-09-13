@@ -36,6 +36,18 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
     val gen = MysqlDiffDdlGenerator()
     fun emptySchema() = SchemaDefinition(name = "App", version = "1")
 
+    /** Eine Tabelle `u` mit einer `NOT NULL`-Spalte `age` samt Default. */
+    fun schemaWithAge(type: NeutralType) = SchemaDefinition(
+        name = "App", version = "1",
+        tables = mapOf(
+            "u" to TableDefinition(
+                columns = linkedMapOf(
+                    "age" to ColumnDefinition(type, required = true, default = DefaultValue.NumberLiteral(18)),
+                ),
+            ),
+        ),
+    )
+
     fun planAndUp(
         diff: SchemaDiff,
         current: SchemaDefinition = emptySchema(),
@@ -132,7 +144,15 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
                 ),
             ),
         )
-        planAndUp(safe).statements.single().sql shouldContainStr "MODIFY COLUMN `age` INT"
+        // `MODIFY COLUMN` ersetzt die ganze Deklaration: die Spalte ist
+        // `NOT NULL` mit Default, und beides muss mit — sonst nimmt MySQL es ihr
+        // stillschweigend weg (live gemessen gegen 9.7.2).
+        val typed = schemaWithAge(NeutralType.Integer)
+        val sql = planAndUp(safe, current = schemaWithAge(NeutralType.SmallInt), desired = typed)
+            .statements.single().sql
+        sql shouldContainStr "MODIFY COLUMN `age` INT"
+        sql shouldContainStr "NOT NULL"
+        sql shouldContainStr "DEFAULT 18"
 
         val unsafe = SchemaDiff(
             tablesChanged = listOf(
@@ -150,6 +170,47 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
         val r = planAndUp(unsafe)
         r.isBlocked shouldBe true
         r.blockers.any { it.reason == MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION } shouldBe true
+    }
+
+    /**
+     * Der Autowert geht denselben Weg wie `NOT NULL` und `DEFAULT`: `MODIFY
+     * COLUMN id BIGINT` liess `AUTO_INCREMENT` fallen (gemessen). Traegt die
+     * Spalte die Identity in `generation`, muss der Migrate-Renderer sie
+     * ebenso rendern wie der Generate-Pfad.
+     */
+    test("a type change on an identity column keeps AUTO_INCREMENT") {
+        val withIdentity = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf(
+                "u" to TableDefinition(
+                    columns = linkedMapOf(
+                        "id" to ColumnDefinition(
+                            NeutralType.BigInteger,
+                            required = true,
+                            generation = dev.dmigrate.core.model.ColumnGeneration.Identity(),
+                        ),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "u",
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff(
+                            name = "id",
+                            type = ValueChange(NeutralType.Integer, NeutralType.BigInteger),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val sql = planAndUp(diff, current = withIdentity, desired = withIdentity).statements.single().sql
+
+        sql shouldContainStr "MODIFY COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT"
     }
 
     test("§11.1 AlterColumnNullability is a documented blocker because MySQL needs the full type") {

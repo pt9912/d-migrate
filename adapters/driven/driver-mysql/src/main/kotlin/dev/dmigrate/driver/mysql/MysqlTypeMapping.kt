@@ -132,28 +132,74 @@ internal object MysqlTypeMapping {
             ?: emptyList()
     }
 
-    fun parseDefault(raw: String?, type: NeutralType): DefaultValue? {
+    /**
+     * Der Default einer MySQL-Spalte.
+     *
+     * **[isExpression] entscheidet, nicht der Text.** MySQL gibt einen
+     * String-Default **ohne** Anfuehrungszeichen zurueck: `DEFAULT \'x\'` steht in
+     * `COLUMN_DEFAULT` als `x`. Am Text allein ist ein Literal deshalb nicht von
+     * einem Ausdruck zu unterscheiden — und das ging schief: aus `DEFAULT \'x\'`
+     * wurde ein `FunctionCall("x")`, gerendert als `DEFAULT x()`. Der Fall, der
+     * es zur Korrektheitsfrage macht, ist `DEFAULT \'UPPER(a)\'`: ein
+     * Zeichenketten-Literal, das wie ein Aufruf aussieht und als solcher im
+     * Ziel **ausgefuehrt** wuerde.
+     *
+     * Die Unterscheidung liefert der Server mit, in `EXTRA` — gemessen an 9.7.2:
+     *
+     * | Default | `COLUMN_DEFAULT` | `EXTRA` |
+     * | --- | --- | --- |
+     * | `\'x\'` | `x` | leer |
+     * | `\'UPPER(a)\'` | `UPPER(a)` | leer |
+     * | `7` | `7` | leer |
+     * | `TRUE` | `1` | leer |
+     * | `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP` | `DEFAULT_GENERATED` |
+     * | `(UUID())` | `uuid()` | `DEFAULT_GENERATED` |
+     * | `(1 + 2)` | `(1 + 2)` | `DEFAULT_GENERATED` |
+     *
+     * Ohne das Flag ist der Text also ein Literal, und **welches** sagt der
+     * Spaltentyp: `\'7\'` in einer `VARCHAR`-Spalte ist eine Zeichenkette, keine
+     * Zahl.
+     */
+    fun parseDefault(raw: String?, type: NeutralType, isExpression: Boolean = false): DefaultValue? {
         if (raw == null) return null
         val trimmed = raw.trim()
+        if (trimmed.equals("NULL", ignoreCase = true)) return null
+        // Die Zeit-Schluesselwoerter behalten ihre Normalisierung: sie kommen als
+        // Ausdruck (`DEFAULT_GENERATED`), und das neutrale Modell fuehrt sie als
+        // Funktionsaufruf.
+        knownTimeFunction(trimmed)?.let { return it }
+        if (isExpression) return DefaultValue.FunctionCall(trimmed)
+        // Eine bereits zitierte Form kommt aus anderen Quellen (Tests, aeltere
+        // Server); sie bleibt eine Zeichenkette.
+        if (trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
+            return DefaultValue.StringLiteral(trimmed.substring(1, trimmed.length - 1).replace("''", "'"))
+        }
         return when {
-            trimmed.equals("NULL", ignoreCase = true) -> null
-            trimmed == "CURRENT_TIMESTAMP" || trimmed == "current_timestamp()" ->
-                DefaultValue.FunctionCall("current_timestamp")
-            trimmed.equals("CURRENT_DATE", ignoreCase = true) ||
-                trimmed.equals("curdate()", ignoreCase = true) ||
-                trimmed.equals("current_date()", ignoreCase = true) -> DefaultValue.FunctionCall("current_date")
-            trimmed.equals("CURRENT_TIME", ignoreCase = true) ||
-                trimmed.equals("curtime()", ignoreCase = true) ||
-                trimmed.equals("current_time()", ignoreCase = true) -> DefaultValue.FunctionCall("current_time")
-            trimmed == "1" && type is NeutralType.BooleanType -> DefaultValue.BooleanLiteral(true)
-            trimmed == "0" && type is NeutralType.BooleanType -> DefaultValue.BooleanLiteral(false)
-            trimmed.startsWith("'") && trimmed.endsWith("'") ->
-                DefaultValue.StringLiteral(trimmed.substring(1, trimmed.length - 1).replace("''", "'"))
+            type is NeutralType.BooleanType && trimmed == "1" -> DefaultValue.BooleanLiteral(true)
+            type is NeutralType.BooleanType && trimmed == "0" -> DefaultValue.BooleanLiteral(false)
+            // Der Typ entscheidet ueber die Literalart, nicht die Gestalt des
+            // Textes: sonst wuerde `\'7\'` in einer Textspalte zur Zahl.
+            isTextLike(type) -> DefaultValue.StringLiteral(trimmed)
             trimmed.toLongOrNull() != null -> DefaultValue.NumberLiteral(trimmed.toLong())
             trimmed.toDoubleOrNull() != null -> DefaultValue.NumberLiteral(trimmed.toDouble())
-            else -> DefaultValue.FunctionCall(trimmed)
+            else -> DefaultValue.StringLiteral(trimmed)
         }
     }
+
+    private fun knownTimeFunction(trimmed: String): DefaultValue? = when {
+        trimmed == "CURRENT_TIMESTAMP" || trimmed.equals("current_timestamp()", ignoreCase = true) ->
+            DefaultValue.FunctionCall("current_timestamp")
+        trimmed.equals("CURRENT_DATE", ignoreCase = true) ||
+            trimmed.equals("curdate()", ignoreCase = true) ||
+            trimmed.equals("current_date()", ignoreCase = true) -> DefaultValue.FunctionCall("current_date")
+        trimmed.equals("CURRENT_TIME", ignoreCase = true) ||
+            trimmed.equals("curtime()", ignoreCase = true) ||
+            trimmed.equals("current_time()", ignoreCase = true) -> DefaultValue.FunctionCall("current_time")
+        else -> null
+    }
+
+    private fun isTextLike(type: NeutralType): Boolean =
+        type is NeutralType.Text || type is NeutralType.Enum || type is NeutralType.Uuid
 
     fun mapParamType(mysqlType: String): String = when (mysqlType.lowercase().trim()) {
         "int", "integer" -> "integer"

@@ -36,6 +36,8 @@ internal object MysqlDiffTableOps {
 
     private const val IDENTITY_NEEDS_TYPE = "MYSQL_IDENTITY_NEEDS_TYPE"
 
+    private const val TYPE_CHANGE_NEEDS_DECLARATION = "MYSQL_TYPE_CHANGE_NEEDS_DECLARATION"
+
     private const val COMPUTED_KIND_CHANGE_NOT_SUPPORTED = "MYSQL_COMPUTED_KIND_CHANGE_NOT_SUPPORTED"
 
     fun renderCreateTable(op: DiffOperation.CreateTable, ctx: MysqlDiffRenderContext) {
@@ -275,13 +277,39 @@ internal object MysqlDiffTableOps {
         }
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
         val targetType = if (ctx.direction == MysqlRenderDirection.UP) op.after else op.before
-        // MySQL note: MODIFY COLUMN replaces the *whole* column spec; nullability and default
-        // are not carried over. The first matrix accepts this caveat — only ops that change
-        // the type alone use this path. NULL/DEFAULT changes go through their dedicated ops.
-        ctx.emit(
-            op,
-            "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN ${ctx.sql.quote(column)} ${ctx.sql.toSql(targetType)};",
+        // `MODIFY COLUMN` ersetzt die **ganze** Spaltendeklaration. Hier stand
+        // zuvor nur der Typ, mit der Begruendung, die Operation aendere ja auch
+        // nur den Typ — das schuetzt die uebrigen Eigenschaften aber nicht.
+        // Live gemessen gegen 9.7.2, alle drei stillschweigend:
+        //
+        // | Anweisung | danach fehlt |
+        // | --- | --- |
+        // | `MODIFY COLUMN qty BIGINT` | `NOT NULL` |
+        // | `MODIFY COLUMN label VARCHAR(30)` | `NOT NULL` und `DEFAULT 'x'` |
+        // | `MODIFY COLUMN id BIGINT` | `AUTO_INCREMENT` |
+        //
+        // Der Post-Compare meldete das als Drift — nachdem die Anweisung
+        // angewandt war. Gerendert wird deshalb die vollstaendige Deklaration
+        // der Zielseite. Inline-`REFERENCES` und -`UNIQUE` bleiben draussen: der
+        // FK bzw. der Index sind eigene Objekte, die ein `MODIFY` nicht anfasst,
+        // und ein zweites inline-`UNIQUE` legte bei jedem Lauf einen weiteren
+        // Index an.
+        val declaration = ctx.columnsOf(table)[column]
+        if (declaration == null) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} changes the type of `$table`.`$column`, but the column is not in the " +
+                    "schema this direction reads — MODIFY COLUMN replaces the whole declaration and needs it.",
+                code = TYPE_CHANGE_NEEDS_DECLARATION,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        val line = ctx.sql.columnLine(
+            column,
+            declaration.copy(type = targetType, references = null, unique = false, uniqueConstraintName = null),
         )
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN $line;")
     }
 
     /**
@@ -327,22 +355,24 @@ internal object MysqlDiffTableOps {
             ColumnGenerationTransition.COMPUTED_EXPRESSION -> Unit
         }
         val computed = target as ColumnGeneration.Computed
-        val type = ctx.columnsOf(table)[column]?.type
-        if (type == null) {
+        val declaration = ctx.columnsOf(table)[column]
+        if (declaration == null) {
             ctx.skip(
                 op,
                 "Operation ${op.id} changes the computed expression of `$table`.`$column`, but the column " +
-                    "is not in the schema this direction reads — MODIFY COLUMN needs its type.",
+                    "is not in the schema this direction reads — MODIFY COLUMN needs its declaration.",
             )
             ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
             return
         }
-        val suffix = if (computed.stored) "STORED" else "VIRTUAL"
-        ctx.emit(
-            op,
-            "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN ${ctx.sql.quote(column)} " +
-                "${ctx.sql.toSql(type)} ${ComputedColumnClause.clause(computed, suffix)};",
+        // Dieselbe vollstaendige Deklaration wie bei der Typaenderung: eine
+        // berechnete Spalte darf `NOT NULL` tragen, und `MODIFY COLUMN` nimmt es
+        // ihr sonst weg (gemessen).
+        val line = ctx.sql.columnLine(
+            column,
+            declaration.copy(generation = computed, references = null, unique = false, uniqueConstraintName = null),
         )
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN $line;")
     }
 
     fun renderAlterColumnNullability(op: DiffOperation.AlterColumnNullability, ctx: MysqlDiffRenderContext) {

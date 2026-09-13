@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.DefaultValue
@@ -42,15 +43,36 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
                 return MysqlEnumColumnRenderer.inline(quote(name), col, values, typeMapper::toDefaultSql)
             }
         }
-        // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
-        // DEFAULT und UNIQUE sind dort keine Frage. Ohne diesen Zweig legte der
-        // Migrate-Pfad sie als gewoehnliche Spalte an — der Generate-Pfad tat
-        // es richtig, und der Post-Compare meldete die Abweichung als Drift.
+        // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; DEFAULT und
+        // UNIQUE sind dort keine Frage. Ohne diesen Zweig legte der Migrate-Pfad
+        // sie als gewoehnliche Spalte an — der Generate-Pfad tat es richtig, und
+        // der Post-Compare meldete die Abweichung als Drift.
+        //
+        // `NOT NULL` ist dort sehr wohl eine Frage: MySQL nimmt
+        // `… GENERATED ALWAYS AS (…) STORED NOT NULL` an (gemessen an 9.7.2), und
+        // `MODIFY COLUMN` ersetzt die ganze Deklaration — ohne das Wort waere der
+        // Zwang nach einem Ausdruckswechsel weg.
         ComputedColumnClause.of(col)?.let { computed ->
-            return listOf(
+            return listOfNotNull(
                 quote(name),
                 typeMapper.toSql(col.type),
                 ComputedColumnClause.clause(computed, if (computed.stored) "STORED" else "VIRTUAL"),
+                "NOT NULL".takeIf { col.required },
+            ).joinToString(" ")
+        }
+        // Eine Identity-Spalte, die ihre Angabe in `generation` traegt (statt im
+        // Typ `identifier`): ohne diesen Zweig rendert `typeMapper.toSql` nur
+        // `BIGINT`, und `AUTO_INCREMENT` faellt weg. Derselbe Fall, den der
+        // Generate-Pfad in `MysqlColumnConstraintHelper` fuehrt — die beiden
+        // Renderer muessen hier dasselbe sagen.
+        if (col.generation is ColumnGeneration.Identity &&
+            MysqlPrimaryKeyOrdering.supportsIdentityGeneration(col.type)
+        ) {
+            val sqlType = if (col.type is NeutralType.BigInteger) "BIGINT" else "INT"
+            return listOfNotNull(
+                quote(name),
+                "$sqlType NOT NULL AUTO_INCREMENT",
+                "UNIQUE".takeIf { NamedUniqueConstraints.rendersInline(col) },
             ).joinToString(" ")
         }
         val parts = mutableListOf<String>()
@@ -204,6 +226,13 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
             before is NeutralType.SmallInt && after is NeutralType.Integer -> true
             before is NeutralType.SmallInt && after is NeutralType.BigInteger -> true
             before is NeutralType.Integer && after is NeutralType.BigInteger -> true
+            // Der Autowert-Schluessel, dem der INT-Bereich ausgeht: `identifier`
+            // ist der 32-bit-PK-Vertrag, `biginteger` + `generation: identity`
+            // der dokumentierte Weg zu 64 bit (Anwenderhandbuch, SQLite-Hinweis).
+            // Ohne diese Zeile blockte genau diese Migration, obwohl MySQL
+            // `MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT` annimmt (gemessen
+            // an 9.7.2). Die Gegenrichtung bleibt unsicher: sie verengt.
+            before is NeutralType.Identifier && after is NeutralType.BigInteger -> true
             else -> false
         }
     }
