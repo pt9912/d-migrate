@@ -126,3 +126,29 @@ Primaerschluessel.
 
 Fuer die Restfläche: ein belegter Bedarf. Was gebaut ist, laeuft; was blockt,
 sagt den gemessenen Grund und nennt den Weg, den der Server kann.
+
+## Nachgemessen 2026-09-13
+
+Zwischen dem Bau (2026-09-12) und heute lag der Capability-Tables-Umbau —
+`DialectCapabilities` und ihre vier Geschwistertabellen verloren ihre
+`when (dialect)`-Zweige, die Werte wanderten in die fuenf Treibermodule. Das
+ist genau die Art Aenderung, die diese Tabelle still haette brechen koennen,
+ohne dass ein Test es haette merken muessen — deshalb erneut gegen echte
+Server gefahren, nicht nur gegen den Code gelesen.
+
+Alle fuenf zustaendigen Integrationsspecs liefen frisch durch (kein
+`UP-TO-DATE`, kein leerer `--tests`-Filter — der haette den Bau hart
+abbrechen lassen) und gruen:
+
+- `PostgresGenerationTransitionMigrateIntegrationTest`
+- `PostgresIdentityShapeIntegrationTest`
+- `MysqlModifyColumnDeclarationIntegrationTest`
+- `OracleGenerationTransitionMigrateIntegrationTest`
+- `SqliteGenerationTransitionIntegrationTest`
+
+Die zweite Tabelle oben (was d-migrate tatsaechlich rendert oder blockt) gilt
+damit unveraendert. Die erste Tabelle (rohe Server-Annahme) haengt nicht am
+Code, sondern an den Server-Versionen selbst (PostgreSQL 18.6, MySQL 9.7.2,
+Oracle 23, SQL Server 2025) — ohne Versionswechsel keine neue Messung noetig.
+Fuer MSSQL gibt es keine eigene Integrationsspec: die Zeile „blockt" ist die
+Abwesenheit eines Renderer-Zweigs, kein Live-Verhalten, das driften koennte.
