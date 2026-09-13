@@ -131,10 +131,14 @@ internal object ParquetGroupValueWriter {
         else -> error("Cannot coerce ${value::class.simpleName} to LocalDate")
     }
 
-    private fun asMicrosOfDay(value: Any): Int = when (value) {
-        is LocalTime -> (value.toNanoOfDay() / NANOS_PER_MICRO).toInt()
-        is java.sql.Time -> (value.toLocalTime().toNanoOfDay() / NANOS_PER_MICRO).toInt()
-        is String -> (LocalTime.parse(value).toNanoOfDay() / NANOS_PER_MICRO).toInt()
+    // TIME(MICROS) ist physisch INT64 (siehe ChunkSchemaToParquetMessageType) --
+    // Mikrosekunden seit Mitternacht passen selbst am Tagesende nicht in Int
+    // (86 400 000 000 ns > Int.MAX_VALUE), .toInt() waere also auch fuer sich
+    // genommen falsch gewesen, nicht nur schema-inkompatibel.
+    private fun asMicrosOfDay(value: Any): Long = when (value) {
+        is LocalTime -> value.toNanoOfDay() / NANOS_PER_MICRO
+        is java.sql.Time -> value.toLocalTime().toNanoOfDay() / NANOS_PER_MICRO
+        is String -> LocalTime.parse(value).toNanoOfDay() / NANOS_PER_MICRO
         else -> error("Cannot coerce ${value::class.simpleName} to LocalTime")
     }
 

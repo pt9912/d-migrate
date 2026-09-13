@@ -57,7 +57,8 @@ internal object ParquetGroupValueReader {
                 group.getBinary(fieldIndex, 0).bytes
             is NeutralType.Date -> LocalDate.ofEpochDay(group.getInteger(fieldIndex, 0).toLong())
             is NeutralType.Time -> {
-                val micros = group.getInteger(fieldIndex, 0).toLong()
+                // TIME(MICROS) ist physisch INT64 (siehe ChunkSchemaToParquetMessageType).
+                val micros = group.getLong(fieldIndex, 0)
                 LocalTime.ofNanoOfDay(micros * NANOS_PER_MICRO)
             }
             is NeutralType.DateTime -> {

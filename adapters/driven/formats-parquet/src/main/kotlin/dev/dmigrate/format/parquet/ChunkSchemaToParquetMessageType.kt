@@ -77,7 +77,14 @@ internal object ChunkSchemaToParquetMessageType {
                 .`as`(LogicalTypeAnnotation.dateType())
                 .named(column.name)
 
-            is NeutralType.Time -> Types.primitive(PrimitiveTypeName.INT32, repetition)
+            // TIME(unit=MICROS) verlangt laut Parquet-Spezifikation INT64 als
+            // physischen Typ -- Types.primitive() wirft sonst beim Bauen des
+            // MessageType. Nachgemessen 2026-09-13 beim Schliessen einer
+            // Coverage-Luecke: kein bestehender Test schrieb je eine
+            // Time-Spalte, der Fehler war deshalb latent. Gehoert zusammen
+            // mit ParquetGroupValueWriter/-Reader und
+            // ParquetMessageTypeToChunkSchema, die ebenfalls INT64 erwarten.
+            is NeutralType.Time -> Types.primitive(PrimitiveTypeName.INT64, repetition)
                 .`as`(LogicalTypeAnnotation.timeType(/* isAdjustedToUTC = */ false, MICROS))
                 .named(column.name)
 

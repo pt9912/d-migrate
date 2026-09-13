@@ -52,6 +52,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Quelle, sondern eine Kopie. Es entfällt samt seinem Workflow und dem
   zugehörigen Handarbeits-Schritt der Release-Doku.
 
+### Fixed
+
+- **Eine Parquet-`Time`-Spalte ließ sich nicht schreiben.** `TIME(MICROS)`
+  verlangt nach Parquet-Spezifikation den physischen Typ `INT64` — der
+  Schema-Baustein für `NeutralType.Time` deklarierte `INT32` und scheiterte
+  deshalb schon beim Anlegen des Schemas, bevor eine einzige Zeile geschrieben
+  war. Kein Rand­fall: Mikrosekunden seit Mitternacht passen ohnehin nicht in
+  `Int` (86 400 000 000 > `Int.MAX_VALUE`), die Koerzierung hätte auch ohne den
+  Schema-Fehler nur überlaufene Werte geliefert. Der Defekt war vollständig
+  unbemerkt, weil kein Test je eine `Time`-Spalte durch den echten
+  Schreibpfad führte — gefunden beim Schließen genau dieser Testlücke.
+  Schreiber, Leser und der Rück-Umsetzer von `MessageType` nach `NeutralType`
+  sind jetzt konsistent auf `INT64`.
+
+- **Eine `FullText`-Spalte in einem Parquet-Bundle-Manifest ließ sich
+  schreiben, aber nicht mehr lesen.** Der Manifest-Schreiber kennt
+  `NeutralType.FullText` seit jeher; der Leser nicht — er verwarf den
+  Eintrag mit `MANIFEST_FIELD_INVALID: unknown NeutralType kind 'FullText'`.
+  Ein Bundle-Export mit einer Volltext-Spalte scheiterte damit beim
+  nächsten Lesen des eigenen Manifests. Derselbe Fund, dieselbe Ursache: kein
+  Test deckte je alle `NeutralType`-Varianten durch den Manifest-Rundlauf ab.
+
 ## [1.4.0] - 2026-09-13
 
 ### Added

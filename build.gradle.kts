@@ -301,6 +301,7 @@ dependencies {
     kover(project(":adapters:driven:driver-oracle"))
     kover(project(":adapters:driven:audit-logging"))
     kover(project(":adapters:driven:formats"))
+    kover(project(":adapters:driven:formats-parquet"))
     kover(project(":adapters:driven:persistence-jdbc"))
     kover(project(":adapters:driven:storage-file"))
     kover(project(":adapters:driven:streaming"))

@@ -234,3 +234,13 @@ dependencies {
 dependencies {
     testImplementation("org.apache.parquet:parquet-arrow:${rootProject.properties["parquetVersion"]}")
 }
+
+kover {
+    reports {
+        verify {
+            rule {
+                minBound(90)
+            }
+        }
+    }
+}

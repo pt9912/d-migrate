@@ -66,9 +66,11 @@ internal object ParquetMessageTypeToChunkSchema {
     fun readShape(type: NeutralType): ReadShape = when (type) {
         is NeutralType.BooleanType -> ReadShape.BOOLEAN
         is NeutralType.SmallInt, is NeutralType.Integer, is NeutralType.Identifier,
-        is NeutralType.Date, is NeutralType.Time,
+        is NeutralType.Date,
         -> ReadShape.INT32
-        is NeutralType.BigInteger, is NeutralType.DateTime -> ReadShape.INT64
+        // TIME(MICROS) ist physisch INT64, nicht INT32 -- Parquet-Spezifikation,
+        // siehe ChunkSchemaToParquetMessageType.
+        is NeutralType.BigInteger, is NeutralType.DateTime, is NeutralType.Time -> ReadShape.INT64
         is NeutralType.Float -> floatShape(type)
         is NeutralType.Decimal -> decimalShape(type)
         else -> ReadShape.BINARY
@@ -97,7 +99,6 @@ internal object ParquetMessageTypeToChunkSchema {
 
     private fun int32Type(annotation: LogicalTypeAnnotation?): NeutralType = when {
         annotation is LogicalTypeAnnotation.DateLogicalTypeAnnotation -> NeutralType.Date
-        annotation is LogicalTypeAnnotation.TimeLogicalTypeAnnotation -> NeutralType.Time
         annotation is LogicalTypeAnnotation.DecimalLogicalTypeAnnotation ->
             NeutralType.Decimal(annotation.precision, annotation.scale)
         annotation is LogicalTypeAnnotation.IntLogicalTypeAnnotation && annotation.bitWidth <= BITS_16 ->
@@ -110,6 +111,9 @@ internal object ParquetMessageTypeToChunkSchema {
     private fun int64Type(annotation: LogicalTypeAnnotation?): NeutralType = when (annotation) {
         is LogicalTypeAnnotation.TimestampLogicalTypeAnnotation ->
             NeutralType.DateTime(timezone = annotation.isAdjustedToUTC)
+        // TIME(MICROS) ist physisch INT64, nicht INT32 -- der Zweig lag vorher
+        // faelschlich in int32Type(), passend zum ebenso falschen Schreibpfad.
+        is LogicalTypeAnnotation.TimeLogicalTypeAnnotation -> NeutralType.Time
         is LogicalTypeAnnotation.DecimalLogicalTypeAnnotation ->
             NeutralType.Decimal(annotation.precision, annotation.scale)
         else -> NeutralType.BigInteger

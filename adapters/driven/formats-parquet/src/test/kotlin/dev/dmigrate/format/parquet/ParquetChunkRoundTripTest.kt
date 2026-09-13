@@ -21,6 +21,7 @@ import java.sql.Types
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneOffset
 
 class ParquetChunkRoundTripTest : FunSpec({
@@ -46,6 +47,10 @@ class ParquetChunkRoundTripTest : FunSpec({
                         nullable = false,
                         neutralType = NeutralType.DateTime(timezone = false),
                     ),
+                    // TIME(MICROS) ist physisch INT64, nicht INT32 (Parquet-
+                    // Spezifikation) -- kein Test schrieb je eine Time-Spalte,
+                    // der Fehler blieb latent. Regressionstest fuer den Fund.
+                    ChunkColumnSchema("start_time", nullable = true, neutralType = NeutralType.Time),
                 ),
                 origin = SchemaOrigin.JDBC_METADATA,
             )
@@ -66,6 +71,7 @@ class ParquetChunkRoundTripTest : FunSpec({
                                     BigDecimal("123.45"),
                                     LocalDate.of(1990, 1, 15),
                                     Instant.parse("2024-03-04T12:34:56.789Z"),
+                                    LocalTime.of(9, 15, 30, 500_000_000),
                                 ),
                                 arrayOf<Any?>(
                                     2,
@@ -74,6 +80,7 @@ class ParquetChunkRoundTripTest : FunSpec({
                                     null,
                                     null,
                                     Instant.parse("2024-03-05T01:23:45.123Z"),
+                                    null,
                                 ),
                             ),
                             chunkIndex = 0L,
@@ -102,6 +109,8 @@ class ParquetChunkRoundTripTest : FunSpec({
             (row1[3] as BigDecimal) shouldBe BigDecimal("123.45")
             row1[4] shouldBe LocalDate.of(1990, 1, 15)
             row1[5] shouldBe Instant.parse("2024-03-04T12:34:56.789Z")
+            // Mikrosekunden-Aufloesung: 500_000_000 ns rundet auf 500_000 us.
+            row1[6] shouldBe LocalTime.of(9, 15, 30, 500_000_000)
 
             val row2 = chunk.rows[1]
             row2[0] shouldBe 2
@@ -110,6 +119,7 @@ class ParquetChunkRoundTripTest : FunSpec({
             row2[3] shouldBe null
             row2[4] shouldBe null
             row2[5] shouldBe Instant.parse("2024-03-05T01:23:45.123Z")
+            row2[6] shouldBe null
         } finally {
             Files.deleteIfExists(tempFile)
         }

@@ -207,6 +207,12 @@ internal object ManifestNeutralTypeToCore {
             length = (manifest.attributes["length"] as? Number)?.toInt()
                 ?: throw ParquetManifestParseException("MANIFEST_FIELD_MISSING: Char.length"),
         )
+        // ChunkSchemaToManifest.toTextLikeNeutralType schreibt "FullText" seit
+        // jeher -- dieser Zweig fehlte hier. Ohne ihn scheiterte das Lesen
+        // eines Bundle-Manifests mit einer FullText-Spalte an
+        // MANIFEST_FIELD_INVALID, obwohl das Schreiben klaglos durchlief.
+        // Gefunden beim Schliessen der Coverage-Luecke (2026-09-13).
+        "FullText" -> NeutralType.FullText
         else -> null
     }
 
