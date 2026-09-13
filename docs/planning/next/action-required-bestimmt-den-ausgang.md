@@ -115,17 +115,65 @@ stuft `SkippedObject` **schon heute** als `error` ein, mit derselben
 KDoc-Zusage („the object did not make it into the DDL"). Vor P1 ist deshalb zu
 entscheiden:
 
-- **Weg α:** Ausgangsregel an der Notiz-Stufe (`action_required`), wie oben
-  beschrieben.
+- **Weg α:** Ausgangsregel an der Notiz-Stufe (`action_required`).
 - **Weg β:** Ausgangsregel an „wurde etwas übersprungen?", und die
   Emissionsstellen, die ein Objekt fallen lassen, erzeugen zusätzlich das
   `SkippedObject`, das ihnen fehlt.
 
-β ist genauer — es trennt „ein Objekt fehlt" von „ein Hinweis liegt an" —
-und behebt nebenbei einen falschen Zähler. α ist kleiner. Die Erhebung der
-Emissionsstellen (P0, Arbeitspaket 1) muss die Frage ohnehin beantworten: für
-jede Stelle ist zu sagen, ob sie ein Objekt fallen lässt oder nur einen
-Hinweis anhängt. Wer das erhoben hat, hat β fast schon gebaut.
+**Entschieden (2026-09-13): Weg β.** Er trennt „ein Objekt fehlt" von „ein
+Hinweis liegt an" und behebt nebenbei den falschen Zähler
+(`skipped_objects: 0` bei tatsächlich übersprungener Constraint). Die
+Ausgangsregel greift damit an `SkippedObject`, nicht an `NoteType
+.ACTION_REQUIRED` — eine Emissionsstelle, die nur einen Hinweis anhängt, ohne
+ein Objekt fallen zu lassen, ändert den Ausgang nicht.
+
+## P0-Erhebung, Teil 2: alle Emissionsstellen klassifiziert (2026-09-13)
+
+11 Dateien, 17 Codestellen, drei Formen. Für die Ausgangsregel (Weg β) zählt
+nur eine Frage je Stelle: **verschwindet ein Objekt aus der Ausgabe, ohne dass
+`SkippedObject` es sagt?**
+
+| Code | Stelle | Objekt | Heute `SkippedObject`? | Form |
+| --- | --- | --- | --- | --- |
+| E054 | `SqliteRoutineDdlHelper` (Function) | Funktion | ja | — |
+| E054 | `SqliteRoutineDdlHelper` (Procedure) | Prozedur | ja | — |
+| E057 | `SqliteCapabilityDdlSupport` (zirkuläre FK) | FK-Constraint | ja | — |
+| E052 | `SqliteTableDdlSupport`/`AbstractDdlGenerator` (Spatial-Block) | Tabelle | ja, über `blocksTable` | — |
+| **E054** | **`SqliteCapabilityDdlSupport`** (COMPOSITE-Typ) | Custom Type | **nein** | **Lücke** |
+| **E054** | **`SqliteColumnConstraintHelper`** (EXCLUDE) | Constraint | **nein** | **Lücke** |
+| **E053** | **`*ColumnConstraintHelper`, alle fünf Dialekte** (CHECK/Computed nicht portabel, `RawSqlExpressionPortability`) | Constraint / berechnete Spalte | **nein** | **Lücke — der ursprüngliche Repro** |
+| **E057** | **`MysqlIndexPartitionDdlHelper`** (Partial Index) | Index | **nein** | **Lücke** |
+| **E065** | **`MysqlDdlGenerator`** (FK auf partitionierter Tabelle) | FK-Constraint | **nein** | **Lücke** |
+| E056 | `SqliteSequenceDdlSupport` / `MysqlSequenceDdlSupport` (Sequenz-Default ohne Helper-Tabelle) | *Facette* einer Spalte | n/a | Degradiert, kein Objektverlust — die Spalte entsteht |
+| E057 | `SqliteSequenceDdlSupport` (WITHOUT ROWID) | *Facette* einer Spalte | n/a | wie oben |
+| E055 | `SqliteTableDdlSupport` / `PostgresDdlGenerator` (Partitionierung ignoriert) | *Facette* einer Tabelle | n/a | Degradiert, kein Objektverlust — die Tabelle entsteht |
+| E060 | `ViewPhaseClassifier` (Split-Phase unbestimmbar) | *Facette* einer Sicht | n/a | Degradiert — die Sicht entsteht, nur die Phasen-Zuordnung ist unsicher |
+
+**Vier echte Lücken**, eine davon der ursprüngliche Befund. Der gemeinsame
+Grund: **die Signatur reicht kein `skipped: MutableList<SkippedObject>`
+durch.**
+
+- `generateConstraintClause(constraint, notes)` — in **allen fünf**
+  `*ColumnConstraintHelper`-Klassen ohne `skipped`-Parameter. Trägt sowohl das
+  EXCLUDE-Verweigern als auch (über `RawSqlExpressionPortability
+  .notPortableNote`) das CHECK-/Computed-Verweigern aus dem Repro. Eine
+  Signaturänderung an einer Stelle behebt drei der vier Lücken auf einmal.
+- `generateCustomTypes(types)` (SQLite) — kein `skipped`-Parameter, anders als
+  das benachbarte `generateSequences`.
+- `generateIndices(tableName, table)` (MySQL) — kein `skipped`-Parameter.
+- `generateTable(...)` — der Basisvertrag in `DdlGenerator` selbst trägt kein
+  `skipped`; nur die Tabellen-Orchestrierung in `AbstractDdlGenerator` hat es
+  (daher funktioniert `blocksTable` für ganze Tabellen, aber nichts
+  Feineres).
+
+**Was das für P1 heißt:** die vier Facetten-Fälle (E055 ×2, E056/E057-Sequenz,
+E060) bleiben unter β bewusst ohne Ausgangswirkung — das Objekt entsteht,
+nur unvollständig. Ob das für den Sequenz-Fall (E056/E057) richtig ist, ist
+eine offene Frage: eine `DEFAULT`-Klausel, die ohne Serverzwang verschwindet,
+ist näher an „trägt nicht, was verlangt wurde" als an einer reinen
+Formatfrage. Für P1 vorgeschlagen: erst die vier echten Lücken schließen
+(klar, mechanisch, direkt am Repro), die Sequenz-Frage als eigenen Punkt der
+Eignerentscheidung vorlegen statt sie hier mitzuentscheiden.
 
 ## Ziel
 
