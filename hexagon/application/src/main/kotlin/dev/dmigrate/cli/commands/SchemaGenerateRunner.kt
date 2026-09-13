@@ -77,6 +77,14 @@ data class SchemaGenerateRequest(
     val output: Path?,
     val report: Path?,
     val generateRollback: Boolean,
+    /**
+     * Erzwingt Exit `0`, auch wenn `skippedObjects` nicht leer ist. Ohne die
+     * Angabe blockt ein Lauf, der ein Objekt fallen laesst, mit Exit `8`
+     * (`MIGRATION_BLOCKED` — "vor Ausfuehrung nicht renderbar", verallgemeinert:
+     * hier heisst "Ausfuehrung" das Erzeugen der Datei). Der Report nennt die
+     * Unterdrueckung in beiden Faellen.
+     */
+    val allowIncomplete: Boolean = false,
     val outputFormat: String,
     val verbose: Boolean,
     val quiet: Boolean,
@@ -127,6 +135,7 @@ class SchemaGenerateRunner(
         SplitMode,
         MysqlNamedSequenceMode?,
         SqliteNamedSequenceMode?,
+        Int,
     ) -> String,
     private val sidecarPath: (Path, String) -> Path,
     private val rollbackPath: (Path) -> Path,
@@ -195,7 +204,8 @@ class SchemaGenerateRunner(
         val generated = generator.generate(effectiveSchema, effectiveOptions)
         // Die Uebersetzung geschieht vor dem Generator; ohne diese Meldungen
         // saehe der Anwender nur RANGE-DDL fuer ein Schema, das LIST sagt.
-        val result = generated.copy(globalNotes = generated.globalNotes + prepared.notes)
+        val withOverlayNotes = generated.copy(globalNotes = generated.globalNotes + prepared.notes)
+        val result = withSuppressionNoteIfNeeded(withOverlayNotes, request)
 
         val splitExit = checkSplitDiagnostics(request, result)
         if (splitExit != null) return splitExit
@@ -203,6 +213,27 @@ class SchemaGenerateRunner(
         printNotes(result, request.verbose)
 
         return routeOutput(request, result, effectiveSchema, generator, dialect, effectiveOptions)
+    }
+
+    /**
+     * Ein Lauf mit `skippedObjects` blockt normalerweise (siehe [routeOutput]).
+     * `--allow-incomplete` erzwingt stattdessen Exit `0` — aber still zu
+     * bleiben waere die stille Degradation, die dieser Slice gerade abschafft.
+     * Die Notiz steht deshalb im Report **und** auf stderr, wie jede andere.
+     */
+    private fun withSuppressionNoteIfNeeded(result: DdlResult, request: SchemaGenerateRequest): DdlResult {
+        if (!request.allowIncomplete || result.skippedObjects.isEmpty()) return result
+        // WARNING, nicht INFO: INFO druckt nur mit --verbose (siehe printNotes),
+        // und still zu bleiben waere genau die stille Degradation, die dieser
+        // Slice abschafft.
+        val note = TransformationNote(
+            type = NoteType.WARNING,
+            code = "W160",
+            objectName = "--allow-incomplete",
+            message = "Exit code suppressed by --allow-incomplete: ${result.skippedObjects.size} " +
+                "object(s) were skipped (see skipped_objects in the report).",
+        )
+        return result.copy(globalNotes = result.globalNotes + note)
     }
 
     /** Was aus den Overlays folgt: das zu erzeugende Schema und, was dazu zu sagen ist. */
@@ -495,6 +526,8 @@ class SchemaGenerateRunner(
             stderr = stderr,
         )
 
+        val exitCode = exitCodeFor(result, request)
+
         if (request.splitMode == SplitMode.PRE_POST) {
             if (request.output != null) {
                 outputWriter.writeSplitFileOutput(request, result, schema, dialect, splitModeStr, options)
@@ -505,6 +538,7 @@ class SchemaGenerateRunner(
                         result, schema, dialectName, request.splitMode,
                         options.mysqlContext?.namedSequenceMode,
                         options.sqliteContext?.namedSequenceMode,
+                        exitCode,
                     ),
                 )
             }
@@ -519,6 +553,7 @@ class SchemaGenerateRunner(
                         result, schema, dialectName, request.splitMode,
                         options.mysqlContext?.namedSequenceMode,
                         options.sqliteContext?.namedSequenceMode,
+                        exitCode,
                     ),
                 )
                 request.output != null -> {
@@ -531,7 +566,22 @@ class SchemaGenerateRunner(
                 }
             }
         }
-        return 0
+        return exitCode
+    }
+
+    /**
+     * Ob ein Objekt fehlt entscheidet den Ausgang — nicht die Notiz-Stufe.
+     * `action_required` selbst kommt in fuenf Auspraegungen vor (Notiz,
+     * Report, MCP, Code-Ledger, Ausgang) und war bisher an keiner davon
+     * verbindlich definiert; diese Regel macht `skippedObjects` zur
+     * einzigen Quelle. `8` = `MIGRATION_BLOCKED`, hier verallgemeinert auf
+     * "das Verlangte wurde nicht vollstaendig erzeugt" statt nur auf
+     * `schema migrate`.
+     */
+    private fun exitCodeFor(result: DdlResult, request: SchemaGenerateRequest): Int = when {
+        result.skippedObjects.isEmpty() -> 0
+        request.allowIncomplete -> 0
+        else -> 8
     }
 
     private fun printNotes(result: DdlResult, verbose: Boolean) {

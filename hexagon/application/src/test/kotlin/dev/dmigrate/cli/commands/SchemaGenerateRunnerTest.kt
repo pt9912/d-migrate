@@ -86,6 +86,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         splitMode: SplitMode = SplitMode.SINGLE,
         mysqlNamedSequences: String? = null,
         deterministic: Boolean = false,
+        allowIncomplete: Boolean = false,
     ) = SchemaGenerateRequest(
         source = source,
         target = target,
@@ -93,6 +94,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         output = output,
         report = report,
         generateRollback = generateRollback,
+        allowIncomplete = allowIncomplete,
         outputFormat = outputFormat,
         verbose = verbose,
         quiet = quiet,
@@ -279,6 +281,7 @@ class SchemaGenerateRunnerTest : FunSpec({
             request(outputFormat = "json")
         ) shouldBe 0
         h.stdout.joined() shouldContain "\"command\": \"schema.generate\""
+        h.stdout.joined() shouldContain "\"exit_code\": 0"
         h.stdout.joined() shouldContain "\"target\": \"postgresql\""
         // json mode bypasses file writing and report generation
         h.fileWrites.shouldBeEmpty()
@@ -302,7 +305,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         h.reportWrites.single().options.generatedAt shouldBe Instant.parse("2026-04-01T00:00:00Z")
     }
 
-    test("Exit 0: --output-format=json preserves spatial W120 notes and E052 skipped objects") {
+    test("Exit 8: --output-format=json preserves spatial W120 notes and E052 skipped objects") {
         val h = harness()
         h.generator = FakeGenerator(
             generateResult = DdlResult(
@@ -331,8 +334,15 @@ class SchemaGenerateRunnerTest : FunSpec({
             )
         )
 
-        h.runner().execute(request(target = "mysql", outputFormat = "json")) shouldBe 0
+        // Ein skipped_object (hier E052) blockt seit dem SkippedObject-Ausgangsslice mit
+        // Exit 8 -- die JSON-Ausgabe selbst entsteht trotzdem, sie steht vor der
+        // Ausgangsentscheidung.
+        h.runner().execute(request(target = "mysql", outputFormat = "json")) shouldBe 8
 
+        // Der Prozess-Exit-Code und das JSON-Feld duerfen nicht auseinanderlaufen --
+        // vor diesem Test war "exit_code" im JSON fest auf 0 verdrahtet, unabhaengig
+        // vom tatsaechlichen Ausgang.
+        h.stdout.joined() shouldContain "\"exit_code\": 8"
         h.stdout.joined() shouldContain "\"code\": \"W120\""
         h.stdout.joined() shouldContain "\"object\": \"places.location\""
         h.stdout.joined() shouldContain "\"code\": \"E052\""
@@ -440,7 +450,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         h.stderr.joined() shouldContain "fyi"
     }
 
-    test("prints skipped objects to stderr") {
+    test("prints skipped objects to stderr and blocks with exit 8") {
         val h = harness()
         h.generator = FakeGenerator(
             generateResult = DdlResult(
@@ -450,9 +460,25 @@ class SchemaGenerateRunnerTest : FunSpec({
                 ),
             )
         )
-        h.runner().execute(request()) shouldBe 0
+        h.runner().execute(request()) shouldBe 8
         h.stderr.joined() shouldContain "Skipped procedure 'legacy_proc'"
         h.stderr.joined() shouldContain "not supported on postgresql"
+    }
+
+    test("--allow-incomplete forces exit 0 and notes the suppression") {
+        val h = harness()
+        h.generator = FakeGenerator(
+            generateResult = DdlResult(
+                statements = listOf(DdlStatement("CREATE TABLE t (id INT);")),
+                skippedObjects = listOf(
+                    SkippedObject("procedure", "legacy_proc", "not supported on postgresql"),
+                ),
+            )
+        )
+        h.runner().execute(request(allowIncomplete = true)) shouldBe 0
+        h.stderr.joined() shouldContain "Skipped procedure 'legacy_proc'"
+        h.stderr.joined() shouldContain "W160"
+        h.stderr.joined() shouldContain "--allow-incomplete"
     }
 
 })

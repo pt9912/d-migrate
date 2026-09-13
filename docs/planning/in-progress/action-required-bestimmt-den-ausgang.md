@@ -1,6 +1,6 @@
 # `action_required` bestimmt den Ausgang
 
-> **Status:** In Arbeit seit 2026-09-13 (P0 abgeschlossen: Erhebung + sechs `SkippedObject`-Lücken geschlossen, Voraussetzung für die Ausgangsregel; P1–P4 offen).
+> **Status:** In Arbeit seit 2026-09-13 (P0 + P1 abgeschlossen: Ausgangsregel gebaut und live belegt; P2–P4 offen).
 > **Trigger:** Konsumentenmeldung, gegen v1.3.1 und unverändert gegen v1.4.0
 > nachgemessen: `schema generate` lässt einen nicht renderbaren Bestandteil
 > weg und endet mit Exit 0.
@@ -237,6 +237,66 @@ nach dem E065-Zusatz) — behoben durch echte Aufteilung
 
 Grün: alle 49 Module, `a-check`, `solid-suppression-gate`.
 
+
+## P1: der Ausgang in der CLI (2026-09-13)
+
+Gebaut und live belegt — dieselben zwei Repro-Läufe wie oben, jetzt mit dem
+vollständigen Ausgang:
+
+```
+$ d-migrate schema generate --source repro.yaml --target mssql --output out.sql
+…
+EXIT=8
+
+$ d-migrate schema generate --source repro.yaml --target mssql --allow-incomplete --output out.sql
+…
+⚠ Warning [W160]: Exit code suppressed by --allow-incomplete: 2 object(s) were skipped …
+EXIT=0
+
+$ d-migrate --output-format json schema generate --source repro.yaml --target mssql
+…
+"exit_code": 8
+EXIT=8
+```
+
+**Die Regel sitzt an einer Stelle**, `SchemaGenerateRunner.exitCodeFor` —
+`skippedObjects.isEmpty() -> 0`, `request.allowIncomplete -> 0`, sonst `8`.
+`--allow-incomplete` ist als neues Flag durch alle vier Schichten gereicht
+(`SchemaGenerateCommand` → `SchemaGenerateOptions` → `SchemaGenerateWiring`
+→ `SchemaGenerateRequest`); die Unterdrückung trägt eine eigene Notiz
+(`W160`, **`WARNING`**, nicht `INFO` — `INFO` druckt nur mit `--verbose`,
+und still zu bleiben wäre genau die stille Degradation, die dieser Slice
+abschafft).
+
+**Ein zweiter, unabhängiger Fund unterwegs:** `formatJsonOutput` hatte
+`"exit_code": 0` **fest verdrahtet** — unabhängig vom tatsächlichen Ausgang.
+Vor diesem Slice war das folgenlos (der JSON-Zweig wurde nur nach
+erfolgreicher Validierung erreicht, also immer bei Exit 0). Mit der neuen
+Regel wäre daraus eine zweite, aus dem Blickwinkel des Anwenders
+unabhängige Quelle für dieselbe Frage geworden — und eine, die log. Das
+Feld nimmt jetzt den echten, in `routeOutput` einmal berechneten Exit-Code.
+
+**Spec zuerst korrigiert, dann Code.** `spec/cli-spec.md` §2.1 und die
+Exit-8-Zeile, `spec/ddl-generation-rules.md` §14.3 (samt seinem
+Zahlenbeispiel, das vorher `skipped_objects` **und** `exit_code: 0`
+gleichzeitig zeigte) sagten bis zu diesem Commit **ausdrücklich das
+Gegenteil**: „Der Exit-Code bleibt `0`, damit CI/CD-Pipelines nicht
+abbrechen." Diese Zusage wird mit dieser Änderung bewusst gebrochen —
+Eignerentscheidung vom 2026-09-13 (siehe oben, „Weg (a) ist ein Bruch am
+Ausgangsvertrag"). `docs/user/troubleshooting-leitfaden.md` unterschied
+bisher nicht zwischen echtem Objektverlust (E053/E054/E057/E065, jetzt
+Exit 8) und bloßer Facetten-Degradation (E055/E056, weiterhin Exit 0) —
+korrigiert.
+
+Belegt: sechs bestehende Tests umgestellt (sie behaupteten „Exit 0" bei
+tatsächlich vorhandenen `skippedObjects` — der Vertrag, den dieser Slice
+korrigiert), drei neue (`--allow-incomplete` auf Runner- und CLI-Ebene,
+`exit_code` im JSON bei Exit 0 **und** Exit 8). Zwei per absichtlich
+falscher Zusicherung als laufend belegt, Rücknahmen geprüft.
+
+Grün: alle 49 Module (Vollbau, geteilte Signatur), `a-check`,
+`solid-suppression-gate`, `docs-check`.
+
 ## Ziel
 
 `action_required` bekommt eine Bedeutung im Vertrag, und der Ausgang folgt
@@ -301,8 +361,8 @@ Migrationsbeispiel, wie beim Bind-Mount-Wechsel in RC3.
    Code falsch eingestuft und wird zur Warnung. Angefangen: 17 Emissionsstellen
    in acht Modulen, der Schwerpunkt bei SQLite (9) — die Einzelbewertung steht
    aus.
-2. **P1 — Ausgang in der CLI.** Eine Stelle, durch die der Ausgang von
-   `schema generate` entsteht; `--allow-incomplete` samt Report-Vermerk.
+2. ~~**P1 — Ausgang in der CLI.**~~ **Erledigt** — siehe „P1: der Ausgang
+   in der CLI" oben.
 3. **P2 — MCP nachziehen.** `isError` aus derselben Regel, nicht aus einer
    zweiten Abbildung im Handler.
 4. **P3 — Die übrigen Kommandos prüfen.** `schema generate` ist der gemeldete

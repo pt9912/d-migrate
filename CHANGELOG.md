@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`schema generate` bricht mit Exit `8` ab, wenn ein Objekt fehlt** — CHECK-
+  Constraint oder berechnete Spalte mit nicht portablem Ausdruck (E053),
+  EXCLUDE-Constraint oder COMPOSITE-Typ auf einem Dialekt ohne diese Form
+  (E054), Partial Index auf MySQL (E057), Fremdschlüssel auf einer
+  partitionierten MySQL-Tabelle (E065). Bisher endete derselbe Lauf mit
+  Exit `0`, obwohl `skipped_objects` im Report genau das auflistete — ein
+  Konsumentenbefund zeigte es an einem Repro, das eine CHECK-Constraint und
+  eine berechnete Spalte gleichzeitig verlor: der Report sagte
+  `skipped_objects: 0`, obwohl die Constraint tatsächlich fehlte, weil die
+  Rendererstellen, die ein Objekt fallen ließen, kein `SkippedObject`
+  trugen, nur eine Notiz.
+
+  Die Regel ist jetzt einheitlich: **ein `skipped_objects`-Eintrag entscheidet
+  den Ausgang, nicht die Notiz-Stufe.** Eine Notiz allein — auch
+  `action_required` — ändert nichts, solange kein Objekt fehlt (eine
+  ignorierte Partitionierung oder ein entfallener Sequenz-Default lassen die
+  Tabelle bzw. Spalte entstehen und bleiben bei Exit `0`).
+
+  **Migrationsbeispiel:** Ein CI-Lauf, der bisher grün durchlief, obwohl der
+  Report eine übersprungene Constraint auswies, wird jetzt rot. Wer das
+  bewusst in Kauf nimmt (die Regel etwa erst schrittweise einführt), setzt
+  `--allow-incomplete` — der Lauf endet dann wie zuvor mit Exit `0`, aber
+  der Report und stderr nennen die Unterdrückung selbst (`W160`), statt sie
+  stillschweigend zu wiederholen.
+
 - **Die Homebrew-Formula wird nicht mehr doppelt geführt.** Im Repo lag ein
   zweites, von Hand gepflegtes Template neben der Formula, die
   `homebrew-releaser` für den Tap erzeugt — und ein eigener Workflow prüfte es.

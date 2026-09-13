@@ -2114,10 +2114,11 @@ Views oder Funktionen.
 | Situation | DDL-Output | Report | Exit-Code | stderr |
 |---|---|---|---|---|
 | Nur info/warning | Vollständig generiert | Alle Notes | `0` | Warnungen ausgeben |
-| action_required vorhanden | Generiert ohne übersprungene Objekte | Alle Notes + skipped_objects | `0` | Warnungen + Hinweise auf übersprungene Objekte |
+| action_required vorhanden, kein Objekt fehlt | Vollständig generiert | Alle Notes | `0` | Hinweise ausgeben |
+| skipped_objects vorhanden | Generiert ohne übersprungene Objekte | Alle Notes + skipped_objects | `8` (`--allow-incomplete`: `0`, mit `W160`) | Warnungen + Hinweise auf übersprungene Objekte |
 | Fehler (z.B. ungültiges Schema) | Nicht generiert | Nicht erzeugt | `3` | Fehler ausgeben |
 
-**Wichtig**: `action_required` ist **kein Fehler** — die DDL-Generierung wird fortgesetzt, das betroffene Objekt (Function, Trigger-Body, etc.) wird übersprungen und im Report dokumentiert. Der Exit-Code bleibt `0`, damit CI/CD-Pipelines nicht abbrechen. Die `skipped_objects`-Liste im Report macht die Lücken transparent.
+**Wichtig**: `action_required` ist **kein Fehler im Sinne von Exit 3** — die DDL-Generierung wird fortgesetzt, was entstehen kann, entsteht. Ob der **Ausgang** blockt, hängt nicht an der Notiz-Stufe, sondern daran, ob ein Objekt deswegen **fehlt**: nur dann trägt der Report einen `skipped_objects`-Eintrag (Typ, Name, Grund, Code), und nur dann endet der Lauf mit Exit `8` — ein `action_required`, das nichts aus der Ausgabe nimmt (z. B. eine optionale Emulation, die der Anwender per Flag einschalten könnte), lässt den Ausgang bei `0`. `--allow-incomplete` erzwingt `0` trotzdem, vermerkt die Unterdrückung aber selbst mit `W160` — CI/CD-Pipelines, die den Lauf trotz Lücken grün sehen wollen, entscheiden das damit bewusst, statt es nie zu bemerken.
 
 **stderr-Ausgabe bei action_required**:
 
@@ -2131,13 +2132,15 @@ Views oder Funktionen.
 **stdout**: DDL-Output (oder in `--output`-Datei)
 **stderr**: Warnungen und action_required-Hinweise
 
-Bei `--output-format json` wird die DDL als `ddl`-Feld im JSON eingebettet:
+Bei `--output-format json` wird die DDL als `ddl`-Feld im JSON eingebettet.
+Der Prozess-Exit-Code (§2.1) und `exit_code` im JSON stimmen überein — auch
+bei `--output-format json` ändert sich der Ausgang nicht (§2.1):
 
 ```json
 {
   "command": "schema.generate",
   "status": "completed",
-  "exit_code": 0,
+  "exit_code": 8,
   "target": "mysql",
   "ddl": "CREATE TABLE `customers` (...);\\n...",
   "notes": [...],

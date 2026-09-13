@@ -93,6 +93,7 @@ object SchemaGenerateHelpers {
         splitMode: SplitMode = SplitMode.SINGLE,
         mysqlNamedSequenceMode: dev.dmigrate.driver.MysqlNamedSequenceMode? = null,
         sqliteNamedSequenceMode: dev.dmigrate.driver.SqliteNamedSequenceMode? = null,
+        exitCode: Int = 0,
     ): String {
         val isSplit = splitMode == SplitMode.PRE_POST
         val notes = result.notes.joinToString(",\n") { note ->
@@ -114,7 +115,7 @@ object SchemaGenerateHelpers {
             appendLine("{")
             appendLine("""  "command": "schema.generate",""")
             appendLine("""  "status": "completed",""")
-            appendLine("""  "exit_code": 0,""")
+            appendLine("""  "exit_code": $exitCode,""")
             appendLine("""  "generator": "d-migrate ${VersionInfo.PRODUCT_VERSION}",""")
             appendLine("""  "target": "$dialect",""")
             if (mysqlNamedSequenceMode != null) {

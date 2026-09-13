@@ -85,7 +85,7 @@ d-migrate data export --source staging --format json
 | `5` | `MIGRATION_ERROR` | Fehler während Daten- oder Schema-Migration nach Beginn der Ausführung | Constraint-Verletzung beim Import; DDL-Anweisung schlägt nach Beginn von `schema migrate --execute` fehl |
 | `6` | `AI_ERROR` | KI-Provider nicht erreichbar oder Transformation fehlgeschlagen | Ollama nicht gestartet |
 | `7` | `LOCAL_ERROR` | Lokaler Konfigurations-, Parse-, Datei-, I/O-, Render- oder Kollisionsfehler | Ungültiges YAML in `.d-migrate.yaml`, Schema-Datei nicht lesbar, Ausgabepfad nicht beschreibbar |
-| `8` | `MIGRATION_BLOCKED` | Migration durch Risiko-, Rollback- oder Dialektblocker nicht renderbar (vor Ausführung) | `schema migrate` ohne `--allow-destructive` mit destruktivem Up; `--generate-rollback` mit nicht-reversibler Operation; Ziel-Dialekt rendert geplante Operation nicht |
+| `8` | `MIGRATION_BLOCKED` | Das Verlangte wurde nicht vollständig erzeugt (vor bzw. ohne Ausführung) | `schema migrate` ohne `--allow-destructive` mit destruktivem Up; `--generate-rollback` mit nicht-reversibler Operation; Ziel-Dialekt rendert geplante Operation nicht; `schema generate` lässt ein Objekt aus (`skipped_objects` nicht leer) — außer mit `--allow-incomplete` |
 | `130` | `INTERRUPTED` | Durch Benutzer abgebrochen (Ctrl+C) | SIGINT empfangen |
 
 ### 2.1 Exit-Code-Regeln
@@ -94,6 +94,29 @@ d-migrate data export --source staging --format json
 - Bei **mehreren Fehlern**: Der spezifischste Exit-Code wird verwendet
 - Bei `--output-format json`: Exit-Code bleibt gleich, Details im JSON-Output
 - Fortschrittsanzeige geht immer nach **stderr**, Ergebnisse nach **stdout**
+
+**Was die drei Notiz-Stufen für den Ausgang bedeuten.** Ein Lauf erzeugt drei
+Arten von Notizen (`info`, `warning`, `action_required`), aber der Ausgang
+hängt an keiner davon direkt — er hängt daran, ob **ein Objekt fehlt**:
+
+- **`info`** — eine Notiz zum Lauf. Das Ergebnis trägt, was die Eingabe
+  verlangt.
+- **`warning`** — das Ergebnis trägt, was die Eingabe verlangt, aber etwas
+  daran verdient einen Blick (eine Degradation mit Ersatz, eine Annahme,
+  eine Emulation).
+- **`action_required`** — kann beides sein: ein Hinweis, der am Ergebnis
+  nichts ändert (z. B. eine Sequenz-Emulation, die nur mit einem Flag
+  aktiviert wird), oder die Meldung zu einem Objekt, das deswegen **nicht**
+  in die Ausgabe kam. Nur der zweite Fall zählt für den Ausgang, und er ist
+  strukturell erkennbar: das Objekt steht als `skipped_objects`-Eintrag im
+  Report (Typ, Name, Grund, Code) — nicht nur als Notiz.
+
+**Die Regel:** Ein Lauf, dessen Report mindestens einen `skipped_objects`-
+Eintrag trägt, endet mit Exit `8`. Notizen allein (`info`, `warning`, ein
+`action_required` ohne zugehöriges `skipped_objects`) lassen den Ausgang bei
+`0`. Wo ein Kommando das erlaubt, erzwingt ein eigenes Flag (z. B.
+`schema generate --allow-incomplete`) stattdessen Exit `0` — der Report nennt
+die Unterdrückung dann selbst (`W160`), damit sie nicht still bleibt.
 
 ---
 
@@ -281,6 +304,7 @@ W200 - W299: Performance-Warnungen
 | W157 | LIST partitioning is not expressible in the target dialect (E055) but a `partition-mapping` overlay resolves it; the note names the fingerprint to bind to |
 | W158 | PostgreSQL below 18: a virtual computed column (`stored: false`) was rendered as `STORED` — the virtual form does not exist there |
 | W159 | The preserve window on this target is serialized, not atomic: a failure inside it leaves what already ran applied (Oracle — every DDL commits implicitly) |
+| W160 | `--allow-incomplete` suppressed the exit code that `skipped_objects` would otherwise have caused (`schema generate`) |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)
 
@@ -404,6 +428,7 @@ Hinweis-/Kommentarblöcke tragen kein `GO`.
 | `--mssql-hash-partitions` | Nein | `action_required` / `computed_column` | SQL-Server-Strategie fuer `hash`-Partitionierung (Default: `action_required`, Abbruch mit `E055`). `computed_column` emuliert sie ueber eine persistierte berechnete Spalte und partitioniert nach ihr; die Eimerspalte tritt dabei in jeden eindeutigen Schluessel (`W145`, `E067`, `E068`, `E069`). |
 | `--target-version` | Nein | Versionstext | Die Version des Servers, fuer den erzeugt wird (`16` oder `16.4` fuer PostgreSQL, `8.0.16` fuer MySQL, `23` fuer Oracle). Entscheidet die versionsabhaengigen Faehigkeiten. **Ohne Angabe** gilt die aktuellste Version, gegen die d-migrate gemessen hat — ein Skript, das auf einem aktuellen Server laeuft und auf einem aelteren laut scheitert, statt still etwas anderes zu bedeuten als das Geschriebene. Nicht lesbar oder fuer einen Dialekt ohne Versionstyp (SQL Server, SQLite): Exit 2. |
 | `--migration-overlay` | Nein | Pfad, wiederholbar | `partition-mapping`-Overlay mit den RANGE-Grenzen zu einer LIST-Wertemenge. **Darstellungs**-gebunden: der Abdruck steht in der `W157`-Meldung des Laufs ohne Overlay. Geprueft **vor** dem Uebersetzen; ein Verstoss ist Exit 2. Wirkt nur, wo der Zieldialekt LIST nicht kennt (heute `mssql`) — wo er es kennt, bleibt LIST stehen. |
+| `--allow-incomplete` | Nein | Boolean | Erzwingt Exit `0`, auch wenn der Report `skipped_objects` traegt (siehe [§2.1](#21-exit-code-regeln)). Ohne die Angabe endet ein solcher Lauf mit Exit `8`. Der Report nennt die Unterdrueckung selbst (`W160`), damit sie nicht still bleibt. |
 
 Dialekt-Aliase: `postgres` → `postgresql`, `maria` / `mariadb` → `mysql`
 
@@ -501,7 +526,7 @@ Einschränkungen für `--split pre-post`:
 - `3`: Schema-Validierung fehlgeschlagen (DDL wird nicht erzeugt)
 - `7`: Schema-Datei nicht lesbar oder ungültiges YAML
 
-**action_required-Objekte** (z.B. Functions mit anderem `source_dialect`, nicht unterstützte Sequences oder blockierte Spatial-Tabellen) werden übersprungen und im Report dokumentiert. Die DDL-Generierung bricht **nicht** ab — der Exit-Code bleibt `0`. Details in [DDL-Generierungsregeln §14.3](./ddl-generation-rules.md#143-verhalten-bei-action_required).
+**action_required-Objekte** (z.B. Functions mit anderem `source_dialect`, nicht unterstützte Sequences oder blockierte Spatial-Tabellen) werden übersprungen und im Report als `skipped_objects` dokumentiert. Die DDL-Generierung selbst bricht **nicht** ab — was entstehen kann, entsteht —, aber der Lauf endet mit Exit `8`, sofern nicht `--allow-incomplete` gesetzt ist. Details in [DDL-Generierungsregeln §14.3](./ddl-generation-rules.md#143-verhalten-bei-action_required) und [§2.1](#21-exit-code-regeln).
 
 #### `schema reverse`
 

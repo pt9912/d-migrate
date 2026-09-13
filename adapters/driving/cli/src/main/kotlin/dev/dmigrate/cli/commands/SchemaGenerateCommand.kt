@@ -38,6 +38,12 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         .flag()
     val deterministic by option("--deterministic", help = "Omit runtime timestamps from DDL and reports")
         .flag()
+    val allowIncomplete by option(
+        "--allow-incomplete",
+        help = "Exit 0 even when an object was skipped (CHECK/EXCLUDE/computed expression not portable, " +
+            "unsupported custom type, partial index, FK on a partitioned table). Without it, a skipped " +
+            "object blocks with exit 8. The report notes the suppression either way.",
+    ).flag()
     val spatialProfile by option("--spatial-profile",
         help = "Spatial type handling profile (postgis, native, spatialite, none)")
     val partitionStorage by option(
@@ -81,6 +87,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
                 report = report,
                 generateRollback = generateRollback,
                 deterministic = deterministic,
+                allowIncomplete = allowIncomplete,
                 spatialProfile = spatialProfile,
                 partitionStorage = partitionStorage,
                 split = split,

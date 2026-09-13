@@ -94,12 +94,24 @@ dialect", „Database does not exist") steht im
   liest nur Tabellen. `--include-all` (oder gezielt `--include-*`) setzen — sonst fehlen
   die Objekte **still** schon im neutralen Modell (Meldungseintrag im
   [Anwenderhandbuch, Abschnitt 5](anwenderhandbuch.md#5-fehlerbehebung)).
-- **Objekte werden übersprungen (`action_required`, Exit bleibt `0`).** Nicht
-  regelbasiert übersetzbarer dialektspezifischer SQL-Inhalt in Views/Functions/
-  Procedures/Triggern (**E053**) oder eine für das Ziel nicht erzeugbare Struktur
-  (z. B. leere oder vom Zieldialekt nicht unterstützte Partition **E055**) werden
-  übersprungen und im **`--report`** ausgewiesen — der Lauf bricht bewusst **nicht** ab.
-  Prüfen Sie den Report und bilden Sie die Objekte zielseitig nach.
+- **Ein Objekt wird übersprungen (Exit 8, außer mit `--allow-incomplete`).**
+  Nicht regelbasiert übersetzbarer dialektspezifischer SQL-Inhalt in einer
+  CHECK-Constraint oder einer berechneten Spalte (**E053**), ein EXCLUDE-
+  Constraint oder ein COMPOSITE-Typ auf einem Dialekt, der sie nicht kennt
+  (**E054**), ein Partial Index auf MySQL (**E057**) oder ein Fremdschlüssel
+  auf einer partitionierten MySQL-Tabelle (**E065**) fehlen deshalb ganz in
+  der Ausgabe. Der Report weist sie unter `skipped_objects` aus (Typ, Name,
+  Grund, Code); der Lauf bricht bewusst **nicht** ab, sondern erzeugt, was
+  entstehen kann — der Ausgang meldet aber, dass etwas fehlt. Prüfen Sie den
+  Report und bilden Sie die Objekte zielseitig nach; `--allow-incomplete`
+  erzwingt Exit `0` trotzdem und vermerkt das im Report (`W160`).
+- **Eine Struktur wird nur vereinfacht, nicht übersprungen (Exit bleibt
+  `0`).** Eine für das Ziel nicht erzeugbare Partitionierung (z. B. leere
+  oder vom Zieldialekt nicht unterstützte Partition **E055**) oder ein
+  Sequenz-Default ohne aktivierte Emulation (**E056**) entstehen als
+  gewöhnliche Tabelle bzw. Spalte — das Objekt selbst fehlt nicht, nur eine
+  Facette davon. Auch das steht im Report, zählt aber nicht als
+  `skipped_objects` und ändert den Ausgang nicht.
 - **`schema migrate` blockiert (Exit 8).** Eine riskante, datenlöschende Operation
   wurde erkannt. Report ansehen; ist sie beabsichtigt, erlauben Sie sie gezielt mit
   **`--allow-destructive`** ([Anwenderhandbuch, Abschnitt 5](anwenderhandbuch.md#5-fehlerbehebung)).

@@ -325,7 +325,7 @@ class SchemaGenerateWiringTest : FunSpec({
             bundle.sidecarPath(output.resolve("schema.sql"), ".report.yaml") shouldBe reportPath
             bundle.rollbackPath(output.resolve("schema.sql")) shouldBe output.resolve("schema.rollback.sql")
             bundle.splitPath(output.resolve("schema.sql"), DdlPhase.PRE_DATA) shouldBe output.resolve("schema.pre-data.sql")
-            bundle.formatJsonOutput(result, schema, "postgresql", SplitMode.SINGLE, null, null) shouldContain
+            bundle.formatJsonOutput(result, schema, "postgresql", SplitMode.SINGLE, null, null, 0) shouldContain
                 "\"target\": \"postgresql\""
 
             bundle.reportWriter(

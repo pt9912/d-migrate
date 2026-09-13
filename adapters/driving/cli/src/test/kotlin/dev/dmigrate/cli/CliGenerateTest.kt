@@ -253,11 +253,16 @@ class CliGenerateTest : FunSpec({
         }
     }
 
-    test("schema generate --output-format json with spatial profile none exposes E052") {
+    test("schema generate --output-format json with spatial profile none exposes E052 and exits 8") {
         val source = writeTempSchema(spatialSchemaYaml)
         try {
+            var ex: ProgramResult? = null
             val (stdout, stderr) = captureStreams {
-                shouldNotThrowAny {
+                // Ein skipped_object (hier E052 -- die Tabelle "places" wird
+                // ohne Raumbezugsprofil ausgelassen) blockt seit dem
+                // SkippedObject-Ausgangsslice mit Exit 8; die JSON-Ausgabe
+                // entsteht trotzdem, sie steht vor der Ausgangsentscheidung.
+                ex = shouldThrow<ProgramResult> {
                     cli().parse(listOf(
                         "--output-format", "json",
                         "schema", "generate",
@@ -267,6 +272,7 @@ class CliGenerateTest : FunSpec({
                     ))
                 }
             }
+            ex!!.statusCode shouldBe 8
 
             stdout shouldContain "\"target\": \"postgresql\""
             stdout shouldContain "\"code\": \"E052\""
@@ -312,12 +318,12 @@ class CliGenerateTest : FunSpec({
         }
     }
 
-    test("schema generate --output with spatial profile none writes sidecar report with E052") {
+    test("schema generate --output with spatial profile none writes sidecar report with E052 and exits 8") {
         val source = writeTempSchema(spatialSchemaYaml)
         val outFile = Files.createTempFile("d-migrate-cli-spatial-none-", ".sql")
         outFile.deleteIfExists()
         try {
-            shouldNotThrowAny {
+            val ex = shouldThrow<ProgramResult> {
                 cli().parse(listOf(
                     "schema", "generate",
                     "--source", source.toString(),
@@ -326,6 +332,7 @@ class CliGenerateTest : FunSpec({
                     "--output", outFile.toString(),
                 ))
             }
+            ex.statusCode shouldBe 8
 
             outFile.exists() shouldBe true
             outFile.readText() shouldNotContain "CREATE TABLE \"places\""
@@ -343,6 +350,27 @@ class CliGenerateTest : FunSpec({
             Files.deleteIfExists(source)
             Files.deleteIfExists(outFile)
             Files.deleteIfExists(reportPath)
+        }
+    }
+
+    test("schema generate --allow-incomplete forces exit 0 despite skipped objects") {
+        val source = writeTempSchema(spatialSchemaYaml)
+        try {
+            val (_, stderr) = captureStreams {
+                shouldNotThrowAny {
+                    cli().parse(listOf(
+                        "schema", "generate",
+                        "--source", source.toString(),
+                        "--target", "postgresql",
+                        "--spatial-profile", "none",
+                        "--allow-incomplete",
+                    ))
+                }
+            }
+            stderr shouldContain "Skipped [E052] table 'places'"
+            stderr shouldContain "Warning [W160]"
+        } finally {
+            Files.deleteIfExists(source)
         }
     }
 
