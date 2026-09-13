@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ColumnGenerationTransition
@@ -43,7 +44,7 @@ internal object OracleDiffTableOps {
 
     private val typeMapper = OracleTypeMapper()
     private fun quoteIdentifier(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.ORACLE)
-    private val columnHelper = OracleColumnConstraintHelper(quoteIdentifier = ::quoteIdentifier, typeMapper = typeMapper)
+    internal val columnHelper = OracleColumnConstraintHelper(quoteIdentifier = ::quoteIdentifier, typeMapper = typeMapper)
     private val indexBuilder = OracleIndexDdlBuilder(quoteIdentifier = ::quoteIdentifier)
     private val partitionBuilder = OraclePartitionDdlBuilder(quoteIdentifier = ::quoteIdentifier)
 
@@ -375,16 +376,6 @@ internal object OracleDiffTableOps {
     /** Ein Index auf der Spalte verbietet die Aenderung (ORA-54022). */
     const val COMPUTED_INDEXED: String = "ORACLE_VIRTUAL_EXPRESSION_INDEXED"
 
-    /**
-     * Aus einer berechneten Spalte eine gewoehnliche machen. Oracle nimmt
-     * `MODIFY (c <typ>)` an, **aendert damit aber nichts**: die Spalte bleibt
-     * virtuell (live durch den Migrationspfad gemessen).
-     */
-    const val COMPUTED_DROP_NOT_SUPPORTED: String = "ORACLE_COMPUTED_DROP_NOT_SUPPORTED"
-
-    /** Aus einer gewoehnlichen Spalte eine berechnete machen (ORA-54026). */
-    const val COMPUTED_ADD_NOT_SUPPORTED: String = "ORACLE_COMPUTED_ADD_NOT_SUPPORTED"
-
     /** Aus einer gewoehnlichen Spalte eine Identity machen (ORA-30673). */
     const val IDENTITY_ADD_NOT_SUPPORTED: String = "ORACLE_IDENTITY_ADD_NOT_SUPPORTED"
 
@@ -420,27 +411,11 @@ internal object OracleDiffTableOps {
                 return
             }
             ColumnGenerationTransition.COMPUTED_ADDED -> {
-                ctx.skip(
-                    op,
-                    "Operation ${op.id} would make the ordinary column '$table.$column' computed. Oracle " +
-                        "refuses that with ORA-54026 (\"Real column cannot have an expression\", measured " +
-                        "against 23); the column has to be dropped and recreated manually.",
-                    code = COMPUTED_ADD_NOT_SUPPORTED,
-                )
-                ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+                OracleDiffGenerationSwapOps.renderComputedKindSwap(op, ctx, table, column, becomingComputed = true)
                 return
             }
             ColumnGenerationTransition.COMPUTED_DROPPED -> {
-                ctx.skip(
-                    op,
-                    "Operation ${op.id} would drop the computed expression of '$table.$column'. Oracle " +
-                        "**accepts** `MODIFY ($column <type>)` for a virtual column, but it changes nothing: " +
-                        "the column is still virtual afterwards and the expression is still there (live " +
-                        "measured against 23 through the full migrate path). The column has to be dropped " +
-                        "and recreated manually.",
-                    code = COMPUTED_DROP_NOT_SUPPORTED,
-                )
-                ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+                OracleDiffGenerationSwapOps.renderComputedKindSwap(op, ctx, table, column, becomingComputed = false)
                 return
             }
             ColumnGenerationTransition.COMPUTED_EXPRESSION -> Unit
@@ -612,7 +587,7 @@ internal object OracleDiffTableOps {
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
     }
 
-    private fun blockMissingSchema(op: DiffOperation, ctx: OracleDiffRenderContext, what: String) {
+    internal fun blockMissingSchema(op: DiffOperation, ctx: OracleDiffRenderContext, what: String) {
         ctx.skip(
             op,
             "Operation ${op.id} needs the schema for $what, but the DiffResult carries none for this direction.",
@@ -621,7 +596,7 @@ internal object OracleDiffTableOps {
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
     }
 
-    private fun blockMissingColumn(
+    internal fun blockMissingColumn(
         op: DiffOperation,
         ctx: OracleDiffRenderContext,
         table: String,

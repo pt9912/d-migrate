@@ -476,7 +476,7 @@ internal object MssqlDiffTableOps {
             .map { ctx.sql.columnObjectStatement(table, column, it) }
     }
 
-    private fun dropColumnStatements(
+    internal fun dropColumnStatements(
         op: DiffOperation,
         ctx: MssqlDiffRenderContext,
         table: String,
@@ -526,7 +526,7 @@ internal object MssqlDiffTableOps {
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
     }
 
-    private fun blockMissingColumn(
+    internal fun blockMissingColumn(
         op: DiffOperation,
         ctx: MssqlDiffRenderContext,
         table: String,
@@ -620,7 +620,7 @@ internal object MssqlDiffTableOps {
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
     }
 
-    private fun blockMissingSchema(op: DiffOperation, ctx: MssqlDiffRenderContext, what: String) {
+    internal fun blockMissingSchema(op: DiffOperation, ctx: MssqlDiffRenderContext, what: String) {
         ctx.skip(
             op,
             "Operation ${op.id} needs the schema for $what, but the DiffResult carries none for this direction.",

@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ColumnGenerationTransition
@@ -12,6 +13,7 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.driver.metadata.ColumnSwapGuard
 import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -39,6 +41,8 @@ internal object MysqlDiffTableOps {
     private const val TYPE_CHANGE_NEEDS_DECLARATION = "MYSQL_TYPE_CHANGE_NEEDS_DECLARATION"
 
     private const val COMPUTED_KIND_CHANGE_NOT_SUPPORTED = "MYSQL_COMPUTED_KIND_CHANGE_NOT_SUPPORTED"
+
+    private const val COMPUTED_KIND_SWAP_ENCUMBERED = "MYSQL_COMPUTED_KIND_SWAP_ENCUMBERED"
 
     fun renderCreateTable(op: DiffOperation.CreateTable, ctx: MysqlDiffRenderContext) {
         val tableName = op.objectRef.rootName
@@ -334,22 +338,12 @@ internal object MysqlDiffTableOps {
                 renderIdentityTransition(op, ctx, table, column, from, target)
                 return
             }
-            ColumnGenerationTransition.COMPUTED_ADDED, ColumnGenerationTransition.COMPUTED_DROPPED -> {
-                // Live gemessen gegen 9.7.2: MySQL lehnt BEIDE Richtungen mit
-                // derselben Meldung ab — „'Changing the STORED status' is not
-                // supported for generated columns". Ein `MODIFY COLUMN` traegt
-                // die ganze Deklaration, aber die Berechnung an- oder
-                // abzuschalten ist dem Server damit nicht erlaubt.
-                ctx.skip(
-                    op,
-                    "Operation ${op.id} would turn `$table`.`$column` " +
-                        "${if (target is ColumnGeneration.Computed) "into a generated column" else "back into an ordinary column"}. " +
-                        "MySQL refuses both directions in place — `MODIFY COLUMN` answers `'Changing the " +
-                        "STORED status' is not supported for generated columns` (measured against 9.7.2); " +
-                        "drop and recreate the column manually.",
-                    code = COMPUTED_KIND_CHANGE_NOT_SUPPORTED,
-                )
-                ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            ColumnGenerationTransition.COMPUTED_ADDED -> {
+                renderComputedKindSwap(op, ctx, table, column, becomingComputed = true)
+                return
+            }
+            ColumnGenerationTransition.COMPUTED_DROPPED -> {
+                renderComputedKindSwap(op, ctx, table, column, becomingComputed = false)
                 return
             }
             ColumnGenerationTransition.COMPUTED_EXPRESSION -> Unit
@@ -374,6 +368,95 @@ internal object MysqlDiffTableOps {
         )
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN $line;")
     }
+
+    /**
+     * `column-generation-diff-unmapped.md`: der Kind-Wechsel per
+     * Spaltentausch. MySQL lehnt beide Richtungen in place ab (`'Changing
+     * the STORED status' is not supported for generated columns`, gemessen
+     * gegen 9.7.2) — `MODIFY COLUMN` traegt die ganze Deklaration, darf die
+     * Berechnung aber nicht an- oder abschalten.
+     *
+     * - **gewoehnlich → berechnet**: kein Kopieren noetig — der Wert
+     *   entsteht sofort aus der Formel, wenn die Spalte neu angelegt wird
+     *   (gemessen: `ADD COLUMN … GENERATED ALWAYS AS (…)` rechnet ueber dem
+     *   Bestand). `DROP COLUMN` + `ADD COLUMN` unter demselben Namen.
+     * - **berechnet → gewoehnlich**: der eingefrorene Wert muss erhalten
+     *   bleiben — echter Spaltentausch mit Datenkopie ueber eine
+     *   Zwischenspalte (`ADD` nullbar + `UPDATE`-Kopie + `DROP` der
+     *   berechneten Spalte + `RENAME COLUMN`), danach ein `MODIFY COLUMN`
+     *   auf die volle Zieldeklaration (NOT NULL/DEFAULT nachziehen — auf
+     *   einer bereits passenden Spalte ein folgenloses No-op).
+     *
+     * `destructive = true` ([OperationMapper]) bindet beide Richtungen
+     * automatisch an `--allow-destructive` — kein eigenes Flag.
+     */
+    private fun renderComputedKindSwap(
+        op: DiffOperation.AlterColumnGeneration,
+        ctx: MysqlDiffRenderContext,
+        table: String,
+        column: String,
+        becomingComputed: Boolean,
+    ) {
+        val schema = ctx.schemaForDirection()
+        val declaration = ctx.columnsOf(table)[column]
+        if (schema == null || declaration == null) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} changes the generation kind of `$table`.`$column`, but the column is " +
+                    "not in the schema this direction reads — the swap needs its full target declaration.",
+                code = COMPUTED_KIND_CHANGE_NOT_SUPPORTED,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        val guard = ColumnSwapGuard.check(schema, table, column)
+        if (guard is ColumnSwapGuard.Result.Encumbered) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} would swap `$table`.`$column` to change its generation kind, but " +
+                    "${guard.reason} — the swap cannot safely carry that across. MySQL refuses the in-place " +
+                    "route (`'Changing the STORED status' is not supported for generated columns`, measured " +
+                    "against 9.7.2); resolve the encumbrance and migrate the column manually.",
+                code = COMPUTED_KIND_SWAP_ENCUMBERED,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        val quotedTable = ctx.sql.quote(table)
+        if (becomingComputed) {
+            ctx.emit(op, "ALTER TABLE $quotedTable DROP COLUMN ${ctx.sql.quote(column)};", swapRisk(dataLossPossible = true))
+            ctx.emit(
+                op,
+                "ALTER TABLE $quotedTable ADD COLUMN ${ctx.sql.columnLine(column, declaration)};",
+                swapRisk(dataLossPossible = true),
+            )
+            return
+        }
+        val tempName = "${column}__dmg_swap"
+        val bare = declaration.copy(
+            required = false,
+            default = null,
+            unique = false,
+            uniqueConstraintName = null,
+            references = null,
+        )
+        val risk = swapRisk(dataLossPossible = false)
+        ctx.emit(op, "ALTER TABLE $quotedTable ADD COLUMN ${ctx.sql.columnLine(tempName, bare)};", risk)
+        ctx.emit(op, "UPDATE $quotedTable SET ${ctx.sql.quote(tempName)} = ${ctx.sql.quote(column)};", risk)
+        ctx.emit(op, "ALTER TABLE $quotedTable DROP COLUMN ${ctx.sql.quote(column)};", risk)
+        ctx.emit(
+            op,
+            "ALTER TABLE $quotedTable RENAME COLUMN ${ctx.sql.quote(tempName)} TO ${ctx.sql.quote(column)};",
+            risk,
+        )
+        ctx.emit(op, "ALTER TABLE $quotedTable MODIFY COLUMN ${ctx.sql.columnLine(column, declaration)};", risk)
+    }
+
+    private fun swapRisk(dataLossPossible: Boolean) = OperationRisk(
+        destructive = true,
+        dataLossPossible = dataLossPossible,
+        requiresManualConfirmation = true,
+    )
 
     fun renderAlterColumnNullability(op: DiffOperation.AlterColumnNullability, ctx: MysqlDiffRenderContext) {
         // MySQL has no SET/DROP NOT NULL — MODIFY COLUMN needs the full type, which

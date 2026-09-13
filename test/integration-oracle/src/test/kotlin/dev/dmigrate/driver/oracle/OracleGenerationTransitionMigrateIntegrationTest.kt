@@ -148,6 +148,12 @@ class OracleGenerationTransitionMigrateIntegrationTest : FunSpec({
                     dialect = DatabaseDialect.ORACLE,
                     report = tmp.resolve("report.json"),
                     execute = true,
+                    // column-generation-diff-unmapped.md: der Kind-Wechsel-
+                    // Spaltentausch ist destructive markiert und braucht
+                    // deshalb dasselbe Opt-in wie jede andere destruktive
+                    // Operation; die encumbered-Faelle bleiben unabhaengig
+                    // davon geblockt.
+                    allowDestructive = true,
                 ),
             )
             val report = runCatching { java.nio.file.Files.readString(tmp.resolve("report.json")) }.getOrElse { "" }
@@ -219,23 +225,89 @@ class OracleGenerationTransitionMigrateIntegrationTest : FunSpec({
     }
 
     /**
-     * **Die Messung, die eine Zusage widerlegt hat.** Ein `MODIFY (c <typ>)` auf
-     * einer virtuellen Spalte wird von Oracle **angenommen** — und aendert
-     * nichts: die Spalte ist danach weiter virtuell. Eine Sonde, die nur den
-     * Wert liest (42), sieht den Unterschied nicht, denn 42 ist genau das, was
-     * der Ausdruck rechnet. Erst der Lauf durch den ganzen Pfad zeigte es, weil
-     * der Post-Compare die Spalte weiterhin als berechnet zuruecklas.
+     * **Die Messung, die die urspruengliche Ablehnung motiviert hat.** Ein
+     * `MODIFY (c <typ>)` auf einer virtuellen Spalte wird von Oracle
+     * **angenommen** — und aendert nichts: die Spalte ist danach weiter
+     * virtuell. Eine Sonde, die nur den Wert liest (42), sieht den
+     * Unterschied nicht, denn 42 ist genau das, was der Ausdruck rechnet.
+     * Erst der Lauf durch den ganzen Pfad zeigte es, weil der Post-Compare
+     * die Spalte weiterhin als berechnet zuruecklas.
      *
-     * Deshalb wird der Uebergang benannt abgelehnt, nicht gerendert.
+     * `column-generation-diff-unmapped.md`: seitdem laeuft der Uebergang
+     * ueber den Spaltentausch (`ADD` + `UPDATE`-Kopie + `DROP` + `RENAME`)
+     * statt ueber das no-op `MODIFY` — der eingefrorene Wert (42) ueberlebt
+     * als gewoehnliche Spalte.
      */
-    test("turning a computed column into an ordinary one is refused, because the MODIFY would change nothing") {
+    test("a computed column becomes ordinary via swap, keeping its frozen value") {
         val want = desiredWith("computed", "total", null)
         val (exit, executed, errors) = migrate(want, changedTable = "computed")
 
-        withClue(errors) { exit shouldBe 8 }
+        withClue(errors + " || " + columnPicture(want, "computed", "total")) { exit shouldBe 0 }
+        withClue(executed.joinToString(" | ")) {
+            executed.size shouldBe 5
+            executed[0] shouldContain "ADD (\"total__dmg_swap\""
+            executed[1] shouldContain "UPDATE"
+            executed[2] shouldContain "DROP COLUMN \"total\""
+            executed[3] shouldContain "RENAME COLUMN \"total__dmg_swap\" TO \"total\""
+            executed[4] shouldContain "MODIFY (\"total\""
+        }
+        liveSchema().tables.getValue("computed").columns.getValue("total").generation shouldBe null
+        pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery("""SELECT "total" FROM "computed" WHERE "id" = 1""").use { rs ->
+                    rs.next() shouldBe true
+                    rs.getInt(1) shouldBe 42
+                }
+            }
+            // Der Generator ist weg: der Wert laesst sich jetzt frei ueberschreiben.
+            conn.createStatement().use { it.execute("""UPDATE "computed" SET "total" = 7 WHERE "id" = 1""") }
+        }
+    }
+
+    test("an ordinary column becomes computed via swap, with no encumbrance blocking it") {
+        pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.execute("""CREATE TABLE "plain_calc" ("id" NUMBER(9) PRIMARY KEY, "qty" NUMBER(9) NOT NULL, "total" NUMBER(9))""")
+                stmt.execute("""INSERT INTO "plain_calc" ("id", "qty", "total") VALUES (1, 5, 999)""")
+            }
+        }
+        val want = desiredWith(
+            "plain_calc", "total",
+            ColumnGeneration.Computed("\"qty\" * 2", stored = false),
+        )
+        val (exit, executed, errors) = migrate(want, changedTable = "plain_calc")
+
+        withClue(errors + " || " + columnPicture(want, "plain_calc", "total")) { exit shouldBe 0 }
+        withClue(executed.joinToString(" | ")) {
+            executed.size shouldBe 2
+            executed[0] shouldContain "DROP COLUMN \"total\""
+            executed[1] shouldContain "ADD (\"total\""
+        }
+        pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery("""SELECT "total" FROM "plain_calc" WHERE "id" = 1""").use { rs ->
+                    rs.next() shouldBe true
+                    rs.getInt(1) shouldBe 10
+                }
+            }
+        }
+    }
+
+    test("an encumbered column (part of the primary key) blocks the swap with a precise reason") {
+        pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.execute("""CREATE TABLE "keyed_calc" ("id" NUMBER(9) PRIMARY KEY, "qty" NUMBER(9) NOT NULL)""")
+                stmt.execute("""INSERT INTO "keyed_calc" ("id", "qty") VALUES (1, 5)""")
+            }
+        }
+        val want = desiredWith(
+            "keyed_calc", "id",
+            ColumnGeneration.Computed("\"qty\" * 2", stored = false),
+        )
+        val (exit, executed, errors) = migrate(want, changedTable = "keyed_calc")
+
+        exit shouldBe 8
         executed.shouldBeEmpty()
-        // Die Spalte ist unberuehrt: weiter virtuell, weiter rechnend.
-        liveSchema().tables.getValue("computed").columns.getValue("total").generation
-            .shouldBeInstanceOf<ColumnGeneration.Computed>()
+        withClue(errors) { errors shouldContain "part of the primary key" }
     }
 })

@@ -280,8 +280,8 @@ auch hier gilt: gemessen, nicht angenommen.
 
 | Übergang | PostgreSQL | MySQL | SQLite | Oracle | SQL Server |
 | --- | --- | --- | --- | --- | --- |
-| berechnet → gewöhnlich | `ALTER COLUMN … DROP EXPRESSION`; der gespeicherte Wert bleibt als Daten stehen | blockt (`'Changing the STORED status' is not supported`) | Tabellen-Neubau; der gerechnete Wert wird übernommen | blockt: das `MODIFY` wird **angenommen** und ändert nichts — die Spalte bleibt virtuell | blockt (`Cannot alter column … because it is 'COMPUTED'`) |
-| gewöhnlich → berechnet | blockt (`is not a generated column`) | blockt (dieselbe Meldung) | Tabellen-Neubau; die Spalte bleibt aus dem `INSERT` und wird gerechnet | blockt (`ORA-54026`) | blockt (Syntaxfehler) |
+| berechnet → gewöhnlich | `ALTER COLUMN … DROP EXPRESSION`; der gespeicherte Wert bleibt als Daten stehen | Spaltentausch mit Datenkopie (der gerechnete Wert überlebt, siehe unten) | Tabellen-Neubau; der gerechnete Wert wird übernommen | Spaltentausch mit Datenkopie | Spaltentausch mit Datenkopie |
+| gewöhnlich → berechnet | blockt (`is not a generated column`) | Spaltentausch (kein Kopieren nötig, der Wert entsteht aus der Formel) | Tabellen-Neubau; die Spalte bleibt aus dem `INSERT` und wird gerechnet | Spaltentausch | Spaltentausch |
 | Identity-Modus (`always` ↔ `by_default`) | `ALTER COLUMN … SET GENERATED …` | — (MySQL kennt keinen Modus) | — (Identity steckt im Typ) | `MODIFY (… GENERATED … AS IDENTITY)` | blockt (Syntaxfehler) |
 | Identity entfernen | `DROP IDENTITY` | `MODIFY COLUMN …` ohne `AUTO_INCREMENT` (Schlüsselspalte) | — (Identity steckt im Typ) | `MODIFY (… DROP IDENTITY)`, **plus** `NOT NULL`, das Oracle sonst mitnimmt | blockt: `ALTER COLUMN` läuft, lässt `IsIdentity` aber stehen |
 | Identity hinzufügen | `SET NOT NULL` + `ADD GENERATED … AS IDENTITY` + Sequenz-Nachzug (drei Anweisungen) | `MODIFY COLUMN … AUTO_INCREMENT` (nur Schlüsselspalte; der Zähler setzt über dem Bestand auf) | — | blockt (`ORA-30673`) | blockt (Syntaxfehler) |
@@ -295,6 +295,32 @@ max(spalte) IS NOT NULL AND max(spalte) >= 1)` — `GREATEST`/`COALESCE`
 decken die leere Tabelle (`max` ist `NULL`) und ausschließlich negative
 Bestandswerte (unter der Sequenz-`MINVALUE` 1) ab, ohne dass `setval`
 scheitert.
+
+**MySQL, Oracle und SQL Server: der Kind-Wechsel läuft über einen
+Spaltentausch.** Keiner der drei kennt einen In-Place-Weg
+(`'Changing the STORED status' is not supported`, `ORA-54026`/`MODIFY (c
+<typ>)` ohne Wirkung, Syntaxfehler auf `ALTER COLUMN … AS (…)`), also
+rendert d-migrate stattdessen:
+
+- **gewöhnlich → berechnet**: `DROP COLUMN` + `ADD … GENERATED ALWAYS AS
+  (…)`/`AS (…)` unter demselben Namen — kein Kopieren nötig, der Wert
+  entsteht sofort aus der Formel.
+- **berechnet → gewöhnlich**: `ADD` einer nullbaren Zwischenspalte +
+  `UPDATE … SET <temp> = <spalte>` (kopiert den eingefrorenen Wert, solange
+  die berechnete Spalte noch lesbar ist) + `DROP COLUMN` der berechneten
+  Spalte + Umbenennen der Zwischenspalte auf den Originalnamen, danach eine
+  Nachdeklaration auf die volle Zieldeklaration (NOT NULL/DEFAULT
+  nachziehen).
+
+Der Tausch läuft nur, wenn die Spalte **keine** Encumbrance trägt:
+Primärschlüssel-Mitgliedschaft, `UNIQUE`, ein Index darauf, oder ein
+Fremdschlüssel-Bezug (ausgehend oder eingehend). Sonst blockt er benannt —
+den Index/die Constraint abzubauen und danach neu anzulegen wäre ein
+eigener, größerer Entwurf. Eine abhängige Sicht kann das neutrale Modell
+nicht sehen; dieselbe Grenze, die SQL Servers eigene Blockmeldung für den
+verbleibenden Fall selbst nennt. Beide Richtungen sind `destructive`
+markiert und brauchen deshalb `--allow-destructive` — kein eigenes Flag,
+dieselbe Schranke wie jede andere destruktive Operation.
 
 Zwei Regeln stecken darin, die über die Tabelle hinausgehen:
 

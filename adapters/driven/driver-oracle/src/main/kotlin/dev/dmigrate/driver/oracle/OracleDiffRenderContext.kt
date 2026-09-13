@@ -48,19 +48,32 @@ internal class OracleDiffRenderContext(
     private val blockers = mutableListOf<MigrationBlocker>()
     private val diagnostics = mutableListOf<DiffDiagnostic>()
 
-    fun emit(op: DiffOperation, sqlText: String, hints: DialectExecutionHints = ORACLE_IMPLICIT_COMMIT_DDL_HINTS) {
+    /**
+     * @param riskOverride `column-generation-diff-unmapped.md`: ein festes
+     *   Risiko statt `riskFor(op)`, fuer den Kind-Wechsel-Spaltentausch --
+     *   derselbe Grund wie bei [emitRebuild]: die Operation ist auf allen
+     *   fuenf Dialekten gleich markiert (`requiresManualConfirmation`), aber
+     *   nur hier laeuft sie ueber Drop+Recreate.
+     */
+    fun emit(
+        op: DiffOperation,
+        sqlText: String,
+        hints: DialectExecutionHints = ORACLE_IMPLICIT_COMMIT_DDL_HINTS,
+        riskOverride: OperationRisk? = null,
+    ) {
+        val risk = riskOverride ?: riskFor(op)
         statements += MigrationDdlStatement(
             sql = sqlText,
             operationIds = setOf(op.id),
-            risk = riskFor(op),
+            risk = risk,
             phase = op.phase,
             transactionScope = TransactionScope.RUNNER_OWNED,
             hints = hints,
         )
         rendered += op.id
-        if (riskFor(op).destructive) destructive += op.id
+        if (risk.destructive) destructive += op.id
         if (op.reversibility == Reversibility.NOT_REVERSIBLE) nonReversible += op.id
-        if (riskFor(op).requiresManualConfirmation) manualActions += op.id
+        if (risk.requiresManualConfirmation) manualActions += op.id
     }
 
     /**

@@ -101,13 +101,21 @@ internal class MssqlDiffRenderContext(
      *   Transaktion ablehnt — der Ausfuehrer schneidet sie dann in einen
      *   eigenen Abschnitt.
      */
+    /**
+     * @param riskOverride `column-generation-diff-unmapped.md`: ein festes
+     *   Risiko statt `riskFor(op)`, fuer den Kind-Wechsel-Spaltentausch --
+     *   derselbe Grund wie bei `emitRebuild`: die Operation ist auf allen
+     *   fuenf Dialekten gleich markiert (`requiresManualConfirmation`), aber
+     *   nur hier laeuft sie ueber Drop+Recreate.
+     */
     fun emit(
         op: DiffOperation,
         sqlText: String,
         hints: DialectExecutionHints = MSSQL_TRANSACTIONAL_DDL_HINTS,
         scope: TransactionScope = TransactionScope.RUNNER_OWNED,
+        riskOverride: OperationRisk? = null,
     ) {
-        if (options.strictGapOperations && riskFor(op).hasGap) {
+        if (riskOverride == null && options.strictGapOperations && riskFor(op).hasGap) {
             if (!isSkipped(op)) {
                 skip(
                     op,
@@ -119,18 +127,19 @@ internal class MssqlDiffRenderContext(
             }
             return
         }
+        val risk = riskOverride ?: riskFor(op)
         statements += MigrationDdlStatement(
             sql = sqlText,
             operationIds = setOf(op.id),
-            risk = riskFor(op),
+            risk = risk,
             phase = op.phase,
             transactionScope = scope,
             hints = hints,
         )
         rendered += op.id
-        if (riskFor(op).destructive) destructive += op.id
+        if (risk.destructive) destructive += op.id
         if (op.reversibility == Reversibility.NOT_REVERSIBLE) nonReversible += op.id
-        if (riskFor(op).requiresManualConfirmation) manualActions += op.id
+        if (risk.requiresManualConfirmation) manualActions += op.id
     }
 
     /**

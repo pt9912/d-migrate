@@ -88,18 +88,23 @@ class OracleDiffGenerationTransitionTest : FunSpec({
     val virtual = ColumnGeneration.Computed("\"qty\" * \"price\"", stored = false)
 
     /**
-     * Die Zeile, die eine frueher hier stehende Zusage widerlegt hat: Oracle
-     * **nimmt** `MODIFY (c <typ>)` auf einer virtuellen Spalte an — und aendert
-     * nichts. Durch den ganzen Migrationspfad gemessen stand danach weiterhin
-     * `generation=Computed("qty"*2)` im Reverse. Eine angenommene Anweisung ist
-     * eben noch keine wirksame.
+     * `column-generation-diff-unmapped.md`: `MODIFY (c <typ>)` nimmt Oracle
+     * zwar an, aendert aber nichts (die Zeile, die die urspruengliche Zusage
+     * widerlegt hat — live durch den vollen Migrationspfad gemessen). Der
+     * Spaltentausch umgeht das: eine Zwischenspalte kopiert den
+     * eingefrorenen Wert, bevor die berechnete Spalte weicht.
      */
-    test("turning a computed column into an ordinary one is refused: the MODIFY changes nothing") {
+    test("a computed column becomes ordinary via swap: add temp, copy, drop, rename, reassert") {
         val result = renderGenerationChange(virtual, null)
-        result.statements.shouldBeEmpty()
-        val message = result.diagnostics.single().message
-        message shouldContain "accepts"
-        message shouldContain "still virtual"
+        val sqls = result.statements.map { it.sql }
+        sqls.size shouldBe 5
+        sqls[0] shouldContain "ADD (\"line_total__dmg_swap\""
+        sqls[1] shouldBe "UPDATE \"order_line\" SET \"line_total__dmg_swap\" = \"line_total\";"
+        sqls[2] shouldContain "DROP COLUMN \"line_total\""
+        sqls[3] shouldBe "ALTER TABLE \"order_line\" RENAME COLUMN \"line_total__dmg_swap\" TO \"line_total\";"
+        sqls[4] shouldContain "MODIFY (\"line_total\""
+        sqls[4] shouldNotContain "GENERATED"
+        result.destructiveOperations.size shouldBe 1
     }
 
     test("the identity mode is switched in place") {
@@ -156,12 +161,47 @@ class OracleDiffGenerationTransitionTest : FunSpec({
         message shouldContain "ORA-30673"
     }
 
-    test("making an ordinary column computed is refused with ORA-54026") {
+    test("an ordinary column becomes computed via DROP + ADD, no data copy") {
         val result = renderGenerationChange(null, virtual)
+        val sqls = result.statements.map { it.sql }
+        sqls.size shouldBe 2
+        sqls[0] shouldContain "DROP COLUMN \"line_total\""
+        sqls[1] shouldContain "ADD (\"line_total\""
+        sqls[1] shouldContain "GENERATED ALWAYS AS"
+        result.destructiveOperations.size shouldBe 1
+    }
+
+    test("an encumbered column (part of the primary key) blocks the swap with a precise reason") {
+        fun schemaWithIdGeneration(generation: ColumnGeneration?) = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf(
+                "order_line" to TableDefinition(
+                    columns = linkedMapOf(
+                        "id" to ColumnDefinition(NeutralType.Integer, required = true, generation = generation),
+                        "qty" to ColumnDefinition(NeutralType.Integer, required = true),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+        )
+        val result = gen.generateUp(
+            planner.plan(
+                schemaWithIdGeneration(null),
+                schemaWithIdGeneration(virtual),
+                SchemaDiff(
+                    tablesChanged = listOf(
+                        TableDiff(
+                            name = "order_line",
+                            columnsChanged = listOf(ColumnDiff(name = "id", generation = ValueChange(null, virtual))),
+                        ),
+                    ),
+                ),
+            ),
+            DdlGenerationOptions(),
+        )
         result.statements.shouldBeEmpty()
-        val message = result.diagnostics.single().message
-        message shouldContain "would make the ordinary column"
-        message shouldContain "ORA-54026"
+        result.diagnostics.single().message shouldContain "part of the primary key"
     }
 
     test("swapping identity for a computation is refused, not reported as an expression change") {

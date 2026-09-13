@@ -141,6 +141,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ausschließlich negative Bestandswerte eingeschlossen, ohne dass `setval`
   an der Sequenz-`MINVALUE` scheitert.
 
+- **`schema migrate` ändert die Erzeugungsart einer Spalte (gewöhnlich ↔
+  berechnet) jetzt auch auf MySQL, Oracle und SQL Server**, per
+  Spaltentausch statt Ablehnung — keiner der drei kennt dafür einen
+  In-Place-Weg. Gewöhnlich → berechnet: `DROP COLUMN` + `ADD … GENERATED
+  ALWAYS AS (…)`/`AS (…)` unter demselben Namen, kein Kopieren nötig.
+  Berechnet → gewöhnlich: eine nullbare Zwischenspalte übernimmt den
+  eingefrorenen Wert per `UPDATE`, dann weicht die berechnete Spalte einer
+  Umbenennung. Der Tausch bleibt aus, wenn die Spalte Primärschlüssel,
+  `UNIQUE`, einen Index oder einen Fremdschlüssel-Bezug trägt — dann blockt
+  er wie bisher, benannt. Beide Richtungen sind `destructive` markiert und
+  brauchen `--allow-destructive`, kein neues Flag.
+
 ## [1.4.0] - 2026-09-13
 
 ### Added

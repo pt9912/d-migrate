@@ -61,13 +61,23 @@ internal class MysqlDiffRenderContext(
     private val blockers = mutableListOf<MigrationBlocker>()
     private val diagnostics = mutableListOf<DiffDiagnostic>()
 
-    fun emit(op: DiffOperation, sqlText: String) {
+    /**
+     * @param riskOverride `column-generation-diff-unmapped.md`: ein festes
+     *   Risiko statt `riskFor(op)`, fuer den Kind-Wechsel-Spaltentausch
+     *   (Drop + Add, oder Add + Kopie + Drop + Rename) -- derselbe Grund wie
+     *   bei Oracles/MSSQLs `emitRebuild`: die Operation ist auf allen fuenf
+     *   Dialekten gleich markiert (`requiresManualConfirmation`), aber nur
+     *   MySQL/Oracle/MSSQL rendern sie hier ueber Drop+Recreate --
+     *   PostgreSQLs bereits bestehendes `DROP EXPRESSION` bliebe sonst
+     *   mitbetroffen, wenn `destructive` am Operationstyp selbst stuende.
+     */
+    fun emit(op: DiffOperation, sqlText: String, riskOverride: OperationRisk? = null) {
         // E.2 Sub-Slice A.3 strict-mode lift: mirrors the
         // PostgresDiffRenderContext guard. When the active-direction
         // risk has `hasGap = true` and `strictGapOperations` is set,
         // block before emitting any statement for this op. Subsequent
         // emit() calls for the same op short-circuit on `isSkipped`.
-        if (options.strictGapOperations && riskFor(op).hasGap) {
+        if (riskOverride == null && options.strictGapOperations && riskFor(op).hasGap) {
             if (!isSkipped(op)) {
                 skip(
                     op,
@@ -80,6 +90,7 @@ internal class MysqlDiffRenderContext(
             }
             return
         }
+        val risk = riskOverride ?: riskFor(op)
         // Plan-2 §G.1: MySQL DDL renders inside the runner-managed JDBC
         // transaction at the dispatch layer (TransactionScope.RUNNER_OWNED),
         // but Plan-2 §A.1 records the dialect-level caveat: every
@@ -94,15 +105,15 @@ internal class MysqlDiffRenderContext(
         statements += MigrationDdlStatement(
             sql = sqlText,
             operationIds = setOf(op.id),
-            risk = riskFor(op),
+            risk = risk,
             phase = op.phase,
             transactionScope = TransactionScope.RUNNER_OWNED,
             hints = MYSQL_IMPLICIT_COMMIT_DDL_HINTS,
         )
         rendered += op.id
-        if (riskFor(op).destructive) destructive += op.id
+        if (risk.destructive) destructive += op.id
         if (op.reversibility == Reversibility.NOT_REVERSIBLE) nonReversible += op.id
-        if (riskFor(op).requiresManualConfirmation) manualActions += op.id
+        if (risk.requiresManualConfirmation) manualActions += op.id
     }
 
     /**
@@ -238,6 +249,10 @@ internal class MysqlDiffRenderContext(
     fun recordDiagnostic(diagnostic: DiffDiagnostic) {
         diagnostics += diagnostic
     }
+
+    /** Das Schema, das diese Richtung liest (UP = SOLL, DOWN = IST) -- oder `null` ohne Schema-Kontext. */
+    fun schemaForDirection(): SchemaDefinition? =
+        if (direction == MysqlRenderDirection.UP) desiredSchema else currentSchema
 
     /** Spalten von [table] auf der Seite, die diese Richtung liest (UP = SOLL, DOWN = IST). */
     fun columnsOf(table: String): Map<String, ColumnDefinition> {
