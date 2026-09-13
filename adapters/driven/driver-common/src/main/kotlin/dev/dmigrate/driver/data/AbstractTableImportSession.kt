@@ -84,6 +84,8 @@ abstract class AbstractTableImportSession(
      */
     protected open val computedTargetColumns: ComputedTargetColumns = ComputedTargetColumns.NONE
 
+    final override val computedColumnNames: Set<String> get() = computedTargetColumns.names
+
     /** Execute a chunk of rows using the dialect-specific conflict strategy. */
     protected abstract fun executeChunk(
         importedTargetColumns: List<TargetColumn>,

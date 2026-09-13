@@ -305,6 +305,7 @@ W200 - W299: Performance-Warnungen
 | W158 | PostgreSQL below 18: a virtual computed column (`stored: false`) was rendered as `STORED` — the virtual form does not exist there |
 | W159 | The preserve window on this target is serialized, not atomic: a failure inside it leaves what already ran applied (Oracle — every DDL commits implicitly) |
 | W160 | `--allow-incomplete` suppressed the exit code that `skipped_objects` would otherwise have caused (`schema generate`) |
+| W161 | A computed target column is excluded from `data transfer`; the target computes it itself |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)
 
@@ -1649,6 +1650,12 @@ Zieldatenbank durch:
   Sortierung).
 - **FK-Zyklen**: Werden zyklische FK-Beziehungen erkannt, scheitert das
   Preflight, sofern kein expliziter sicherer Bypass konfiguriert ist.
+- **Berechnete Zielspalten**: Eine Zielspalte, die der Katalog als berechnet
+  führt (`GENERATED ALWAYS AS (...)`, SQL Server: Computed Column), wird aus
+  der Übertragung ausgelassen — sie ist nirgends schreibbar, und das Ziel
+  berechnet sie ohnehin selbst. Der Lauf meldet das je Tabelle einmal (`W161`),
+  nicht je Zeile; siehe „Berechnete Spalten im Datenpfad" unten für die
+  Abgrenzung gegen `data import`.
 
 Preflight-Fehler erzeugen einen eigenen Exit-Code, damit sie vom eigentlichen
 Streaming-Fehlerpfad getrennt bleiben.
@@ -1845,18 +1852,26 @@ nicht übernommen; Provenienz bleibt im Report oder in stabilen Metadaten.
 `exports.down`) auf Basis des bestehenden full-state-`generateRollback()`-Pfads.
 Dies ist nicht der spätere diff-basierte `DiffResult`-Rollback.
 
-**Berechnete Spalten im Importpfad**: Eine berechnete Spalte
+**Berechnete Spalten im Datenpfad**: Eine berechnete Spalte
 (`GENERATED ALWAYS AS (...)`, SQL Server: Computed Column) kann kein Ziel
-beschreiben — gespeichert/persistiert/materialisiert wie virtuell. Enthaelt der
-Chunk eine, bricht der Import vor dem ersten Schreiben mit einer benennenden
-Meldung ab (Spaltenname + Zielsystem), statt den Treiberfehler mitten im ersten
-Chunk durchzureichen; der Ausweg ist, die Spalte aus Export/Transfer
-auszunehmen. Die Pruefung gilt fuer den Chunk, nicht fuer die Tabelle: eine
-berechnete Spalte, die der Import ohnehin auslaesst, ist kein Fehler. Fuer ein
+beschreiben — gespeichert/persistiert/materialisiert wie virtuell. Fuer ein
 Oracle-Ziel gilt das auch fuer die materialisierte Form, die der Katalog nicht
 von einer Spalte mit `DEFAULT` unterscheidet — sie wird ueber die abgelegte DDL
 (`DBMS_METADATA.GET_DDL`) erkannt; ist das Paket nicht ausfuehrbar, bleibt es
 beim Treiberfehler (`ORA-54013`).
+
+Die beiden Datenpfade behandeln das unterschiedlich:
+
+- **`data import`** bricht, wenn der Chunk eine solche Spalte enthaelt, vor
+  dem ersten Schreiben mit einer benennenden Meldung ab (Spaltenname +
+  Zielsystem), statt den Treiberfehler mitten im ersten Chunk durchzureichen.
+  Die Pruefung gilt fuer den Chunk, nicht fuer die Tabelle: eine berechnete
+  Spalte, die der Import ohnehin auslaesst, ist kein Fehler. Ausweg: die
+  Spalte aus der Importdatei auslassen.
+- **`data transfer`** laesst eine berechnete Zielspalte automatisch aus der
+  Uebertragung aus, statt abzulehnen (siehe „Target-autoritatives Preflight"
+  oben, `W161`) — der Wert entsteht dort ohnehin aus einer serverseitigen
+  Berechnung, nicht aus uebergebenen Daten.
 
 **MSSQL-Datenpfad**: `--on-conflict skip` verlangt für ein SQL-Server-Ziel
 einen Primärschlüssel — und dass die übertragenen Spalten ihn enthalten

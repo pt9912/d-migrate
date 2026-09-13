@@ -310,3 +310,25 @@ entries:
         path_type: production
       - source: "hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SequenceCapabilityDefaults.kt"
         path_type: production
+
+  # W160 ist im Main-Code emittiert (SchemaGenerateRunner.kt), aber hier
+  # bewusst nicht nachgezogen -- bekannte Luecke, siehe
+  # docs/planning/open/warn-code-ledger-completeness.md. Kein Beleg dafuer
+  # schaffen, dass die Reihenfolge hier vollstaendig waere.
+
+  # W161 — berechnete-spalten-im-transferpfad.md: eine berechnete Zielspalte
+  # ist nirgends schreibbar; `data transfer` laesst sie aus der Uebertragung
+  # aus statt abzulehnen (Gegenstueck zur `data import`-Ablehnung derselben
+  # Spaltenart) und meldet es je Tabelle einmal.
+  - code: W161
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/DataTransferRunnerTest.kt"
+    evidence_paths:
+      - source: "hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/TransferPreflightPlanner.kt"
+        path_type: production
+      - source: "hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/TransferExecutor.kt"
+        path_type: production
+      - source: "hexagon/ports-write/src/main/kotlin/dev/dmigrate/driver/data/TableImportSession.kt"
+        path_type: production

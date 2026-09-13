@@ -131,7 +131,12 @@ open class TransferExecutor(
         ).use { sequence ->
             context.cancellationToken.throwIfCancellationRequested()
             context.writer.openTable(context.targetPool, context.table, context.options).use { session ->
-                val targetNames = session.targetColumns.map { it.name }
+                // Eine berechnete Zielspalte ist nirgends schreibbar (siehe
+                // TableImportSession.computedColumnNames) -- der Transfer
+                // laesst sie aus, statt den Chunk abzulehnen; das Ziel
+                // rechnet sie selbst (berechnete-spalten-im-transferpfad.md).
+                val writableTargetColumns = session.targetColumns.filterNot { it.name in session.computedColumnNames }
+                val targetNames = writableTargetColumns.map { it.name }
                 var chunkIndex = 0L
                 for (chunk in sequence) {
                     context.cancellationToken.throwIfCancellationRequested()
@@ -143,7 +148,7 @@ open class TransferExecutor(
                             if (sourceIndex >= 0) row[sourceIndex] else null
                         }
                     }
-                    val targetDescriptors = session.targetColumns.map {
+                    val targetDescriptors = writableTargetColumns.map {
                         ColumnDescriptor(it.name, it.nullable, it.sqlTypeName)
                     }
                     val normalized = DataChunk(context.table, targetDescriptors, reordered, chunkIndex++)

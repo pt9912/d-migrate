@@ -80,6 +80,7 @@ neuen Version.
 | W156 - W157 | LIST-Partitionierung ohne LIST-Dialekt: aus einem `partition-mapping`-Overlay als RANGE gerendert, samt der Weitung, die das mit sich bringt (W156); ohne Overlay der Hinweis, woran ein solches zu binden waere (W157, INFO) |
 | W158 | PostgreSQL unter 18: eine virtuelle berechnete Spalte (`stored: false`) wurde als `STORED` gerendert — die virtuelle Form gibt es dort nicht |
 | W159 | Das Preserve-Fenster ist auf diesem Ziel serialisiert statt atomar: ein Fehlschlag darin laesst Angewandtes stehen (Oracle — jedes DDL committet implizit) |
+| W161 | `data transfer`: eine berechnete Zielspalte wird aus der Übertragung ausgelassen (nirgends schreibbar); das Ziel rechnet sie selbst |
 
 Neue Codes werden am Ende des jeweiligen Bereichs angefuegt.
 Luecken (z.B. E021-E051) sind reservierte Bereiche fuer kuenftige

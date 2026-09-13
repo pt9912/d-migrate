@@ -844,8 +844,8 @@ betroffene Verarbeitung abgebrochen, sodass keine halben Stände entstehen.
   der fünf Ziele. Lassen Sie sie in den Quelldaten weg; die übrigen Spalten
   reichen, der Server rechnet sie neu aus. Bei einem direkten
   `data transfer` ([3.8](#38-daten-direkt-von-datenbank-zu-datenbank-übertragen))
-  gibt es dafür keinen Schalter — dort führt der Weg über eine Exportdatei, aus
-  der Sie die Spalte entfernen.
+  brauchen Sie das nicht: dort läßt d-migrate eine solche Spalte automatisch
+  aus und meldet es (`W161`).
 - **Tipp (Trigger/Funktionen):** Erzeugen Sie das Schema mit
   `--split pre-post` ([3.2](#32-sql-für-eine-zieldatenbank-erzeugen)), spielen
   Sie zuerst `schema.pre-data.sql` ein, importieren dann die Daten und aktivieren
@@ -921,6 +921,10 @@ richtige Reihenfolge anhand der Fremdschlüssel im Ziel.
   öffnet die Quelle schreibgeschützt (bei SQLite ohne `-wal`/`-shm`-Nebendateien);
   das Ziel bleibt schreibend. Brauchen Sie ausnahmsweise ein schreibendes Öffnen
   der Quelle, setzen Sie `--no-read-only`.
+- **Eine Zieltabelle trägt eine berechnete Spalte** (`GENERATED ALWAYS AS
+  (...)`)? Die läßt `data transfer` automatisch aus der Übertragung aus — sie
+  ist auf keinem der fünf Ziele schreibbar, und das Ziel rechnet sie ohnehin
+  selbst. Die Meldung dazu (`W161`) steht je Tabelle einmal, kein Fehler.
 
 ### 3.9 Sehr große Datenmengen übertragen (mit Wiederaufnahme)
 

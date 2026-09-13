@@ -453,7 +453,7 @@ Mapper fuellt ihn.
 
 **Was ausdruecklich nicht mit geschlossen ist:**
 
-- [`berechnete-spalten-im-transferpfad.md`](../next/berechnete-spalten-im-transferpfad.md)
+- [`berechnete-spalten-im-transferpfad.md`](berechnete-spalten-im-transferpfad.md)
   — die Ablehnung des Schreibpfads nennt einen Ausweg („Spalte aus
   Export/Transfer herausnehmen"), den ein **direkter** `data transfer` nicht
   hat: es gibt keinen Spaltenfilter. Ob das Auslassen der berechneten Spalte

@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.dependency.sortTablesByDependency
 import dev.dmigrate.core.dependency.sortTablesIntoLayers
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.TransferTypeCompatibility
@@ -19,8 +20,9 @@ internal class TransferPreflightPlanner {
         target: SchemaDefinition,
         typeCompatibility: TransferTypeCompatibility,
         targetCapabilities: DialectCapabilities,
+        onNote: (String) -> Unit = {},
     ): List<String> {
-        val candidates = validate(request, source, target, typeCompatibility, targetCapabilities)
+        val candidates = validate(request, source, target, typeCompatibility, targetCapabilities, onNote)
         val result = sortTablesByDependency(candidates.toSet(), SchemaFkEdges.of(target, candidates))
         if (result.circularEdges.isNotEmpty()) {
             throw TransferPreflightException("FK cycle: ${result.circularEdges.map { it.fromTable }.toSet().joinToString()}")
@@ -40,8 +42,9 @@ internal class TransferPreflightPlanner {
         target: SchemaDefinition,
         typeCompatibility: TransferTypeCompatibility,
         targetCapabilities: DialectCapabilities,
+        onNote: (String) -> Unit = {},
     ): List<List<String>> {
-        val candidates = validate(request, source, target, typeCompatibility, targetCapabilities)
+        val candidates = validate(request, source, target, typeCompatibility, targetCapabilities, onNote)
         val result = sortTablesIntoLayers(candidates.toSet(), SchemaFkEdges.of(target, candidates))
         if (result.circularEdges.isNotEmpty()) {
             val cyclic = result.circularEdges.map { it.fromTable }.toSet()
@@ -56,6 +59,7 @@ internal class TransferPreflightPlanner {
         target: SchemaDefinition,
         typeCompatibility: TransferTypeCompatibility,
         targetCapabilities: DialectCapabilities,
+        onNote: (String) -> Unit,
     ): List<String> {
         val candidates = if (request.tables != null) {
             for (table in request.tables) {
@@ -96,6 +100,35 @@ internal class TransferPreflightPlanner {
                 }
             }
         }
+        noteComputedTargetColumns(candidates, target, onNote)
         return candidates
+    }
+
+    /**
+     * berechnete-spalten-im-transferpfad.md: eine berechnete Zielspalte ist
+     * nirgends schreibbar (siehe [TableImportSession.computedColumnNames]); der
+     * Transfer laesst sie aus, statt abzulehnen. Der Lauf sagt es trotzdem
+     * -- je Tabelle einmal, nicht je Zeile.
+     */
+    private fun noteComputedTargetColumns(
+        candidates: List<String>,
+        target: SchemaDefinition,
+        onNote: (String) -> Unit,
+    ) {
+        for (table in candidates) {
+            val computed = target.tables[table]!!.columns
+                .filterValues { it.generation is ColumnGeneration.Computed }
+                .keys
+            if (computed.isEmpty()) continue
+            onNote(
+                "Warning [$COMPUTED_TARGET_COLUMNS_EXCLUDED_CODE]: table '$table': computed target " +
+                    "column(s) ${computed.sorted().joinToString()} are excluded from the transfer; " +
+                    "the target computes them itself.",
+            )
+        }
+    }
+
+    companion object {
+        const val COMPUTED_TARGET_COLUMNS_EXCLUDED_CODE = "W161"
     }
 }

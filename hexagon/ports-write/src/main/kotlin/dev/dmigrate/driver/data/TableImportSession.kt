@@ -31,6 +31,16 @@ interface TableImportSession : AutoCloseable {
     val targetColumns: List<TargetColumn>
 
     /**
+     * Namen der Zielspalten, die die Zieltabelle als berechnet fuehrt
+     * (`GENERATED ALWAYS AS (…)`) — Teilmenge von [targetColumns]. Ein
+     * Chunk, der eine davon mitbringt, wird abgelehnt (siehe [write]); ein
+     * Aufrufer, der sie stattdessen selbst auslassen will (z. B. `data
+     * transfer`), liest diese Menge vorher. Default leer: kein Import kennt
+     * eine.
+     */
+    val computedColumnNames: Set<String> get() = emptySet()
+
+    /**
      * Schreibt einen Chunk im aktuellen Transaktionskontext.
      *
      * State-Maschine: OPEN → WRITTEN.

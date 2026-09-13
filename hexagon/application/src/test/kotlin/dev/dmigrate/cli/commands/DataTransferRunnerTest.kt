@@ -125,6 +125,85 @@ class DataTransferRunnerTest : FunSpec({
         stderr.joined() shouldContain "Transfer complete"
     }
 
+    test("transfer excludes a computed target column and notes it once per table (W161)") {
+        val computedSchema = SchemaDefinition(
+            name = "test", version = "1.0",
+            tables = mapOf(
+                "orders" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                        "total" to ColumnDefinition(
+                            type = NeutralType.Decimal(10, 2),
+                            generation = ColumnGeneration.Computed("qty * price"),
+                        ),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+        )
+        val computedSchemaReader = object : SchemaReader {
+            override fun read(pool: ConnectionPool, options: SchemaReadOptions) = SchemaReadResult(schema = computedSchema)
+        }
+        val writtenChunks = mutableListOf<DataChunk>()
+        val recordingSession = object : TableImportSession {
+            override val targetColumns = listOf(
+                TargetColumn("id", false, java.sql.Types.INTEGER),
+                TargetColumn("total", false, java.sql.Types.DECIMAL),
+            )
+            override val computedColumnNames = setOf("total")
+            override fun write(chunk: DataChunk): WriteResult {
+                writtenChunks += chunk
+                return WriteResult(chunk.rows.size.toLong(), 0, 0)
+            }
+            override fun commitChunk() {}
+            override fun rollbackChunk() {}
+            override fun markTruncatePerformed() {}
+            override fun finishTable() = FinishTableResult.Success(emptyList())
+            override fun close() {}
+        }
+        val oneRowReader = object : DataReader {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun streamTable(
+                pool: ConnectionPool,
+                table: String,
+                filter: dev.dmigrate.core.data.DataFilter?,
+                chunkSize: Int,
+            ) = object : ChunkSequence {
+                override val schema: ChunkSchema = chunkSchemaOf(table, emptyList())
+                override fun iterator(): Iterator<DataChunk> = listOf(
+                    DataChunk(
+                        table,
+                        listOf(ColumnDescriptor("id", false, null), ColumnDescriptor("total", false, null)),
+                        listOf(arrayOf<Any?>(1, 42.0)),
+                        0L,
+                    ),
+                ).iterator()
+                override fun close() {}
+            }
+        }
+        val recordingWriter = object : DataWriter {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun schemaSync() = throw UnsupportedOperationException()
+            override fun openTable(pool: ConnectionPool, table: String, options: ImportOptions) = recordingSession
+        }
+        val drv = object : DatabaseDriver {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun ddlGenerator() = throw UnsupportedOperationException()
+            override fun dataReader() = oneRowReader
+            override fun tableLister() = throw UnsupportedOperationException()
+            override fun dataWriter() = recordingWriter
+            override fun urlBuilder() = throw UnsupportedOperationException()
+            override fun schemaReader() = computedSchemaReader
+        }
+        val (runner, stderr, _) = buildRunner(driverLookup = { drv })
+
+        runner.execute(request(tables = listOf("orders"))) shouldBe 0
+
+        stderr.joined() shouldContain "Warning [W161]"
+        stderr.joined() shouldContain "total"
+        writtenChunks.single().columns.map { it.name } shouldContainExactly listOf("id")
+    }
+
     test("quiet suppresses all output") {
         val (runner, stderr, _) = buildRunner()
         runner.execute(request(quiet = true)) shouldBe 0

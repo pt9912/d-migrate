@@ -54,6 +54,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ein `data transfer` in eine Tabelle mit berechneter Zielspalte konnte nie
+  durchlaufen.** `TransferExecutor` baute jeden Chunk aus der vollständigen
+  Zielspaltenliste — unabhängig davon, ob die Quelle die Spalte überhaupt
+  führte. Eine berechnete Spalte (`GENERATED ALWAYS AS (...)`) ist auf
+  keinem der fünf Ziele schreibbar; der Import lehnte deshalb jeden Chunk
+  benannt ab, ohne dass es für `data transfer` einen Ausweg gab (kein
+  Spaltenfilter existiert). `data transfer` lässt eine solche Spalte jetzt
+  automatisch aus der Übertragung aus — das Ziel berechnet sie ohnehin
+  selbst — und meldet es je Tabelle einmal (`W161`). `data import` lehnt
+  weiter ab: dort hat der Anwender eine Datei übergeben, die die Spalte
+  enthält, sie stillschweigend zu verwerfen hieße, übergebene Daten
+  wegzuwerfen.
+
 - **Eine Parquet-`Time`-Spalte ließ sich nicht schreiben.** `TIME(MICROS)`
   verlangt nach Parquet-Spezifikation den physischen Typ `INT64` — der
   Schema-Baustein für `NeutralType.Time` deklarierte `INT32` und scheiterte

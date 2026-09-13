@@ -135,10 +135,13 @@ class DataTransferRunner(
         val compat = tgtDrv.transferCompatibility()
         val tgtCaps = DialectCapabilities.forDialect(tgtCfg.dialect)
         if (degree > 1) {
-            val layers = preflightPlanner.planLayers(request, srcSchema, tgtSchema, compat, tgtCaps)
+            val layers = preflightPlanner.planLayers(request, srcSchema, tgtSchema, compat, tgtCaps, userFacingStderr)
             return TransferPlan(layers.flatten(), layers)
         }
-        return TransferPlan(preflightPlanner.planTables(request, srcSchema, tgtSchema, compat, tgtCaps), emptyList())
+        return TransferPlan(
+            preflightPlanner.planTables(request, srcSchema, tgtSchema, compat, tgtCaps, userFacingStderr),
+            emptyList(),
+        )
     }
 
     private fun executeWithConnections(

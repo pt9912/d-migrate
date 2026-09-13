@@ -112,3 +112,41 @@ CHANGELOG.
 
 Bestaetigung der Grenze (Transfer laesst aus, Import lehnt ab) durch den
 Eigner. Ohne sie ist P1/P2 gebaut und P3 sagt das Falsche.
+
+## Closure (2026-09-13)
+
+Alle vier Phasen umgesetzt, in einem Zug (keine Zwischenkommits noetig):
+
+- **P1** — `TableImportSession.computedColumnNames: Set<String>` (Default
+  leer) macht sichtbar, was `AbstractTableImportSession` intern schon hielt
+  (`computedTargetColumns`). Umbenannt gegenueber dem im Scope skizzierten
+  `computedColumns`: MSSQL und Oracle fuehren bereits einen privaten
+  Konstruktor-Parameter dieses Namens — die Kollision haette in einem
+  `hides member of supertype`-Fehler geendet.
+- **P2** — `TransferExecutor.transferTable` filtert `session.targetColumns`
+  gegen `computedColumnNames`, bevor `targetNames`/`targetDescriptors`
+  entstehen. Eine Zeile Diff, kein zweiter Pfad.
+- **P3** — `TransferPreflightPlanner.validate` liest `ColumnGeneration
+  .Computed` aus dem **Ziel**-`SchemaDefinition` (nicht aus der Session) und
+  meldet je Tabelle einmal, mit neuem Code `W161`. `onNote`-Callback analog
+  zum bestehenden `effectiveTransferParallelism`-Muster durchgereicht.
+- **P4** — `spec/cli-spec.md` (Preflight-Bullet + Abgrenzung Import/Transfer
+  im bisherigen „Berechnete Spalten im Importpfad"-Absatz, jetzt „... im
+  Datenpfad"), `spec/ledger.md` + `ledger/warn-code-ledger-1.1.0.yaml`
+  (W161 registriert, inkl. Test-/Evidence-Pfaden), Anwenderhandbuch §3.7/3.8
+  (der alte Hinweis auf den Exportdatei-Umweg entfernt), CHANGELOG.
+
+**Verifiziert:** `DataTransferRunnerTest` — neuer Test baut eine Zieltabelle
+mit einer `ColumnGeneration.Computed`-Spalte, prueft `Warning [W161]` im
+stderr und dass der geschriebene Chunk die Spalte nicht mehr traegt.
+Sabotage (`shouldContainExactly listOf("id", "total")` statt `listOf("id")`)
+schlug erwartungsgemaess fehl, danach zurueckgenommen. Ganzes Repo einmal
+ohne `MODULES` gebaut (geteilte `TableImportSession`-Signatur) — gruen.
+
+**Grenze bestaetigt:** `data import` lehnt eine berechnete Zielspalte im
+Chunk weiterhin ab (Regressionstest unveraendert gruen) — die im Scope
+begruendete Unterscheidung (uebergebene Daten vs. eine Berechnung, die aus
+einer anderen Quelle stammt) gilt wie skizziert.
+
+**Nicht Teil dieses Schnitts** (wie im Scope abgegrenzt): ein allgemeiner
+Spaltenfilter (`--columns`), Identity-Spalten (laufen bereits).
