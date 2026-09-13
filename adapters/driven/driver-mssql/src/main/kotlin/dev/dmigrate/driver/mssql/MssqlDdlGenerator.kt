@@ -93,7 +93,7 @@ class MssqlDdlGenerator private constructor(
 
     // ── Custom types ─────────────────────────────
 
-    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> =
+    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement> =
         types.mapNotNull { (name, typeDef) ->
             when (typeDef.kind) {
                 // Enum/Domain werden an der Spalte gerendert (NVARCHAR + CHECK bzw. Basistyp + CHECK).
@@ -130,6 +130,7 @@ class MssqlDdlGenerator private constructor(
         deferredFks: Set<Pair<String, String>>,
         deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         val notes = mutableListOf<TransformationNote>()
         val lines = mutableListOf<String>()
@@ -153,7 +154,7 @@ class MssqlDdlGenerator private constructor(
         val lobColumns = typeResolver.lobColumns(effective, schema)
 
         for ((colName, col) in effective.columns.inOrdinalOrder()) {
-            lines += columnHelper.generateColumnSql(name, colName, col, effective, schema, notes)
+            lines += columnHelper.generateColumnSql(name, colName, col, effective, schema, notes, skipped)
         }
         // Die berechnete Spalte steht nicht im neutralen Modell; ihre Zeile
         // kommt direkt aus der Emulation.
@@ -176,7 +177,7 @@ class MssqlDdlGenerator private constructor(
         for (constraint in effective.constraints) {
             if (options.deferForeignKeys && constraint.type == ConstraintType.FOREIGN_KEY) continue
             if ((name to constraint.name) in deferredConstraints) continue
-            columnHelper.generateConstraintClause(cascadeGuard, name, table, constraint, lobColumns, notes)
+            columnHelper.generateConstraintClause(cascadeGuard, name, table, constraint, lobColumns, notes, skipped)
                 ?.let { lines += it }
         }
 
@@ -210,6 +211,7 @@ class MssqlDdlGenerator private constructor(
         tableName: String,
         table: TableDefinition,
         options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         val schema = currentSchema ?: SchemaDefinition(name = "", version = "", tables = mapOf(tableName to table))
         // Die Indizes kommen aus der Schema-Tabelle, nicht aus der in

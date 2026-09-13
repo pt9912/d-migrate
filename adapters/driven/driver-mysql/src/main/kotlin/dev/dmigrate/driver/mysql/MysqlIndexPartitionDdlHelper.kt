@@ -21,6 +21,7 @@ import dev.dmigrate.driver.PartitionLiteralGuard
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.RawSqlExpressionPortability
+import dev.dmigrate.driver.SkippedObject
 
 internal class MysqlIndexPartitionDdlHelper(
     private val quoteIdentifier: (String) -> String,
@@ -247,11 +248,15 @@ internal class MysqlIndexPartitionDdlHelper(
         }.joinToString(", ").ifEmpty { "MAXVALUE" }
     }
 
-    fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
+    fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        skipped: MutableList<SkippedObject>? = null,
+    ): List<DdlStatement> {
         val lift = liftPartitionIndices(tableName, table)
         val allIndices = table.indices + lift.indices
         val statements = generatedIndexNames(tableName, allIndices).mapIndexedNotNull { position, indexName ->
-            generateIndex(tableName, allIndices[position], indexName, table.columns)
+            generateIndex(tableName, allIndices[position], indexName, table.columns, skipped)
         }
         // Lift notes (E064 unique-skip, W131 rename, INFO lifted) carry on a note-only statement.
         return if (lift.notes.isEmpty()) statements else statements + DdlStatement("", lift.notes)
@@ -368,9 +373,12 @@ internal class MysqlIndexPartitionDdlHelper(
         index: IndexDefinition,
         indexName: String,
         columns: Map<String, ColumnDefinition>,
+        skipped: MutableList<SkippedObject>? = null,
     ): DdlStatement? {
         RawSqlExpressionPortability.indexRefusal(index, indexName, DatabaseDialect.MYSQL)?.let { return it }
         if (index.where != null) {
+            val reason = "Partial index '$indexName' is not supported in MySQL and was skipped."
+            skipped?.add(SkippedObject("index", indexName, reason, code = "E057"))
             return DdlStatement(
                 "",
                 listOf(
@@ -378,7 +386,7 @@ internal class MysqlIndexPartitionDdlHelper(
                         type = NoteType.ACTION_REQUIRED,
                         code = "E057",
                         objectName = indexName,
-                        message = "Partial index '$indexName' is not supported in MySQL and was skipped.",
+                        message = reason,
                         hint = "Create an equivalent generated-column index manually or remove the index predicate.",
                     )
                 )

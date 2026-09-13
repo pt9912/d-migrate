@@ -62,7 +62,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
     // ── Custom types (ENUM, COMPOSITE, DOMAIN) ──
 
-    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> {
+    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement> {
         // MySQL does not support standalone CREATE TYPE.
         // ENUMs are inlined at column level.
         // COMPOSITEs are not supported.
@@ -99,7 +99,8 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>,
         deferredConstraints: Set<Pair<String, String>>,
-        options: DdlGenerationOptions
+        options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         val notes = mutableListOf<TransformationNote>()
@@ -118,7 +119,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
         // Columns — physische Ordinalreihenfolge (siehe inOrdinalOrder).
         for ((colName, col) in table.columns.inOrdinalOrder()) {
-            columnLines += generateColumnSql(colName, col, schema, name, notes)
+            columnLines += generateColumnSql(colName, col, schema, name, notes, skipped)
             // C3: Warn when datetime with timezone is mapped to DATETIME (no TZ support in MySQL)
             if (col.type is NeutralType.DateTime && (col.type as NeutralType.DateTime).timezone) {
                 notes += TransformationNote(
@@ -132,16 +133,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         }
 
         // Inline foreign key constraints (non-circular, from column references)
-        for ((colName, col) in table.columns.inOrdinalOrder()) {
-            val ref = col.references ?: continue
-            if ((name to colName) in deferredFks) continue
-            val fkName = "fk_${name}_${colName}"
-            if (isPartitioned || ref.table in partitionedTables) {
-                notes += partitionedFkSkipNote(fkName, name)
-                continue
-            }
-            columnLines += buildForeignKeyClause(fkName, listOf(colName), ref.table, listOf(ref.column), ref.onDelete, ref.onUpdate)
-        }
+        columnLines += inlineForeignKeyLines(name, table, deferredFks, isPartitioned, notes, skipped)
 
         // Explicit constraints
         columnLines += NamedUniqueConstraints.clauses(table, ::quoteIdentifier)
@@ -151,9 +143,10 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 (isPartitioned || constraint.references?.table in partitionedTables)
             ) {
                 notes += partitionedFkSkipNote(constraint.name, name)
+                skipped += partitionedFkSkip(constraint.name)
                 continue
             }
-            generateConstraintClause(constraint, notes)?.let { columnLines += it }
+            generateConstraintClause(constraint, notes, skipped)?.let { columnLines += it }
         }
 
         // Primary key
@@ -218,7 +211,8 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     private fun generateColumnSql(
         colName: String, col: ColumnDefinition, schema: SchemaDefinition,
         tableName: String, notes: MutableList<TransformationNote>,
-    ): String = columnConstraintHelper.generateColumnSql(colName, col, schema, tableName, notes)
+        skipped: MutableList<SkippedObject>? = null,
+    ): String = columnConstraintHelper.generateColumnSql(colName, col, schema, tableName, notes, skipped)
 
     private fun buildForeignKeyClause(
         constraintName: String, fromColumns: List<String>, toTable: String,
@@ -227,14 +221,50 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
     private fun generateConstraintClause(
         constraint: ConstraintDefinition, notes: MutableList<TransformationNote>,
-    ): String? = columnConstraintHelper.generateConstraintClause(constraint, notes)
+        skipped: MutableList<SkippedObject>? = null,
+    ): String? = columnConstraintHelper.generateConstraintClause(constraint, notes, skipped)
 
     override fun generateIndices(
         tableName: String,
         table: TableDefinition,
         options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> =
-        indexPartitionHelper.generateIndices(tableName, table)
+        indexPartitionHelper.generateIndices(tableName, table, skipped)
+
+    /**
+     * Inline-Fremdschluessel aus Spaltenreferenzen (nicht zirkulaer). Eigene
+     * Funktion, weil der Partitions-Zweig (E065) sonst die zyklomatische
+     * Komplexitaet von `generateTable` ueber die Schranke trieb — derselbe
+     * Zweig wie bei den expliziten Constraints, nur ueber die
+     * Spaltenreferenz statt die Constraint-Liste erreicht.
+     */
+    private fun inlineForeignKeyLines(
+        name: String,
+        table: TableDefinition,
+        deferredFks: Set<Pair<String, String>>,
+        isPartitioned: Boolean,
+        notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>,
+    ): List<String> {
+        val lines = mutableListOf<String>()
+        for ((colName, col) in table.columns.inOrdinalOrder()) {
+            val ref = col.references ?: continue
+            if ((name to colName) in deferredFks) continue
+            val fkName = "fk_${name}_${colName}"
+            if (isPartitioned || ref.table in partitionedTables) {
+                notes += partitionedFkSkipNote(fkName, name)
+                skipped += partitionedFkSkip(fkName)
+                continue
+            }
+            lines += buildForeignKeyClause(fkName, listOf(colName), ref.table, listOf(ref.column), ref.onDelete, ref.onUpdate)
+        }
+        return lines
+    }
+
+    private fun partitionedFkSkip(fkName: String): SkippedObject = SkippedObject(
+        "foreign_key", fkName, "FK on partitioned table (MySQL/InnoDB restriction)", code = "E065",
+    )
 
     /**
      * §5 (ADR 0020): MySQL/InnoDB supports no foreign keys on partitioned tables in either
@@ -259,6 +289,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         return edges.map { edge ->
             // ADR 0020 §5: drop a deferred/circular FK that touches a partitioned table (either end).
             if (edge.fromTable in partitionedTables || edge.toTable in partitionedTables) {
+                skipped += partitionedFkSkip(edge.constraintName)
                 return@map DdlStatement("", listOf(partitionedFkSkipNote(edge.constraintName, edge.fromTable)))
             }
             val sql = buildString {

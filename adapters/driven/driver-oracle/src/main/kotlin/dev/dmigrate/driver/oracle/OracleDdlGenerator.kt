@@ -80,7 +80,7 @@ class OracleDdlGenerator private constructor(
 
     // ── Custom types ─────────────────────────────
 
-    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> =
+    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement> =
         types.mapNotNull { (name, typeDef) ->
             when (typeDef.kind) {
                 // Enum/Domain werden an der Spalte gerendert (VARCHAR2 + CHECK bzw. CLOB + E053).
@@ -116,13 +116,14 @@ class OracleDdlGenerator private constructor(
         deferredFks: Set<Pair<String, String>>,
         deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         val notes = mutableListOf<TransformationNote>()
         val lines = mutableListOf<String>()
         val unkeyableColumns = unkeyableColumns(table)
 
         for ((colName, col) in table.columns.inOrdinalOrder()) {
-            lines += columnHelper.generateColumnSql(name, colName, col, schema, notes)
+            lines += columnHelper.generateColumnSql(name, colName, col, schema, notes, skipped = skipped)
         }
 
         for ((colName, col) in table.columns.inOrdinalOrder()) {
@@ -152,7 +153,7 @@ class OracleDdlGenerator private constructor(
             if ((name to constraint.name) in deferredConstraints) continue
             columnHelper.generateConstraintClause(
                 name, constraint, unkeyableColumns, notes,
-                OracleIdentifierRequoter.knownIdentifiers(schema),
+                OracleIdentifierRequoter.knownIdentifiers(schema), skipped,
             )?.let { lines += it }
         }
 
@@ -190,6 +191,7 @@ class OracleDdlGenerator private constructor(
         tableName: String,
         table: TableDefinition,
         options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         val unkeyableColumns = unkeyableColumns(table)
         return table.indices.map { indexBuilder.render(tableName, table, it, unkeyableColumns) }

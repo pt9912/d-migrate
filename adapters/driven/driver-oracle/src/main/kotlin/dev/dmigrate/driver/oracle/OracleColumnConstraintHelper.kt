@@ -18,6 +18,7 @@ import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.RawSqlExpressionPortability
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SkippedObject
 
 /**
  * Spalten- und Constraint-Rendering fuer Oracle-DDL, aus [OracleDdlGenerator]
@@ -45,6 +46,7 @@ internal class OracleColumnConstraintHelper(
         notes: MutableList<TransformationNote>,
         identityModeOverride: IdentityMode? = null,
         inlineNamedConstraints: Boolean = true,
+        skipped: MutableList<SkippedObject>? = null,
     ): String {
         val type = col.type
         val ctx = ColumnContext(tableName, colName, col, notes, inlineNamedConstraints)
@@ -64,6 +66,7 @@ internal class OracleColumnConstraintHelper(
             )
             if (refusal != null) {
                 notes += refusal
+                skipped?.add(SkippedObject("computed_expression", colName, refusal.message, code = refusal.code))
             } else {
                 return listOf(
                     quoteIdentifier(colName),
@@ -402,6 +405,7 @@ internal class OracleColumnConstraintHelper(
         unkeyableColumns: Set<String>,
         notes: MutableList<TransformationNote>,
         knownIdentifiers: Map<String, String>,
+        skipped: MutableList<SkippedObject>? = null,
     ): String? = when (constraint.type) {
         ConstraintType.CHECK -> {
             // Vor dem Requoten geprueft: das Requoten fasst nur Bezeichner an,
@@ -412,6 +416,7 @@ internal class OracleColumnConstraintHelper(
                 notes += RawSqlExpressionPortability.notPortableNote(
                     "constraint", constraint.name, "CHECK expression", verdict.reason, DatabaseDialect.ORACLE,
                 )
+                skipped?.add(SkippedObject("constraint", constraint.name, verdict.reason.orEmpty(), code = "E053"))
                 null
             } else {
                 val expression = OracleIdentifierRequoter.requote(
@@ -431,11 +436,13 @@ internal class OracleColumnConstraintHelper(
             }
         }
         ConstraintType.EXCLUDE -> {
-            notes += ManualActionRequired(
+            val action = ManualActionRequired(
                 code = "E054", objectType = "constraint", objectName = constraint.name,
                 reason = "EXCLUDE constraint '${constraint.name}' is not supported in Oracle.",
                 hint = "Enforce the exclusion with a trigger or application-level validation instead.",
-            ).toNote()
+            )
+            notes += action.toNote()
+            skipped?.add(action.toSkipped())
             null
         }
         ConstraintType.FOREIGN_KEY -> {

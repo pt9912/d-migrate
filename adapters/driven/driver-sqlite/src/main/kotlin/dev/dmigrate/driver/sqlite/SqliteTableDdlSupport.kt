@@ -17,6 +17,7 @@ internal class SqliteTableDdlSupport(
         deferredFks: Set<Pair<String, String>>,
         deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject> = mutableListOf(),
     ): List<DdlStatement> {
         // Defensive: drop any sequence-support notes that survived the
         // previous `generateTable` call (e.g. through a future early
@@ -35,7 +36,7 @@ internal class SqliteTableDdlSupport(
         }
 
         val notes = mutableListOf<TransformationNote>()
-        val columnLines = buildColumnLines(name, table, schema, deferredFks, deferredConstraints, isSpatiaLite, notes)
+        val columnLines = buildColumnLines(name, table, schema, deferredFks, deferredConstraints, isSpatiaLite, notes, skipped)
 
         if (table.partitioning != null) {
             notes += TransformationNote(
@@ -97,6 +98,7 @@ internal class SqliteTableDdlSupport(
         deferredConstraints: Set<Pair<String, String>>,
         isSpatiaLite: Boolean,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>? = null,
     ): List<String> {
         val lines = mutableListOf<String>()
         val normalColumns = table.columns.filter { it.value.type !is NeutralType.Geometry }
@@ -112,12 +114,12 @@ internal class SqliteTableDdlSupport(
             // neutral model's "PK ⇒ required" invariant before rendering.
             val col = SqlitePrimaryKeyNullability.materialize(columnName, column, table.primaryKey)
             val isSolePrimaryKey = solePrimaryKey == columnName
-            lines += columnConstraintHelper.generateColumnSql(columnName, col, schema, name, notes, deferredFks, isSolePrimaryKey)
+            lines += columnConstraintHelper.generateColumnSql(columnName, col, schema, name, notes, deferredFks, isSolePrimaryKey, skipped)
         }
         lines += NamedUniqueConstraints.clauses(table) { quoteIdentifier(it) }
         for (constraint in table.constraints) {
             if ((name to constraint.name) in deferredConstraints) continue
-            val clause = columnConstraintHelper.generateConstraintClause(constraint, notes, name)
+            val clause = columnConstraintHelper.generateConstraintClause(constraint, notes, name, skipped)
             if (clause != null) lines += clause
         }
         val skipPrimaryKey = table.primaryKey.size == 1 && table.primaryKey.all { primaryKey ->

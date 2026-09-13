@@ -19,6 +19,7 @@ import dev.dmigrate.driver.RawSqlExpressionPortability
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.metadata.ComputedColumnClause
+import dev.dmigrate.driver.SkippedObject
 
 /**
  * Spalten- und Constraint-Rendering für T-SQL, aus [MssqlDdlGenerator]
@@ -46,7 +47,8 @@ internal class MssqlColumnConstraintHelper(
         table: TableDefinition,
         schema: SchemaDefinition,
         notes: MutableList<TransformationNote>,
-    ): String = renderColumn(tableName, colName, col, table, schema, notes).let { rendering ->
+        skipped: MutableList<SkippedObject>? = null,
+    ): String = renderColumn(tableName, colName, col, table, schema, notes, skipped).let { rendering ->
         (listOf(rendering.declaration) + rendering.objects.map { inlineClause(it) }).joinToString(" ")
     }
 
@@ -71,11 +73,13 @@ internal class MssqlColumnConstraintHelper(
         colName: String,
         col: ColumnDefinition,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>? = null,
     ): Boolean {
         val computed = ComputedColumnClause.of(col) ?: return false
         val note = RawSqlExpressionPortability.computedRefusal(colName, computed.expression, DatabaseDialect.MSSQL)
             ?: return false
         notes += note
+        skipped?.add(SkippedObject("computed_expression", colName, note.message, code = note.code))
         return true
     }
 
@@ -93,6 +97,7 @@ internal class MssqlColumnConstraintHelper(
         table: TableDefinition,
         schema: SchemaDefinition,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>? = null,
     ): ColumnRendering {
         val type = col.type
         val generation = col.generation
@@ -106,7 +111,7 @@ internal class MssqlColumnConstraintHelper(
             //
             // Traegt der Ausdruck fremde Grammatik, faellt die Berechnung weg
             // und die Spalte bleibt gewoehnlich — benannt, nicht still.
-            ComputedColumnClause.of(col) != null && refuseUnportableComputed(colName, col, notes) ->
+            ComputedColumnClause.of(col) != null && refuseUnportableComputed(colName, col, notes, skipped) ->
                 plainColumn(ctx)
             ComputedColumnClause.of(col) != null -> computedColumn(colName, col)
             generation is ColumnGeneration.Identity && supportsIdentity(type) ->
@@ -502,8 +507,9 @@ internal class MssqlColumnConstraintHelper(
         constraint: ConstraintDefinition,
         lobColumns: Set<String>,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>? = null,
     ): String? = when (constraint.type) {
-        ConstraintType.CHECK -> checkClauseOrNull(constraint, notes)
+        ConstraintType.CHECK -> checkClauseOrNull(constraint, notes, skipped)
         ConstraintType.UNIQUE -> {
             val columns = constraint.columns.orEmpty()
             val lob = columns.filter { it in lobColumns }
@@ -519,11 +525,13 @@ internal class MssqlColumnConstraintHelper(
             }
         }
         ConstraintType.EXCLUDE -> {
-            notes += ManualActionRequired(
+            val action = ManualActionRequired(
                 code = "E054", objectType = "constraint", objectName = constraint.name,
                 reason = "EXCLUDE constraint '${constraint.name}' is not supported in SQL Server.",
                 hint = "Enforce the exclusion with a trigger or application-level validation instead.",
-            ).toNote()
+            )
+            notes += action.toNote()
+            skipped?.add(action.toSkipped())
             null
         }
         ConstraintType.FOREIGN_KEY -> {
@@ -555,12 +563,14 @@ internal class MssqlColumnConstraintHelper(
     private fun checkClauseOrNull(
         constraint: ConstraintDefinition,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>? = null,
     ): String? {
         val verdict = RawSqlExpressionPortability.assess(constraint.expression, DatabaseDialect.MSSQL)
         if (!verdict.portable) {
             notes += RawSqlExpressionPortability.notPortableNote(
                 "constraint", constraint.name, "CHECK expression", verdict.reason, DatabaseDialect.MSSQL,
             )
+            skipped?.add(SkippedObject("constraint", constraint.name, verdict.reason.orEmpty(), code = "E053"))
             return null
         }
         return "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"

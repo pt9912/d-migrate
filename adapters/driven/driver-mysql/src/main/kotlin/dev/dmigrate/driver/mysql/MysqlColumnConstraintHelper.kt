@@ -23,11 +23,12 @@ internal class MysqlColumnConstraintHelper(
         schema: SchemaDefinition,
         tableName: String,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>? = null,
     ): String = when {
         // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
         // DEFAULT und AUTO_INCREMENT sind dort keine Frage. MySQL kennt beide
         // Speicherformen und nimmt ohne Angabe die virtuelle.
-        ComputedColumnClause.of(col) != null && refuseUnportableComputed(colName, col, notes) ->
+        ComputedColumnClause.of(col) != null && refuseUnportableComputed(colName, col, notes, skipped) ->
             columnSql(tableName, colName, col, schema)
         ComputedColumnClause.of(col) != null -> columnComputed(colName, col)
         col.generation is ColumnGeneration.Identity && supportsIdentityGeneration(col.type) ->
@@ -45,11 +46,13 @@ internal class MysqlColumnConstraintHelper(
         colName: String,
         col: ColumnDefinition,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>? = null,
     ): Boolean {
         val computed = ComputedColumnClause.of(col) ?: return false
         val note = RawSqlExpressionPortability.computedRefusal(colName, computed.expression, DatabaseDialect.MYSQL)
             ?: return false
         notes += note
+        skipped?.add(SkippedObject("computed_expression", colName, note.message, code = note.code))
         return true
     }
 
@@ -171,8 +174,9 @@ internal class MysqlColumnConstraintHelper(
     fun generateConstraintClause(
         constraint: ConstraintDefinition,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>? = null,
     ): String? = when (constraint.type) {
-        ConstraintType.CHECK -> checkClauseOrNull(constraint, notes)
+        ConstraintType.CHECK -> checkClauseOrNull(constraint, notes, skipped)
         ConstraintType.UNIQUE -> {
             val cols = constraint.columns?.joinToString(", ") { quoteIdentifier(it) } ?: ""
             "CONSTRAINT ${quoteIdentifier(constraint.name)} UNIQUE ($cols)"
@@ -184,6 +188,7 @@ internal class MysqlColumnConstraintHelper(
                 hint = "Consider using CHECK constraints or application-level validation instead.",
             )
             notes += action.toNote()
+            skipped?.add(action.toSkipped())
             null
         }
         ConstraintType.FOREIGN_KEY -> {
@@ -199,12 +204,14 @@ internal class MysqlColumnConstraintHelper(
     private fun checkClauseOrNull(
         constraint: ConstraintDefinition,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>? = null,
     ): String? {
         val verdict = RawSqlExpressionPortability.assess(constraint.expression, DatabaseDialect.MYSQL)
         if (!verdict.portable) {
             notes += RawSqlExpressionPortability.notPortableNote(
                 "constraint", constraint.name, "CHECK expression", verdict.reason, DatabaseDialect.MYSQL,
             )
+            skipped?.add(SkippedObject("constraint", constraint.name, verdict.reason.orEmpty(), code = "E053"))
             return null
         }
         return "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"

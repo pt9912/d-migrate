@@ -383,6 +383,7 @@ internal class TestDdlGenerator(
         deferredFks: Set<Pair<String, String>>,
         deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         callOrder += "table:$name"
         tableOrder += name
@@ -402,7 +403,10 @@ internal class TestDdlGenerator(
         return listOf(DdlStatement("CREATE TABLE \"$name\" ();"))
     }
 
-    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> {
+    override fun generateCustomTypes(
+        types: Map<String, CustomTypeDefinition>,
+        skipped: MutableList<SkippedObject>,
+    ): List<DdlStatement> {
         callOrder += "customTypes"
         return emptyList()
     }
@@ -419,6 +423,7 @@ internal class TestDdlGenerator(
         tableName: String,
         table: TableDefinition,
         options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         callOrder += "indices:$tableName"
         return emptyList()

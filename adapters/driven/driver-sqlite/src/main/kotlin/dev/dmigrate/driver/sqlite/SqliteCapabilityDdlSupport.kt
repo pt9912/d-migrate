@@ -14,7 +14,10 @@ internal class SqliteCapabilityDdlSupport(
     private val sequenceSupport: SqliteSequenceDdlSupport,
 ) {
 
-    fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> {
+    fun generateCustomTypes(
+        types: Map<String, CustomTypeDefinition>,
+        skipped: MutableList<SkippedObject>? = null,
+    ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         for ((name, typeDefinition) in types) {
             statements += when (typeDefinition.kind) {
@@ -23,13 +26,17 @@ internal class SqliteCapabilityDdlSupport(
                     sqlComment = "-- Enum type ${quoteIdentifier(name)} is handled inline via CHECK constraints",
                     message = "Enum type '$name' mapped to inline TEXT + CHECK constraint in SQLite."
                 )
-                CustomTypeKind.COMPOSITE -> unsupportedTypeMapping(
-                    name = name,
-                    sqlComment = "-- Composite type ${quoteIdentifier(name)} is not supported in SQLite",
-                    code = "E054",
-                    message = "Composite type '$name' is not supported in SQLite.",
-                    hint = "Flatten composite fields into individual table columns or use JSON."
-                )
+                CustomTypeKind.COMPOSITE -> {
+                    val reason = "Composite type '$name' is not supported in SQLite."
+                    skipped?.add(SkippedObject("custom_type", name, reason, code = "E054"))
+                    unsupportedTypeMapping(
+                        name = name,
+                        sqlComment = "-- Composite type ${quoteIdentifier(name)} is not supported in SQLite",
+                        code = "E054",
+                        message = reason,
+                        hint = "Flatten composite fields into individual table columns or use JSON."
+                    )
+                }
                 CustomTypeKind.DOMAIN -> informationalTypeMapping(
                     name = name,
                     sqlComment = "-- Domain type ${quoteIdentifier(name)} is mapped to its base type with inline CHECK in SQLite",

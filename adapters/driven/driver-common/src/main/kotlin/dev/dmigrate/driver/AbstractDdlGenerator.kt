@@ -21,7 +21,7 @@ abstract class AbstractDdlGenerator(
 
         // ─── PRE_DATA (default phase) ────────────────────────────
         statements += generateHeader(schema, options)
-        statements += generateCustomTypes(schema.customTypes)
+        statements += generateCustomTypes(schema.customTypes, skipped)
 
         var preSkipCount = skipped.size
         statements += generateSequences(schema, skipped)
@@ -43,7 +43,7 @@ abstract class AbstractDdlGenerator(
                 statements += DdlStatement("", notes = listOf(spatialBlockNote))
                 continue
             }
-            val tableStatements = generateTable(name, table, schema, deferredFks, deferredConstraints, options)
+            val tableStatements = generateTable(name, table, schema, deferredFks, deferredConstraints, options, skipped)
             val blockNote = tableStatements.asSequence()
                 .flatMap { it.notes.asSequence() }
                 .firstOrNull { it.blocksTable }
@@ -55,7 +55,7 @@ abstract class AbstractDdlGenerator(
         for ((name, table) in sorted) {
             if (shouldBlockTable(name, table, options)) continue
             if (name in blockedTables) continue
-            statements += generateIndices(name, table, options)
+            statements += generateIndices(name, table, options, skipped)
         }
 
         preSkipCount = skipped.size
@@ -143,13 +143,18 @@ abstract class AbstractDdlGenerator(
         deferredFks: Set<Pair<String, String>> = emptySet(),
         deferredConstraints: Set<Pair<String, String>> = emptySet(),
         options: DdlGenerationOptions = DdlGenerationOptions(),
+        skipped: MutableList<SkippedObject> = mutableListOf(),
     ): List<DdlStatement>
-    abstract fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement>
+    abstract fun generateCustomTypes(
+        types: Map<String, CustomTypeDefinition>,
+        skipped: MutableList<SkippedObject> = mutableListOf(),
+    ): List<DdlStatement>
     abstract fun generateSequences(schema: SchemaDefinition, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateIndices(
         tableName: String,
         table: TableDefinition,
         options: DdlGenerationOptions = DdlGenerationOptions(),
+        skipped: MutableList<SkippedObject> = mutableListOf(),
     ): List<DdlStatement>
     abstract fun handleCircularReferences(edges: List<CircularFkEdge>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     /**

@@ -61,8 +61,8 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         return rendered
     }
 
-    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> =
-        capabilitySupport.generateCustomTypes(types)
+    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement> =
+        capabilitySupport.generateCustomTypes(types, skipped)
 
     override fun generateSequences(
         schema: SchemaDefinition,
@@ -79,13 +79,15 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         deferredFks: Set<Pair<String, String>>,
         deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> =
-        tableSupport.generateTable(name, table, schema, deferredFks, deferredConstraints, options)
+        tableSupport.generateTable(name, table, schema, deferredFks, deferredConstraints, options, skipped)
 
     override fun generateIndices(
         tableName: String,
         table: TableDefinition,
         options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> =
         tableSupport.generateIndices(tableName, table, options)
 

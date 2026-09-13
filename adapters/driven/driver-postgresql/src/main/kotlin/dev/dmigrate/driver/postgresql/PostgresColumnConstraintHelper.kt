@@ -146,6 +146,7 @@ internal class PostgresColumnConstraintHelper(
     fun generateConstraintClause(
         constraint: ConstraintDefinition,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>? = null,
     ): String? {
         if (constraint.type == ConstraintType.CHECK || constraint.type == ConstraintType.EXCLUDE) {
             val verdict = RawSqlExpressionPortability.assess(constraint.expression, DatabaseDialect.POSTGRESQL)
@@ -155,6 +156,7 @@ internal class PostgresColumnConstraintHelper(
                     if (constraint.type == ConstraintType.CHECK) "CHECK expression" else "EXCLUDE expression",
                     verdict.reason, DatabaseDialect.POSTGRESQL,
                 )
+                skipped?.add(SkippedObject("constraint", constraint.name, verdict.reason.orEmpty(), code = "E053"))
                 return null
             }
         }

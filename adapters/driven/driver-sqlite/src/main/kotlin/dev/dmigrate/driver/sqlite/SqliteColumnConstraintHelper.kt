@@ -27,6 +27,7 @@ internal class SqliteColumnConstraintHelper(
         // is the whole primary key. In a composite PK the identity column degrades
         // to a plain INTEGER (W135) and the composite key is emitted table-level.
         isSolePrimaryKey: Boolean = true,
+        skipped: MutableList<SkippedObject>? = null,
     ): String {
         val type = col.type
 
@@ -43,6 +44,7 @@ internal class SqliteColumnConstraintHelper(
             )
             if (refusal != null) {
                 notes += refusal
+                skipped?.add(SkippedObject("computed_expression", colName, refusal.message, code = refusal.code))
             } else {
                 return listOf(
                     quoteIdentifier(colName),
@@ -186,6 +188,7 @@ internal class SqliteColumnConstraintHelper(
         constraint: ConstraintDefinition,
         notes: MutableList<TransformationNote>,
         tableName: String = "",
+        skipped: MutableList<SkippedObject>? = null,
     ): String? {
         return when (constraint.type) {
             ConstraintType.CHECK -> {
@@ -202,6 +205,7 @@ internal class SqliteColumnConstraintHelper(
                     notes += RawSqlExpressionPortability.notPortableNote(
                         "constraint", constraint.name, "CHECK expression", verdict.reason, DatabaseDialect.SQLITE,
                     )
+                    skipped?.add(SkippedObject("constraint", constraint.name, verdict.reason.orEmpty(), code = "E053"))
                     return null
                 }
                 "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"
@@ -212,13 +216,15 @@ internal class SqliteColumnConstraintHelper(
             }
             ConstraintType.EXCLUDE -> {
                 // EXCLUDE constraints are not supported in SQLite
+                val reason = "EXCLUDE constraint '${constraint.name}' is not supported in SQLite."
                 notes += TransformationNote(
                     type = NoteType.ACTION_REQUIRED,
                     code = "E054",
                     objectName = constraint.name,
-                    message = "EXCLUDE constraint '${constraint.name}' is not supported in SQLite.",
+                    message = reason,
                     hint = "Enforce exclusion logic at the application level or use triggers."
                 )
+                skipped?.add(SkippedObject("constraint", constraint.name, reason, code = "E054"))
                 "-- EXCLUDE constraint ${quoteIdentifier(constraint.name)} is not supported in SQLite"
             }
             ConstraintType.FOREIGN_KEY -> {

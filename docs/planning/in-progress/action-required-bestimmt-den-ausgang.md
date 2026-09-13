@@ -1,6 +1,6 @@
 # `action_required` bestimmt den Ausgang
 
-> **Status:** Draft mit Scope (2026-09-13).
+> **Status:** In Arbeit seit 2026-09-13 (P0 abgeschlossen: Erhebung + sechs `SkippedObject`-Lücken geschlossen, Voraussetzung für die Ausgangsregel; P1–P4 offen).
 > **Trigger:** Konsumentenmeldung, gegen v1.3.1 und unverändert gegen v1.4.0
 > nachgemessen: `schema generate` lässt einen nicht renderbaren Bestandteil
 > weg und endet mit Exit 0.
@@ -139,11 +139,12 @@ nur eine Frage je Stelle: **verschwindet ein Objekt aus der Ausgabe, ohne dass
 | E054 | `SqliteRoutineDdlHelper` (Procedure) | Prozedur | ja | — |
 | E057 | `SqliteCapabilityDdlSupport` (zirkuläre FK) | FK-Constraint | ja | — |
 | E052 | `SqliteTableDdlSupport`/`AbstractDdlGenerator` (Spatial-Block) | Tabelle | ja, über `blocksTable` | — |
-| **E054** | **`SqliteCapabilityDdlSupport`** (COMPOSITE-Typ) | Custom Type | **nein** | **Lücke** |
-| **E054** | **`SqliteColumnConstraintHelper`** (EXCLUDE) | Constraint | **nein** | **Lücke** |
-| **E053** | **`*ColumnConstraintHelper`, alle fünf Dialekte** (CHECK/Computed nicht portabel, `RawSqlExpressionPortability`) | Constraint / berechnete Spalte | **nein** | **Lücke — der ursprüngliche Repro** |
-| **E057** | **`MysqlIndexPartitionDdlHelper`** (Partial Index) | Index | **nein** | **Lücke** |
-| **E065** | **`MysqlDdlGenerator`** (FK auf partitionierter Tabelle) | FK-Constraint | **nein** | **Lücke** |
+| E054 | `SqliteCapabilityDdlSupport` (COMPOSITE-Typ) | Custom Type | ~~nein~~ **behoben** | — |
+| E054 | alle fünf `*ColumnConstraintHelper` (EXCLUDE) | Constraint | ~~nein~~ **behoben** | — |
+| E053 | alle fünf `*ColumnConstraintHelper` (CHECK nicht portabel) | Constraint | ~~nein~~ **behoben** | der ursprüngliche Repro, Hälfte 1 |
+| E053 | alle fünf `generateColumnSql`/`renderColumn` (Computed nicht portabel, `computedRefusal`) | berechnete Spalte | ~~nein~~ **behoben** | der ursprüngliche Repro, Hälfte 2 — **eigener Codepfad, in der ersten P1-Runde übersehen** |
+| E057 | `MysqlIndexPartitionDdlHelper` (Partial Index) | Index | ~~nein~~ **behoben** | — |
+| E065 | `MysqlDdlGenerator` (FK auf partitionierter Tabelle) | FK-Constraint | ~~nein~~ **behoben** | — |
 | E056 | `SqliteSequenceDdlSupport` / `MysqlSequenceDdlSupport` (Sequenz-Default ohne Helper-Tabelle) | *Facette* einer Spalte | n/a | Degradiert, kein Objektverlust — die Spalte entsteht |
 | E057 | `SqliteSequenceDdlSupport` (WITHOUT ROWID) | *Facette* einer Spalte | n/a | wie oben |
 | E055 | `SqliteTableDdlSupport` / `PostgresDdlGenerator` (Partitionierung ignoriert) | *Facette* einer Tabelle | n/a | Degradiert, kein Objektverlust — die Tabelle entsteht |
@@ -166,14 +167,75 @@ durch.**
   (daher funktioniert `blocksTable` für ganze Tabellen, aber nichts
   Feineres).
 
-**Was das für P1 heißt:** die vier Facetten-Fälle (E055 ×2, E056/E057-Sequenz,
-E060) bleiben unter β bewusst ohne Ausgangswirkung — das Objekt entsteht,
-nur unvollständig. Ob das für den Sequenz-Fall (E056/E057) richtig ist, ist
-eine offene Frage: eine `DEFAULT`-Klausel, die ohne Serverzwang verschwindet,
-ist näher an „trägt nicht, was verlangt wurde" als an einer reinen
-Formatfrage. Für P1 vorgeschlagen: erst die vier echten Lücken schließen
-(klar, mechanisch, direkt am Repro), die Sequenz-Frage als eigenen Punkt der
-Eignerentscheidung vorlegen statt sie hier mitzuentscheiden.
+**Was das für P1 hieß, und was blieb:** die sechs echten Lücken sind
+geschlossen (siehe unten). Die vier Facetten-Fälle (E055 ×2,
+E056/E057-Sequenz, E060) bleiben unter β bewusst ohne Ausgangswirkung — das
+Objekt entsteht, nur unvollständig. Ob das für den Sequenz-Fall (E056/E057)
+richtig ist, ist eine offene Frage: eine `DEFAULT`-Klausel, die ohne
+Serverzwang verschwindet, ist näher an „trägt nicht, was verlangt wurde" als
+an einer reinen Formatfrage. Bleibt fuer die Eignerentscheidung, statt hier
+mitentschieden zu werden.
+
+
+## P0-Fortsetzung: die sechs `SkippedObject`-Lücken geschlossen (2026-09-13)
+
+Kein eigener Sub-Slice, sondern der Teil von P0, den die Erhebung selbst
+vorhersagte: „wer die Emissionsstellen erhoben hat, hat β fast schon
+gebaut." Ohne diesen Schritt hätte P1 (`--allow-incomplete`, Exit 8) einen
+Ausgang verdrahtet, der auf einer Datenquelle (`skippedObjects`) beruht, die
+an sechs Stellen leer geblieben wäre — der Ausgang stimmte, aber aus
+Zufall, nicht aus Vollständigkeit.
+
+Gebaut und live belegt — der Repro aus der Konsumentenmeldung liefert jetzt
+`skipped_objects: 2` statt `0`:
+
+```
+⚠ Skipped [E053] computed_expression 'line_total': …
+⚠ Skipped [E053] constraint 'ck_quantity': …
+```
+
+**Sechs Emissionsstellen tragen jetzt `SkippedObject`**, fünf davon über eine
+gemeinsame Signaturerweiterung (`skipped: MutableList<SkippedObject>? = null`
+auf `generateConstraintClause`/`generateColumnSql`, real befüllt nur im
+Generate-Pfad, `null` und damit folgenlos in Diff-/Rebuild-Pfaden):
+
+- E053 CHECK/Computed nicht portabel — **alle fünf** `*ColumnConstraintHelper`.
+- E054 EXCLUDE nicht unterstützt — alle fünf (PostgreSQL rendert EXCLUDE
+  nativ und hat dort keinen Skip-Fall).
+- E054 SQLite COMPOSITE-Typ — `generateCustomTypes` bekam den Parameter neu.
+- E057 MySQL Partial Index — `generateIndices`/`generateIndex` bekamen ihn
+  neu.
+- E065 MySQL FK auf partitionierter Tabelle — an allen drei Stellen
+  (Spaltenreferenz-Loop, Constraint-Loop, `handleCircularReferences`), über
+  einen gemeinsamen `partitionedFkSkip`-Helper statt dreifacher Duplikation.
+
+**Eine Korrektur am eigenen Befund unterwegs:** Die P0-Tabelle hatte
+„E053, alle fünf `*ColumnConstraintHelper` (CHECK/Computed nicht portabel)"
+als **einen** Fund geführt. Der erste Live-Test nach der Constraint-Reparatur
+zeigte `skipped_objects: 1` — die Constraint stand drin, `line_total` nicht.
+Computed-Column-Refusal läuft über `RawSqlExpressionPortability
+.computedRefusal`, einen **eigenen** Codepfad je Dialekt
+(`generateColumnSql`/`renderColumn`, nicht `generateConstraintClause`), den
+die erste Reparatur nicht erreichte — obwohl er die Hälfte des
+namensgebenden Repros war. Nachgezogen, ebenfalls für alle fünf Dialekte,
+gleiches Muster.
+
+**Bewusst unverändert, je mit eigener Begründung im P0-Table oben:**
+E055 (Partitionierung ignoriert), E056/E057-Sequenz (Default entfällt),
+E060 (Split-Phase unsicher) — die Tabelle/Spalte/Sicht entsteht, nur eine
+Facette fehlt. Ob das für E056/E057 richtig ist, bleibt die offene Frage aus
+der Erhebung.
+
+**Belegt:** je Dialekt eine neue Spec
+(`<Dialekt>ActionRequiredSkippedObjectsTest`), die über den vollen
+`generate()`-Pfad prüft, dass CHECK/EXCLUDE/Computed als `SkippedObject` mit
+Typ, Name und Code ankommen — nicht nur als Notiz. Eine davon per absichtlich
+falscher Zusicherung als laufend belegt, Rücknahme geprüft. `detekt` schlug
+dabei einmal zu (`CyclomaticComplexMethod` in `MysqlDdlGenerator.generateTable`
+nach dem E065-Zusatz) — behoben durch echte Aufteilung
+(`inlineForeignKeyLines` extrahiert), nicht durch `@Suppress`.
+
+Grün: alle 49 Module, `a-check`, `solid-suppression-gate`.
 
 ## Ziel
 

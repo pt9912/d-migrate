@@ -51,7 +51,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
 
     // ── Custom types (ENUM, COMPOSITE, DOMAIN) ──
 
-    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> =
+    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement> =
         typeSequenceSupport.generateCustomTypes(types)
 
     // ── Sequences ────────────────────────────────
@@ -94,9 +94,13 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         table: TableDefinition,
         schema: SchemaDefinition,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>,
     ): List<String> = table.columns.inOrdinalOrder().map { (colName, col) ->
         PostgresComputedStorage.degradedNote(name, colName, col, currentServerVersion)?.let { notes += it }
-        PostgresComputedStorage.refusalNote(colName, col)?.let { notes += it }
+        PostgresComputedStorage.refusalNote(colName, col)?.let { note ->
+            notes += note
+            skipped += SkippedObject("computed_expression", colName, note.message, code = note.code)
+        }
         generateColumnSql(colName, col, schema, name)
     }
 
@@ -106,7 +110,8 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>,
         deferredConstraints: Set<Pair<String, String>>,
-        options: DdlGenerationOptions
+        options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         val notes = mutableListOf<TransformationNote>()
@@ -120,7 +125,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             )
         }
 
-        columnLines += columnLines(name, table, schema, notes)
+        columnLines += columnLines(name, table, schema, notes, skipped)
 
         // Inline foreign key constraints (non-circular, from column references)
         for ((colName, col) in table.columns.inOrdinalOrder()) {
@@ -140,7 +145,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         for (constraint in table.constraints) {
             if (options.deferForeignKeys && constraint.type == ConstraintType.FOREIGN_KEY) continue
             if ((name to constraint.name) in deferredConstraints) continue
-            generateConstraintClause(constraint, notes)?.let { columnLines += it }
+            generateConstraintClause(constraint, notes, skipped)?.let { columnLines += it }
         }
 
         // Primary key
@@ -207,7 +212,8 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
     private fun generateConstraintClause(
         constraint: ConstraintDefinition,
         notes: MutableList<TransformationNote>,
-    ): String? = columnConstraintHelper.generateConstraintClause(constraint, notes)
+        skipped: MutableList<SkippedObject>? = null,
+    ): String? = columnConstraintHelper.generateConstraintClause(constraint, notes, skipped)
 
     // ── Indices ──────────────────────────────────
 
@@ -215,6 +221,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         tableName: String,
         table: TableDefinition,
         options: DdlGenerationOptions,
+        skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         val generatedNames = indexNameAllocator.namesFor(tableName, table.indices)
         val parentIndices = table.indices.mapIndexed { position, index ->
