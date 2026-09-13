@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.3.1** (stabil, [veröffentlicht 2026-09-11](https://github.com/pt9912/d-migrate/releases/tag/v1.3.1)).
+**1.4.0** (stabil, [veröffentlicht 2026-09-13](https://github.com/pt9912/d-migrate/releases/tag/v1.4.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -174,20 +174,23 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.3.1** (2026-09-11) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Oracle ist der fünfte
-  Dialekt** und vollständig: Reverse, Generate, Migrate, Datenpfad und
-  Profiling, dazu Bitmap- und Ausdrucks-Indizes, Partitionierung, Oracle Text,
-  Routinen und Trigger, Materialized Views und `SDO_GEOMETRY`. PostgreSQL
-  trägt berechnete Spalten durch eine Migration, und ein Lauf konvergiert dort,
-  wo roher SQL-Text im Spiel ist, statt dieselbe Änderung erneut zu planen. Das
-  Container-Image läuft als **non-root** (`uid 10001`); Schreiben in einen
-  Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`. Native Binaries gibt
-  es für `linux-x64` und `windows-x64`; unter macOS führen Homebrew, die
-  JVM-Artefakte oder das Container-Image zum Ziel. 1.3.1 behebt zwei Defekte,
-  die ein Konsumentenprojekt an 1.3.0 fand: ein Lauf, der eine Sicht anlegt,
-  meldete Drift, die keine war, und ein `--execute`-Report konnte `ok` sagen,
-  obwohl der Lauf scheiterte.
+- **Aktuelles Stable** · **1.4.0** (2026-09-13) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Berechnete Spalten sind auf
+  allen fünf Dialekten vollständig**: sie werden mit Ausdruck und Speicherform
+  gelesen, gerendert, geändert wo der Server es in place kann — und benannt
+  abgelehnt, wo nicht. Dazu die Übergänge zwischen berechnet, gewöhnlich und
+  Autowert, jeder einzeln durch den ganzen Migrationspfad gemessen. Ein
+  Datenimport versucht auf keinem Ziel mehr, eine berechnete Spalte zu
+  beschreiben. `--target-version` sagt, für welchen Server ein Lauf erzeugt, und
+  „kann das Ziel das?" beantwortet eine Fähigkeit an einer Stelle statt jeder
+  Renderer für sich. Das Container-Image läuft als **non-root** (`uid 10001`);
+  Schreiben in einen Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`.
+  Native Binaries gibt es für `linux-x64` und `windows-x64`; unter macOS führen
+  Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel. 1.4.0 behebt
+  außerdem drei MySQL-Defekte, die der Release-Check zutage brachte:
+  `MODIFY COLUMN` verlor `NOT NULL`, `DEFAULT` und `AUTO_INCREMENT`; ein
+  String-Default kam als Funktionsaufruf zurück; und das Verbreitern eines
+  Autowert-Schlüssels war blockiert.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter

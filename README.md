@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.3.1**
-(stable, [released 2026-09-11](https://github.com/pt9912/d-migrate/releases/tag/v1.3.1)).
+d-migrate is a working production tool at version **1.4.0**
+(stable, [released 2026-09-13](https://github.com/pt9912/d-migrate/releases/tag/v1.4.0)).
 
 The current capabilities:
 
@@ -160,19 +160,22 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.3.1** (2026-09-11) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **Oracle is the fifth
-  dialect** and complete: reverse, generate, migrate, the data path and
-  profiling, plus bitmap and expression indexes, partitioning, Oracle Text,
-  routines and triggers, materialized views and `SDO_GEOMETRY`. PostgreSQL
-  carries computed columns through a migration, and a migration run converges
-  where raw SQL text is involved instead of replanning the same change every
-  time. The container image runs as **non-root** (`uid 10001`), so writing
+- **Current stable** · **1.4.0** (2026-09-13) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **Computed columns are
+  complete across all five dialects**: they are read with their expression and
+  storage form, rendered, changed where the server can do it in place, and
+  refused by name where it cannot — including the transitions between computed,
+  ordinary and identity columns, each one measured through the full migration
+  path. A data import can no longer try to write a computed column on any
+  target. `--target-version` says which server a run generates for, and a
+  capability answers "can the target do this?" in one place instead of at each
+  renderer. The container image runs as **non-root** (`uid 10001`), so writing
   into a bind mount needs `--user "$(id -u):$(id -g)"`. Native binaries ship
   for `linux-x64` and `windows-x64`; on macOS use Homebrew, the JVM artefacts
-  or the container image. 1.3.1 fixes two defects a consumer project found in
-  1.3.0: a run creating a view reported drift that was none, and an
-  `--execute` report could say `ok` for a run that ended in failure.
+  or the container image. 1.4.0 also fixes three MySQL defects a release check
+  surfaced: `MODIFY COLUMN` dropped `NOT NULL`, `DEFAULT` and `AUTO_INCREMENT`;
+  a string default came back as a function call; and widening an
+  auto-increment key was blocked.
 
 For per-milestone task tables and ADR pointers see the canonical
 roadmap at
