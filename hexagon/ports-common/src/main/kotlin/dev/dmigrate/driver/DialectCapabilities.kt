@@ -355,207 +355,24 @@ data class DialectCapabilities(
 ) {
     companion object {
         /**
-         * SET-Optionen, die SQL Server fuer gefilterte Indizes verlangt (und die
-         * `sqlcmd` nicht per Default setzt). Eigener Batch, damit sie fuer alle
-         * folgenden Batches der Sitzung gelten.
-         */
-        private val MSSQL_SCRIPT_PREAMBLE = listOf(
-            "SET ANSI_NULLS ON;",
-            "SET ANSI_PADDING ON;",
-            "SET ANSI_WARNINGS ON;",
-            "SET ARITHABORT ON;",
-            "SET CONCAT_NULL_YIELDS_NULL ON;",
-            "SET NUMERIC_ROUNDABORT OFF;",
-            "SET QUOTED_IDENTIFIER ON;",
-        ).joinToString("\n")
-
-        /**
          * Die Faehigkeiten des Dialekts **ohne** bekannte Zielversion.
          *
-         * Gleichbedeutend mit `forTarget(dialect, null)`: wo eine Faehigkeit an
-         * der Version haengt, antwortet sie fuer die aktuellste gemessene
-         * ([MeasuredServerVersions]). Wer das Ziel kennt, nimmt [forTarget] —
-         * dieser Einstieg bleibt fuer die Stellen, die es nicht koennen.
+         * Duenne Weiterleitung an [DialectCapabilityLookup]; die Werte
+         * liegen im Treibermodul des jeweiligen Dialekts. Wer das Ziel
+         * kennt, nimmt [forTarget].
          */
-        fun forDialect(dialect: DatabaseDialect): DialectCapabilities = forTarget(dialect, null)
+        fun forDialect(dialect: DatabaseDialect): DialectCapabilities =
+            DialectCapabilityLookup.forDialect(dialect)
 
         /**
          * Die Faehigkeiten des Ziels, **Version eingerechnet**.
          *
-         * [serverVersion] ist die Auspraegung des Lesepfads; jede Faehigkeit
-         * faengt mit `as?` die von ihr erwartete ab. `null` heisst „unbekannt"
-         * — ein Dateiziel hat keine Version.
-         *
-         * **Was „unbekannt" bedeutet, entscheidet die Faehigkeit, nicht dieser
-         * Einstieg.** Es waere bequem, hier einmal den Pin aus
-         * [MeasuredServerVersions] einzusetzen und fertig zu sein — genau das
-         * stand hier zuerst, und es kippte `supportsDropIfExists` fuer
-         * Dateiziele still von „weglassen" auf „hinschreiben". Die Faehigkeiten
-         * der einen Klasse fragen den Pin selbst, die der anderen antworten
-         * konservativ; die beiden Klassen stehen bei [MeasuredServerVersions].
+         * [serverVersion] ist die Auspraegung des Lesepfads; `null` heisst
+         * „unbekannt" — ein Dateiziel hat keine Version. Was „unbekannt"
+         * bedeutet, entscheidet die Faehigkeit, nicht dieser Einstieg; die
+         * beiden Klassen stehen bei [MeasuredServerVersions].
          */
         fun forTarget(dialect: DatabaseDialect, serverVersion: ServerVersion?): DialectCapabilities =
-            when (dialect) {
-                DatabaseDialect.POSTGRESQL -> postgresql(serverVersion as? PostgresServerVersion)
-                DatabaseDialect.MYSQL -> mysql()
-                DatabaseDialect.SQLITE -> sqlite()
-                DatabaseDialect.MSSQL -> mssql()
-                DatabaseDialect.ORACLE -> oracle(serverVersion as? OracleServerVersion)
-            }
-
-        /** `VIRTUAL` gibt es ab dieser Hauptversion; darunter ist es ein Syntaxfehler. */
-        const val POSTGRES_VIRTUAL_COMPUTED_SINCE_MAJOR: Int = 18
-
-        private fun postgresql(version: PostgresServerVersion?): DialectCapabilities = DialectCapabilities(
-            supportsComputedExpressionInPlace = version?.supportsSetExpression ?: false,
-            supportsVirtualComputedColumns =
-                (version?.major ?: MeasuredServerVersions.POSTGRESQL.major) >= POSTGRES_VIRTUAL_COMPUTED_SINCE_MAJOR,
-            supportsRawTextSandbox = true,
-            supportsViews = true,
-            supportsFunctions = true,
-            supportsProcedures = true,
-            supportsTriggers = true,
-            supportsSequences = true,
-            supportsCustomTypes = true,
-            supportsPartitioning = true,
-            supportsDisableFkChecks = false,
-            supportsTriggerDisable = true,
-            supportsTriggerStrict = true,
-            supportsSchemaParameter = true,
-            partitionChildrenAreTables = true,
-            supportsIndexIncludeColumns = true,
-            // Der Reverse liest den system-vergebenen Sequenznamen einer
-            // IDENTITY-Spalte schema-qualifiziert zurueck; gerendert wird
-            // er von keinem Dialekt, ein Soll-Schema kann ihn also nicht
-            // tragen.
-            namesIdentitySequences = false,
-            // `SERIAL` und `GENERATED ... AS IDENTITY` sind in PostgreSQL
-            // zwei verschiedene Dinge, nicht zwei Schreibweisen desselben.
-            rendersAutoIncrementAsIdentity = false,
-        )
-
-        private fun mysql(): DialectCapabilities = DialectCapabilities(
-            supportsComputedExpressionInPlace = true,
-            supportsViews = true,
-            supportsFunctions = true,
-            supportsProcedures = true,
-            supportsTriggers = true,
-            supportsSequences = false,
-            supportsCustomTypes = false,
-            supportsPartitioning = true,
-            supportsDisableFkChecks = true,
-            supportsTriggerDisable = false,
-            supportsTriggerStrict = false,
-            supportsSchemaParameter = true,
-            carriesFullTextConfiguration = false,
-        )
-
-        private fun sqlite(): DialectCapabilities = DialectCapabilities(
-            supportsComputedExpressionInPlace = true,
-            supportsViews = true,
-            supportsFunctions = false,
-            supportsProcedures = false,
-            supportsTriggers = true,
-            supportsSequences = false,
-            supportsCustomTypes = false,
-            supportsPartitioning = false,
-            namesSingleColumnConstraints = false,
-            supportsDisableFkChecks = true,
-            supportsTriggerDisable = false,
-            supportsTriggerStrict = false,
-            supportsSchemaParameter = false,
-            carriesFullTextConfiguration = false,
-        )
-            // Objekttyp-Flags = Faehigkeiten von SQL Server (2017+, ADR 0047);
-            // die Import-Modus-Flags (FK-/Trigger-Disable) beschreiben den
-            // Werkzeug-Pfad, den d-migrate fuer MSSQL nicht faehrt.
-
-            // Objekttyp-Flags = Faehigkeiten von SQL Server (2017+, ADR 0047);
-            // die Import-Modus-Flags (FK-/Trigger-Disable) beschreiben den
-            // Werkzeug-Pfad, den d-migrate fuer MSSQL nicht faehrt.
-        private fun mssql(): DialectCapabilities = DialectCapabilities(
-            supportsViews = true,
-            supportsFunctions = true,
-            supportsProcedures = true,
-            supportsTriggers = true,
-            supportsSequences = true,
-            supportsCustomTypes = false,
-            supportsPartitioning = true,
-            supportsDisableFkChecks = false,
-            supportsTriggerDisable = false,
-            supportsTriggerStrict = false,
-            supportsSchemaParameter = true,
-            partitionChildrenAreTables = false,
-            batchSeparator = "GO",
-            scriptPreamble = MSSQL_SCRIPT_PREAMBLE,
-            requiresPrimaryKeyForSkip = true,
-            supportsIndexIncludeColumns = true,
-            supportsClusteredIndexes = true,
-            namesFullTextIndexes = false,
-            carriesFullTextConfiguration = false,
-            namesPartitions = false,
-            supportsListPartitioning = false,
-        )
-            // Objekttyp-Flags nach dem Oracle-Inventar (ADR 0052).
-            // supportsCustomTypes bleibt bewusst false: Oracle-Objekttypen
-            // (CREATE TYPE) bildet d-migrate nicht ab.
-            // batchSeparator bleibt null. `/` ist zwar die SQL*Plus/SQLcl-
-            // Konvention -- aber es bedeutet etwas anderes als T-SQLs `GO`:
-            // `GO` beendet einen Batch, `/` fuehrt den Puffer ERNEUT aus.
-            // Hinter einer mit `;` abgeschlossenen Anweisung laeuft sie damit
-            // zweimal; jedes `CREATE SEQUENCE` meldete beim zweiten Durchlauf
-            // `ORA-00955`, bei einem Datenskript waere es ein doppelter INSERT
-            // gewesen. `/` gehoert nur zu PL/SQL-Bloecken und dort ANSTELLE
-            // des `;` -- also an die einzelne Anweisung
-            // (`DdlStatement.scriptTerminator`), nicht an den Dialekt.
-            // partitionChildrenAreTables=false: Oracle-Partitionen brauchen wie
-            // bei MySQL die `PARTITION (name)`-Klausel, sind keine eigenstaendig
-            // adressierbaren Relationen. namesFullTextIndexes=true: Oracle-Text-
-            // Indizes (CONTEXT/CTXCAT) tragen anders als MSSQL einen Namen.
-
-            // Objekttyp-Flags nach dem Oracle-Inventar (ADR 0052).
-            // supportsCustomTypes bleibt bewusst false: Oracle-Objekttypen
-            // (CREATE TYPE) bildet d-migrate nicht ab.
-            // batchSeparator bleibt null. `/` ist zwar die SQL*Plus/SQLcl-
-            // Konvention -- aber es bedeutet etwas anderes als T-SQLs `GO`:
-            // `GO` beendet einen Batch, `/` fuehrt den Puffer ERNEUT aus.
-            // Hinter einer mit `;` abgeschlossenen Anweisung laeuft sie damit
-            // zweimal; jedes `CREATE SEQUENCE` meldete beim zweiten Durchlauf
-            // `ORA-00955`, bei einem Datenskript waere es ein doppelter INSERT
-            // gewesen. `/` gehoert nur zu PL/SQL-Bloecken und dort ANSTELLE
-            // des `;` -- also an die einzelne Anweisung
-            // (`DdlStatement.scriptTerminator`), nicht an den Dialekt.
-            // partitionChildrenAreTables=false: Oracle-Partitionen brauchen wie
-            // bei MySQL die `PARTITION (name)`-Klausel, sind keine eigenstaendig
-            // adressierbaren Relationen. namesFullTextIndexes=true: Oracle-Text-
-            // Indizes (CONTEXT/CTXCAT) tragen anders als MSSQL einen Namen.
-        private fun oracle(version: OracleServerVersion?): DialectCapabilities = DialectCapabilities(
-            supportsDropIfExists = version?.supportsDropIfExists ?: false,
-            rendersViewRefreshSetting = true,
-            supportsViews = true,
-            supportsFunctions = true,
-            supportsProcedures = true,
-            supportsTriggers = true,
-            supportsSequences = true,
-            supportsCustomTypes = false,
-            supportsPartitioning = true,
-            supportsDisableFkChecks = true,
-            supportsTriggerDisable = false,
-            supportsTriggerStrict = false,
-            supportsSchemaParameter = true,
-            partitionChildrenAreTables = false,
-            requiresPrimaryKeyForSkip = true,
-            supportsIndexIncludeColumns = false,
-            supportsClusteredIndexes = false,
-            namesFullTextIndexes = true,
-            namesIdentitySequences = false,
-            supportsBitmapIndexes = true,
-            carriesFullTextConfiguration = false,
-            carriesPartialIndexPredicate = false,
-            carriesPartitionLowerBounds = false,
-            carriesPartitionHashModulus = false,
-            separatesDateFromDateTime = false,
-            batchSeparator = null,
-        )
+            DialectCapabilityLookup.forTarget(dialect, serverVersion)
     }
 }

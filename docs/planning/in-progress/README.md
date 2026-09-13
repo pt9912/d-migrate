@@ -58,6 +58,7 @@ festgehalten.
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
 | [`cli-data-seed.md`](cli-data-seed.md) | Per-Feature-Umbrella | `d-migrate data seed`: Testdaten generieren + importieren. Vier Phasen P1-P4; P1 (deterministischer Generator-Kern) und P2 (`--rules`) geliefert (siehe [`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md)/[`ImpPlan-1.3.0-cli-data-seed-p2.md`](../done/ImpPlan-1.3.0-cli-data-seed-p2.md) in `done/`); P3 (`--ai-backend`) bleibt geplant. |
+| [`capability-tables-driver-interface.md`](capability-tables-driver-interface.md) | Per-Feature-Umbrella | Die fuenf statischen Capability-Tabellen tragen keine `when (dialect)`-Zweige mehr: die Werte liegen je Dialekt im Treibermodul, gefunden ueber den neuen Port `DialectCapabilityProvider` in `ports-common` (nicht ueber `DatabaseDriverRegistry` — `ports` haengt von `ports-read` ab, das haette den Modulgraphen umgedreht). P0 gemessen, P1-P3 gebaut und ueber alle 49 Module gruen. Offen: `SequenceCapabilityDefaults`, `RoutineCapabilityDefaults`, `TriggerCapabilityDefaults` und `SpatialProfilePolicy` stehen noch im Hexagon. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

@@ -10,14 +10,39 @@ import dev.dmigrate.driver.data.TableLister
  * dialect provides an implementation that bundles all driver-specific
  * capabilities behind this facade.
  *
+ * Faehigkeiten (`kann das Ziel das?`) beantwortet jeder Treiber ueber
+ * [DialectCapabilityProvider] selbst — die Werte liegen im Treibermodul,
+ * nicht in einer geteilten Tabelle. Wer nur die Auskunft braucht und keine
+ * Laufzeit, fragt [DialectCapabilityLookup] statt diesen Port: der Anbieter
+ * wird eigenstaendig ueber den `ServiceLoader` gefunden und braucht weder
+ * Registry noch Bootstrap.
+ *
  * [TypeMapper] is intentionally NOT exposed here — it is an internal
  * implementation detail of [DdlGenerator] (via AbstractDdlGenerator).
  * Consumers who obtain a [DdlGenerator] through [ddlGenerator] get
  * type-mapping implicitly; transfer compatibility is exposed structurally via
  * [transferCompatibility] without leaking the mapper.
  */
-interface DatabaseDriver {
-    val dialect: DatabaseDialect
+interface DatabaseDriver : DialectCapabilityProvider {
+    override val dialect: DatabaseDialect
+
+    /**
+     * Die Faehigkeiten dieses Ziels.
+     *
+     * Der Default loest ueber [DialectCapabilityLookup] auf und landet damit
+     * beim [DialectCapabilityProvider] desselben Treibermoduls — kein
+     * Kreis, denn die Werte liegen in einem eigenen Objekt neben dem
+     * Treiber, nicht im Treiber. Die fuenf echten Treiber ueberschreiben
+     * trotzdem: der direkte Weg spart den ServiceLoader und sagt am
+     * Treiber, wo seine Antwort steht.
+     *
+     * Der Default ist da, damit eine Test-Attrappe nicht Werte erfinden
+     * muss, die sie nicht kennt. Ruft sie die Frage nie, kostet er nichts;
+     * ruft sie sie doch, bekommt sie die echte Antwort oder einen
+     * benannten Fehlschlag — nie eine ausgedachte.
+     */
+    override fun capabilities(serverVersion: ServerVersion?): DialectCapabilities =
+        DialectCapabilityLookup.forTarget(dialect, serverVersion)
 
     fun ddlGenerator(): DdlGenerator
     fun dataReader(): DataReader

@@ -12,7 +12,6 @@ import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlStatement
-import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.SqlIdentifiers
 
 /**
@@ -286,7 +285,7 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
         if (index.where.isNullOrBlank()) {
             sqlText
         } else {
-            DialectCapabilities.forDialect(DatabaseDialect.MSSQL).scriptPreamble
+            MssqlCapabilities.capabilities(null).scriptPreamble
                 ?.let { "$it\n$sqlText" } ?: sqlText
         }
 

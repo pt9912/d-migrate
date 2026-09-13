@@ -1,6 +1,6 @@
 # Capability-Tabellen ans `DatabaseDriver`-Interface statt statischer Tabellen im Hexagon
 
-> **Status:** Draft mit Scope (2026-09-05).
+> **Status:** In Arbeit seit 2026-09-13 (P0 gemessen, P1–P3 gebaut).
 > **Trigger:** Beim Oracle-Slice-2-Bau fiel auf, dass fünf statische
 > Objekte in `hexagon/ports-common`/`hexagon/ports-read`
 > (`DialectCapabilities`, `SequenceCapabilityDefaults`,
@@ -101,6 +101,55 @@ kann. Zwei Teile:
 Ohne beides verschiebt der Umbau einen reinen Wert in einen Zustand — und
 tauscht eine `when (dialect)`-Tabelle gegen eine Klasse von Testfehlern, die
 es heute nicht gibt.
+
+## Wie es gebaut wurde — und wo es vom Entwurf abweicht
+
+Drei Abweichungen, jede mit einem Grund, der beim Bauen entstand.
+
+**1. Die Naht liegt in `ports-common`, nicht an `DatabaseDriverRegistry`.**
+Der Entwurf wollte über die Registry auflösen. Das geht für `ports-read`
+nicht: `hexagon/ports` (wo die Registry wohnt) hängt **von** `ports-read` ab,
+nicht umgekehrt — eine Auflösung über die Registry hätte den Modulgraphen
+umgedreht. `ports-read` hat aber zwei Aufrufstellen (`DdlScript`:
+`batchSeparator`, `scriptPreamble`).
+
+Deshalb ein eigener Port im untersten Ports-Modul:
+`DialectCapabilityProvider` + `DialectCapabilityLookup`. Der Lookup lädt
+selbst über den `ServiceLoader` und **träge** — er braucht weder Registry noch
+`RuntimeBootstrap`. Damit ist die in P0 gemessene Laufzeit-Abhängigkeit gar
+nicht erst entstanden: wer die Treiber-JARs auf dem Klassenpfad hat, bekommt
+eine Antwort.
+
+`DatabaseDriver` **erweitert** den neuen Port, jeder der fünf Treiber
+implementiert ihn — die vom Entwurf verlangte Interface-Erweiterung ist damit
+da, nur eine Ebene tiefer verankert.
+
+**2. `forDialect`/`forTarget` bleiben als dünne Weiterleitung stehen.** Der
+Entwurf wollte 20 Aufrufstellen auf `Registry.get(dialect).xCapability()`
+umschreiben. Das Akzeptanzkriterium ist aber, dass die `when (dialect)`-Tabelle
+verschwindet — und das tut sie. Die Frage behält ihren Namen, der Diff bleibt
+lesbar, und die Aufrufstellen ändern sich nicht. Wo ein **Treiber** seine
+eigene Antwort braucht (PG-Computed-Storage, MSSQL-Präambel), ruft er jetzt
+sein lokales Objekt, statt über den ServiceLoader zu gehen.
+
+**3. Keine Capability-Attrappe, sondern die echten Anbieter im Test.** P0 sagte
+voraus, dass `hexagon/application`-Tests keinen Treiber sehen. Sie bekommen die
+fünf Module als `testRuntimeOnly`: der ServiceLoader findet die **echten**
+Werte, Testcode kann trotzdem keinen Treibertyp importieren, und `a-check`
+prüft Importe — die Schichtregel bleibt in den Quellen unberührt. Eine
+Attrappe mit erfundenen Werten wäre die schlechtere Wahl gewesen: dann prüften
+dialektabhängige Tests gegen Fantasie statt gegen den Dialekt.
+`DialectCapabilityLookup.register(...)` gibt es trotzdem — für Tests, die
+bewusst eine abweichende Antwort setzen wollen.
+
+## Was dabei auffiel, aber nicht dazugehört
+
+`batchSeparator` und `scriptPreamble` sind nach dem Maßstab dieses Plans gar
+keine Fähigkeiten, sondern **Syntax** — dieselbe Klasse, die der Plan für
+`SqlIdentifiers` ausdrücklich ausschließt („das ist Syntax, keine
+Capability"). Sie beschreiben nicht, was ein Server kann, sondern wie ein
+Skript für ihn geschrieben wird. Sie sind vorerst mitgewandert; ob sie an eine
+eigene Naht gehören, ist eine Frage für danach, kein Blocker hier.
 
 ## Scope-Skizze
 

@@ -6,9 +6,11 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.NeutralTypeCanonicalizer
 import dev.dmigrate.driver.PreGenerationValidator
 import dev.dmigrate.driver.SchemaReader
+import dev.dmigrate.driver.ServerVersion
 import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.StructuralTransferTypeCompatibility
 import dev.dmigrate.driver.TransferTypeCompatibility
@@ -23,6 +25,11 @@ import dev.dmigrate.driver.sqliteContext
  */
 class SqliteDriver : DatabaseDriver {
     override val dialect = DatabaseDialect.SQLITE
+
+    /** Die Werte liegen in [SqliteCapabilities] — dem Ort, der den Dialekt kennt. */
+    override fun capabilities(serverVersion: ServerVersion?): DialectCapabilities =
+        SqliteCapabilities.capabilities(serverVersion)
+
     override fun ddlGenerator(): DdlGenerator = SqliteDdlGenerator()
     override fun dataReader(): DataReader = dataReader(null)
 

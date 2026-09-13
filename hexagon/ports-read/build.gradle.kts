@@ -4,6 +4,18 @@ plugins {
 
 dependencies {
     api(project(":hexagon:ports-common"))
+
+    // Capability-Tabellen liegen seit dem Driver-Interface-Slice im Treibermodul
+    // und werden ueber den ServiceLoader gefunden (DialectCapabilityLookup).
+    // Tests dieser Schicht pruefen dialektabhaengiges Verhalten und brauchen
+    // deshalb die ECHTEN Antworten, nicht erfundene. `testRuntimeOnly` gibt sie
+    // ihnen, ohne dass Testcode einen Treibertyp importieren koennte — die
+    // Schichtregel (a-check prueft Importe) bleibt unberuehrt.
+    testRuntimeOnly(project(":adapters:driven:driver-postgresql"))
+    testRuntimeOnly(project(":adapters:driven:driver-mysql"))
+    testRuntimeOnly(project(":adapters:driven:driver-sqlite"))
+    testRuntimeOnly(project(":adapters:driven:driver-mssql"))
+    testRuntimeOnly(project(":adapters:driven:driver-oracle"))
 }
 
 kover {

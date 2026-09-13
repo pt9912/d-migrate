@@ -3,10 +3,12 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.NeutralTypeCanonicalizer
 import dev.dmigrate.driver.SchemaReader
-import dev.dmigrate.driver.TransferTypeCompatibility
+import dev.dmigrate.driver.ServerVersion
 import dev.dmigrate.driver.StructuralTransferTypeCompatibility
+import dev.dmigrate.driver.TransferTypeCompatibility
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.DataWriter
@@ -20,6 +22,11 @@ import dev.dmigrate.driver.data.TableLister
  */
 class MssqlDriver : DatabaseDriver {
     override val dialect = DatabaseDialect.MSSQL
+
+    /** Die Werte liegen in [MssqlCapabilities] — dem Ort, der den Dialekt kennt. */
+    override fun capabilities(serverVersion: ServerVersion?): DialectCapabilities =
+        MssqlCapabilities.capabilities(serverVersion)
+
     override fun urlBuilder(): JdbcUrlBuilder = MssqlJdbcUrlBuilder()
     override fun schemaReader(): SchemaReader = MssqlSchemaReader()
     override fun tableLister(): TableLister = MssqlTableLister()

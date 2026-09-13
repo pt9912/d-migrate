@@ -3,8 +3,10 @@ package dev.dmigrate.driver.oracle
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.NeutralTypeCanonicalizer
 import dev.dmigrate.driver.SchemaReader
+import dev.dmigrate.driver.ServerVersion
 import dev.dmigrate.driver.StructuralTransferTypeCompatibility
 import dev.dmigrate.driver.TransferTypeCompatibility
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
@@ -23,6 +25,11 @@ import dev.dmigrate.driver.data.TableLister
  */
 class OracleDriver : DatabaseDriver {
     override val dialect = DatabaseDialect.ORACLE
+
+    /** Die Werte liegen in [OracleCapabilities] — dem Ort, der den Dialekt kennt. */
+    override fun capabilities(serverVersion: ServerVersion?): DialectCapabilities =
+        OracleCapabilities.capabilities(serverVersion)
+
     override fun urlBuilder(): JdbcUrlBuilder = OracleJdbcUrlBuilder()
     override fun schemaReader(): SchemaReader = OracleSchemaReader()
     override fun tableLister(): TableLister = OracleTableLister()

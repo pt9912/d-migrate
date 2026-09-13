@@ -3,7 +3,6 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.PostgresServerVersion
 import dev.dmigrate.driver.RawSqlExpressionPortability
@@ -36,9 +35,7 @@ internal object PostgresComputedStorage {
         !computed.stored && !supportsVirtual(serverVersion)
 
     private fun supportsVirtual(serverVersion: PostgresServerVersion?): Boolean =
-        DialectCapabilities
-            .forTarget(DatabaseDialect.POSTGRESQL, serverVersion)
-            .supportsVirtualComputedColumns
+        PostgresCapabilities.capabilities(serverVersion).supportsVirtualComputedColumns
 
     /**
      * Ob der Ausdruck auf PostgreSQL ueberhaupt gilt.
@@ -65,7 +62,7 @@ internal object PostgresComputedStorage {
      */
     fun degradedMessage(colName: String, serverVersion: PostgresServerVersion?): String {
         val where = serverVersion?.let { "PostgreSQL ${it.major}.${it.minor}" }
-            ?: "PostgreSQL below ${DialectCapabilities.POSTGRES_VIRTUAL_COMPUTED_SINCE_MAJOR}"
+            ?: "PostgreSQL below ${PostgresCapabilities.VIRTUAL_COMPUTED_SINCE_MAJOR}"
         return "Column '$colName' is declared as a virtual computed column, but $where has no virtual form; " +
             "it was rendered as STORED and the value is kept on disk."
     }
