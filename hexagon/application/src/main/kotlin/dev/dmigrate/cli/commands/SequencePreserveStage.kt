@@ -6,7 +6,6 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.PreserveWindowIsolation
 import dev.dmigrate.driver.SequenceCapability
@@ -68,7 +67,6 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
 object SequencePreserveStage {
 
     /** Codes the stage emits; classifier mapping in [PlannerBlockerClassifier]. */
-    private const val CONFIG_INVALID_CODE = PlannerBlockerClassifier.SEQUENCE_PRESERVE_CONFIG_INVALID_CODE
     private const val REQUIRES_DB_TARGET_CODE = PlannerBlockerClassifier.SEQUENCE_PRESERVE_REQUIRES_DB_TARGET_CODE
     private const val NOT_SUPPORTED_BY_DIALECT_CODE =
         PlannerBlockerClassifier.SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT_CODE
@@ -128,7 +126,6 @@ object SequencePreserveStage {
             }
         }
         if (candidates.isEmpty()) return Outcome.NotRun
-        configInvalidIfMysqlNeedsIt(candidates, plan)?.let { return it }
 
         // C.1 capability gate: every candidate kind MUST be in the
         // dialect's protectedSequenceOperations allowlist
@@ -366,42 +363,6 @@ object SequencePreserveStage {
         plan: DiffResult,
         coreDialect: RenameProjectionDialect,
     ): List<Candidate> = plan.operations.mapNotNull { op -> classifyCandidate(op, plan, coreDialect) }
-
-    // ── MySQL initial config check (§6.4.4) ────────────────────────────
-
-    private fun configInvalidIfMysqlNeedsIt(candidates: List<Candidate>, plan: DiffResult): Outcome? {
-        val hasMysqlCandidates = candidates.any { it.probeRef.dialect == RenameProjectionDialect.MYSQL }
-        if (!hasMysqlCandidates) return null
-        if (MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY.isEmpty()) {
-            return failedSingleDiagnostic(
-                CONFIG_INVALID_CODE,
-                "MySQL sequence metadata is missing supported managed_by markers; " +
-                    "cannot perform a deterministic preserve run.",
-                plan = plan,
-            )
-        }
-        if (MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS.isEmpty()) {
-            return failedSingleDiagnostic(
-                CONFIG_INVALID_CODE,
-                "MySQL sequence metadata is missing supported format versions; " +
-                    "cannot perform a deterministic preserve run.",
-                plan = plan,
-            )
-        }
-        return null
-    }
-
-    private fun failedSingleDiagnostic(code: String, message: String, plan: DiffResult): Outcome.Failed =
-        Outcome.Failed(
-            diagnostics = listOf(
-                DiffDiagnostic(
-                    code = code,
-                    message = message,
-                    severity = DiffDiagnostic.Severity.BLOCKER,
-                ),
-            ),
-            plan = plan,
-        )
 
     // ── Atomic batch construction + plan augmentation ──────────────────
 

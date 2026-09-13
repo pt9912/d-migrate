@@ -2,7 +2,6 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
-import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult

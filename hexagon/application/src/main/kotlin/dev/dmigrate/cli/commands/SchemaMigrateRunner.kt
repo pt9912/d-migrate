@@ -116,6 +116,13 @@ class SchemaMigrateRunner(
      */
     private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
     /**
+     * `mysql-sequenz-kanonizitaet-hinter-einen-port.md`: welche
+     * Deklarationen der Plan erzeugt, wenn der Live-Probe nicht
+     * laeuft. Vom treibenden CLI gebunden; siehe
+     * [SchemaMigrateRenderPipeline].
+     */
+    private val mysqlSequenceCanonicityPlanner: MysqlSequenceCanonicityPlannerFn? = null,
+    /**
      * Das Urteil ueber rohen Ausdruckstext gegen den Zieldialekt. Vom
      * treibenden CLI gebunden; ohne Bindung prueft der Lauf nicht.
      */
@@ -190,6 +197,7 @@ class SchemaMigrateRunner(
         sqliteCastPreflightProbe = sqliteCastPreflightProbe,
         checkPreflightProbe = checkPreflightProbe,
         mysqlSequenceCanonicityProbe = mysqlSequenceCanonicityProbe,
+        mysqlSequenceCanonicityPlanner = mysqlSequenceCanonicityPlanner,
         rawSqlPortability = rawSqlPortability,
     )
 

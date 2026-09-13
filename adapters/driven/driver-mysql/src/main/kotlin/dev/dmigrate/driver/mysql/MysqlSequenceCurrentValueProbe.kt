@@ -1,7 +1,6 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
-import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import java.sql.Connection
 import java.sql.SQLException

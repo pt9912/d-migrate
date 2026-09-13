@@ -325,7 +325,7 @@ class MysqlDiffSequenceOpsDriftGateTest : FunSpec({
             ))),
         )
         val addColumnOp = plan.operations.filterIsInstance<DiffOperation.AddColumn>().single()
-        val triggerName = dev.dmigrate.driver.MysqlSequenceSupportNaming.triggerName("orders", "number")
+        val triggerName = MysqlSequenceSupportNaming.triggerName("orders", "number")
         val r = gen.generateUp(
             plan,
             helperOptionsWith(listOf(MysqlSequenceCanonicityDeclaration(

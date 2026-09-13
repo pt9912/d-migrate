@@ -70,6 +70,36 @@ class SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest : FunSpec({
         ),
     )
 
+    /**
+     * `mysql-sequenz-kanonizitaet-hinter-einen-port.md`: the real
+     * plan-walk lives in `driver-mysql`'s
+     * `MysqlSequenceCanonicityPlanner` now, which `hexagon/application`
+     * test code cannot import (layering). This fixture only exercises
+     * `CreateSequence` ops, so a minimal SEQUENCE_ROW-only stand-in
+     * suffices — it mirrors the production walk for exactly the op
+     * kinds this file's fixtures produce.
+     */
+    fun fakeMysqlSequencePlanner(): MysqlSequenceCanonicityPlannerFn = { diff, status, sqlHash, problem ->
+        diff.operations.mapNotNull { op ->
+            val name = when (op) {
+                is DiffOperation.CreateSequence -> op.objectRef.rootName
+                is DiffOperation.AlterSequence -> op.objectRef.rootName
+                is DiffOperation.DropSequence -> op.objectRef.rootName
+                is DiffOperation.RenameSequence -> op.fromName
+                else -> return@mapNotNull null
+            }
+            MysqlSequenceCanonicityDeclaration(
+                operationId = op.id,
+                dialect = "mysql",
+                kind = MysqlSequenceCanonicityKind.SEQUENCE_ROW,
+                objectName = name,
+                status = status,
+                sqlHash = sqlHash,
+                problem = problem,
+            )
+        }
+    }
+
     fun fakeRendered(opIds: Set<String> = setOf("op-1")) = MigrationDdlResult(
         statements = listOf(
             MigrationDdlStatement(
@@ -141,6 +171,7 @@ class SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest : FunSpec({
             },
             executor = executor,
             mysqlSequenceCanonicityProbe = probe,
+            mysqlSequenceCanonicityPlanner = fakeMysqlSequencePlanner(),
             atomicWriter = { p, c -> Files.writeString(p, c) },
             renderReport = { report, _ ->
                 capturedReport.value = report
@@ -299,6 +330,7 @@ class SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest : FunSpec({
                     ),
                 )
             },
+            mysqlSequenceCanonicityPlanner = fakeMysqlSequencePlanner(),
             atomicWriter = { p, c -> Files.writeString(p, c) },
             renderReport = { report, _ ->
                 capturedReport.value = report

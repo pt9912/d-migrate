@@ -101,6 +101,14 @@ internal class SchemaMigrateRenderPipeline(
      */
     private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
     /**
+     * `mysql-sequenz-kanonizitaet-hinter-einen-port.md`: welche
+     * Deklarationen der Plan erzeugt, wenn der Live-Probe nicht
+     * laeuft (Datei-Ziel oder Policy). Vom treibenden CLI auf
+     * `driver-mysql`s `MysqlSequenceCanonicityPlanner` gebunden;
+     * null in Testpfaden, die keine MySQL-Deklarationen brauchen.
+     */
+    private val mysqlSequenceCanonicityPlanner: MysqlSequenceCanonicityPlannerFn? = null,
+    /**
      * Das Urteil ueber rohen Ausdruckstext. Vom treibenden CLI gebunden; ohne
      * Bindung prueft der Lauf nicht — dieselbe Bauweise wie bei den
      * Preflight-Sonden darueber.
@@ -136,7 +144,9 @@ internal class SchemaMigrateRenderPipeline(
             probe = probeOutcome,
             cast = runCastPreflight(request, targetOp, dialect, effectivePlan, preflightPlan, overlayPreflight),
             check = runCheckPreflight(request, targetOp, dialect, effectivePlan, preflightPlan, overlayPreflight),
-            mysqlSequence = runMysqlSequenceCanonicity(request, targetOp, dialect, effectivePlan, overlayPreflight),
+            mysqlSequence = runMysqlSequenceCanonicity(
+                request, targetOp, dialect, effectivePlan, preflightPlan, overlayPreflight,
+            ),
             preserve = preserveOutcome,
         )
         val renderOptions = buildRenderOptions(
@@ -192,6 +202,7 @@ internal class SchemaMigrateRenderPipeline(
     } else {
         MigrationPreflightPlanner.plan(
             sqliteCastPreflightPlanner,
+            mysqlSequenceCanonicityPlanner,
             request,
             targetOp,
             dialect,
@@ -257,6 +268,7 @@ internal class SchemaMigrateRenderPipeline(
         targetOp: CompareOperand,
         dialect: DatabaseDialect,
         plan: DiffResult,
+        preflightPlan: MigrationPreflightPlan,
         overlayPreflight: MigrationOverlayPreflightResult,
     ): MysqlSequenceCanonicityStage.Outcome = if (overlayPreflight.hasBlockers) {
         MysqlSequenceCanonicityStage.Outcome.NotRun
@@ -267,6 +279,7 @@ internal class SchemaMigrateRenderPipeline(
             targetOp,
             dialect,
             plan,
+            preflightPlan,
         )
     }
 

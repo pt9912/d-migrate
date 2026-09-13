@@ -69,10 +69,10 @@ Prüfungen wurden dabei **echter**:
   sie die Sequenz aus dem **Soll**-Schema mitgibt und sie leer lässt, wenn das
   Schema sie nicht führt.
 
-## Was offen bleibt
+## Was offen blieb (erledigt)
 
 Drei MySQL-Regelobjekte (`MysqlSequenceSupportNaming`,
-`MysqlCheckEnforcementResolver`, `MysqlSequenceCanonicityGate`) bleiben in
-`hexagon/ports-read`, weil drei Stages der Anwendungsschicht sie benutzen.
-Eigenes Ticket:
-[`next/mysql-sequenz-kanonizitaet-hinter-einen-port.md`](../next/mysql-sequenz-kanonizitaet-hinter-einen-port.md).
+`MysqlCheckEnforcementResolver`, `MysqlSequenceCanonicityGate`) lagen noch in
+`hexagon/ports-read`, weil drei Stages der Anwendungsschicht sie benutzten.
+Eigenes Ticket, abgeschlossen:
+[`mysql-sequenz-kanonizitaet-hinter-einen-port.md`](mysql-sequenz-kanonizitaet-hinter-einen-port.md).

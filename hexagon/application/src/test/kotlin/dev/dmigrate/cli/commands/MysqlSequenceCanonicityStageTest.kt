@@ -25,9 +25,14 @@ import java.nio.file.Path
 /**
  * E.3 MySQL Sequence Drift-Check Sub-Slice C: pins the
  * application-layer stage's skip / succeed / fail routing.
- * The driver-adapter side of the probe lives in `driver-mysql`;
- * here we exercise the dispatch logic that decides whether to
- * call it at all and how to surface a thrown exception.
+ *
+ * `mysql-sequenz-kanonizitaet-hinter-einen-port.md`: the stage no
+ * longer walks the plan itself — it consumes the already-planned
+ * [MigrationPreflightPlan.mysqlSequenceCanonicity] declarations
+ * (built by `driver-mysql`'s `MysqlSequenceCanonicityPlanner`,
+ * exercised in its own test there). This file pins only the glue:
+ * skip conditions, and that a probe exception `copy`s the supplied
+ * declarations to `PROBE_RUNTIME_ERROR` without re-deriving them.
  */
 class MysqlSequenceCanonicityStageTest : FunSpec({
 
@@ -60,6 +65,18 @@ class MysqlSequenceCanonicityStageTest : FunSpec({
     fun dbTarget(dialect: String) = CompareOperand.Database(dialect)
     fun fileTarget() = CompareOperand.File(Path.of("current.yaml"))
 
+    fun notRunRow(operationId: String, objectName: String) = MysqlSequenceCanonicityDeclaration(
+        operationId = operationId,
+        dialect = "mysql",
+        kind = MysqlSequenceCanonicityKind.SEQUENCE_ROW,
+        objectName = objectName,
+        status = MysqlSequenceCanonicityStatus.NOT_RUN_POLICY,
+        sqlHash = "not-run",
+    )
+
+    fun preflightPlanWith(vararg declarations: MysqlSequenceCanonicityDeclaration) =
+        MigrationPreflightPlan(mysqlSequenceCanonicity = declarations.toList())
+
     // ── Skip paths return NotRun ────────────────────────────────
 
     test("file target → NotRun") {
@@ -69,6 +86,7 @@ class MysqlSequenceCanonicityStageTest : FunSpec({
             target = fileTarget(),
             dialect = DatabaseDialect.MYSQL,
             plan = planWithSequenceAdd(),
+            preflightPlan = MigrationPreflightPlan.EMPTY,
         ) shouldBe MysqlSequenceCanonicityStage.Outcome.NotRun
     }
 
@@ -80,6 +98,7 @@ class MysqlSequenceCanonicityStageTest : FunSpec({
                 target = dbTarget(dialect.name.lowercase()),
                 dialect = dialect,
                 plan = planWithSequenceAdd(),
+                preflightPlan = MigrationPreflightPlan.EMPTY,
             ) shouldBe MysqlSequenceCanonicityStage.Outcome.NotRun
         }
     }
@@ -91,16 +110,18 @@ class MysqlSequenceCanonicityStageTest : FunSpec({
             target = dbTarget("mysql"),
             dialect = DatabaseDialect.MYSQL,
             plan = planWithSequenceAdd(),
+            preflightPlan = preflightPlanWith(notRunRow("op-1", "order_seq")),
         ) shouldBe MysqlSequenceCanonicityStage.Outcome.NotRun
     }
 
-    test("execute against MySQL with no sequence-related ops in plan → NotRun") {
+    test("execute against MySQL with an empty preflight plan → NotRun (nothing to probe)") {
         MysqlSequenceCanonicityStage.run(
             probe = { _, _, _ -> emptyList() },
             request = requestExecuteDb("mysql"),
             target = dbTarget("mysql"),
             dialect = DatabaseDialect.MYSQL,
             plan = planWithoutSequenceOps(),
+            preflightPlan = MigrationPreflightPlan.EMPTY,
         ) shouldBe MysqlSequenceCanonicityStage.Outcome.NotRun
     }
 
@@ -155,6 +176,8 @@ class MysqlSequenceCanonicityStageTest : FunSpec({
         // for the column-bound support trigger. The stage must
         // run the probe even without an explicit Sequence-Op so
         // the gate can block on an operator-modified trigger.
+        val plan = planWithColumnDefaultOnly()
+        val addColumnOp = plan.operations.filterIsInstance<DiffOperation.AddColumn>().single()
         val canned = MysqlSequenceCanonicityDeclaration(
             operationId = "op-x",
             dialect = "mysql",
@@ -168,30 +191,50 @@ class MysqlSequenceCanonicityStageTest : FunSpec({
             request = requestExecuteDb("mysql"),
             target = dbTarget("mysql"),
             dialect = DatabaseDialect.MYSQL,
-            plan = planWithColumnDefaultOnly(),
+            plan = plan,
+            preflightPlan = preflightPlanWith(
+                MysqlSequenceCanonicityDeclaration(
+                    operationId = addColumnOp.id,
+                    dialect = "mysql",
+                    kind = MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
+                    objectName = "dmg_seq_orders_number_xyz_bi",
+                    status = MysqlSequenceCanonicityStatus.NOT_RUN_POLICY,
+                    sqlHash = "not-run",
+                ),
+            ),
         )
         outcome shouldBe MysqlSequenceCanonicityStage.Outcome.Succeeded(listOf(canned))
     }
 
-    test("AddColumn probe exception → Failed, stamps SUPPORT_TRIGGER PROBE_RUNTIME_ERROR with canonical trigger name") {
+    test("AddColumn probe exception → Failed, copies the planned SUPPORT_TRIGGER declaration to PROBE_RUNTIME_ERROR") {
         val plan = planWithColumnDefaultOnly()
         val addColumnOp = plan.operations.filterIsInstance<DiffOperation.AddColumn>().single()
+        val planned = MysqlSequenceCanonicityDeclaration(
+            operationId = addColumnOp.id,
+            dialect = "mysql",
+            kind = MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
+            objectName = "dmg_seq_orders_number_deadbeef00_bi",
+            status = MysqlSequenceCanonicityStatus.NOT_RUN_POLICY,
+            sqlHash = "not-run",
+        )
         val outcome = MysqlSequenceCanonicityStage.run(
             probe = { _, _, _ -> error("permission denied") },
             request = requestExecuteDb("mysql"),
             target = dbTarget("mysql"),
             dialect = DatabaseDialect.MYSQL,
             plan = plan,
+            preflightPlan = preflightPlanWith(planned),
         )
         val failed = outcome as MysqlSequenceCanonicityStage.Outcome.Failed
         failed.message shouldContain "permission denied"
-        // Exactly one declaration for the AddColumn op, kind
-        // SUPPORT_TRIGGER, op-id matches so the renderer-gate in
-        // `emitSupportTriggerForColumn` can attribute the block.
+        // Exactly the planned declaration, status flipped, objectName
+        // untouched — the stage does not re-derive the trigger name.
         val stamped = failed.declarations.single()
         stamped.operationId shouldBe addColumnOp.id
         stamped.kind shouldBe MysqlSequenceCanonicityKind.SUPPORT_TRIGGER
-        stamped.objectName shouldContain "dmg_seq_orders_number_"
+        stamped.objectName shouldBe "dmg_seq_orders_number_deadbeef00_bi"
+        stamped.status shouldBe MysqlSequenceCanonicityStatus.PROBE_RUNTIME_ERROR
+        (stamped.problem ?: "") shouldContain "permission denied"
     }
 
     // ── Happy path ──────────────────────────────────────────────
@@ -211,13 +254,14 @@ class MysqlSequenceCanonicityStageTest : FunSpec({
             target = dbTarget("mysql"),
             dialect = DatabaseDialect.MYSQL,
             plan = planWithSequenceAdd(),
+            preflightPlan = preflightPlanWith(notRunRow("op-1", "order_seq")),
         )
         outcome shouldBe MysqlSequenceCanonicityStage.Outcome.Succeeded(listOf(canned))
     }
 
-    // ── Exception path: stamp every sequence op as PROBE_RUNTIME_ERROR
+    // ── Exception path: copy every planned declaration as PROBE_RUNTIME_ERROR
 
-    test("probe throws → Failed; stamps one PROBE_RUNTIME_ERROR declaration per sequence op with the underlying message") {
+    test("probe throws → Failed; copies one PROBE_RUNTIME_ERROR declaration per planned op with the underlying message") {
         val plan = planWithSequenceAdd()
         val outcome = MysqlSequenceCanonicityStage.run(
             probe = { _, _, _ -> error("permission denied for INFORMATION_SCHEMA.COLUMNS") },
@@ -225,11 +269,10 @@ class MysqlSequenceCanonicityStageTest : FunSpec({
             target = dbTarget("mysql"),
             dialect = DatabaseDialect.MYSQL,
             plan = plan,
+            preflightPlan = preflightPlanWith(notRunRow("op-1", "order_seq")),
         )
         val failed = outcome as MysqlSequenceCanonicityStage.Outcome.Failed
         failed.message shouldContain "permission denied"
-        // Plan-derived: one declaration per sequence op (one CreateSequence
-        // op for `order_seq` in this fixture).
         failed.declarations shouldHaveSize 1
         val decl = failed.declarations.single()
         decl.status shouldBe MysqlSequenceCanonicityStatus.PROBE_RUNTIME_ERROR

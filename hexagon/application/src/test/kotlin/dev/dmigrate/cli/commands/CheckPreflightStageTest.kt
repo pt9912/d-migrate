@@ -53,6 +53,7 @@ class CheckPreflightStageTest : FunSpec({
         for (dialect in listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE)) {
             val r = MigrationPreflightPlanner.plan(
                 sqliteCastPlanner = null,
+                mysqlSequencePlanner = null,
                 request = requestExecuteDb(dialect.name.lowercase()),
                 target = dbTarget(dialect.name.lowercase()),
                 dialect = dialect,
@@ -67,6 +68,7 @@ class CheckPreflightStageTest : FunSpec({
     test("plan with CHECK Add + file target → NOT_RUN_FILE_TARGET") {
         val r = MigrationPreflightPlanner.plan(
             sqliteCastPlanner = null,
+            mysqlSequencePlanner = null,
             request = requestFile(),
             target = fileTarget(),
             dialect = DatabaseDialect.POSTGRESQL,
@@ -79,6 +81,7 @@ class CheckPreflightStageTest : FunSpec({
         val empty = planner.plan(emptySchema(), emptySchema(), SchemaDiff())
         val r = MigrationPreflightPlanner.plan(
             sqliteCastPlanner = null,
+            mysqlSequencePlanner = null,
             request = requestExecuteDb("postgresql"),
             target = dbTarget("postgresql"),
             dialect = DatabaseDialect.POSTGRESQL,
@@ -97,7 +100,7 @@ class CheckPreflightStageTest : FunSpec({
             dialect = DatabaseDialect.POSTGRESQL,
             plan = planWithCheckAdd(),
             preflightPlan = MigrationPreflightPlanner.plan(
-                null, requestFile(), fileTarget(), DatabaseDialect.POSTGRESQL, planWithCheckAdd(),
+                null, null, requestFile(), fileTarget(), DatabaseDialect.POSTGRESQL, planWithCheckAdd(),
             ),
         )
         outcome shouldBe CheckPreflightStage.Outcome.NotRun
@@ -111,7 +114,7 @@ class CheckPreflightStageTest : FunSpec({
             dialect = DatabaseDialect.POSTGRESQL,
             plan = planWithCheckAdd(),
             preflightPlan = MigrationPreflightPlanner.plan(
-                null, requestExecuteDb("postgresql"), dbTarget("postgresql"),
+                null, null, requestExecuteDb("postgresql"), dbTarget("postgresql"),
                 DatabaseDialect.POSTGRESQL, planWithCheckAdd(),
             ),
         )
@@ -148,7 +151,7 @@ class CheckPreflightStageTest : FunSpec({
             dialect = DatabaseDialect.POSTGRESQL,
             plan = planWithCheckAdd(),
             preflightPlan = MigrationPreflightPlanner.plan(
-                null, requestExecuteDb("postgresql"), dbTarget("postgresql"),
+                null, null, requestExecuteDb("postgresql"), dbTarget("postgresql"),
                 DatabaseDialect.POSTGRESQL, planWithCheckAdd(),
             ),
         )
@@ -157,7 +160,7 @@ class CheckPreflightStageTest : FunSpec({
 
     test("probe throws → Failed; declarations from preflight plan get PROBE_RUNTIME_ERROR + problem text") {
         val preflightPlan = MigrationPreflightPlanner.plan(
-            null, requestExecuteDb("postgresql"), dbTarget("postgresql"),
+            null, null, requestExecuteDb("postgresql"), dbTarget("postgresql"),
             DatabaseDialect.POSTGRESQL, planWithCheckAdd(),
         )
         val outcome = CheckPreflightStage.run(

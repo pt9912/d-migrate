@@ -178,6 +178,52 @@ class PortsReadTest : FunSpec({
         opts.toString() shouldContain "HELPER_TABLE"
     }
 
+    // ── The other four DdlDialectContext variants ────────────────────
+    // MySql/Sqlite are exercised above/elsewhere via their own accessor
+    // tests; Postgres/MsSql/Oracle otherwise have no ports-read-local
+    // construction site (their only consumers are driver modules and
+    // hexagon/application), so their smart-cast accessors stay untested
+    // from this module's own suite without these.
+
+    test("DdlGenerationOptions carries postgres context via DdlDialectContext.Postgres") {
+        val opts = DdlGenerationOptions(
+            dialectContext = DdlDialectContext.Postgres(
+                concurrentIndexes = true,
+                serverVersion = PostgresServerVersion(16, 3),
+                defaultSchema = "app",
+            ),
+        )
+        opts.postgresContext?.concurrentIndexes shouldBe true
+        opts.postgresContext?.serverVersion shouldBe PostgresServerVersion(16, 3)
+        opts.postgresContext?.defaultSchema shouldBe "app"
+        opts.mysqlContext shouldBe null
+
+        val defaultOpts = DdlGenerationOptions()
+        defaultOpts.postgresContext shouldBe null
+    }
+
+    test("DdlGenerationOptions carries mssql hash-partition mode via DdlDialectContext.MsSql") {
+        val opts = DdlGenerationOptions(
+            dialectContext = DdlDialectContext.MsSql(hashPartitionMode = MssqlHashPartitionMode.COMPUTED_COLUMN),
+        )
+        opts.mssqlContext?.hashPartitionMode shouldBe MssqlHashPartitionMode.COMPUTED_COLUMN
+        opts.postgresContext shouldBe null
+
+        val defaultOpts = DdlGenerationOptions()
+        defaultOpts.mssqlContext shouldBe null
+    }
+
+    test("DdlGenerationOptions carries oracle server version via DdlDialectContext.Oracle") {
+        val opts = DdlGenerationOptions(
+            dialectContext = DdlDialectContext.Oracle(serverVersion = OracleServerVersion(23, "23.26.3.0.0")),
+        )
+        opts.oracleContext?.serverVersion shouldBe OracleServerVersion(23, "23.26.3.0.0")
+        opts.mssqlContext shouldBe null
+
+        val defaultOpts = DdlGenerationOptions()
+        defaultOpts.oracleContext shouldBe null
+    }
+
     test("SqliteCastPreflightDeclaration bindingKey is stable") {
         val declaration = SqliteCastPreflightDeclaration(
             operationId = "op-1",

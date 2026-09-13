@@ -3,15 +3,11 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.diff.migration.CheckPreflightPlanner
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffResult
-import dev.dmigrate.core.diff.migration.DiffOperation
-import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.CheckPreflightStatus
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
-import dev.dmigrate.driver.MysqlSequenceCanonicityKind
 import dev.dmigrate.driver.MysqlSequenceCanonicityStatus
-import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.SqliteCastPreflightStatus
@@ -57,6 +53,7 @@ object MigrationPreflightPlanner {
 
     fun plan(
         sqliteCastPlanner: SqliteCastPreflightPlannerFn?,
+        mysqlSequencePlanner: MysqlSequenceCanonicityPlannerFn?,
         request: SchemaMigrateRequest,
         target: CompareOperand,
         dialect: DatabaseDialect,
@@ -74,7 +71,7 @@ object MigrationPreflightPlanner {
             emptyList()
         }
         val checkPart = planCheckPreflights(request, target, dialect, plan)
-        val mysqlSequencePart = planMysqlSequenceCanonicity(request, target, dialect, plan)
+        val mysqlSequencePart = planMysqlSequenceCanonicity(mysqlSequencePlanner, request, target, dialect, plan)
         return MigrationPreflightPlan(
             sqliteCastPreflights = castPart,
             checkPreflights = checkPart,
@@ -87,89 +84,30 @@ object MigrationPreflightPlanner {
      * pre-plans one [MysqlSequenceCanonicityDeclaration] per
      * sequence-related op in [plan] when the live probe will not
      * run. Returns an empty list when the dialect is not MySQL
-     * (the gate is MySQL-only) or when nothing in the plan
-     * touches the helper-table emulation.
+     * (the gate is MySQL-only) or no [mysqlSequencePlanner] was
+     * wired.
      *
-     * Sequence ops (Create/Alter/Drop/Rename) carry a SEQUENCE_ROW
-     * NOT_RUN declaration. Column ops (AddColumn,
-     * AlterColumnDefault) whose target default is a
-     * `SequenceNextVal` carry an additional SUPPORT_TRIGGER NOT_RUN
-     * declaration with the synthesised canonical trigger name —
-     * matching the trigger-side renderer-gate in
-     * `MysqlDiffSequenceOps.emitSupportTriggerForColumn`. Without
-     * the column-op declaration the gate sees an empty list and
-     * proceeds, so a file-target plan would never surface a
-     * "Trigger-Body drift-check skipped" line for these ops.
+     * The walk itself — which op kinds carry a declaration, and how
+     * the SUPPORT_TRIGGER name is derived — lives behind
+     * [MysqlSequenceCanonicityPlannerFn] in `driver-mysql`
+     * (`mysql-sequenz-kanonizitaet-hinter-einen-port.md`); this
+     * function only supplies the NOT_RUN status the file-target /
+     * policy branch implies.
      */
     private fun planMysqlSequenceCanonicity(
+        mysqlSequencePlanner: MysqlSequenceCanonicityPlannerFn?,
         request: SchemaMigrateRequest,
         target: CompareOperand,
         dialect: DatabaseDialect,
         plan: DiffResult,
     ): List<MysqlSequenceCanonicityDeclaration> {
         if (dialect != DatabaseDialect.MYSQL) return emptyList()
+        if (mysqlSequencePlanner == null) return emptyList()
         val initialStatus = when {
             request.execute && target is CompareOperand.Database -> MysqlSequenceCanonicityStatus.NOT_RUN_POLICY
             else -> MysqlSequenceCanonicityStatus.NOT_RUN_FILE_TARGET
         }
-        val mysqlDialectName = DatabaseDialect.MYSQL.name.lowercase()
-        return plan.operations.flatMap { op ->
-            when (op) {
-                is DiffOperation.CreateSequence ->
-                    listOf(rowNotRun(op.id, mysqlDialectName, op.objectRef.rootName, initialStatus))
-                is DiffOperation.AlterSequence ->
-                    listOf(rowNotRun(op.id, mysqlDialectName, op.objectRef.rootName, initialStatus))
-                is DiffOperation.DropSequence ->
-                    listOf(rowNotRun(op.id, mysqlDialectName, op.objectRef.rootName, initialStatus))
-                is DiffOperation.RenameSequence ->
-                    listOf(rowNotRun(op.id, mysqlDialectName, op.fromName, initialStatus))
-                is DiffOperation.AddColumn -> {
-                    val def = op.column.default as? DefaultValue.SequenceNextVal
-                        ?: return@flatMap emptyList<MysqlSequenceCanonicityDeclaration>()
-                    listOf(triggerNotRun(op.id, mysqlDialectName, op.objectRef, def.sequenceName, initialStatus))
-                }
-                is DiffOperation.AlterColumnDefault -> {
-                    val def = op.after as? DefaultValue.SequenceNextVal
-                        ?: return@flatMap emptyList<MysqlSequenceCanonicityDeclaration>()
-                    listOf(triggerNotRun(op.id, mysqlDialectName, op.objectRef, def.sequenceName, initialStatus))
-                }
-                else -> emptyList()
-            }
-        }
-    }
-
-    private fun rowNotRun(
-        operationId: String,
-        dialect: String,
-        sequenceName: String,
-        status: MysqlSequenceCanonicityStatus,
-    ): MysqlSequenceCanonicityDeclaration = MysqlSequenceCanonicityDeclaration(
-        operationId = operationId,
-        dialect = dialect,
-        kind = MysqlSequenceCanonicityKind.SEQUENCE_ROW,
-        objectName = sequenceName,
-        status = status,
-        sqlHash = "not-run",
-    )
-
-    private fun triggerNotRun(
-        operationId: String,
-        dialect: String,
-        columnRef: dev.dmigrate.core.diff.migration.DiffObjectRef,
-        @Suppress("UNUSED_PARAMETER") sequenceName: String,
-        status: MysqlSequenceCanonicityStatus,
-    ): MysqlSequenceCanonicityDeclaration {
-        // Column op's objectRef path: [tableName, columnName].
-        val tableName = columnRef.path[0]
-        val columnName = columnRef.path[1]
-        return MysqlSequenceCanonicityDeclaration(
-            operationId = operationId,
-            dialect = dialect,
-            kind = MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
-            objectName = MysqlSequenceSupportNaming.triggerName(tableName, columnName),
-            status = status,
-            sqlHash = "not-run",
-        )
+        return mysqlSequencePlanner(plan, initialStatus, "not-run", null)
     }
 
     /**
@@ -231,7 +169,8 @@ object SqliteCastPreflightStage {
         target: CompareOperand,
         dialect: DatabaseDialect,
         plan: DiffResult,
-        preflightPlan: MigrationPreflightPlan = MigrationPreflightPlanner.plan(planner, request, target, dialect, plan),
+        preflightPlan: MigrationPreflightPlan =
+            MigrationPreflightPlanner.plan(planner, null, request, target, dialect, plan),
     ): Outcome {
         if (dialect != DatabaseDialect.SQLITE) return Outcome.NotRun
         if (!request.execute) return Outcome.NotRun

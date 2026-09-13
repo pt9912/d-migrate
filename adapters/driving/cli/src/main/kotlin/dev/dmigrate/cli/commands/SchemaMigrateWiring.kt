@@ -164,6 +164,7 @@ internal object SchemaMigrateWiring {
             sqliteCastPreflightProbe = SqliteCastPreflightProbeRunner::probe,
             checkPreflightProbe = CheckPreflightProbeRunner::probe,
             mysqlSequenceCanonicityProbe = MysqlSequenceCanonicityProbeRunner::probe,
+            mysqlSequenceCanonicityPlanner = MysqlSequenceCanonicityProbeRunner::planNotRun,
             // Der migrate-Pfad prueft rohen Ausdruckstext hinter allen fuenf
             // Renderern; das Urteil selbst kennt die Grammatik der Dialekte und
             // liegt deshalb im Adapter.

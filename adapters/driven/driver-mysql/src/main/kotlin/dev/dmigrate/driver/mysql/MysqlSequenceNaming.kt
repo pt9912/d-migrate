@@ -1,7 +1,5 @@
 package dev.dmigrate.driver.mysql
 
-import dev.dmigrate.driver.MysqlSequenceSupportNaming
-
 /**
  * Canonical naming for MySQL sequence emulation support objects (0.9.3).
  *
@@ -10,13 +8,13 @@ import dev.dmigrate.driver.MysqlSequenceSupportNaming
  * - hash10: first 10 lowercase hex chars of SHA-256 over
  *   `<tableNorm><NUL><columnNorm>` (full normalized names, not truncated)
  *
- * Driver-side facade over [MysqlSequenceSupportNaming] in
- * `hexagon:ports-read` (E.3 Sub-Slice F follow-up, 2026-05-20).
- * Kept as a public driver object so existing callers
+ * Facade over [MysqlSequenceSupportNaming], which lived in
+ * `hexagon:ports-read` until `mysql-sequenz-kanonizitaet-hinter-
+ * einen-port.md` moved it here alongside its last consumer. Kept as
+ * a thin delegate rather than merged so existing callers
  * (`MysqlDdlGenerator`, `MysqlSequenceReverseSupport`, integration
- * tests) keep their imports stable while the drift-check stage in
- * `hexagon:application` reuses the same naming logic without
- * crossing a driver-internal module boundary.
+ * tests) keep their imports stable — the move itself is a pure
+ * relocation, not a rename.
  */
 object MysqlSequenceNaming {
 

@@ -8,7 +8,9 @@ import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlSequenceCanonicityKind
 import dev.dmigrate.driver.MysqlSequenceCanonicityProbe
+import dev.dmigrate.driver.MysqlSequenceCanonicityStatus
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.mysql.MysqlSequenceCanonicityPlanner
 import dev.dmigrate.driver.mysql.MysqlSequenceCanonicityProbeAdapter
 import dev.dmigrate.driver.mysql.MysqlSequenceNaming
 import java.nio.file.Path
@@ -36,6 +38,20 @@ import java.nio.file.Path
  *   matches the declaration to the right operation.
  */
 internal object MysqlSequenceCanonicityProbeRunner {
+
+    /**
+     * `mysql-sequenz-kanonizitaet-hinter-einen-port.md`: CLI-Bindung
+     * fuer [dev.dmigrate.cli.commands.MysqlSequenceCanonicityPlannerFn]
+     * — delegiert an `driver-mysql`s [MysqlSequenceCanonicityPlanner],
+     * derselbe Zwilling wie `SqliteCastPreflightProbeRunner.planNotRun`.
+     */
+    fun planNotRun(
+        plan: DiffResult,
+        status: MysqlSequenceCanonicityStatus,
+        sqlHash: String,
+        problem: String?,
+    ): List<MysqlSequenceCanonicityDeclaration> =
+        MysqlSequenceCanonicityPlanner.plan(plan, status, sqlHash, problem)
 
     fun probe(
         target: CompareOperand.Database,

@@ -8,6 +8,7 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlSequenceCanonicityKind
 import dev.dmigrate.driver.MysqlSequenceCanonicityStatus
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
@@ -43,6 +44,7 @@ class MigrationPreflightPlannerTest : FunSpec({
     test("B.2 pre-render planner declares SQLite DB execute casts as policy-pending") {
         val result = MigrationPreflightPlanner.plan(
             sqliteCastPlanner = { _, status, problem -> listOf(declaration(status, problem)) },
+            mysqlSequencePlanner = null,
             request = SchemaMigrateRequest(source = "desired.yaml", target = "db:sqlite", execute = true),
             target = CompareOperand.Database("sqlite"),
             dialect = DatabaseDialect.SQLITE,
@@ -55,6 +57,7 @@ class MigrationPreflightPlannerTest : FunSpec({
     test("B.2 pre-render planner declares SQLite file casts as not run for file target") {
         val result = MigrationPreflightPlanner.plan(
             sqliteCastPlanner = { _, status, problem -> listOf(declaration(status, problem)) },
+            mysqlSequencePlanner = null,
             request = SchemaMigrateRequest(source = "desired.yaml", target = "file:current.yaml"),
             target = CompareOperand.File(Path.of("current.yaml")),
             dialect = DatabaseDialect.SQLITE,
@@ -67,6 +70,7 @@ class MigrationPreflightPlannerTest : FunSpec({
     test("B.2 pre-render planner is silent for non-SQLite dialects") {
         val result = MigrationPreflightPlanner.plan(
             sqliteCastPlanner = { _, status, problem -> listOf(declaration(status, problem)) },
+            mysqlSequencePlanner = null,
             request = SchemaMigrateRequest(source = "desired.yaml", target = "db:postgresql", execute = true),
             target = CompareOperand.Database("postgresql"),
             dialect = DatabaseDialect.POSTGRESQL,
@@ -77,6 +81,12 @@ class MigrationPreflightPlannerTest : FunSpec({
     }
 
     // ── E.3 MySQL Sequence Drift-Check Sub-Slice E ─────────────
+    // Die eigentliche Plan-Wanderung (welcher Op traegt welche
+    // Deklaration) lebt seit `mysql-sequenz-kanonizitaet-hinter-
+    // einen-port.md` in `driver-mysql`s `MysqlSequenceCanonicityPlanner`
+    // (eigene Tests dort). Hier wird nur noch die Kleberlogik dieser
+    // Datei geprueft: Status-Wahl, Dialekt-Gate, Null-Sicherheit —
+    // der injizierte Planer ist deshalb ein Fake, kein echter Treiber.
 
     val sequencePlanner = DiffPlanner()
     fun planWithSequenceAdd(): DiffResult = sequencePlanner.plan(
@@ -85,9 +95,24 @@ class MigrationPreflightPlannerTest : FunSpec({
         SchemaDiff(sequencesAdded = listOf(NamedSequence("order_seq", SequenceDefinition(start = 1L)))),
     )
 
+    fun fakeMysqlPlanner(): MysqlSequenceCanonicityPlannerFn = { diff, status, sqlHash, problem ->
+        diff.operations.map { op ->
+            MysqlSequenceCanonicityDeclaration(
+                operationId = op.id,
+                dialect = "mysql",
+                kind = MysqlSequenceCanonicityKind.SEQUENCE_ROW,
+                objectName = "order_seq",
+                status = status,
+                sqlHash = sqlHash,
+                problem = problem,
+            )
+        }
+    }
+
     test("MySQL DB execute pre-plans sequence ops as NOT_RUN_POLICY") {
         val result = MigrationPreflightPlanner.plan(
             sqliteCastPlanner = null,
+            mysqlSequencePlanner = fakeMysqlPlanner(),
             request = SchemaMigrateRequest(source = "desired.yaml", target = "db:mysql", execute = true),
             target = CompareOperand.Database("mysql"),
             dialect = DatabaseDialect.MYSQL,
@@ -104,6 +129,7 @@ class MigrationPreflightPlannerTest : FunSpec({
     test("file target pre-plans sequence ops as NOT_RUN_FILE_TARGET") {
         val result = MigrationPreflightPlanner.plan(
             sqliteCastPlanner = null,
+            mysqlSequencePlanner = fakeMysqlPlanner(),
             request = SchemaMigrateRequest(source = "desired.yaml", target = "file:current.yaml"),
             target = CompareOperand.File(Path.of("current.yaml")),
             dialect = DatabaseDialect.MYSQL,
@@ -112,10 +138,11 @@ class MigrationPreflightPlannerTest : FunSpec({
         result.mysqlSequenceCanonicity.single().status shouldBe MysqlSequenceCanonicityStatus.NOT_RUN_FILE_TARGET
     }
 
-    test("non-MySQL dialects → no sequence canonicity declarations") {
+    test("non-MySQL dialects → no sequence canonicity declarations, planner not consulted") {
         for (dialect in listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.SQLITE)) {
             val result = MigrationPreflightPlanner.plan(
                 sqliteCastPlanner = null,
+                mysqlSequencePlanner = { _, _, _, _ -> error("must not be called for $dialect") },
                 request = SchemaMigrateRequest(source = "desired.yaml", target = "db:${dialect.name.lowercase()}", execute = true),
                 target = CompareOperand.Database(dialect.name.lowercase()),
                 dialect = dialect,
@@ -125,13 +152,14 @@ class MigrationPreflightPlannerTest : FunSpec({
         }
     }
 
-    test("MySQL DB execute with no sequence ops → empty mysqlSequenceCanonicity") {
+    test("MySQL DB execute without a wired planner → empty mysqlSequenceCanonicity") {
         val result = MigrationPreflightPlanner.plan(
             sqliteCastPlanner = null,
+            mysqlSequencePlanner = null,
             request = SchemaMigrateRequest(source = "desired.yaml", target = "db:mysql", execute = true),
             target = CompareOperand.Database("mysql"),
             dialect = DatabaseDialect.MYSQL,
-            plan = plan(),
+            plan = planWithSequenceAdd(),
         )
         result.mysqlSequenceCanonicity.shouldBeEmpty()
     }

@@ -11,7 +11,6 @@ import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
-import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.collections.shouldBeEmpty

@@ -1,4 +1,4 @@
-package dev.dmigrate.driver
+package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
