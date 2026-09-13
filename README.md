@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.4.0**
-(stable, [released 2026-09-13](https://github.com/pt9912/d-migrate/releases/tag/v1.4.0)).
+d-migrate is a working production tool at version **1.5.0**
+(stable, [released 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.5.0)).
 
 The current capabilities:
 
@@ -160,22 +160,31 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.4.0** (2026-09-13) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **Computed columns are
-  complete across all five dialects**: they are read with their expression and
-  storage form, rendered, changed where the server can do it in place, and
-  refused by name where it cannot — including the transitions between computed,
-  ordinary and identity columns, each one measured through the full migration
-  path. A data import can no longer try to write a computed column on any
-  target. `--target-version` says which server a run generates for, and a
-  capability answers "can the target do this?" in one place instead of at each
-  renderer. The container image runs as **non-root** (`uid 10001`), so writing
-  into a bind mount needs `--user "$(id -u):$(id -g)"`. Native binaries ship
-  for `linux-x64` and `windows-x64`; on macOS use Homebrew, the JVM artefacts
-  or the container image. 1.4.0 also fixes three MySQL defects a release check
-  surfaced: `MODIFY COLUMN` dropped `NOT NULL`, `DEFAULT` and `AUTO_INCREMENT`;
-  a string default came back as a function call; and widening an
-  auto-increment key was blocked.
+- **Current stable** · **1.5.0** (2026-09-14) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **The remaining gaps in
+  column-generation changes are closed.** PostgreSQL can now turn an ordinary
+  column into an identity column (`SET NOT NULL` + `ADD GENERATED … AS
+  IDENTITY` + a `setval` catch-up past the existing high value, empty tables
+  and negative values included). MySQL, Oracle and SQL Server can now change a
+  column between ordinary and computed — none of the three has an in-place
+  path, so both directions go through a column swap instead of a named
+  rejection: no copy needed going ordinary → computed, a frozen-value copy via
+  a temporary column going the other way. Both directions are marked
+  destructive and need `--allow-destructive`; the swap stays blocked, by name,
+  when the column carries a primary key, `UNIQUE`, an index or a foreign-key
+  reference. `schema generate` now exits `8` whenever an object is actually
+  skipped, not just noted — a CHECK constraint or computed column with a
+  non-portable expression, an EXCLUDE constraint or composite type the target
+  dialect lacks, a partial index on MySQL, a foreign key on a partitioned
+  MySQL table; `--allow-incomplete` keeps the previous exit-`0` behaviour.
+  `--inline-foreign-keys auto|always|never` and `ddl.include_comments: false`
+  give direct control over two switches that existed but were only reachable
+  indirectly. `ddl.postgresql.default_schema` qualifies every generated
+  object with a schema other than `public`. The container image runs as
+  **non-root** (`uid 10001`), so writing into a bind mount needs `--user
+  "$(id -u):$(id -g)"`. Native binaries ship for `linux-x64` and
+  `windows-x64`; on macOS use Homebrew, the JVM artefacts or the container
+  image.
 
 For per-milestone task tables and ADR pointers see the canonical
 roadmap at

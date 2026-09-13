@@ -2532,9 +2532,23 @@ Das ändert, was die Spalte *ist*; entsprechend können es nur zwei Ziele:
 | --- | --- | --- |
 | PostgreSQL | `DROP EXPRESSION`; der gespeicherte Wert bleibt als Daten stehen | der Lauf blockt |
 | SQLite | Tabellen-Neubau; der gerechnete Wert wird übernommen | Tabellen-Neubau; der Server rechnet neu |
-| MySQL | der Lauf blockt | der Lauf blockt |
-| Oracle | der Lauf blockt — Oracle **nimmt** die Anweisung an und ändert nichts | der Lauf blockt |
-| SQL Server | der Lauf blockt | der Lauf blockt |
+| MySQL | Spaltentausch (siehe unten) | Spaltentausch (siehe unten) |
+| Oracle | Spaltentausch (siehe unten) | Spaltentausch (siehe unten) |
+| SQL Server | Spaltentausch (siehe unten) | Spaltentausch (siehe unten) |
+
+Keinen In-Place-Weg kennen MySQL, Oracle und SQL Server für beide Richtungen;
+d-migrate geht dort über einen **Spaltentausch** statt abzulehnen. Gewöhnlich →
+berechnet: die Spalte wird unter demselben Namen gelöscht und mit der
+`GENERATED`-Form neu angelegt, ohne Wertübernahme — der Wert steht sofort aus
+den anderen Spalten fest. Berechnet → gewöhnlich: eine nullbare
+Zwischenspalte übernimmt den eingefrorenen Wert per `UPDATE`, dann weicht die
+berechnete Spalte einer Umbenennung. Beide Richtungen sind **destruktiv
+markiert** und brauchen `--allow-destructive`. Der Tausch bleibt aus — mit
+benannter Ablehnung statt eines halbfertigen Laufs —, wenn die Spalte
+Primärschlüssel, `UNIQUE`, einen Index oder einen Fremdschlüssel-Bezug trägt
+(als Quelle **oder** als Ziel einer Fremdschlüssel-Referenz einer anderen
+Tabelle); eine abhängige Sicht erkennt d-migrate dabei nicht — ein Tausch kann
+eine Sicht darüber ungeprüft brechen lassen.
 
 **Den Autowert (`generation: identity`) nachträglich ändern.** Auch das hängt am
 Server, und die letzte Zeile ist die, auf die es meist ankommt:
@@ -2543,7 +2557,7 @@ Server, und die letzte Zeile ist die, auf die es meist ankommt:
 | --- | --- |
 | Modus `always` ↔ `by_default` | PostgreSQL und Oracle stellen ihn um; MySQL kennt keinen Modus |
 | Autowert **entfernen** | PostgreSQL, MySQL (Schlüsselspalte) und Oracle tun es; auf Oracle zieht d-migrate das `NOT NULL` nach, das der Server dabei mitnimmt |
-| Autowert **hinzufügen** | nur MySQL (Schlüsselspalte). PostgreSQL blockt: der neue Zähler begänne bei 1, und der nächste `INSERT` kollidierte mit dem Bestand. Oracle und SQL Server können es gar nicht |
+| Autowert **hinzufügen** | PostgreSQL und MySQL (Schlüsselspalte). PostgreSQL setzt zuerst `NOT NULL`, hängt die Identity an und zieht die Sequenz per `setval` auf den Bestand nach — auch bei leerer Tabelle oder ausschließlich negativen Werten. Oracle und SQL Server können es gar nicht |
 
 Auf PostgreSQL, MySQL und SQLite ist der Autowert Teil des **Spaltentyps**
 (`identifier` mit `auto_increment`); ein Reverse liefert ihn dort so, und dann ist

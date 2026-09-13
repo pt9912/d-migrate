@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-14
+
 ### Changed
 
 - **`schema generate` bricht mit Exit `8` ab, wenn ein Objekt fehlt** — CHECK-

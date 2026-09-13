@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.4.0** (stabil, [veröffentlicht 2026-09-13](https://github.com/pt9912/d-migrate/releases/tag/v1.4.0)).
+**1.5.0** (stabil, [veröffentlicht 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.5.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -174,23 +174,33 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.4.0** (2026-09-13) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Berechnete Spalten sind auf
-  allen fünf Dialekten vollständig**: sie werden mit Ausdruck und Speicherform
-  gelesen, gerendert, geändert wo der Server es in place kann — und benannt
-  abgelehnt, wo nicht. Dazu die Übergänge zwischen berechnet, gewöhnlich und
-  Autowert, jeder einzeln durch den ganzen Migrationspfad gemessen. Ein
-  Datenimport versucht auf keinem Ziel mehr, eine berechnete Spalte zu
-  beschreiben. `--target-version` sagt, für welchen Server ein Lauf erzeugt, und
-  „kann das Ziel das?" beantwortet eine Fähigkeit an einer Stelle statt jeder
-  Renderer für sich. Das Container-Image läuft als **non-root** (`uid 10001`);
-  Schreiben in einen Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`.
-  Native Binaries gibt es für `linux-x64` und `windows-x64`; unter macOS führen
-  Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel. 1.4.0 behebt
-  außerdem drei MySQL-Defekte, die der Release-Check zutage brachte:
-  `MODIFY COLUMN` verlor `NOT NULL`, `DEFAULT` und `AUTO_INCREMENT`; ein
-  String-Default kam als Funktionsaufruf zurück; und das Verbreitern eines
-  Autowert-Schlüssels war blockiert.
+- **Aktuelles Stable** · **1.5.0** (2026-09-14) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Die verbliebenen Lücken
+  beim Ändern der Erzeugungsart einer Spalte sind geschlossen.** PostgreSQL
+  macht jetzt aus einer gewöhnlichen Spalte eine Identity-Spalte (`SET NOT
+  NULL` + `ADD GENERATED … AS IDENTITY` + ein `setval`-Nachzug über den
+  Bestand hinaus, leere Tabellen und negative Werte eingeschlossen). MySQL,
+  Oracle und SQL Server ändern jetzt die Erzeugungsart einer Spalte
+  (gewöhnlich ↔ berechnet) — keiner der drei kennt dafür einen In-Place-Weg,
+  also läuft es über einen Spaltentausch statt einer benannten Ablehnung: kein
+  Kopieren nötig in Richtung gewöhnlich → berechnet, eine Übernahme des
+  eingefrorenen Werts über eine Zwischenspalte in der Gegenrichtung. Beide
+  Richtungen sind destruktiv markiert und brauchen `--allow-destructive`; der
+  Tausch bleibt benannt aus, wenn die Spalte Primärschlüssel, `UNIQUE`, einen
+  Index oder einen Fremdschlüssel-Bezug trägt. `schema generate` bricht jetzt
+  mit Exit `8` ab, sobald ein Objekt tatsächlich übersprungen wird, nicht erst
+  bei einer bloßen Notiz — eine CHECK-Constraint oder berechnete Spalte mit
+  nicht portablem Ausdruck, ein EXCLUDE-Constraint oder COMPOSITE-Typ ohne
+  diese Form auf dem Ziel, ein Partial Index auf MySQL, ein Fremdschlüssel auf
+  einer partitionierten MySQL-Tabelle; `--allow-incomplete` erhält das
+  bisherige Exit-`0`-Verhalten. `--inline-foreign-keys auto|always|never` und
+  `ddl.include_comments: false` legen zwei Schalter direkt offen, die es
+  schon gab, aber nur indirekt erreichbar waren. `ddl.postgresql.default_schema`
+  qualifiziert jedes erzeugte Objekt mit einem anderen Schema als `public`.
+  Das Container-Image läuft als **non-root** (`uid 10001`); Schreiben in
+  einen Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`. Native
+  Binaries gibt es für `linux-x64` und `windows-x64`; unter macOS führen
+  Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter
