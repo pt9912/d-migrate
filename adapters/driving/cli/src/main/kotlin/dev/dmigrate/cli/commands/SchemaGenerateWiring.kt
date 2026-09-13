@@ -6,6 +6,7 @@ import dev.dmigrate.cli.config.resolveEffectiveHashPartitions
 import dev.dmigrate.cli.config.resolveEffectiveIncludeComments
 import dev.dmigrate.cli.config.resolveEffectiveInlineForeignKeys
 import dev.dmigrate.cli.config.resolveEffectiveMysqlTableOptions
+import dev.dmigrate.cli.config.resolveEffectivePostgresqlDefaultSchema
 import dev.dmigrate.driver.MysqlTableOptions
 import dev.dmigrate.cli.config.resolveEffectivePartitionStorage
 import dev.dmigrate.cli.output.OutputFormatter
@@ -55,6 +56,7 @@ private data class EffectiveDdlSettings(
     val mysqlTableOptions: MysqlTableOptions = MysqlTableOptions(),
     val inlineForeignKeys: String? = null,
     val includeComments: Boolean = true,
+    val postgresqlDefaultSchema: String? = null,
 )
 
 internal data class SchemaGenerateWiringBundle(
@@ -154,6 +156,13 @@ internal object SchemaGenerateWiring {
                     inlineForeignKeys = inlineForeignKeys,
                     includeComments = includeComments,
                 )
+                options.target.equals("postgresql", ignoreCase = true) -> EffectiveDdlSettings(
+                    partitionStorage = options.partitionStorage,
+                    hashPartitions = options.mssqlHashPartitions,
+                    inlineForeignKeys = inlineForeignKeys,
+                    includeComments = includeComments,
+                    postgresqlDefaultSchema = resolveEffectivePostgresqlDefaultSchema(options.configPath),
+                )
                 else -> EffectiveDdlSettings(
                     options.partitionStorage, options.mssqlHashPartitions,
                     inlineForeignKeys = inlineForeignKeys,
@@ -184,6 +193,7 @@ internal object SchemaGenerateWiring {
             mssqlHashPartitions = ddl.hashPartitions,
             inlineForeignKeys = ddl.inlineForeignKeys,
             includeComments = ddl.includeComments,
+            postgresqlDefaultSchema = ddl.postgresqlDefaultSchema,
             targetVersion = options.targetVersion,
             deterministic = options.deterministic,
             migrationOverlays = MigrationOverlayFileLoader.load(options.migrationOverlays),

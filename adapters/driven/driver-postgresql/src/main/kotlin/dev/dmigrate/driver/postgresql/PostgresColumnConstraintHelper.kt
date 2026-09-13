@@ -8,6 +8,8 @@ import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 internal class PostgresColumnConstraintHelper(
     private val quoteIdentifier: (String) -> String,
+    /** postgresql-default-schema-context.md: fuer Referenzen auf schema-gebundene Objekte (Custom Types, FK-Ziele). */
+    private val quoteQualified: (String) -> String,
     private val typeMapper: TypeMapper,
     private val columnSql: (String, String, ColumnDefinition, SchemaDefinition) -> String,
     private val referentialActionSql: (ReferentialAction) -> String,
@@ -72,7 +74,7 @@ internal class PostgresColumnConstraintHelper(
             if (refType != null) {
                 val parts = mutableListOf<String>()
                 parts += quoteIdentifier(colName)
-                parts += quoteIdentifier(refType)
+                parts += quoteQualified(refType)
                 if (col.required) parts += "NOT NULL"
                 if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
                 if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
@@ -130,7 +132,7 @@ internal class PostgresColumnConstraintHelper(
         val fromCols = fromColumns.joinToString(", ") { quoteIdentifier(it) }
         val toCols = toColumns.joinToString(", ") { quoteIdentifier(it) }
         val sql = buildString {
-            append("CONSTRAINT ${quoteIdentifier(constraintName)} FOREIGN KEY ($fromCols) REFERENCES ${quoteIdentifier(toTable)} ($toCols)")
+            append("CONSTRAINT ${quoteIdentifier(constraintName)} FOREIGN KEY ($fromCols) REFERENCES ${quoteQualified(toTable)} ($toCols)")
             if (onDelete != null) append(" ON DELETE ${referentialActionSql(onDelete)}")
             if (onUpdate != null) append(" ON UPDATE ${referentialActionSql(onUpdate)}")
         }

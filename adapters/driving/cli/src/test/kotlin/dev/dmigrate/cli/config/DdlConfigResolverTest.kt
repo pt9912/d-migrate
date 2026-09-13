@@ -263,6 +263,50 @@ class DdlConfigResolverTest : FunSpec({
         resolveEffectiveIncludeComments(file) shouldBe false
     }
 
+    // Anders als include_comments/inline_foreign_keys IST default_schema
+    // dialekt-geschachtelt (unter postgresql:), wie mssql.*/mysql.*.
+    test("ddl.postgresql.default_schema is read from the postgresql sub-block") {
+        val file = tempConfig(
+            """
+            ddl:
+              postgresql:
+                default_schema: analytics
+            """.trimIndent()
+        )
+        resolverFor(file).resolve().postgresqlDefaultSchema shouldBe "analytics"
+    }
+
+    test("a default_schema that could break out of the identifier fails loudly") {
+        val file = tempConfig(
+            """
+            ddl:
+              postgresql:
+                default_schema: "analytics\"; DROP TABLE users; --"
+            """.trimIndent()
+        )
+        val ex = shouldThrow<ConfigResolveException> { resolverFor(file).resolve() }
+        ex.message!! shouldContain "ddl.postgresql.default_schema"
+        ex.message!! shouldContain "plain identifier"
+    }
+
+    test("default_schema: no config value -> effective null (unqualified, unchanged behaviour)") {
+        resolveEffectivePostgresqlDefaultSchema(
+            configPath = null,
+            preloaded = LoadedConfig(root = null, path = Path.of(".d-migrate.yaml")),
+        ) shouldBe null
+    }
+
+    test("default_schema: config value is read through the effective resolver") {
+        val file = tempConfig(
+            """
+            ddl:
+              postgresql:
+                default_schema: analytics
+            """.trimIndent()
+        )
+        resolveEffectivePostgresqlDefaultSchema(file) shouldBe "analytics"
+    }
+
     test("precedence: CLI beats config, config beats default") {
         val file = tempConfig(
             """

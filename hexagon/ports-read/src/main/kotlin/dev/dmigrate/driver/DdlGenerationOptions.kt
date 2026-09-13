@@ -282,6 +282,19 @@ sealed interface DdlDialectContext {
     data class Postgres(
         val concurrentIndexes: Boolean = false,
         val serverVersion: PostgresServerVersion? = null,
+        /**
+         * `ddl.postgresql.default_schema` — das Schema, in dem `schema
+         * generate --target postgresql` die erzeugten Objekte anlegt. `null`
+         * (Default): unveraendertes Verhalten, jeder Bezeichner unqualifiziert
+         * (PostgreSQLs eigener Server-Default `public` greift implizit).
+         * Gesetzt: jeder schema-gebundene Bezeichner (Tabellen, Views,
+         * Funktionen, Prozeduren, Aggregate, Sequenzen, Custom Types) UND
+         * jede Referenz darauf (FK-Ziele, Sequenz-`nextval()`-Defaults,
+         * ENUM-`refType`-Spaltentypen, Trigger-Zieltabellen) wird mit diesem
+         * Schema qualifiziert (`"schema"."name"`). Siehe
+         * `docs/planning/done/postgresql-default-schema-context.md`.
+         */
+        val defaultSchema: String? = null,
     ) : DdlDialectContext
 
     /**

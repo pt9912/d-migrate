@@ -13,7 +13,15 @@ import io.kotest.matchers.string.shouldNotContain
 
 class PostgresRoutineDdlHelperTest : FunSpec({
 
-    val helper = PostgresRoutineDdlHelper { "\"$it\"" }
+    val helper = PostgresRoutineDdlHelper(quoteIdentifier = { "\"$it\"" }, quoteQualified = { "\"$it\"" })
+
+    // postgresql-default-schema-context.md: eine Fassung mit unterscheidbarer
+    // quoteQualified-Funktion, um zu belegen, WELCHE Bezeichner sie erreichen
+    // (Objektnamen) und welche bei quoteIdentifier bleiben (Trigger-Name).
+    val qualifiedHelper = PostgresRoutineDdlHelper(
+        quoteIdentifier = { "\"$it\"" },
+        quoteQualified = { "\"myschema\".\"$it\"" },
+    )
 
     // ── Views ───────────────────────────────────────
 
@@ -311,5 +319,80 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         result[0].notes[0].code shouldBe "E053"
         skipped shouldHaveSize 1
         skipped[0].name shouldBe "mysql_trg"
+    }
+
+    // ── postgresql-default-schema-context.md: quoteQualified reaches the ──
+    // ── object's OWN name (and the trigger's target table), never the    ──
+    // ── trigger's own name or a parameter name.                         ──
+
+    test("generateViews qualifies the view/materialized-view name") {
+        val views = mapOf(
+            "v" to ViewDefinition(query = "SELECT 1", sourceDialect = "postgresql"),
+            "mv" to ViewDefinition(query = "SELECT 1", sourceDialect = "postgresql", materialized = true),
+        )
+        val result = qualifiedHelper.generateViews(views, mutableListOf())
+        result.single { it.sql.contains("VIEW") && !it.sql.contains("MATERIALIZED") }.sql shouldContain
+            "CREATE OR REPLACE VIEW \"myschema\".\"v\""
+        result.single { it.sql.contains("MATERIALIZED") }.sql shouldContain
+            "CREATE MATERIALIZED VIEW \"myschema\".\"mv\""
+    }
+
+    test("generateFunctions qualifies the function name, not its parameters") {
+        val functions = mapOf(
+            "add_one" to FunctionDefinition(
+                body = "BEGIN RETURN 1; END;",
+                parameters = listOf(ParameterDefinition("x", "integer")),
+            ),
+        )
+        val result = qualifiedHelper.generateFunctions(functions, mutableListOf())
+        result.single().sql shouldContain "CREATE OR REPLACE FUNCTION \"myschema\".\"add_one\"(\"x\" INTEGER)"
+    }
+
+    test("generateAggregates qualifies the aggregate name, not SFUNC/STYPE") {
+        val aggregates = mapOf(
+            "my_sum" to AggregateDefinition(stateType = "integer", transitionFunction = "int4pl"),
+        )
+        val result = qualifiedHelper.generateAggregates(aggregates, mutableListOf())
+        val sql = result.single().sql
+        sql shouldContain "CREATE AGGREGATE \"myschema\".\"my_sum\""
+        // SFUNC/STYPE are raw pass-through text (may reference PostgreSQL
+        // builtins that live in no target schema) -- never qualified.
+        sql shouldContain "SFUNC = int4pl"
+        sql shouldNotContain "\"myschema\".\"int4pl\""
+    }
+
+    test("generateProcedures qualifies the procedure name, not its parameters") {
+        val procedures = mapOf(
+            "do_work" to ProcedureDefinition(
+                body = "BEGIN RAISE NOTICE 'done'; END;",
+                parameters = listOf(ParameterDefinition("val", "text")),
+            ),
+        )
+        val result = qualifiedHelper.generateProcedures(procedures, mutableListOf())
+        result.single().sql shouldContain "CREATE OR REPLACE PROCEDURE \"myschema\".\"do_work\"(\"val\" TEXT)"
+    }
+
+    test("generateTriggers qualifies the helper function and its target table, never the trigger's own name") {
+        val triggers = mapOf(
+            "audit_insert" to TriggerDefinition(
+                table = "users",
+                event = TriggerEvent.INSERT,
+                timing = TriggerTiming.AFTER,
+                forEach = TriggerForEach.ROW,
+                body = "BEGIN INSERT INTO audit_log VALUES (NEW.id); RETURN NEW; END;",
+            ),
+        )
+        val result = qualifiedHelper.generateTriggers(triggers, mutableListOf())
+        result shouldHaveSize 2
+        // The helper function is a real, schema-scoped object -- qualified.
+        result[0].sql shouldContain "CREATE OR REPLACE FUNCTION \"myschema\".\"trg_fn_audit_insert\"() RETURNS TRIGGER"
+        // The trigger's own name is never schema-qualified in PostgreSQL
+        // (`CREATE TRIGGER name ON table` — the trigger belongs to the
+        // table's schema implicitly); the target table and the function
+        // reference in EXECUTE FUNCTION are.
+        result[1].sql shouldContain "CREATE TRIGGER \"audit_insert\""
+        result[1].sql shouldNotContain "CREATE TRIGGER \"myschema\""
+        result[1].sql shouldContain "ON \"myschema\".\"users\""
+        result[1].sql shouldContain "EXECUTE FUNCTION \"myschema\".\"trg_fn_audit_insert\"()"
     }
 })

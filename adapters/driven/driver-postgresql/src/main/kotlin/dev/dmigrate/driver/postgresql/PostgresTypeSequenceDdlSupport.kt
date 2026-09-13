@@ -10,6 +10,8 @@ import dev.dmigrate.driver.TypeMapper
 
 internal class PostgresTypeSequenceDdlSupport(
     private val quoteIdentifier: (String) -> String,
+    /** postgresql-default-schema-context.md: fuer die Custom-Type-/Sequenz-Namen selbst. */
+    private val quoteQualified: (String) -> String,
     private val typeMapper: TypeMapper,
 ) {
 
@@ -24,7 +26,7 @@ internal class PostgresTypeSequenceDdlSupport(
             CustomTypeKind.ENUM -> {
                 val values = typeDef.values ?: return emptyList()
                 val enumValues = values.joinToString(", ") { "'${it.replace("'", "''")}'" }
-                listOf(DdlStatement("CREATE TYPE ${quoteIdentifier(name)} AS ENUM ($enumValues);"))
+                listOf(DdlStatement("CREATE TYPE ${quoteQualified(name)} AS ENUM ($enumValues);"))
             }
             CustomTypeKind.COMPOSITE -> {
                 val fields = typeDef.fields ?: return emptyList()
@@ -33,13 +35,13 @@ internal class PostgresTypeSequenceDdlSupport(
                 val fieldsSql = fields.inOrdinalOrder().joinToString(",\n    ") { (fieldName, col) ->
                     "${quoteIdentifier(fieldName)} ${typeMapper.toSql(col.type)}"
                 }
-                listOf(DdlStatement("CREATE TYPE ${quoteIdentifier(name)} AS (\n    $fieldsSql\n);"))
+                listOf(DdlStatement("CREATE TYPE ${quoteQualified(name)} AS (\n    $fieldsSql\n);"))
             }
             CustomTypeKind.DOMAIN -> {
                 val baseType = typeDef.baseType ?: return emptyList()
                 val sqlType = domainBaseTypeSql(baseType, typeDef.precision, typeDef.scale)
                 val sql = buildString {
-                    append("CREATE DOMAIN ${quoteIdentifier(name)} AS $sqlType")
+                    append("CREATE DOMAIN ${quoteQualified(name)} AS $sqlType")
                     if (typeDef.check != null) {
                         append(" CHECK (${typeDef.check})")
                     }
@@ -90,7 +92,7 @@ internal class PostgresTypeSequenceDdlSupport(
 
     private fun generateSequence(name: String, seq: SequenceDefinition): DdlStatement {
         val sql = buildString {
-            append("CREATE SEQUENCE ${quoteIdentifier(name)}")
+            append("CREATE SEQUENCE ${quoteQualified(name)}")
             append(" START WITH ${seq.start}")
             append(" INCREMENT BY ${seq.increment}")
             if (seq.minValue != null) append(" MINVALUE ${seq.minValue}")

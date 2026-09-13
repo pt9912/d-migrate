@@ -1,7 +1,7 @@
 # `inline_foreign_keys` — vorhandenes Deferral-Verhalten konfigurierbar machen
 
 > **Status:** Draft mit Scope (2026-09-13). Teil von
-> [`open/ddl-config-block-unimplemented.md`](../open/ddl-config-block-unimplemented.md).
+> [`done/ddl-config-block-unimplemented.md`](ddl-config-block-unimplemented.md).
 
 ## Ziel
 

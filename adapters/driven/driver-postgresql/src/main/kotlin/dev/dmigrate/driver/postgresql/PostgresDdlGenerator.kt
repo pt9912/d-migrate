@@ -12,9 +12,13 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
 
     override val supportsDeferredForeignKeys: Boolean = true
 
-    private val routineHelper = PostgresRoutineDdlHelper(::quoteIdentifier)
+    private val routineHelper = PostgresRoutineDdlHelper(
+        quoteIdentifier = ::quoteIdentifier,
+        quoteQualified = ::quoteQualified,
+    )
     private val typeSequenceSupport = PostgresTypeSequenceDdlSupport(
         quoteIdentifier = ::quoteIdentifier,
+        quoteQualified = ::quoteQualified,
         typeMapper = typeMapper,
     )
     /**
@@ -24,8 +28,16 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
      */
     private var currentServerVersion: PostgresServerVersion? = null
 
+    /**
+     * `ddl.postgresql.default_schema` des laufenden `generate`-Aufrufs —
+     * `null`, wenn nicht gesetzt (unqualifiziertes Rendern, heutiges
+     * Verhalten). Siehe [quoteQualified].
+     */
+    private var currentDefaultSchema: String? = null
+
     private val columnConstraintHelper = PostgresColumnConstraintHelper(
         quoteIdentifier = ::quoteIdentifier,
+        quoteQualified = ::quoteQualified,
         typeMapper = typeMapper,
         columnSql = ::columnSql,
         referentialActionSql = ::referentialActionSql,
@@ -42,12 +54,32 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
     ): DdlResult {
         indexNameAllocator.reset()
         currentServerVersion = options.postgresContext?.serverVersion
+        currentDefaultSchema = options.postgresContext?.defaultSchema
         return super.generate(schema, options)
     }
 
     // ── Quoting ──────────────────────────────────
 
     override fun quoteIdentifier(name: String): String = SqlIdentifiers.quoteIdentifier(name, dialect)
+
+    /**
+     * postgresql-default-schema-context.md: dasselbe wie [quoteIdentifier],
+     * aber fuer schema-gebundene Objekte (Tabellen, Views, Funktionen,
+     * Prozeduren, Aggregate, Sequenzen, Custom Types) und Referenzen darauf
+     * (FK-Ziele, ENUM-`refType`-Spaltentypen, Trigger-Zieltabellen). Ohne
+     * `ddl.postgresql.default_schema` identisch zu [quoteIdentifier]
+     * (unqualifiziert, heutiges Verhalten). Spalten-, Index- und
+     * Constraint-Namen bleiben immer bei [quoteIdentifier] — PostgreSQL
+     * qualifiziert die nie eigenstaendig mit einem Schema.
+     */
+    private fun quoteQualified(name: String): String {
+        val schema = currentDefaultSchema
+        return if (schema.isNullOrBlank()) {
+            quoteIdentifier(name)
+        } else {
+            SqlIdentifiers.quoteQualifiedIdentifier("$schema.$name", dialect)
+        }
+    }
 
     // ── Custom types (ENUM, COMPOSITE, DOMAIN) ──
 
@@ -173,7 +205,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
 
         // Build CREATE TABLE
         val tableSql = buildString {
-            append("CREATE TABLE ${quoteIdentifier(name)} (\n")
+            append("CREATE TABLE ${quoteQualified(name)} (\n")
             append(columnLines.joinToString(",\n") { "    $it" })
             append("\n)")
             if (emitPartitioning) {
@@ -186,7 +218,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         // Sub-partitions
         if (emitPartitioning) {
             statements += PostgresPartitionClauses
-                .childStatements(name, partitioning!!, ::quoteIdentifier)
+                .childStatements(name, partitioning!!, ::quoteQualified)
                 .map { DdlStatement(it) }
         }
 
@@ -277,7 +309,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         val sql = buildString {
             append("CREATE ")
             if (index.unique) append("UNIQUE ")
-            append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)}")
+            append("INDEX ${quoteIdentifier(indexName)} ON ${quoteQualified(tableName)}")
             append(pgUsingClause(index.type))
             append(" ($cols)")
             // PostgreSQL traegt INCLUDE seit 11 nativ; die Steuerung der Ablage kennt
@@ -375,7 +407,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
     ): List<DdlStatement> {
         return edges.map { edge ->
             val sql = buildString {
-                append("ALTER TABLE ${quoteIdentifier(edge.fromTable)} ADD ")
+                append("ALTER TABLE ${quoteQualified(edge.fromTable)} ADD ")
                 append(buildForeignKeyClause(
                     edge.constraintName,
                     edge.fromColumns,
@@ -396,7 +428,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
     ): List<DdlStatement> =
         foreignKeys.map { fk ->
             val sql = buildString {
-                append("ALTER TABLE ${quoteIdentifier(fk.fromTable)} ADD ")
+                append("ALTER TABLE ${quoteQualified(fk.fromTable)} ADD ")
                 append(buildForeignKeyClause(
                     fk.constraintName,
                     fk.fromColumns,
@@ -462,5 +494,12 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         colName: String,
         col: dev.dmigrate.core.model.ColumnDefinition,
         seqDefault: dev.dmigrate.core.model.DefaultValue.SequenceNextVal,
-    ): String = "DEFAULT nextval(${SqlIdentifiers.quoteStringLiteral(seqDefault.sequenceName, DatabaseDialect.POSTGRESQL)})"
+    ): String {
+        // Dieselbe Qualifizierung wie beim CREATE SEQUENCE selbst (siehe
+        // PostgresTypeSequenceDdlSupport) -- sonst zeigt `nextval(...)` ueber
+        // den Suchpfad auf eine andere/nicht existente Sequenz als die, die
+        // gerade angelegt wurde.
+        val qualifiedName = currentDefaultSchema?.let { "$it.${seqDefault.sequenceName}" } ?: seqDefault.sequenceName
+        return "DEFAULT nextval(${SqlIdentifiers.quoteStringLiteral(qualifiedName, DatabaseDialect.POSTGRESQL)})"
+    }
 }

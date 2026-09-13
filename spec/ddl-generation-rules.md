@@ -159,6 +159,35 @@ Beispiel:
 [user's name]
 ```
 
+### 2.4 PostgreSQL: Schema-Qualifizierung (`ddl.postgresql.default_schema`)
+
+Ohne `ddl.postgresql.default_schema` rendert `schema generate --target
+postgresql` jeden Bezeichner unqualifiziert (heutiges Verhalten,
+PostgreSQLs eigener Server-Default `public` greift implizit) — Default und
+einziges bisheriges Verhalten.
+
+Ist der Schlüssel gesetzt, wird **jeder schema-gebundene Bezeichner** —
+Tabellen, Views/Materialized Views, Funktionen, Prozeduren, Aggregate,
+Sequenzen, Custom Types (ENUM/COMPOSITE/DOMAIN) — als `"schema"."name"`
+gerendert, **und ebenso jede Referenz darauf**: FK-`REFERENCES`-Ziele,
+ENUM-Spalten mit `refType`, `DEFAULT nextval('schema.seq')` und die
+Trigger-Zieltabelle (`ON "schema"."table"`).
+
+**Nicht qualifiziert, nie:** Spalten-, Index- und Constraint-Namen (kein
+Dialekt qualifiziert diese eigenständig mit einem Schema — auch ein
+`CREATE INDEX name ON schema.table` lässt `name` unqualifiziert), der
+Trigger-eigene Name (`CREATE TRIGGER name ON …` — der Trigger gehört
+implizit zum Schema seiner Tabelle), sowie roher SQL-Text, den d-migrate
+grundsätzlich nicht übersetzt (Funktions-/Prozedur-/Trigger-Bodies,
+CHECK-/EXCLUDE-Ausdrücke, Sichten-Query-Text, `SFUNC`/`FINALFUNC` eines
+Aggregats, Parameter-/Rückgabetypen) — diese können auf einen
+PostgreSQL-Builtin oder ein anderes Schema verweisen, das d-migrate nicht
+kennt.
+
+Scope: nur `schema generate`. `schema migrate` (Diff-Pfad) rendert
+Bezeichner weiterhin unqualifiziert — dieselbe Lücke besteht dort, ist aber
+nicht Teil dieses Vertrags.
+
 ---
 
 ## 3. Tabellen-Generierung

@@ -37,6 +37,12 @@ internal data class DdlConfig(
      * Header setzt. Wie `inline_foreign_keys` nicht dialekt-geschachtelt.
      */
     val includeComments: Boolean? = null,
+    /**
+     * `ddl.postgresql.default_schema` — das Schema, in dem `schema generate
+     * --target postgresql` die erzeugten Objekte anlegt (`null` = unveraendert
+     * unqualifiziert, PostgreSQLs Server-Default `public` greift implizit).
+     */
+    val postgresqlDefaultSchema: String? = null,
 )
 
 /**
@@ -66,6 +72,7 @@ internal class DdlConfigResolver(
         // anderen nicht mitnehmen.
         val mssql = ddl["mssql"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
         val mysql = ddl["mysql"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val postgresql = ddl["postgresql"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
         return DdlConfig(
             mssqlPartitionStorage = readIdentifier(mssql, "partition_storage", path),
             mssqlHashPartitions = readChoice(
@@ -82,6 +89,9 @@ internal class DdlConfigResolver(
                 qualifiedKey = "ddl.inline_foreign_keys",
             ),
             includeComments = readBoolean(ddl, "include_comments", path, qualifiedKey = "ddl.include_comments"),
+            postgresqlDefaultSchema = readIdentifier(
+                postgresql, "default_schema", path, qualifiedKey = "ddl.postgresql.default_schema",
+            ),
         )
     }
 
@@ -217,4 +227,17 @@ internal fun resolveEffectiveIncludeComments(
 ): Boolean {
     val config = DdlConfigResolver(configPathFromCli = configPath, preloaded = preloaded).resolve()
     return config.includeComments ?: true
+}
+
+/**
+ * Der effektive `default_schema`-Wert: was die Konfiguration nennt, sonst
+ * `null` (unqualifiziert, heutiges Verhalten). Kein CLI-Flag — dasselbe
+ * Ziel-Beschreibungs-Argument wie bei [DdlConfig.includeComments].
+ */
+internal fun resolveEffectivePostgresqlDefaultSchema(
+    configPath: Path?,
+    preloaded: LoadedConfig? = null,
+): String? {
+    val config = DdlConfigResolver(configPathFromCli = configPath, preloaded = preloaded).resolve()
+    return config.postgresqlDefaultSchema
 }

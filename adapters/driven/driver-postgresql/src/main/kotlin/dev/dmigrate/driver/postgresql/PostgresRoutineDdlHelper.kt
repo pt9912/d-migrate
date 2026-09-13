@@ -4,7 +4,11 @@ import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 
-internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) -> String) {
+internal class PostgresRoutineDdlHelper(
+    private val quoteIdentifier: (String) -> String,
+    /** postgresql-default-schema-context.md: fuer Views/Funktionen/Prozeduren/Aggregate und ihre Ziel-Tabelle (Trigger). */
+    private val quoteQualified: (String) -> String,
+) {
     private fun actionRequired(action: ManualActionRequired): DdlStatement =
         DdlStatement(sql = "", notes = listOf(action.toNote()))
 
@@ -45,9 +49,9 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
 
         return if (view.materialized) {
-            DdlStatement("CREATE MATERIALIZED VIEW ${quoteIdentifier(name)} AS\n$transformedQuery;", queryNotes)
+            DdlStatement("CREATE MATERIALIZED VIEW ${quoteQualified(name)} AS\n$transformedQuery;", queryNotes)
         } else {
-            DdlStatement("CREATE OR REPLACE VIEW ${quoteIdentifier(name)} AS\n$transformedQuery;", queryNotes)
+            DdlStatement("CREATE OR REPLACE VIEW ${quoteQualified(name)} AS\n$transformedQuery;", queryNotes)
         }
     }
 
@@ -123,7 +127,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         }
 
         val sql = buildString {
-            append("CREATE OR REPLACE FUNCTION ${quoteIdentifier(name)}($params)$returns AS \$\$\n")
+            append("CREATE OR REPLACE FUNCTION ${quoteQualified(name)}($params)$returns AS \$\$\n")
             append(body)
             append("\n\$\$ LANGUAGE $language$attributes;")
         }
@@ -179,7 +183,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             if (aggregate.sortOperator != null) add("SORTOP = ${aggregate.sortOperator}")
         }
         val sql = buildString {
-            append("CREATE AGGREGATE ${quoteIdentifier(name)}($args) (\n")
+            append("CREATE AGGREGATE ${quoteQualified(name)}($args) (\n")
             append(clauses.joinToString(",\n") { "    $it" })
             append("\n);")
         }
@@ -235,7 +239,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         }
 
         val sql = buildString {
-            append("CREATE OR REPLACE PROCEDURE ${quoteIdentifier(name)}($params) AS \$\$\n")
+            append("CREATE OR REPLACE PROCEDURE ${quoteQualified(name)}($params) AS \$\$\n")
             append(body)
             append("\n\$\$ LANGUAGE $language$attributes;")
         }
@@ -299,12 +303,12 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             val funcName = "trg_fn_" + key.replace(Regex("[^A-Za-z0-9_]"), "_")
             statements += DdlStatement(
                 buildString {
-                    append("CREATE OR REPLACE FUNCTION ${quoteIdentifier(funcName)}() RETURNS TRIGGER AS \$\$\n")
+                    append("CREATE OR REPLACE FUNCTION ${quoteQualified(funcName)}() RETURNS TRIGGER AS \$\$\n")
                     append(body)
                     append("\n\$\$ LANGUAGE plpgsql;")
                 }
             )
-            "EXECUTE FUNCTION ${quoteIdentifier(funcName)}()"
+            "EXECUTE FUNCTION ${quoteQualified(funcName)}()"
         }
 
         val timing = trigger.timing.name
@@ -315,7 +319,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         val forEach = trigger.forEach.name
         val triggerSql = buildString {
             append("CREATE TRIGGER ${quoteIdentifier(name)}\n")
-            append("    $timing $event ON ${quoteIdentifier(trigger.table)}\n")
+            append("    $timing $event ON ${quoteQualified(trigger.table)}\n")
             append("    FOR EACH $forEach")
             if (trigger.condition != null) {
                 append("\n    WHEN (${trigger.condition})")

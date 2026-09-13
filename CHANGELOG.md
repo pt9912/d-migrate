@@ -118,6 +118,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Header beschreibt das Ziel, nicht den einzelnen Aufruf, dieselbe Ebene wie
   `ddl.mysql.engine`.
 
+- **`ddl.postgresql.default_schema: <name>`** lässt `schema generate --target
+  postgresql` alle erzeugten Objekte in einem anderen Schema als `public`
+  anlegen. Jeder schema-gebundene Bezeichner — Tabellen, Views/Materialized
+  Views, Funktionen, Prozeduren, Aggregate, Sequenzen, Custom Types
+  (ENUM/COMPOSITE/DOMAIN) — wird qualifiziert (`"schema"."name"`), samt
+  jeder Referenz darauf: FK-`REFERENCES`-Ziele, ENUM-Spalten mit `refType`,
+  `DEFAULT nextval('schema.seq')` und die Trigger-Zieltabelle. Spalten-,
+  Index- und Constraint-Namen sowie der Trigger-eigene Name bleiben immer
+  unqualifiziert (PostgreSQL qualifiziert die nie eigenständig mit einem
+  Schema). Ohne den Schlüssel: unverändertes, unqualifiziertes Rendern —
+  auch die PostgreSQL-Golden-Master-Fixtures bleiben unberührt. Kein
+  CLI-Flag, aus demselben Grund wie `ddl.include_comments`. Gilt nur für
+  `schema generate`; `schema migrate` rendert Bezeichner weiterhin
+  unqualifiziert.
+
 ## [1.4.0] - 2026-09-13
 
 ### Added

@@ -18,6 +18,7 @@ import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.PreGenerationValidator
 import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.mysqlContext
+import dev.dmigrate.driver.postgresContext
 import dev.dmigrate.driver.sqliteContext
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -230,6 +231,48 @@ class SchemaGenerateWiringTest : FunSpec({
 
         exit shouldBe 0
         factory.generators.single().generateOptions.single().includeComments shouldBe false
+    }
+
+    // ─── postgresql-default-schema-context.md: ddl.postgresql.default_schema ───
+
+    fun postgresqlDefaultSchemaConfig(schema: String): Path {
+        val file = Files.createTempFile("dmigrate-generate-defaultschema-", ".yaml")
+        Files.writeString(file, "ddl:\n  postgresql:\n    default_schema: $schema\n")
+        return file
+    }
+
+    test("ddl.postgresql.default_schema reaches the generation options") {
+        val factory = RecordingSchemaGenerateFactory()
+
+        val exit = SchemaGenerateWiring.execute(
+            options(configPath = postgresqlDefaultSchemaConfig("analytics")),
+            factory,
+        )
+
+        exit shouldBe 0
+        factory.generators.single().generateOptions.single().postgresContext?.defaultSchema shouldBe "analytics"
+    }
+
+    test("without ddl.postgresql.default_schema the default stays null (unqualified)") {
+        val factory = RecordingSchemaGenerateFactory()
+
+        val exit = SchemaGenerateWiring.execute(options(), factory)
+
+        exit shouldBe 0
+        factory.generators.single().generateOptions.single().postgresContext?.defaultSchema shouldBe null
+    }
+
+    test("a configured default_schema does not leak into a non-PostgreSQL target's options") {
+        val factory = RecordingSchemaGenerateFactory()
+
+        val exit = SchemaGenerateWiring.execute(
+            options(target = "mysql", configPath = postgresqlDefaultSchemaConfig("analytics")),
+            factory,
+        )
+
+        exit shouldBe 0
+        factory.generators.single().dialect shouldBe DatabaseDialect.MYSQL
+        factory.generators.single().generateOptions.single().postgresContext shouldBe null
     }
 
     test("without ddl.include_comments the default stays true") {

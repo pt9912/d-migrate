@@ -1,7 +1,7 @@
 # `postgresql.default_schema` — Ziel-Schema für generiertes DDL
 
-> **Status:** Draft mit Scope (2026-09-13). Teil von
-> [`open/ddl-config-block-unimplemented.md`](../open/ddl-config-block-unimplemented.md).
+> **Status:** Umgesetzt (2026-09-13). Teil von
+> [`done/ddl-config-block-unimplemented.md`](ddl-config-block-unimplemented.md).
 
 ## Ziel
 
@@ -100,3 +100,72 @@ Eigner zu klären, bevor Code entsteht:
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/DdlGenerationOptions.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/DdlConfigResolver.kt`
 - `adapters/driven/formats/src/test/resources/fixtures/ddl/` (PostgreSQL-Goldens, falls Weg A)
+
+## Closure (2026-09-13)
+
+Weg A gebaut (Eigner-Entscheidung), nach einer Recherche- und einer
+gezielten Audit-Runde vor dem Bau — beide zeigten einen groesseren
+Umfang als im Scope skizziert.
+
+**Recherche vor der Entscheidung:** die urspruengliche Auflistung
+(`PostgresDdlGenerator.kt`, `PostgresComputedStorage`,
+`PostgresPartitionClauses`, `PostgresIndexClauses`,
+`NamedUniqueConstraints`) unterschaetzte die Flaeche erheblich. Tatsaechlich
+schema-gebunden (und damit qualifizierungspflichtig) sind zusaetzlich
+Views/Materialized Views, Funktionen, Prozeduren, Aggregate, Sequenzen und
+alle drei Custom-Type-Arten (ENUM/COMPOSITE/DOMAIN) —
+`PostgresRoutineDdlHelper.kt` und `PostgresTypeSequenceDdlSupport.kt` kamen
+dazu. Der Migrate-Pfad (`PostgresDiffSqlBuilders` + 11 Dateien, ~74
+Aufrufstellen) hat dieselbe Luecke, blieb aber wie gescoped aussen vor.
+
+**Audit vor dem Bau deckte zwei Referenz-Faelle auf, die eine reine
+CREATE-Statement-Betrachtung uebersehen haette:** ein ENUM-Spalten-Typ mit
+`refType` verweist auf den `CREATE TYPE`-Namen
+(`PostgresColumnConstraintHelper.kt`), und ein `DEFAULT nextval('seq')`
+verweist auf den `CREATE SEQUENCE`-Namen (`resolveSequenceDefault`) — beide
+haetten unqualifiziert ins Leere gezeigt, waere nur die Erzeugung selbst
+qualifiziert worden, das Ziel aber nicht mit im Suchpfad. Beide sind jetzt
+mitqualifiziert.
+
+**Der wiederverwendbare Baustein:** `SqlIdentifiers.quoteQualifiedIdentifier`
+existierte bereits (genutzt von `PostgresSequenceCurrentValueProbe`, einer
+Live-DB-Stelle im Preserve-Pfad) — kein neuer Mechanismus noetig, nur eine
+neue Zugriffsflaeche (`PostgresDdlGenerator.quoteQualified`, per
+Funktionsreferenz an vier Helfer durchgereicht: `PostgresColumnConstraintHelper`,
+`PostgresRoutineDdlHelper`, `PostgresTypeSequenceDdlSupport`, sowie direkt
+in `PostgresDdlGenerator` selbst).
+
+**Golden-Master-Risiko wie in der Recherche vorhergesagt aufgeloest:** der
+Default (`defaultSchema == null`) rendert exakt wie zuvor — keines der
+PostgreSQL-Goldens musste neu gezogen werden, `DdlGoldenMasterTest` blieb
+unveraendert gruen.
+
+**Bewusst nicht qualifiziert** (Audit-Befund, aus demselben Grund wie
+Funktions-/Prozedur-Bodies nie uebersetzt werden): `SFUNC`/`FINALFUNC`/`STYPE`
+eines Aggregats und Parameter-/Rueckgabetypen von Funktionen/Prozeduren sind
+roher SQL-Text ohne Information, ob sie einen PostgreSQL-Builtin oder ein
+selbst erzeugtes Objekt meinen — eine Qualifizierung koennte einen gueltigen
+Verweis auf einen Builtin brechen. Der Trigger-eigene Name bleibt
+unqualifiziert (PostgreSQL kennt das nicht); seine Zieltabelle und seine
+Helfer-Funktion (samt `EXECUTE FUNCTION`-Referenz) sind qualifiziert.
+
+**Kein CLI-Flag** — dieselbe Begruendung wie bei `ddl.include_comments`:
+eine Ziel-Beschreibung, kein Aufruf-Parameter.
+
+**Verifiziert:** `PostgresDefaultSchemaQualificationTest` (Ende-zu-Ende ueber
+`generate()`: Tabelle+Index+FK, Partitions-Eltern/Kind, Sequenz+`nextval()`,
+ENUM+`refType`, sowie der Default-Fall byte-identisch zum vorherigen
+Rendering), `PostgresRoutineDdlHelperTest`-Ergaenzung (View/Funktion/
+Prozedur/Aggregat/Trigger, inkl. Gegenprobe dass Parameter- und
+Trigger-eigener-Name unqualifiziert bleiben), `DdlConfigResolverTest` und
+`SchemaGenerateWiringTest`-Ergaenzungen (Config-Lesen, Praezedenz, keine
+Uebertragung auf einen Nicht-PostgreSQL-Lauf). Vier Sabotagen durchgefuehrt
+und zurueckgenommen (der zentrale `quoteQualified`-Mechanismus, eine
+einzelne Aufrufstelle in `PostgresRoutineDdlHelper`, der Config-Resolver-Read
+und die `nextval()`-Qualifizierung je einmal neutralisiert) — alle brachen
+die erwarteten Tests. Einmal voller Repo-Build ohne `MODULES`
+(`DdlGenerationOptions` ist ein geteilter Hexagon-Port).
+
+**Nicht Teil dieses Schnitts** (wie im Scope abgegrenzt): `schema migrate`
+(Diff-Pfad) — dieselbe Luecke besteht dort unveraendert, deutlich groesser
+(~74 Aufrufstellen in 11 Dateien), aber nicht Gegenstand dieses Slices.

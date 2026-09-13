@@ -338,6 +338,16 @@ CREATE TABLE "customers" (
   `--inline-foreign-keys always`/`never` auch losgelöst vom Split-Modus erzwingen
   (Default `auto`, folgt `--split` wie bisher). Auf MySQL/SQLite gibt es keine
   zurückgestellte Form; `never` bricht dort ab.
+- **Soll das DDL in einem anderen PostgreSQL-Schema als `public` landen?**
+  Setzen Sie `ddl.postgresql.default_schema: <name>` in der
+  Konfigurationsdatei. Jede Tabelle, View, Funktion, Prozedur, jedes
+  Aggregat, jede Sequenz und jeder Custom Type entsteht dann als
+  `"<name>"."..."`, samt aller Referenzen darauf (Fremdschlüssel,
+  Sequenz-Defaults, ENUM-Spaltentypen, Trigger-Zieltabellen). Kein
+  CLI-Flag — der Wert beschreibt das Ziel, nicht den einzelnen Aufruf. Ohne
+  den Schlüssel bleibt es unqualifiziert wie bisher (PostgreSQLs eigener
+  Server-Default `public` greift). Gilt nur für `schema generate`, nicht
+  für `schema migrate`.
 - Wenn der Bericht Codes wie `E056` (Sequenzen) oder Warnungen enthält, sehen
   Sie in [3.12](#312-sequenzenautowerte-korrekt-mitnehmen) bzw.
   [Anhang D](#anhang-d--fehler--und-warnungscodes) nach.
