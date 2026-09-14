@@ -82,9 +82,10 @@ Die aktuellen Fähigkeiten:
   `DBMS_LOCK`). Auf Oracle ist dieses Fenster serialisiert statt atomar
   und sagt das auch (`W159`); SQLite-Sequence-Emulation via
   `--sqlite-named-sequences helper_table`.
-- **Spatial-DDL**: PostGIS, MySQL native, SpatiaLite
-  (`--spatial-profile`); View-Query-Transformation über Dialekte
-  hinweg.
+- **Spatial-DDL auf allen fünf Dialekten**: PostGIS unter PostgreSQL,
+  native räumliche Typen unter MySQL, SQL Server und Oracle, SpatiaLite
+  unter SQLite (`--spatial-profile`); View-Query-Transformation über
+  Dialekte hinweg.
 - **Daten-Operationen**: streaming `data export` / `import` /
   `transfer` (JSON / YAML / CSV / Parquet) mit benannten
   Verbindungen, UPSERT, Truncate, Trigger-Handling, Reseeding,

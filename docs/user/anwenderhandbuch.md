@@ -1537,22 +1537,26 @@ Verbindungen, die der Agent nutzen darf, kommen aus einer Server-YAML
 **Was der Agent dann nutzen kann.** Der Server bietet dieselben Operationen wie
 die CLI als MCP-Tools an:
 
-- **Schema:** `schema_validate`, `schema_compare`, `schema_generate`,
-  `schema_reverse`, `schema_format`, `schema_list`, `schema_metadata`,
-  `schema_staging_readonly`
-- **Daten:** `data_profile`, `data_type`, `data_import`, `data_transfer`
-- **Lang laufend als Job** (asynchron, Fortschritt per Job-Status):
-  `schema_reverse_start`, `schema_compare_start`, `data_export_start`,
-  `data_import_start`, `data_transfer_start`, `data_profile_start`
+- **Schema (synchron):** `schema_validate`, `schema_compare`, `schema_generate`
+- **Asynchron als Job** (Start über `*_start`, Fortschritt per
+  `job_status_get`): `schema_reverse_start`, `schema_compare_start`,
+  `data_profile_start`, `data_import_start`, `data_transfer_start`
 - **KI-gestützt** (Scope `dmigrate:ai:execute`, synchron, genehmigungspflichtig):
   `testdata_plan`/`testdata_execute` (synthetische Testdaten aus einem
   Schema planen und erzeugen), `procedure_transform_plan`/
   `procedure_transform_execute` (gespeicherte Prozedur in einen anderen
   Dialekt übersetzen) — Vorgehen siehe unten
   ["Beispiel: Testdaten über MCP erzeugen"](#beispiel-testdaten-über-mcp-erzeugen).
-- **Discovery:** `capabilities_list` sowie `resources/list` und `resources/read`;
-  `connections/list` zusätzlich für `dmigrate:admin`-Aufrufer (konfigurierte
-  Verbindungen auflisten, optional mit echtem Erreichbarkeits-Check)
+- **Jobs und Artefakte:** `job_status_get`, `job_list`, `job_cancel`;
+  `artifact_list`, `artifact_chunk_get`. Ein Schema für einen späteren Aufruf
+  vorab bereitstellen (statt es inline zu übergeben): `artifact_upload_init`
+  mit `uploadIntent: schema_staging_readonly`, dann `artifact_upload`
+  (Abbruch über `artifact_upload_abort`)
+- **Auflisten:** `capabilities_list`, `schema_list`, `profile_list`,
+  `diff_list` sowie `resources/list` und `resources/read`
+- **Verbindungen** (Scope `dmigrate:admin`): `connections/list` — die
+  konfigurierten Verbindungen auflisten, optional mit echtem
+  Erreichbarkeits-Check
 
 Welche Tools ein Aufrufer tatsächlich sieht, hängt von seinen Scopes ab
 (read-only vs. schreibend). Den vollständigen Katalog mit Ein-/Ausgabe-Verträgen
