@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.5.2** (stabil, [veröffentlicht 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.5.2)).
+**1.6.0** (stabil, [veröffentlicht 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.6.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,7 +175,7 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.5.2** (2026-09-14) — das, was `:latest`,
+- **Aktuelles Stable** · **1.6.0** (2026-09-14) — das, was `:latest`,
   Homebrew und ein `docker pull` ohne Tag liefern. **Die verbliebenen Lücken
   beim Ändern der Erzeugungsart einer Spalte sind geschlossen.** PostgreSQL
   macht jetzt aus einer gewöhnlichen Spalte eine Identity-Spalte (`SET NOT
@@ -210,11 +210,17 @@ Die vollständige Release-History steht in
   Gleichheit (ein Fehlalarm könnte eine teure Tabellen-Neuschreibung
   auslösen), sagte darüber aber bislang nichts; zwei Schemas mit
   inhaltlich unterschiedlicher Formel liefen bisher ohne jede Meldung als
-  identisch durch. Das Container-Image läuft als **non-root** (`uid
-  10001`); Schreiben in einen Bind-Mount braucht daher `--user
-  "$(id -u):$(id -g)"`. Native Binaries gibt es für `linux-x64` und
-  `windows-x64`; unter macOS führen Homebrew, die JVM-Artefakte oder das
-  Container-Image zum Ziel.
+  identisch durch. 1.6.0 trägt das in den MCP-Server: Der Tool-Call
+  `schema_generate` meldet jetzt `status` (`complete`/`incomplete`) und
+  `skippedCount`, ein Agent erfährt also aus einem Feld, dass Objekte
+  fehlen, statt einen Freitext-`summary` zu parsen oder Findings nach
+  `severity` zu filtern — additiv zum Wire-Vertrag, und der Aufruf bleibt
+  ein Erfolg (`isError=false`), denn ein fehlgeschlagener Aufruf würde die
+  Antwort ersetzen und damit genau die `findings` und die DDL verlieren, um
+  die es geht. Das Container-Image läuft als **non-root** (`uid 10001`);
+  Schreiben in einen Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`.
+  Native Binaries gibt es für `linux-x64` und `windows-x64`; unter macOS
+  führen Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-14
+
 ### Added
 
 - **Der MCP-Aufruf `schema_generate` sagt jetzt explizit, wenn sein Ergebnis

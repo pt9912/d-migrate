@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.5.2**
-(stable, [released 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.5.2)).
+d-migrate is a working production tool at version **1.6.0**
+(stable, [released 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.6.0)).
 
 The current capabilities:
 
@@ -161,7 +161,7 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.5.2** (2026-09-14) — what `:latest`,
+- **Current stable** · **1.6.0** (2026-09-14) — what `:latest`,
   Homebrew and an unpinned `docker pull` give you. **The remaining gaps in
   column-generation changes are closed.** PostgreSQL can now turn an ordinary
   column into an identity column (`SET NOT NULL` + `ADD GENERATED … AS
@@ -192,7 +192,13 @@ The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
   comparator has always folded that case to equal (a false alarm there
   could trigger an expensive table rewrite), but said nothing about it
   before; two schemas with a genuinely different formula used to compare
-  as identical without any note. The container image runs as
+  as identical without any note. 1.6.0 carries that into the MCP server: the
+  `schema_generate` tool call now reports `status` (`complete`/`incomplete`)
+  and `skippedCount`, so an agent learns from a field that objects were
+  dropped instead of parsing a free-text summary or filtering findings by
+  severity — additive to the wire contract, and the call stays a success
+  (`isError=false`), because a failed call would replace the payload and lose
+  the very findings and DDL it is about. The container image runs as
   **non-root** (`uid 10001`), so writing into a bind mount needs `--user
   "$(id -u):$(id -g)"`. Native binaries ship for `linux-x64` and
   `windows-x64`; on macOS use Homebrew, the JVM artefacts or the container
