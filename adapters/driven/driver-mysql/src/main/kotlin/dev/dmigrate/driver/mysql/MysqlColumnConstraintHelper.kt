@@ -173,13 +173,35 @@ internal class MysqlColumnConstraintHelper(
 
     fun generateConstraintClause(
         constraint: ConstraintDefinition,
+        columnType: (String) -> NeutralType?,
         notes: MutableList<TransformationNote>,
         skipped: MutableList<SkippedObject>? = null,
     ): String? = when (constraint.type) {
         ConstraintType.CHECK -> checkClauseOrNull(constraint, notes, skipped)
         ConstraintType.UNIQUE -> {
-            val cols = constraint.columns?.joinToString(", ") { quoteIdentifier(it) } ?: ""
-            "CONSTRAINT ${quoteIdentifier(constraint.name)} UNIQUE ($cols)"
+            val cols = constraint.columns.orEmpty()
+            // I-08 / ERROR 1170: MySQL kann eine unbegrenzte TEXT/BLOB-Spalte
+            // nicht ohne Praefixlaenge in einen Schluessel aufnehmen. Dieselbe
+            // Regel gilt fuer Indizes (W125, MysqlIndexPartitionDdlHelper) —
+            // hier fehlte sie, und die erzeugte DDL scheiterte erst am Server.
+            // Uebersprungen statt geraten: eine Prefix-Laenge zu erfinden
+            // aenderte die Zusicherung (nur die ersten n Zeichen waeren
+            // eindeutig), ohne dass es jemand gesagt haette.
+            val offending = cols.firstOrNull { MysqlIndexPrefix.needsPrefixLength(columnType(it)) }
+            if (offending != null) {
+                val note = MysqlIndexPrefix.uniquePrefixSkipNote(constraint.name, offending)
+                notes += note
+                skipped?.add(
+                    SkippedObject(
+                        type = "constraint", name = constraint.name, reason = note.message,
+                        code = note.code, hint = note.hint,
+                    ),
+                )
+                null
+            } else {
+                "CONSTRAINT ${quoteIdentifier(constraint.name)} " +
+                    "UNIQUE (${cols.joinToString(", ") { quoteIdentifier(it) }})"
+            }
         }
         ConstraintType.EXCLUDE -> {
             val action = ManualActionRequired(

@@ -135,8 +135,27 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         // Inline foreign key constraints (non-circular, from column references)
         columnLines += inlineForeignKeyLines(name, table, deferredFks, isPartitioned, notes, skipped)
 
-        // Explicit constraints
-        columnLines += NamedUniqueConstraints.clauses(table, ::quoteIdentifier)
+        // Explicit constraints.
+        //
+        // Benannte einspaltige UNIQUE-Constraints laufen nicht ueber `clauses`,
+        // sondern einzeln: MySQL braucht auf einer unbegrenzten TEXT/BLOB-Spalte
+        // eine Praefixlaenge im Schluessel (ERROR 1170) und lehnt die ganze
+        // Anweisung sonst ab. Uebersprungen statt geraten — eine erfundene
+        // Praefixlaenge aenderte die Zusicherung. Dasselbe Muster wie bei Oracle
+        // (`ORA-02329`, dort fuer LOB-Schluessel), inklusive der Regel, dass der
+        // Ausgang am SkippedObject haengt und nicht an der Notiz.
+        for ((colName, constraintName) in NamedUniqueConstraints.named(table)) {
+            if (MysqlIndexPrefix.needsPrefixLength(table.columns[colName]?.type)) {
+                val note = MysqlIndexPrefix.uniquePrefixSkipNote(constraintName, colName)
+                notes += note
+                skipped += SkippedObject(
+                    type = "constraint", name = constraintName, reason = note.message,
+                    code = note.code, hint = note.hint,
+                )
+            } else {
+                columnLines += NamedUniqueConstraints.clause(colName, constraintName, ::quoteIdentifier)
+            }
+        }
         for (constraint in table.constraints) {
             if ((name to constraint.name) in deferredConstraints) continue
             if (constraint.type == ConstraintType.FOREIGN_KEY &&
@@ -146,7 +165,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 skipped += partitionedFkSkip(constraint.name)
                 continue
             }
-            generateConstraintClause(constraint, notes, skipped)?.let { columnLines += it }
+            generateConstraintClause(constraint, table, notes, skipped)?.let { columnLines += it }
         }
 
         // Primary key
@@ -220,9 +239,11 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     ): String = columnConstraintHelper.buildForeignKeyClause(constraintName, fromColumns, toTable, toColumns, onDelete, onUpdate)
 
     private fun generateConstraintClause(
-        constraint: ConstraintDefinition, notes: MutableList<TransformationNote>,
+        constraint: ConstraintDefinition, table: TableDefinition, notes: MutableList<TransformationNote>,
         skipped: MutableList<SkippedObject>? = null,
-    ): String? = columnConstraintHelper.generateConstraintClause(constraint, notes, skipped)
+    ): String? = columnConstraintHelper.generateConstraintClause(
+        constraint, { table.columns[it]?.type }, notes, skipped,
+    )
 
     override fun generateIndices(
         tableName: String,

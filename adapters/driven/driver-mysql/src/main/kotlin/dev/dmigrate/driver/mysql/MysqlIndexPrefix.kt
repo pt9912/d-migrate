@@ -3,6 +3,8 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.TransformationNote
 
 /**
  * I-08: MySQL prefix-index rules. An unbounded `TEXT`/`BLOB` column cannot be
@@ -32,4 +34,21 @@ internal object MysqlIndexPrefix {
         is NeutralType.Binary, is NeutralType.Xml -> true
         else -> false
     }
+
+    /**
+     * Die Note zu einem uebersprungenen **UNIQUE-Constraint** auf einer
+     * unbegrenzten TEXT/BLOB-Spalte. Dieselbe Regel wie beim Index
+     * ([columnNeedingPrefix]) und derselbe Code (`W125`) — nur ein anderer
+     * Objekttyp, weshalb der Wortlaut den Constraint nennt.
+     */
+    fun uniquePrefixSkipNote(constraintName: String, column: String): TransformationNote =
+        TransformationNote(
+            type = NoteType.WARNING,
+            code = "W125",
+            objectName = constraintName,
+            message = "UNIQUE constraint '$constraintName' on TEXT/BLOB column '$column' was skipped: " +
+                "MySQL requires a prefix length (e.g. `$column(255)`) which is not present.",
+            hint = "Bound the column with a max_length so it becomes key-eligible, " +
+                "or enforce uniqueness manually.",
+        )
 }

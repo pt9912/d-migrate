@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`schema generate --target mysql` erzeugte DDL, die MySQL ablehnt, wenn eine
+  `UNIQUE`-Constraint auf einer unbegrenzten `TEXT`/`BLOB`-Spalte liegt.**
+  MySQL verlangt dort eine Präfixlänge (`ERROR 1170: BLOB/TEXT column 'email'
+  used in key specification without a key length`) — die erzeugte Anweisung war
+  also nicht anwendbar, ohne dass der Lauf es sagte. Für **Indizes** war die
+  Regel seit I-08 abgefangen (`W125`), der Constraint-Pfad rendert
+  `CONSTRAINT … UNIQUE (email)` ungeprüft. Die Constraint wird jetzt
+  übersprungen und benannt — dieselbe Linie wie MSSQLs `E057`, und mit einem
+  `SkippedObject`, damit der Lauf mit Exit `8` endet statt still eine DDL ohne
+  die Zusicherung zu liefern. Eine Präfixlänge zu erfinden wäre die falsche
+  Antwort: Sie änderte die Zusicherung (nur die ersten n Zeichen wären
+  eindeutig), ohne dass es jemand erführe. Gefunden an einem Konsumenten-Schema
+  (`customers.email` als `TEXT` mit `uq_customer_email`).
+
 - **`schema compare` meldete zwischen zwei zurückgelesenen Schemata
   Unterschiede, die keine waren.** Ein Konsumentenprojekt verglich zwei
   Reverses gegeneinander und maß eine Falsch-Positiv-Quote von 38 %
