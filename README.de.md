@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.5.1** (stabil, [veröffentlicht 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.5.1)).
+**1.5.2** (stabil, [veröffentlicht 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.5.2)).
 
 Die aktuellen Fähigkeiten:
 
@@ -174,7 +174,7 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.5.1** (2026-09-14) — das, was `:latest`,
+- **Aktuelles Stable** · **1.5.2** (2026-09-14) — das, was `:latest`,
   Homebrew und ein `docker pull` ohne Tag liefern. **Die verbliebenen Lücken
   beim Ändern der Erzeugungsart einer Spalte sind geschlossen.** PostgreSQL
   macht jetzt aus einer gewöhnlichen Spalte eine Identity-Spalte (`SET NOT
@@ -202,10 +202,18 @@ Die vollständige Release-History steht in
   LOB-Spalte auf SQL Server (E057) und ein verworfener Rohtext-Funktions-
   DEFAULT, der auf dem Zieldialekt nicht gilt (E053) — beide melden sich
   jetzt als übersprungenes Objekt und treiben Exit `8`, wie schon die sechs
-  Stellen oben. Das Container-Image läuft als **non-root** (`uid 10001`);
-  Schreiben in einen Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`.
-  Native Binaries gibt es für `linux-x64` und `windows-x64`; unter macOS
-  führen Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel.
+  Stellen oben. 1.5.2 schließt eine weitere Lücke im selben Bereich:
+  `schema compare` (und der MCP-Tool-Call `schema_compare`) melden jetzt
+  `W137`, wenn eine Änderung am Berechnungsausdruck einer Spalte nicht
+  entscheidbar war — der Vergleich faltet diesen Fall seit jeher auf
+  Gleichheit (ein Fehlalarm könnte eine teure Tabellen-Neuschreibung
+  auslösen), sagte darüber aber bislang nichts; zwei Schemas mit
+  inhaltlich unterschiedlicher Formel liefen bisher ohne jede Meldung als
+  identisch durch. Das Container-Image läuft als **non-root** (`uid
+  10001`); Schreiben in einen Bind-Mount braucht daher `--user
+  "$(id -u):$(id -g)"`. Native Binaries gibt es für `linux-x64` und
+  `windows-x64`; unter macOS führen Homebrew, die JVM-Artefakte oder das
+  Container-Image zum Ziel.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter
