@@ -16,17 +16,22 @@ import dev.dmigrate.core.diff.migration.overlay.RawTextProvenanceFields
  * gleichartige Formen gegeneinanderstehen — ueber die Herkunft (zwei
  * Autorentexte) oder ueber den Sandkasten (zwei Serverformen).
  *
- * Liegt keines von beidem vor, plant der Lauf nichts: eine Aenderung an einer
- * berechneten Spalte kostet die Neuschreibung der Tabelle unter exklusiver
- * Sperre, und je nach Server scheitert sie an einer abhaengigen Sicht oder
- * verliert einen Index. Ein Fehlalarm ist hier also teurer als bei den uebrigen
- * rohen Textfeldern, wo konservativ geplant wird.
+ * Liegt keines von beidem vor, plant `schema migrate` nichts: eine Aenderung
+ * an einer berechneten Spalte kostet die Neuschreibung der Tabelle unter
+ * exklusiver Sperre, und je nach Server scheitert sie an einer abhaengigen
+ * Sicht oder verliert einen Index. Ein Fehlalarm ist hier also teurer als bei
+ * den uebrigen rohen Textfeldern, wo konservativ geplant wird. `schema
+ * compare` plant ohnehin nichts — dort gilt dieselbe Unentscheidbarkeit fuer
+ * den Diff-Fund: `RawTextFolding` faltet den unentscheidbaren Fall auf
+ * Gleichheit, damit kein Fehlalarm entsteht.
  *
- * Nichts zu planen heisst aber nicht, nichts zu sagen: waere die Frage
- * unbeantwortet **und** unerwaehnt, aenderte jemand den Ausdruck, bekaeme
- * Exit 0 und die Datenbank rechnete weiter nach der alten Formel.
+ * Nichts zu planen (bzw. keinen Diff-Fund zu erzeugen) heisst aber nicht,
+ * nichts zu sagen: waere die Frage unbeantwortet **und** unerwaehnt, aenderte
+ * jemand den Ausdruck, bekaeme sowohl `schema compare` als auch `schema
+ * migrate` (Exit 0) keine Auskunft, und die Datenbank rechnete weiter nach
+ * der alten Formel. Deshalb rufen beide Pfade [diagnostics] auf.
  */
-internal object ComputedExpressionDecidability {
+object ComputedExpressionDecidability {
 
     /** Die Frage blieb offen — es wurde nichts geplant. */
     const val UNDECIDED: String = "W137"
@@ -62,7 +67,7 @@ internal object ComputedExpressionDecidability {
         code = UNDECIDED,
         message = "The computed expression of column `$path` was not compared: its authored form and the " +
             "form the server keeps never match literally, and neither a `raw-text-provenance` overlay nor " +
-            "the raw-SQL sandbox was available to decide. A change to it would NOT have been migrated.",
+            "the raw-SQL sandbox was available to decide. A change to it would not be detected here.",
         severity = DiffDiagnostic.Severity.WARNING,
     )
 

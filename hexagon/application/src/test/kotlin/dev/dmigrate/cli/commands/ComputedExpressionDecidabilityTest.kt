@@ -49,7 +49,7 @@ class ComputedExpressionDecidabilityTest : FunSpec({
 
         diagnostics.single().code shouldBe ComputedExpressionDecidability.UNDECIDED
         diagnostics.single().message shouldContain "order_line.line_total"
-        diagnostics.single().message shouldContain "would NOT have been migrated"
+        diagnostics.single().message shouldContain "would not be detected here"
     }
 
     test("with provenance the question is answerable, so nothing is reported") {

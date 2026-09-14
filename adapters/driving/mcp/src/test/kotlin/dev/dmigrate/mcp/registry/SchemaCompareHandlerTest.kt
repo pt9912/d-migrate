@@ -624,4 +624,51 @@ class SchemaCompareHandlerTest : FunSpec({
         content.mimeType shouldBe "application/json"
         parsePayload(outcome).getAsJsonObject("executionMeta").get("requestId").asString shouldBe "req-deadbeef"
     }
+
+    test(
+        "an undecidable computed-expression change surfaces as a W137 finding even when status is identical",
+    ) {
+        val setup = setup()
+        stageSchema(
+            setup, "left",
+            singleTable(
+                columns = mapOf(
+                    "id" to "\"type\":\"identifier\"",
+                    "total" to "\"type\":\"decimal\",\"precision\":10,\"scale\":2," +
+                        "\"generation\":{\"type\":\"computed\",\"expression\":\"quantity * unit_price\"," +
+                        "\"stored\":true}",
+                ),
+            ),
+        )
+        stageSchema(
+            setup, "right",
+            singleTable(
+                columns = mapOf(
+                    "id" to "\"type\":\"identifier\"",
+                    "total" to "\"type\":\"decimal\",\"precision\":10,\"scale\":2," +
+                        "\"generation\":{\"type\":\"computed\",\"expression\":\"((quantity)::numeric * unit_price)\"," +
+                        "\"stored\":true}",
+                ),
+            ),
+        )
+        val json = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        )
+        // Der Comparator faltet die unentscheidbare Aenderung auf Gleichheit —
+        // kein struktureller Diff-Fund, "identical" bleibt stehen.
+        json.get("status").asString shouldBe "identical"
+        val findings = json.getAsJsonArray("findings")
+        findings.size() shouldBe 1
+        val finding = findings.single().asJsonObject
+        finding.get("code").asString shouldBe "W137"
+        finding.get("severity").asString shouldBe "warning"
+        finding.get("path").asString shouldBe "t1.total"
+        finding.get("message").asString shouldContain "was not compared"
+    }
 })

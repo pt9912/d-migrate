@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`schema compare` (und der MCP-Tool-Call `schema_compare`) melden jetzt
+  `W137`, wenn eine Aenderung am Berechnungsausdruck einer `computed`-Spalte
+  nicht entscheidbar war.** Ohne Herkunfts-Overlay oder Server-Sandkasten
+  faltet der Vergleich eine solche Aenderung schon immer auf Gleichheit —
+  bewusst, ein Fehlalarm koennte eine teure Tabellen-Neuschreibung anstossen.
+  Bislang blieb das aber unausgesprochen: zwei Schemas mit inhaltlich
+  unterschiedlicher Formel liefen als identisch durch, ohne jede Meldung.
+  `schema migrate` kannte diese Warnung bereits (`ComputedExpressionDecidability`);
+  jetzt ruft `schema compare` dieselbe Pruefung auf. Neues, optionales
+  `diagnostics`-Feld im JSON-/YAML-Compare-Dokument (`code`, `severity`,
+  `message`), zusaetzlich auf `stderr` im Plain-Modus und als eigene Sektion
+  im Textreport — auch wenn `status: identical` ist. Gemeldet von einem
+  Konsumenten gegen 1.5.1.
+
 ## [1.5.1] - 2026-09-14
 
 ### Fixed

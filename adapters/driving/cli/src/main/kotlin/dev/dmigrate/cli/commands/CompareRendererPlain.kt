@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.validation.ValidationResult
 
 /**
@@ -12,16 +13,29 @@ internal object CompareRendererPlain {
         appendLine()
 
         if (doc.status == "invalid") { renderInvalid(this, doc); return@buildString }
-        if (doc.status == "identical") { appendLine("Status: IDENTICAL"); appendLine("No differences found."); return@buildString }
+        if (doc.status == "identical") {
+            appendLine("Status: IDENTICAL")
+            appendLine("No differences found.")
+            renderDiagnostics(this, doc.diagnostics)
+            return@buildString
+        }
 
         appendLine("Status: DIFFERENT")
         appendLine()
         renderSummary(this, doc.summary)
+        renderDiagnostics(this, doc.diagnostics)
         val diff = doc.diff ?: return@buildString
         renderDiffSections(this, diff)
         renderOperandInfo(this, doc.sourceOperand, "source")
         renderOperandInfo(this, doc.targetOperand, "target")
     }.trimEnd()
+
+    private fun renderDiagnostics(sb: StringBuilder, diagnostics: List<DiffDiagnostic>) {
+        if (diagnostics.isEmpty()) return
+        sb.appendLine()
+        sb.appendLine("Diagnostics:")
+        for (d in diagnostics) sb.appendLine("  ${d.severity.name.lowercase()} [${d.code}]: ${d.message}")
+    }
 
     private fun renderInvalid(sb: StringBuilder, doc: SchemaCompareDocument) {
         sb.appendLine("Status: INVALID")

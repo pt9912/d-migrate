@@ -134,6 +134,21 @@ class SchemaCompareRunner(
         val diff = comparator(sourceNormalized.schema, targetNormalized.schema)
         val identical = diff.isEmpty()
         val diffView = if (identical) null else projectDiff(diff)
+        // Ein unentscheidbarer Berechnungsausdruck faltet TableComparator auf
+        // Gleichheit (kein Fehlalarm) — das ist dieselbe Frage, die
+        // `schema migrate` mit W137 beantwortet, hier fuer denselben
+        // `comparator`-Aufruf (source == left/current, target == right/desired,
+        // siehe TableComparator.compareTables). "identical" bleibt unberuehrt:
+        // die Meldung ist informativ, kein Diff-Fund.
+        val undecided = ComputedExpressionDecidability.diagnostics(
+            current = sourceNormalized.schema,
+            desired = targetNormalized.schema,
+            authorship = null,
+            serverForm = null,
+        )
+        if (request.outputFormat == "plain") {
+            for (d in undecided) userFacingStderr("  ${d.severity.name} [${d.code}]: ${d.message}")
+        }
 
         // 9. Build document
         val summary = buildSummary(diff)
@@ -154,6 +169,7 @@ class SchemaCompareRunner(
             validation = validation,
             sourceOperand = operandInfo(sourceResolved),
             targetOperand = operandInfo(targetResolved),
+            diagnostics = undecided,
         )
 
         cancellationToken.throwIfCancellationRequested()

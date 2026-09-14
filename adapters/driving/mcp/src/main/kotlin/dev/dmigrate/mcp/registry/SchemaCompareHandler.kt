@@ -3,11 +3,13 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import dev.dmigrate.cli.commands.ComputedExpressionDecidability
 import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
+import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.schema.SchemaContentLoader
 import dev.dmigrate.mcp.schema.SchemaFindingSeverity
@@ -56,6 +58,12 @@ import dev.dmigrate.server.core.principal.PrincipalContext
  * - column `unique → true` / `default` change / `references` change /
  *   index removed-or-changed / constraint added-or-changed → `warning`
  *
+ * A computed column's expression whose change the comparator itself could
+ * not decide (see [ComputedExpressionDecidability]) is projected as its own
+ * `W137`/`warning` finding, independent of `status` — the comparator folds
+ * the undecidable case to equal (no false alarm), so `status` can read
+ * `identical` while a `W137` finding still says the question was open.
+ *
  * When findings exceed `maxInlineFindings` or the rendered envelope
  * would breach `maxToolResponseBytes`, the full diff JSON is written
  * via [ArtifactSink] and surfaced as `diffArtifactRef`; `truncated`
@@ -76,8 +84,15 @@ internal class SchemaCompareHandler(
         val leftSchema = loadSide(args.leftRef, args.format, context.principal)
         val rightSchema = loadSide(args.rightRef, args.format, context.principal)
         val diff = comparator.compare(leftSchema, rightSchema)
+        // Ein unentscheidbarer Berechnungsausdruck faltet der Comparator auf
+        // Gleichheit (kein Fehlalarm) — dieselbe Frage, die `schema migrate`
+        // mit W137 beantwortet. left/right hier == current/desired in
+        // TableComparator.compareTables, derselbe Aufruf wie oben.
+        val undecided = ComputedExpressionDecidability.diagnostics(
+            current = leftSchema, desired = rightSchema, authorship = null, serverForm = null,
+        )
 
-        val allFindings = projectFindings(diff)
+        val allFindings = projectFindings(diff) + undecided.map(::undecidedFinding)
         val cap = limits.maxInlineFindings
         val findingsTruncated = allFindings.size > cap
         val inlineFindings = if (findingsTruncated) allFindings.take(cap) else allFindings
@@ -282,6 +297,17 @@ internal class SchemaCompareHandler(
         if (!details.isNullOrEmpty()) {
             put("details", details.mapValues { (_, v) -> SecretScrubber.scrub(v) })
         }
+    }
+
+    /**
+     * Projects a [ComputedExpressionDecidability] result onto the same
+     * finding shape as everything else — `path` is pulled out of the
+     * backtick-quoted `table.column` the message already carries, since
+     * [DiffDiagnostic] itself has no structured path field.
+     */
+    private fun undecidedFinding(d: DiffDiagnostic): Map<String, Any?> {
+        val path = Regex("`([^`]+)`").find(d.message)?.groupValues?.get(1) ?: "-"
+        return finding(SchemaFindingSeverity.WARNING, d.code, path, d.message)
     }
 
     /**

@@ -646,6 +646,24 @@ damit sie nicht mit Dateipfaden kollidieren.
 - Im Plain-Modus erscheinen operandseitige Notes zusaetzlich auf `stderr`
 - Operandseitige Notes beeinflussen den Compare-Exit-Code **nicht**: `W116` allein erzeugt weder Exit 1 noch Exit 3/4/7. Exit-Codes folgen ausschliesslich aus Validation-Fehlern oder echtem Schema-Diff.
 
+**Vergleichsseitige Diagnose (`diagnostics`)**: Ein Berechnungsausdruck
+(`generation: {type: computed, ...}`), dessen Aenderung der Vergleich nicht
+entscheiden kann — weder eine Herkunfts-Ueberlagerung noch ein
+Server-Sandkasten liegt vor —, wird auf Gleichheit gefaltet: kein Diff-Fund,
+kein Fehlalarm bei einer teuren Operation. Diese Unentscheidbarkeit selbst
+wird zusaetzlich gemeldet:
+
+- `diagnostics` ist ein optionales Array im JSON-/YAML-Dokument (nur gesetzt,
+  wenn mindestens eine offene Frage vorliegt); jeder Eintrag traegt `code`
+  (z.B. `W137`), `severity` (`warning`) und `message`
+- Im Plain-Modus erscheinen dieselben Eintraege zusaetzlich auf `stderr` und
+  unter einer eigenen `Diagnostics:`-Sektion im Textreport — auch wenn
+  `status: identical` ist, denn genau dort waere die Frage sonst unsichtbar
+- `diagnostics` beeinflusst weder `status` noch den Exit-Code: die Meldung
+  ist informativ, kein struktureller Diff-Fund. Dieselbe Frage beantwortet
+  `schema migrate` mit derselben Warnung (`W137`), dort zusaetzlich zum
+  Verzicht, die Aenderung zu planen.
+
 **Exit-Codes**:
 - `0`: Schemas identisch (keine Unterschiede; auch bei operandseitigen Warnungen wie `W116`)
 - `1`: Unterschiede gefunden (zur Nutzung in Scripting: `if d-migrate schema compare ...`)

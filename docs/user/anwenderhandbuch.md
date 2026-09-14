@@ -603,6 +603,13 @@ nützlich in Skripten.
 
 - Für eine maschinenlesbare Differenz: `d-migrate --output-format json schema
   compare … --output diff.json`.
+- **Eine Änderung am Berechnungsausdruck einer `computed`-Spalte kann der
+  Vergleich nicht immer sehen.** Ohne Herkunfts-Overlay oder Server-Sandkasten
+  ist die Frage unentscheidbar — der Vergleich meldet dann bewusst **keinen**
+  Unterschied (ein Fehlalarm könnte auf `schema migrate` eine teure
+  Tabellen-Neuschreibung auslösen), sagt die offene Frage aber als `W137` im
+  `diagnostics`-Feld (bzw. im Plain-Modus auf `stderr` und unter einer eigenen
+  „Diagnostics:"-Sektion) — auch dann, wenn der Status sonst `identical` ist.
 - Alle Exit-Codes stehen in [Anhang B](#anhang-b--exit-codes).
 
 ### 3.5 Eine Schemaänderung ausrollen und zurücknehmen

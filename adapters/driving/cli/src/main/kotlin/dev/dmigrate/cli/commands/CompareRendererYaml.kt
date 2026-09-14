@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.validation.ValidationResult
 
 /**
@@ -23,6 +24,7 @@ internal object CompareRendererYaml {
 
         renderOperandIfPresent(this, "source_operand", doc.sourceOperand)
         renderOperandIfPresent(this, "target_operand", doc.targetOperand)
+        renderDiagnostics(this, doc.diagnostics)
 
         val yd = doc.diff
         if (yd != null) {
@@ -200,6 +202,16 @@ internal object CompareRendererYaml {
             sb.appendLine("    - level: warning")
             sb.appendLine("      code: \"${w.code}\"")
             sb.appendLine("      message: \"${esc(w.message)}\"")
+        }
+    }
+
+    private fun renderDiagnostics(sb: StringBuilder, diagnostics: List<DiffDiagnostic>) {
+        if (diagnostics.isEmpty()) return
+        sb.appendLine("diagnostics:")
+        for (d in diagnostics) {
+            sb.appendLine("  - severity: ${d.severity.name.lowercase()}")
+            sb.appendLine("    code: \"${esc(d.code)}\"")
+            sb.appendLine("    message: \"${esc(d.message)}\"")
         }
     }
 

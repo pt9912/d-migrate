@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.validation.ValidationResult
 
 /**
@@ -25,6 +26,7 @@ internal object CompareRendererJson {
 
         renderOperandIfPresent(this, "source_operand", doc.sourceOperand)
         renderOperandIfPresent(this, "target_operand", doc.targetOperand)
+        renderDiagnostics(this, doc.diagnostics)
 
         val jd = doc.diff
         if (jd != null) {
@@ -179,6 +181,15 @@ internal object CompareRendererJson {
         for (e in result.errors) items += """{"level": "error", "code": "${e.code}", "message": "${esc(e.message)}"}"""
         for (w in result.warnings) items += """{"level": "warning", "code": "${w.code}", "message": "${esc(w.message)}"}"""
         return """    "$side": [${items.joinToString(", ")}]"""
+    }
+
+    private fun renderDiagnostics(sb: StringBuilder, diagnostics: List<DiffDiagnostic>) {
+        if (diagnostics.isEmpty()) return
+        val items = diagnostics.joinToString(", ") { d ->
+            """{"severity": "${d.severity.name.lowercase()}", "code": "${esc(d.code)}", """ +
+                """"message": "${esc(d.message)}"}"""
+        }
+        sb.appendLine("""  "diagnostics": [$items],""")
     }
 
     private fun renderOperandIfPresent(sb: StringBuilder, key: String, info: OperandInfo?) {

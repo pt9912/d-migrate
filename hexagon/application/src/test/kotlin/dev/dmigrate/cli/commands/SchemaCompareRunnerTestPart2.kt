@@ -380,4 +380,53 @@ class SchemaCompareRunnerTestPart2 : FunSpec({
         capturedDoc!!.sourceOperand!!.notes.size shouldBe 1
         capturedDoc!!.sourceOperand!!.notes[0].code shouldBe "W116"
     }
+
+    test(
+        "an undecidable computed-expression change surfaces a W137 diagnostic even though the structural diff is empty",
+    ) {
+        val h = Harness()
+        var capturedDoc: SchemaCompareDocument? = null
+        fun schemaWith(expression: String) = SchemaDefinition(
+            name = "A", version = "1.0",
+            tables = mapOf("t1" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier()),
+                    "total" to ColumnDefinition(
+                        type = NeutralType.Decimal(10, 2),
+                        generation = ColumnGeneration.Computed(expression, stored = true),
+                    ),
+                ),
+                primaryKey = listOf("id"),
+            )),
+        )
+        val leftSchema = schemaWith("quantity * unit_price")
+        val rightSchema = schemaWith("((quantity)::numeric * unit_price)")
+        val runner = SchemaCompareRunner(
+            fileLoader = { op ->
+                val schema = if (op.path.toString().contains("a.yaml")) leftSchema else rightSchema
+                ResolvedSchemaOperand(op.path.toString(), schema, ValidationResult())
+            },
+            // Der echte Comparator faltet die unentscheidbare Aenderung auf
+            // Gleichheit — hier simuliert durch einen leeren Diff, das
+            // Diagnostics-Wiring haengt nicht am Comparator-Fake.
+            comparator = { _, _ -> emptyDiff },
+            projectDiff = { fakeDiffView },
+            renderPlain = { doc ->
+                capturedDoc = doc
+                "PLAIN:${doc.status}"
+            },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { _, _ -> },
+            stdout = h.stdout.sink,
+            stderr = h.stderr.sink,
+        )
+        runner.execute(request()) shouldBe 0
+
+        capturedDoc!!.status shouldBe "identical"
+        capturedDoc!!.diagnostics.size shouldBe 1
+        capturedDoc!!.diagnostics.single().code shouldBe "W137"
+        capturedDoc!!.diagnostics.single().message shouldContain "t1.total"
+        h.stderr.joined() shouldContain "W137"
+    }
 })

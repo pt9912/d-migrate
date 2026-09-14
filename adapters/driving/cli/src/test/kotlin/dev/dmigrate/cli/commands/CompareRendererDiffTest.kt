@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.string.shouldContain
 
@@ -140,6 +141,25 @@ class CompareRendererDiffTest : FunSpec({
         diff = null,
     )
 
+    // Unentscheidbare Computed-Expression-Aenderung: struktureller Diff
+    // bleibt leer (RawTextFolding faltet auf Gleichheit), die Frage bleibt
+    // aber sichtbar — genau der Fall, den `identical` allein nicht zeigt.
+    val undecidedDiagnostic = DiffDiagnostic(
+        code = "W137",
+        message = "The computed expression of column `t1.total` was not compared: undecidable.",
+        severity = DiffDiagnostic.Severity.WARNING,
+    )
+
+    val identicalWithDiagnosticsDoc = SchemaCompareDocument(
+        status = "identical",
+        exitCode = 0,
+        source = "/tmp/a.yaml",
+        target = "/tmp/b.yaml",
+        summary = SchemaCompareSummary(),
+        diff = null,
+        diagnostics = listOf(undecidedDiagnostic),
+    )
+
     // ── JSON ───────────────────────────────────────────────────────
 
     context("CompareRendererJson") {
@@ -201,6 +221,15 @@ class CompareRendererDiffTest : FunSpec({
             val json = CompareRendererJson.render(emptyDoc)
             json shouldContain """"diff": null"""
         }
+
+        test("an undecidable computed-expression diagnostic renders even when status is identical") {
+            val json = CompareRendererJson.render(identicalWithDiagnosticsDoc)
+            json shouldContain """"status": "identical""""
+            json shouldContain """"diagnostics":"""
+            json shouldContain """"severity": "warning""""
+            json shouldContain """"code": "W137""""
+            json shouldContain "t1.total"
+        }
     }
 
     // ── YAML ──────────────────────────────────────────────────────
@@ -236,6 +265,15 @@ class CompareRendererDiffTest : FunSpec({
         test("empty document renders without crashing") {
             CompareRendererYaml.render(emptyDoc)
         }
+
+        test("an undecidable computed-expression diagnostic renders even when status is identical") {
+            val yaml = CompareRendererYaml.render(identicalWithDiagnosticsDoc)
+            yaml shouldContain "status: identical"
+            yaml shouldContain "diagnostics:"
+            yaml shouldContain "severity: warning"
+            yaml shouldContain "W137"
+            yaml shouldContain "t1.total"
+        }
     }
 
     // ── Plain ─────────────────────────────────────────────────────
@@ -263,6 +301,14 @@ class CompareRendererDiffTest : FunSpec({
 
         test("empty document renders without crashing") {
             CompareRendererPlain.render(emptyDoc)
+        }
+
+        test("an undecidable computed-expression diagnostic renders even when status is identical") {
+            val plain = CompareRendererPlain.render(identicalWithDiagnosticsDoc)
+            plain shouldContain "Status: IDENTICAL"
+            plain shouldContain "Diagnostics:"
+            plain shouldContain "warning [W137]"
+            plain shouldContain "t1.total"
         }
     }
 })

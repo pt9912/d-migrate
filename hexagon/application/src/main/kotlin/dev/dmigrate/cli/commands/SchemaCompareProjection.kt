@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SkippedObject
@@ -25,6 +26,13 @@ data class SchemaCompareDocument(
     val validation: CompareValidation? = null,
     val sourceOperand: OperandInfo? = null,
     val targetOperand: OperandInfo? = null,
+    /**
+     * Fragen, die der Vergleich nicht beantworten konnte — etwa ein
+     * Berechnungsausdruck ohne Herkunfts-Overlay oder Sandkasten
+     * ([ComputedExpressionDecidability]). Leer heisst nicht "alles gleich",
+     * nur "keine offene Frage bekannt".
+     */
+    val diagnostics: List<DiffDiagnostic> = emptyList(),
 )
 
 data class SchemaCompareSummary(
