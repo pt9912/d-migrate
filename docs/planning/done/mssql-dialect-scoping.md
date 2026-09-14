@@ -1,4 +1,4 @@
-# Vorabklärung: MS SQL Server als vierter Dialekt (Milestone 1.7.0, vorgezogen)
+# Vorabklärung: MS SQL Server als vierter Dialekt (Milestone: MS SQL Server, vorgezogen)
 
 > **Status:** Abgeschlossen — Slices 0 bis 10 geliefert, Entscheidungen in
 > [ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md) festgehalten.

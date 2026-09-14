@@ -13,10 +13,24 @@ Sie basiert auf den Anforderungen des [Lastenhefts](../../../spec/lastenheft-d-m
 
 ```
 Phase 1: MVP          Phase 2: Beta         Phase 3: Stable       Phase 4: Growth
-0.1.0 - 0.5.5        0.6.0 - 0.9.9        1.0.0                 1.1.0 - 2.0.0
+0.1.0 - 0.5.5        0.6.0 - 0.9.9        1.0.0                 Themen (unbenummert)
 Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 ──────────────────────────────────────────────────────────────────────────────────▶
 ```
+
+> **Warum die Milestones ab Phase 4 keine Nummer mehr tragen.** Bis
+> `1.0.0` waren Milestone- und Versionsnummer deckungsgleich: jeder
+> Milestone wurde als genau diese Version ausgeliefert. Seit Phase 4 gilt
+> das nicht mehr — SQL Server und Oracle wurden als *Milestone 1.7.0/1.8.0*
+> vorgezogen und als `v1.3.0`/`v1.4.0` ausgeliefert
+> ([ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md)), während
+> umgekehrt `v1.5.0`/`v1.6.0` Inhalte trugen, die nicht ihre gleichnamigen
+> Milestones waren. Die Nummern sahen danach weiter wie Versionsnummern aus,
+> ohne es zu sein — eine `1.7.0` gibt es als Release bis heute nicht.
+> Deshalb tragen die Milestones dieser Phase nur noch ihren **Themen-Namen**.
+> **Welche Version welchen Inhalt hatte, steht im
+> [`CHANGELOG.md`](../../../CHANGELOG.md) und in [`version.md`](../../../version.md)
+> — nicht hier.**
 
 ---
 
@@ -227,7 +241,7 @@ JSON/YAML-Report. Design: [profiling.md](../../../spec/profiling.md).
 > beschriebene semantische Analyse ist bewusst **nicht** Teil von 0.7.5.
 > Zuerst wird das deterministische Kern-Profiling stabilisiert; die opt-in
 > LLM-Erweiterung folgt später auf Basis der allgemeinen KI-Provider-
-> Infrastruktur in [1.5.5](#milestone-155--ki-integration).
+> Infrastruktur in [1.5.5](#milestone-ki-integration).
 
 ### Milestone 0.8.0 — Internationalisierung ✅ (2026-04-16)
 
@@ -313,7 +327,7 @@ kritischen Orchestrierungs-/Dialekt-Hotspots (`Data*Runner`,
 > stabilisiert werden. Ursprünglich war er 1.0.0 vorbehalten; seit
 > [ADR 0037](../../adr/0037-database-agnostic-first-staffelung.md) (2026-07-17)
 > steht er hinter dem Treiber-Port-Umbau in
-> [Milestone 2.0.0](#milestone-200--langfristige-vision) — derselbe Grund, nur
+> [Milestone: Langfristige Vision](#milestone-langfristige-vision) — derselbe Grund, nur
 > ein Refactor weiter. Der Kanal ist seit
 > [ADR 0036](../../adr/0036-library-artefakte-github-packages.md) **GitHub
 > Packages** statt des ursprünglich vorgesehenen Maven-Central-Portals.
@@ -784,7 +798,7 @@ End-to-End-Zeilen-Parität über alle logischen Tabellen plus den drei 8.6-Typ-T
 zugleich den SQLite-Generator-Bug W135 auf (Identity-Spalte in einem zusammengesetzten
 Primärschlüssel → ungültiges Doppel-PRIMARY-KEY-DDL), der im selben Zug behoben wurde.
 
-⁴ **Library-Publishing verschoben nach [Milestone 2.0.0](#milestone-200--langfristige-vision)**
+⁴ **Library-Publishing verschoben nach [Milestone: Langfristige Vision](#milestone-langfristige-vision)**
 (2026-07-17). Die Zeile „Publish-Workflow für stabile Library-Artefakte" stand hier, weil 1.0.0 die
 API stabilisieren sollte. [ADR 0037](../../adr/0037-database-agnostic-first-staffelung.md) hat
 beschlossen, den Treiber-Port **nach** 1.0.0 umzubauen — eine Stabilitätszusage mit 1.0.0 träfe
@@ -804,7 +818,7 @@ Live-Repro, Gson-Rekursionstiefe) nachgeholt. Flankiert von [`SECURITY.md`](../.
 [`dependency-inventory.md`](../../security/dependency-inventory.md)). **Der _externe_ (unabhängige
 Dritt-)Audit ist per [ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md) kein
 1.0.0-Gate** (Beschaffung/Business, nicht durch das interne Audit erfüllt) und nach
-[Milestone 2.0.0](#milestone-200--langfristige-vision) verschoben.
+[Milestone: Langfristige Vision](#milestone-langfristige-vision) verschoben.
 
 ⁶ **Docker-Hub-Spiegel ✅** — erstmals wirksam mit dem `v1.0.0-RC2`-Tag (2026-07-31): Der Spiegel
 war zum RC1-Tag zwar konfiguriert, der Mechanik-Commit lag aber **nach** RC1, weshalb das Repository
@@ -841,7 +855,7 @@ macOS bleibt vollwertige Laufzeitplattform über Homebrew, JVM-Artefakte und Con
 
 **Ziel**: Feature-Completeness und Ökosystem-Wachstum
 
-### Milestone 1.1.0 — Trino-Federation (read-first)
+### Milestone: Trino-Federation (read-first)
 
 | Bereich | Aufgabe                                                                                                                                                                    | LF-Ref |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
@@ -857,7 +871,7 @@ als OLTP-Migrationspfad. Schreibpfade, Transaktions-/MERGE-Semantik und
 `schema generate` bleiben ausserhalb Phase 1 (spaetere Phasen). Details und
 Tranchen-Schnitt: [`trino.md`](../next/trino.md).
 
-### Milestone 1.1.8 — gRPC-API
+### Milestone: gRPC-API
 
 | Bereich | Aufgabe                                                                          | LF-Ref |
 | ------- | -------------------------------------------------------------------------------- | ------ |
@@ -876,7 +890,7 @@ Low-Latency-Integration und Streaming-Szenarien. Details:
 Artifact-Service; (2) Reverse/Compare/Profile; (3) Export, Artefakt-Upload-RPCs,
 Import, Transfer. (Aus `grpc-service.md` ausgegliedert, ADR 0024.)
 
-### Milestone 1.2.0 — REST-API
+### Milestone: REST-API
 
 | Bereich | Aufgabe                                                                                          | LF-Ref                                                   |
 | ------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
@@ -898,7 +912,7 @@ zuerst, da ohne Schreibzugriff auf die Ziel-DB); (3) Datenbewegung:
 export/import/transfer + Artefakt-Download; (4) Integrationen: Tool-Exports,
 KI-nahe Endpunkte nur bei echtem Bedarf. (Aus `rest-service.md` ausgegliedert, ADR 0024.)
 
-### Milestone 1.3.0 — Testdaten-Generierung
+### Milestone: Testdaten-Generierung
 
 | Bereich | Aufgabe                                                 | LF-Ref                                                   |
 | ------- | ------------------------------------------------------- | -------------------------------------------------------- |
@@ -922,7 +936,7 @@ NOOP-Platzhalter statt echten Modell-Output, siehe
 [`../next/ollama-lm-studio-provider-adapter.md`](../next/ollama-lm-studio-provider-adapter.md).
 Milestone bleibt deshalb ohne ✅, bis diese Zeile auch geliefert ist.
 
-### Milestone 1.4.0 — Erweiterte Features
+### Milestone: Erweiterte Features
 
 | Bereich   | Aufgabe                                                  | LF-Ref                                                                                                             |
 | --------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -934,7 +948,7 @@ Milestone bleibt deshalb ohne ✅, bis diese Zeile auch geliefert ist.
 | Community | Code of Conduct                                          | —                                                                                                                  |
 | Community | Issue- und PR-Templates                                  | —                                                                                                                  |
 
-### Milestone 1.5.0 — Oekosystem-Integrationen
+### Milestone: Oekosystem-Integrationen
 
 | Bereich     | Aufgabe                                                                                                                                                                           | LF-Ref |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
@@ -942,7 +956,7 @@ Milestone bleibt deshalb ohne ✅, bis diese Zeile auch geliefert ist.
 | Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](../next/orchestrator-examples.md)          | —      |
 | Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](../done-archive/bi-demo-compose.md)            | —      |
 
-### Milestone 1.5.5 — KI-Integration
+### Milestone: KI-Integration
 
 | Bereich | Aufgabe                                                                                                                   | LF-Ref                                                                                                             |
 | ------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -973,7 +987,7 @@ Validierung deterministisch im Profiling-Kern bleiben.
 > Input bleibt auf verdichtete Profil-Summaries begrenzt, konsistent mit
 > Privacy-by-Design und der Trennung aus `spec/profiling.md` §10.
 
-### Milestone 1.6.0 — Metadata Catalog und Lakehouse Targets
+### Milestone: Metadata Catalog und Lakehouse Targets
 
 | Bereich   | Aufgabe                                                                                                                                                                                            | LF-Ref |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
@@ -987,9 +1001,9 @@ ist. Minor-Nummer und Milestone-Nummer sind in diesem Projekt nicht dasselbe;
 der Milestone bleibt offen und wandert mit seiner Arbeit in die naechste
 passende Minor-Version.
 
-### Milestone 1.7.0 — Weitere Datenbanken (MS SQL Server) ✅ (2026-08-30)
+### Milestone: Weitere Datenbanken (MS SQL Server) ✅ (2026-08-30)
 
-Vorgezogen vor die Milestones 1.1.0 bis 1.6.0 (Eigner-Entscheidung,
+Vorgezogen vor die uebrigen Milestones der Phase 4 (Eigner-Entscheidung,
 [ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md)); geliefert in
 elf Slices, siehe [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md).
 
@@ -1002,7 +1016,7 @@ elf Slices, siehe [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)
 Datenbanksystem — `schema reverse`, `generate`, `migrate`, der Datenpfad und
 `data profile`, jeweils live gegen SQL Server belegt.
 
-### Milestone 1.8.0 — Weitere Datenbanken (Oracle) ✅ (2026-09-11)
+### Milestone: Weitere Datenbanken (Oracle) ✅ (2026-09-11)
 
 Geliefert in dreizehn nummerierten Slices ([ADR 0052](../../adr/0052-oracle-fuenfter-dialekt-scoping.md),
 [`oracle-dialect-scoping.md`](../done/oracle-dialect-scoping.md)).
@@ -1024,7 +1038,7 @@ Neutralmodells um Routine-Gruppierung und stehen ohne Terminzusage
 (Entscheidung 4 im Scoping-Dokument) — kein verstecktes `else`, aber auch kein
 Datum, das niemand halten kann.
 
-### Milestone 2.0.0 — Langfristige Vision
+### Milestone: Langfristige Vision
 
 | Bereich   | Aufgabe                                                                     | LF-Ref                                                   |
 | --------- | --------------------------------------------------------------------------- | -------------------------------------------------------- |
@@ -1137,7 +1151,7 @@ DB-Kombinationen, Cutover-Readiness, Betriebs-/Failure-Recovery-Doku.
 **Version**: 3.67
 **Stand**: 2026-09-14 (**1.6.0 veröffentlicht** (`v1.6.0`) — Minor-Release, das den MCP-Tool-Call `schema_generate` vervollstaendigt: er meldet jetzt `status` (`complete`/`incomplete`) und `skippedCount`, wenn Objekte nicht in die DDL kamen, statt das nur im Freitext-`summary` und in den `findings` zu verstecken. **Hinweis zur Nummer:** die Minor-Nummer markiert den Kompatibilitaetsstand, nicht den Fortschritt des gleichnamigen Milestones — der Milestone 1.6.0 („Metadata Catalog und Lakehouse Targets", unten) ist **nicht** begonnen; dasselbe Muster trug schon 1.5.0 (der Milestone 1.5.0 „Oekosystem-Integrationen" ist ebenfalls offen). Zuvor **1.5.2 veröffentlicht** (`v1.5.2`) — Bugfix-Release aus einem Konsumentenbefund (Falsch-Positiv-Audit): `schema compare` und der MCP-Tool-Call `schema_compare` melden jetzt `W137`, wenn eine Aenderung am Berechnungsausdruck einer `computed`-Spalte nicht entscheidbar war — der Vergleich faltet diesen Fall seit jeher auf Gleichheit (ein Fehlalarm koennte eine teure Tabellen-Neuschreibung ausloesen), sagte das aber bislang nicht; `schema migrate` kannte die Warnung bereits. Zuvor **1.5.1 veröffentlicht** (`v1.5.1`) — Bugfix-Release aus einem Konsumentenbefund: zwei weitere Objektverluste, die der 1.5.0-Exit-`8`-Fix noch nicht abdeckte (UNIQUE/PRIMARY-KEY-auf-LOB-Constraint auf SQL Server, E057; verworfener Rohtext-Funktions-DEFAULT, E053), melden sich jetzt ebenfalls als `SkippedObject` und treiben Exit `8`. Zuvor **1.5.0 veröffentlicht** (`v1.5.0`) — die verbliebenen Lücken beim Ändern der Erzeugungsart einer Spalte sind geschlossen: PostgreSQL macht aus einer gewöhnlichen Spalte eine Identity-Spalte (`SET NOT NULL` + `ADD GENERATED … AS IDENTITY` + `setval`-Nachzug über den Bestand hinaus), und MySQL, Oracle sowie SQL Server ändern die Erzeugungsart (gewöhnlich ↔ berechnet) über einen Spaltentausch statt einer benannten Ablehnung — destruktiv markiert, `--allow-destructive` nötig, blockiert bei Primärschlüssel/`UNIQUE`/Index/Fremdschlüssel-Bezug. Dazu: `schema generate` bricht mit Exit `8` ab, sobald ein Objekt tatsächlich übersprungen wird (`--allow-incomplete` erhält das alte Verhalten); `--inline-foreign-keys auto|always|never` und `ddl.include_comments: false` legen zwei bestehende Schalter direkt offen; `ddl.postgresql.default_schema` qualifiziert erzeugte Objekte mit einem anderen Schema als `public`. Zuvor **1.4.0 veröffentlicht** (`v1.4.0`) — berechnete Spalten auf allen fünf Dialekten vollständig: gelesen, gerendert, geändert wo der Server es in place kann, und benannt abgelehnt wo nicht — samt der Übergänge zwischen berechnet, gewöhnlich und Autowert, jeder durch den ganzen Migrationspfad gemessen. Ein Import beschreibt auf keinem Ziel mehr eine berechnete Spalte; `--target-version` sagt, für welchen Server erzeugt wird; das Preserve-Fenster ist auf allen fünf belegt und sagt, was es nicht zusichert. Dazu drei MySQL-Korrektheitsfixes aus dem Release-Check (`MODIFY COLUMN` verlor `NOT NULL`/`DEFAULT`/`AUTO_INCREMENT`, ein String-Default kam als Funktionsaufruf zurück, und das Verbreitern eines Autowert-Schlüssels war blockiert). Zuvor **1.3.1 veröffentlicht** (`v1.3.1`) — Fehlerbehebung aus einem Konsumentenbefund: eine frisch angelegte Sicht meldete Scheindrift, und der `--execute`-Report widersprach dem Prozess-Ausgang. Zuvor **1.3.0 veröffentlicht** (`v1.3.0`) — Oracle als fünfter Dialekt vollständig (Milestone 1.8.0), berechnete Spalten auf PostgreSQL, Atomic-Preserve für SQL Server, und ein Migrationslauf, der bei rohem SQL-Text konvergiert. Zuvor **1.2.0 veröffentlicht** (`v1.2.0`) — kein einzelner
 Milestone, sondern gebündelte Fortsetzungsarbeit: die Core/CLI-Zeilen aus
-**Milestone 1.3.0 — Testdaten-Generierung** (`d-migrate data seed`,
+**Milestone: Testdaten-Generierung** (`d-migrate data seed`,
 seed-basiert reproduzierbar, `--rules`-Regeldatei; die KI-Zeile bleibt
 offen, siehe [`../next/ollama-lm-studio-provider-adapter.md`](../next/ollama-lm-studio-provider-adapter.md))
 sowie vier operative Härtungen des bereits **Milestone 0.9.6 — MCP-Server**
@@ -1160,4 +1174,4 @@ Release-Reihenfolge; der Tag trägt deshalb die semver-nächste Nummer
 am Partitionsbestand laufen als Migrations-Operation statt als Warnung, und
 der Lauf kann Anweisungen ausführen, die eine Datenbank in einer offenen
 Transaktion ablehnt (SQL-Server-Volltext). Zuvor **1.0.3 veröffentlicht** (`v1.0.3`) — inhaltlich identisch mit 1.0.2; der v1.0.2-Tag baute beide nativen Binaries und der Parquet-Round-Trip lief auf beiden Plattformen korrekt, die Smoke-Assertion las jedoch den falschen Ausgabekanal und stoppte die Legs vor dem Artefakt-Upload. Zuvor **1.0.2 veröffentlicht** (`v1.0.2`) — stellt die nativen Binaries wieder her, die der v1.0.1-Tag nicht bauen konnte (zwei unabhängige Bauzeit-Auslöser aus der CVE-Arbeit, per Bisect isoliert: die `commons-logging`-1.3-Brücke aus dem beanutils-Update und Logbacks 1.5.34-SAX-Schnappschuss), und macht den Parquet-**Import** im nativen Binary erstmals funktionsfähig — er scheiterte in jedem bisher veröffentlichten nativen Binary an Hadoops Sicherheitsinitialisierung; der Lesepfad geht jetzt über `LocalInputFile` statt über Hadoops FileSystem, und beide Native-Legs prüfen einen vollständigen Parquet-Round-Trip mit Zeilenzahl-Assertion. **Erstes Release im Ein-Branch-Modell** ([ADR 0045](../../adr/0045-ein-branch-main-statt-develop-main.md)): Tag direkt auf `main`, kein Merge-Schritt. Zuvor **1.0.1 veröffentlicht** (`v1.0.1`) — Sicherheits- und Korrektheits-Patch aus der stabilen Linie. Das Auslieferungsartefakt enthält **keine bekannt verwundbare Abhängigkeitsversion** mehr (1.0.0 lieferte eine kritische und 43 hohe aus, gemessen am publizierten Image) und schrumpft von 240 auf 177 Jars; der Großteil waren Hadoop-Trabanten unter `formats-parquet`, die der Adapter nie angesprochen hat — Ursache war `io.netty:netty-all`, ein Sammelartefakt mit jedem Netty-Modul. Guava kam über `guice`/`guice-servlet` (YARN-Webapps) und musste nicht gehoben, sondern nur entfernt werden. Hadoop selbst bleibt bibliotheksbedingt ([ADR 0046](../../adr/0046-hadoop-bleibt-im-parquet-adapter.md)): `ParquetReader$Builder` verlangt `FileInputFormat`, `ParquetReadOptions$Builder` instanziiert `HadoopParquetConfiguration` — in 1.17.1 wie 1.18.0. Behoben außerdem ein vorbestehender Parquet-Defekt: ein einzelnes Mitglied eines `--split-files`-Bundles brach beim Import mit `ClassCastException` ab, weil der Preflight ohne Manifest jede Spalte mit einem `Text`-Platzhalter füllte; die Typen kommen jetzt aus dem Datei-Footer, und Bundle-Mitglieder tragen ihr Schema selbst. Neu in der CI: `semgrep` und `a-check` laufen als blockierender Job, dazu ein nächtlicher Trivy-Scan der publizierten Images. **Nach diesem Release entfällt `develop`** — Entwicklung und Releases finden auf `main` statt ([ADR 0045](../../adr/0045-ein-branch-main-statt-develop-main.md)). Zuvor **1.0.0 veröffentlicht** (`v1.0.0`) — erstes stabiles Release der 1.0-Linie. Der Milestone ist damit geschlossen: alle Zeilen ✅ bis auf SDKMAN, das per [ADR 0042](../../adr/0042-sdkman-kein-1.0.0-gate.md) ausdrücklich **kein Gate** ist. Mit diesem Tag bewegen sich erstmals seit 0.9.12 wieder `:latest` in beiden Registries und der Homebrew-Tap. Kurz zuvor entschieden: **kein natives macOS-Binary mehr** ([ADR 0044](../../adr/0044-kein-macos-native-binary.md)) — der GraalVM-Builder erstickte auf dem macOS-Runner reproduzierbar im GC, und alle drei Stellschrauben der Maschine wurden gemessen und blieben wirkungslos; da Native Image nicht cross-kompiliert, gibt es keinen Ausweg über eine andere Maschine. Der Release-Pfad ist dadurch deterministisch statt ein Würfelspiel je Tag. Der Homebrew-Pfad wurde vor dem Cut geprüft statt gehofft: Install gegen das RC4-Artefakt auf Linux, Install-Logik auf einem echten macOS-Runner, und der duplizierte `install:`-Block in `release-homebrew.yml` gegen die Repo-Formula abgeglichen. Zuvor **1.0.0-RC4 als Prerelease veröffentlicht** (`v1.0.0-RC4`) — vierte Vorabversion der 1.0.0-Linie, **rein bauseitig**: Kotlin 2.1.20 → 2.4.10 (samt `-jvm-default=no-compatibility`, [ADR 0043](../../adr/0043-interface-default-ohne-defaultimpls.md)), Kover 0.9.9, GraalVM-Buildtools 1.1.7 und Flyway 11.8.2 → 13.1.0. An CLI, Ausgaben und Konfigurationsvertrag ändert sich nichts. Der Flyway-Zwei-Major-Sprung betrifft die Engine, die beim Start von `mcp serve` d-migrates **eigenes** Server-State-Schema anlegt bzw. prüft — nicht die Datenbanken der Anwender; der Upgrade-Pfad wurde gegen echtes PostgreSQL 16 mit beiden Majors geprüft (bestehende History bleibt gültig, identische Prüfsumme, `validate` grün, `auto=true` meldet „up to date"). Flyway ist zudem nicht mehr `api` des Adapters, ein Bruch erreicht Konsumenten also nicht mehr. Nebenher lief die Coverage-Naht `persistence-jdbc` (gemessene Fläche 96 → 192 Zeilen, S1–S3, graduiert). **macOS-Native-Leg bleibt wacklig** — eigener Befund in `open/native-macos-build-marginal.md`, blockiert nichts (nur `linux-x64` ist Gate). Zuvor **1.0.0-RC3 als Prerelease veröffentlicht** (`v1.0.0-RC3`) — dritte Vorabversion der 1.0.0-Linie, geschnitten wegen des **geänderten Auslieferungsartefakts**: das publizierte JVM-Image kommt jetzt aus der Dockerfile-`runtime`-Stage statt aus Jib ([ADR 0041](../../adr/0041-oci-image-aus-dockerfile-runtime-statt-jib.md)), läuft also als non-root (`uid 10001`) und enthält `mod_spatialite`. Der Wechsel legte einen latenten Defekt frei: ein nicht beschreibbarer Ausgabepfad endete im Stacktrace statt in Exit 7 (`cli-spec.md`-Vertrag) — an **einer** Naht in `Main.kt` behoben, nicht an 28 Schreibstellen. Schreiben in einen Bind-Mount braucht ab RC3 `--user "$(id -u):$(id -g)"`; das steht als Verhaltensänderung mit Migrationsbeispiel im CHANGELOG. **SDKMAN bleibt ⛔ und ist kein 1.0.0-Gate** ([ADR 0042](../../adr/0042-sdkman-kein-1.0.0-gate.md)): die Wartefrist auf den Merge des Candidate-PRs lief am 2026-08-05 ohne Bewegung ab, 1.0.0 wird ohne den Kanal geschnitten, Nachpublizieren bleibt per `workflow_dispatch` möglich. Sonst ist seit dem RC2-Tag **kein Produktivcode** angefasst worden; hinzu kam die Coverage-Naht `hexagon:ports-execute` (89,8 % → 100 %, unerreichbarer Zweig gelöscht + Default-Argument gepinnt). Zuvor **1.0.0-RC2 als Prerelease veröffentlicht** (`v1.0.0-RC2`) — zweite Vorabversion der 1.0.0-Linie. Schwerpunkt sind die Distributionszeilen: **GraalVM-Native-Binaries** (`linux-x64` als Release-Gate, `macos-arm64`/`windows-x64` best-effort — beide best-effort-Legs kamen mit durch, alle drei Binaries hängen am Release), das **native OCI-Image** `:X.Y.Z-native` und der **Docker-Hub-Spiegel**; dazu `schema validate --source -`, `config show`, der `keychain:`-Credential-Provider und das interne Security-Vollaudit (27 gemeldet, 18 bestätigt, alle behoben). **Docker Hub → ✅**: mit diesem Tag erstmals wirksam, verifiziert per `docker pull` auf beide Tags plus identischem Manifest-Digest zu GHCR. **SDKMAN bleibt ⛔** — zusätzlich zum offenen Candidate-PR ist aufgefallen, dass `sdkman-release.yml` zum Tag **null Läufe** hatte: `on: release` feuert nicht, weil das Release mit `GITHUB_TOKEN` erzeugt wird. `:latest`/Homebrew bleiben auf dem letzten Stable (0.9.12). Develop danach zurück auf `1.0.0-RC3-SNAPSHOT`. Zuvor **1.0.0-RC1 als Prerelease veröffentlicht** (`v1.0.0-RC1`, 2026-07-16) — der 1.0.0-RC-Feature-Milestone ist feature-komplett (alle Tabellen-Zeilen ✅); publiziert als GitHub-Prerelease + versioniertes OCI-Tag `ghcr.io/pt9912/d-migrate:1.0.0-RC1`. Develop danach zurück auf `1.0.0-RC2-SNAPSHOT`. Profiling-DataSketches (⛔) ist ein bewusster Carve-Out (ADR 0024), post-RC. Zuvor **0.9.12 released** — Patch aus der 1.0.0-RC-Linie: paralleler Datenpfad [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007)/[`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) (`--parallel N`), atomarer Clean-Load [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) (`--atomic`) und Read-only-Quelle (`--read-only`); zuvor **0.9.11** mit [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) SHA-256-`--verify`, [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) First-Class SSL/TLS und [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) CLI-Audit-Logging; und 0.9.10-Patch SQLite-PK-NOT-NULL + Property-Based-Testing [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046). Develop nach jedem Patch zurück auf `1.0.0-RC-SNAPSHOT`.)
-**Status**: **Oracle ist als fünfter Dialekt fertig** (Milestone 1.8.0, 2026-09-11) — damit tragen alle fünf Dialekte Reverse, Generate, Migrate, Datenpfad und Profiling. Zuvor **0.9.11 (2026-07-12) und 0.9.12 (2026-07-13) als Patch-Releases aus der 1.0.0-RC-Linie veröffentlicht.** Milestone 0.1.0–0.9.7 abgeschlossen — 0.9.7 ist mit dem Release-Tag `v0.9.7` am 2026-06-02 veröffentlicht. **0.9.8 ist am 2026-06-14 als `v0.9.8` veröffentlicht** — produktiver Parquet „Cut A" (Sub-Slices S0..S9b closed), S3-kompatibler `ArtifactStore` (Verdict AWS SDK v2 + `url-connection-client`), BI-Demo unter `examples/bi-demo/`, plus die 0.9.8-Refactor-Slices (Atomic-Preserve Service-Mode A+E+SIGINT-Bridge, [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)); alle Closure-Plan-Docs in `docs/planning/done/` (Umbrella [`parquet-productive-cut-a.md`](../done-archive/parquet-productive-cut-a.md)). **0.9.9 ist am 2026-07-08 als `v0.9.9` veröffentlicht** — vollständige Beta-Dokumentation, menschliche ≥5-Tester-Pilot-Abnahme (LF 9.2) und alle P1/P2/P3-Cross-Dialect-Blocker aus fünf Pilot-Läufen behoben (strukturelle Transfer-Preflight, Array/`tsvector`-Bind, `CURRENT_DATE`-Defaults, View-Portabilität, Routinen-Emission, Post-Execute-Compare-Kanonisierung). **0.9.10 ist am 2026-07-11 als `v0.9.10` veröffentlicht** — Patch-Release aus der 1.0.0-Entwicklungslinie: SQLite-Round-Trip-Fix (PK-Spalten rendern jetzt `NOT NULL`, da SQLites `PRIMARY KEY` es — anders als PG/MySQL — nicht impliziert; m-trace-Consumer-Befund) plus Property-Based-Testing ([`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046), `kotest-property`, [ADR 0029](../../adr/0029-property-based-testing-framework.md)). Develop ist nach dem 0.9.10-Release auf `1.0.0-RC-SNAPSHOT` gebumpt; **1.0.0-RC ist jetzt der aktive Zyklus**. Inhalte 0.9.7: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker, Telemetry-Plan-Gates, **D.3b Materialized-View-Vollscheibe (Sub-Slices A/B/C)**, **E.2 Trigger-Rendering-Vollscheibe (Sub-Slices A.1/A.2/A.3/B/C)**, **SQLite-Trigger-Reverse-Read (Sub-Slices A–E)** und **MySQL-Routine-Identity-Reverse-Read** sind umgesetzt; **Quality-Coverage-Expansion** komplett 2026-05-31 (Phasen A/B/C/D am 2026-05-30, E in vier Sub-Slices + Review-Fixes am 2026-05-31, F als Closure): `PerfMeasure`-Lib + 3 Hotpath-PerfSpecs + Bestands-Migration, Cross-Dialekt-Matrix-Sweep mit 7 gepinnten + permanenten Carve-outs (Phase F2 ergaenzt um `Kind.REPORT`/`ROLLBACK`/`FILE_MODE`), PG/MySQL/SQLite Sequence-Preserve-Race-Reproducer, Operational-MCP-Harness gegen file-SQLite mit `schema_compare_start` + MCP `resources/read` (Phase F1), Large-Schema-Scales N=100/1000 mit `HeapDumpOnOutOfMemoryError`-jvmArgs (Phase F5), Kover-Excludes-Ledger mit Disposition-Pflichtspalte + geschlossenem Token-Vokabular + fail-closed-Gradle-Scanner auf unbekannte Selectoren (Phase F4) + Formats-PerfTest-Migration auf `PerfMeasure`/`PerfReport` (Phase F3). D-N10k (N=10000 Nightly) bleibt opt-in-Folge-Thema. **Atomic-Preserve-Folge-Slice** zur 0.9.7-`preserveCurrentValue`-Serie ist 2026-06-01 mit Phasen A + B + C + D + E komplett geliefert: Probe + Restore + protected DDL in einer einzigen Transaktion unter Per-Dialekt-Lock (`pg_advisory_xact_lock` / `SELECT FOR UPDATE` / `BEGIN IMMEDIATE`), drei Cross-Plan-Deadlock-Tests pinnen die deterministische Lock-Reihenfolge, `supportsAtomicPreserveAllInPlan = true` pro Dialekt, Stage-AllInPlan-Gate, CHANGELOG + User-Guide + KDoc-Sync. Backlog-Tracker `docs/planning/done-archive/atomic-preserve-followups.md` mit allen 6 Code-Review-Findings + Dead-Code-Cleanup (Interface gelöscht, Adapter-Singletons live) ebenfalls abgehakt — wandert zusammen mit dem Plan-Doc zum 0.9.7-Release-Tag nach `done/`. Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit Trino-Federation (1.1.0), gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
+**Status**: **Oracle ist als fünfter Dialekt fertig** (Milestone: Oracle, 2026-09-11) — damit tragen alle fünf Dialekte Reverse, Generate, Migrate, Datenpfad und Profiling. Zuvor **0.9.11 (2026-07-12) und 0.9.12 (2026-07-13) als Patch-Releases aus der 1.0.0-RC-Linie veröffentlicht.** Milestone 0.1.0–0.9.7 abgeschlossen — 0.9.7 ist mit dem Release-Tag `v0.9.7` am 2026-06-02 veröffentlicht. **0.9.8 ist am 2026-06-14 als `v0.9.8` veröffentlicht** — produktiver Parquet „Cut A" (Sub-Slices S0..S9b closed), S3-kompatibler `ArtifactStore` (Verdict AWS SDK v2 + `url-connection-client`), BI-Demo unter `examples/bi-demo/`, plus die 0.9.8-Refactor-Slices (Atomic-Preserve Service-Mode A+E+SIGINT-Bridge, [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)); alle Closure-Plan-Docs in `docs/planning/done/` (Umbrella [`parquet-productive-cut-a.md`](../done-archive/parquet-productive-cut-a.md)). **0.9.9 ist am 2026-07-08 als `v0.9.9` veröffentlicht** — vollständige Beta-Dokumentation, menschliche ≥5-Tester-Pilot-Abnahme (LF 9.2) und alle P1/P2/P3-Cross-Dialect-Blocker aus fünf Pilot-Läufen behoben (strukturelle Transfer-Preflight, Array/`tsvector`-Bind, `CURRENT_DATE`-Defaults, View-Portabilität, Routinen-Emission, Post-Execute-Compare-Kanonisierung). **0.9.10 ist am 2026-07-11 als `v0.9.10` veröffentlicht** — Patch-Release aus der 1.0.0-Entwicklungslinie: SQLite-Round-Trip-Fix (PK-Spalten rendern jetzt `NOT NULL`, da SQLites `PRIMARY KEY` es — anders als PG/MySQL — nicht impliziert; m-trace-Consumer-Befund) plus Property-Based-Testing ([`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046), `kotest-property`, [ADR 0029](../../adr/0029-property-based-testing-framework.md)). Develop ist nach dem 0.9.10-Release auf `1.0.0-RC-SNAPSHOT` gebumpt; **1.0.0-RC ist jetzt der aktive Zyklus**. Inhalte 0.9.7: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker, Telemetry-Plan-Gates, **D.3b Materialized-View-Vollscheibe (Sub-Slices A/B/C)**, **E.2 Trigger-Rendering-Vollscheibe (Sub-Slices A.1/A.2/A.3/B/C)**, **SQLite-Trigger-Reverse-Read (Sub-Slices A–E)** und **MySQL-Routine-Identity-Reverse-Read** sind umgesetzt; **Quality-Coverage-Expansion** komplett 2026-05-31 (Phasen A/B/C/D am 2026-05-30, E in vier Sub-Slices + Review-Fixes am 2026-05-31, F als Closure): `PerfMeasure`-Lib + 3 Hotpath-PerfSpecs + Bestands-Migration, Cross-Dialekt-Matrix-Sweep mit 7 gepinnten + permanenten Carve-outs (Phase F2 ergaenzt um `Kind.REPORT`/`ROLLBACK`/`FILE_MODE`), PG/MySQL/SQLite Sequence-Preserve-Race-Reproducer, Operational-MCP-Harness gegen file-SQLite mit `schema_compare_start` + MCP `resources/read` (Phase F1), Large-Schema-Scales N=100/1000 mit `HeapDumpOnOutOfMemoryError`-jvmArgs (Phase F5), Kover-Excludes-Ledger mit Disposition-Pflichtspalte + geschlossenem Token-Vokabular + fail-closed-Gradle-Scanner auf unbekannte Selectoren (Phase F4) + Formats-PerfTest-Migration auf `PerfMeasure`/`PerfReport` (Phase F3). D-N10k (N=10000 Nightly) bleibt opt-in-Folge-Thema. **Atomic-Preserve-Folge-Slice** zur 0.9.7-`preserveCurrentValue`-Serie ist 2026-06-01 mit Phasen A + B + C + D + E komplett geliefert: Probe + Restore + protected DDL in einer einzigen Transaktion unter Per-Dialekt-Lock (`pg_advisory_xact_lock` / `SELECT FOR UPDATE` / `BEGIN IMMEDIATE`), drei Cross-Plan-Deadlock-Tests pinnen die deterministische Lock-Reihenfolge, `supportsAtomicPreserveAllInPlan = true` pro Dialekt, Stage-AllInPlan-Gate, CHANGELOG + User-Guide + KDoc-Sync. Backlog-Tracker `docs/planning/done-archive/atomic-preserve-followups.md` mit allen 6 Code-Review-Findings + Dead-Code-Cleanup (Interface gelöscht, Adapter-Singletons live) ebenfalls abgehakt — wandert zusammen mit dem Plan-Doc zum 0.9.7-Release-Tag nach `done/`. Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit Trino-Federation (1.1.0), gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).

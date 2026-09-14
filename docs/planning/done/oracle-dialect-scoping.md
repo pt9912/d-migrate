@@ -1,4 +1,4 @@
-# Vorabklärung: Oracle als fünfter Dialekt (Milestone 1.8.0)
+# Vorabklärung: Oracle als fünfter Dialekt (Milestone: Oracle)
 
 > **Status:** Closure (2026-09-12) — siehe `## Closure` am Ende. Alle fünf
 > Grundsatzentscheidungen getroffen (siehe ADR 0052). **Geliefert: Slices 0 bis

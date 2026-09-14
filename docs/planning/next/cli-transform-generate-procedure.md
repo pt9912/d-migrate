@@ -9,7 +9,7 @@
 > server-/artefaktgebundenes Tool-Paar, nicht als CLI-taugliche
 > Wiederverwendung.
 > **Vorbedingung:** Keine harte Blockade; Aktivierung frühestens bei
-> Priorisierung von Milestone 1.5.5 (KI-Integration) laut
+> Priorisierung von Milestone: KI-Integration laut
 > [`roadmap.md`](../in-progress/roadmap.md) oder konkretem Anwenderbedarf.
 
 ## Ziel
@@ -78,7 +78,7 @@ Zieldialekt), synchron über die CLI nutzbar.
    mehreren Providern (mehrere Dateien? ein Vergleichsreport?) ist offen.
 5. **Doku-Drift-Hinweis.** `roadmap.md` führt „Stored Procedure →
    Markdown-Zwischenformat" und „Markdown-Zwischenformat → Ziel-DB-Code"
-   unter Milestone 1.5.5 ohne Status-Häkchen, obwohl die MCP-seitige
+   unter Milestone: KI-Integration ohne Status-Häkchen, obwohl die MCP-seitige
    Funktionalität real existiert. Beim Slice-Start Roadmap-Zeilen
    943/944/949/950 gegen den Ist-Stand abgleichen (Korrektur ist nicht
    Teil dieses Dokuments, nur Hinweis).
@@ -133,7 +133,7 @@ werden.
 
 ## Aktivierungs-Trigger
 
-Priorisierung von Milestone 1.5.5 (KI-Integration) laut
+Priorisierung von Milestone: KI-Integration laut
 [`roadmap.md`](../in-progress/roadmap.md), oder ein konkreter
 Anwenderbedarf für Stored-Procedure-Migration zwischen Dialekten. Bis
 dahin bleibt der Eintrag hier (geplant, nicht aktiv).

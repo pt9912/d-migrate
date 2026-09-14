@@ -8,7 +8,7 @@
 > Hinweis: Ein öffentlicher Library-Publish-Vertrag ist bewusst noch nicht Teil
 > dieses Dokuments. Das Publishing steht seit
 > [ADR 0037](../adr/0037-database-agnostic-first-staffelung.md) (2026-07-17) **hinter dem
-> Treiber-Port-Umbau** (Milestone 2.0.0) und **nicht** mehr bei 1.0.0: Der Umbau bricht
+> Treiber-Port-Umbau** (Milestone: Langfristige Vision) und **nicht** mehr bei 1.0.0: Der Umbau bricht
 > Port-Signaturen, eine Stabilitätszusage mit 1.0.0 träfe also genau die Module, deren Bruch
 > bereits beschlossen ist. **1.0.0 liefert CLI, OCI-Image und MCP — keine Library-Artefakte.**
 > Als Kanal ist seit [ADR 0036](../adr/0036-library-artefakte-github-packages.md) **GitHub
