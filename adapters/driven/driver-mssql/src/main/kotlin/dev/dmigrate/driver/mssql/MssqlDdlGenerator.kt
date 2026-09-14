@@ -184,7 +184,9 @@ class MssqlDdlGenerator private constructor(
         if (effective.primaryKey.isNotEmpty()) {
             val lobKeys = effective.primaryKey.filter { it in lobColumns }
             if (lobKeys.isNotEmpty()) {
-                notes += columnHelper.lobKeyNote(name, MssqlConstraintNames.primaryKey(name), "PRIMARY KEY", lobKeys)
+                val action = columnHelper.lobKeyAction(name, MssqlConstraintNames.primaryKey(name), "PRIMARY KEY", lobKeys)
+                notes += action.toNote()
+                skipped += action.toSkipped()
             } else {
                 val pkCols = effective.primaryKey.joinToString(", ") { quoteIdentifier(it) }
                 val pkClause = MssqlClusteredStorage.primaryKeyClause(effective)

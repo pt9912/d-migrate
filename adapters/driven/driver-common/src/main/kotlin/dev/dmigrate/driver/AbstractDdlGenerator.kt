@@ -17,6 +17,8 @@ abstract class AbstractDdlGenerator(
         val schema = filtered.schema
         val statements = mutableListOf<DdlStatement>()
         val skipped = mutableListOf<SkippedObject>()
+        skipped += filtered.skipped
+        tagNewSkips(skipped, 0, DdlPhase.PRE_DATA)
         val blockedTables = mutableSetOf<String>()
 
         // ─── PRE_DATA (default phase) ────────────────────────────

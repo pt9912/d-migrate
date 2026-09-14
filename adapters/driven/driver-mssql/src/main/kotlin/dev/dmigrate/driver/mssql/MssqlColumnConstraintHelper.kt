@@ -101,7 +101,7 @@ internal class MssqlColumnConstraintHelper(
     ): ColumnRendering {
         val type = col.type
         val generation = col.generation
-        val ctx = ColumnContext(tableName, colName, col, table, notes)
+        val ctx = ColumnContext(tableName, colName, col, table, notes, skipped)
         val declaration = when {
             // SQL Server faellt aus dem Muster der anderen vier: die Spalte
             // bekommt ihren Typ aus dem Ausdruck, ein davorstehender Typ ist
@@ -179,6 +179,7 @@ internal class MssqlColumnConstraintHelper(
         val col: ColumnDefinition,
         val table: TableDefinition,
         val notes: MutableList<TransformationNote>,
+        val skipped: MutableList<SkippedObject>? = null,
     ) {
         /** Die benannten Objekte, die die Spalten-Zweige unterwegs einsammeln. */
         val objects = mutableListOf<MssqlColumnObject>()
@@ -372,12 +373,14 @@ internal class MssqlColumnConstraintHelper(
         }
         if (ctx.col.unique) {
             if (lob) {
-                ctx.notes += lobKeyNote(
+                val action = lobKeyAction(
                     ctx.tableName,
                     ctx.col.uniqueConstraintName ?: MssqlConstraintNames.unique(ctx.tableName, ctx.colName),
                     "UNIQUE",
                     listOf(ctx.colName),
                 )
+                ctx.notes += action.toNote()
+                ctx.skipped?.add(action.toSkipped())
             } else {
                 ctx.objects += uniqueObject(ctx)
                 if (isNullable(ctx.table, ctx.colName)) {
@@ -442,14 +445,14 @@ internal class MssqlColumnConstraintHelper(
     }
 
     /** E057: UNIQUE/PRIMARY KEY auf LOB-Spalten ist in SQL Server nicht erzeugbar. */
-    fun lobKeyNote(tableName: String, constraintName: String, kind: String, columns: List<String>): TransformationNote =
+    fun lobKeyAction(tableName: String, constraintName: String, kind: String, columns: List<String>): ManualActionRequired =
         ManualActionRequired(
             code = "E057", objectType = "constraint", objectName = constraintName,
             reason = "$kind constraint '$constraintName' on table '$tableName' was skipped: column(s) " +
                 "'${columns.joinToString(", ")}' are large-object types (NVARCHAR(MAX)/VARBINARY(MAX)/XML) " +
                 "which SQL Server does not allow as key columns.",
             hint = "Bound the column (e.g. max_length <= 4000) so it becomes key-eligible, or enforce uniqueness manually.",
-        ).toNote()
+        )
 
     // ── Foreign keys / table constraints ─────────
 
@@ -514,7 +517,9 @@ internal class MssqlColumnConstraintHelper(
             val columns = constraint.columns.orEmpty()
             val lob = columns.filter { it in lobColumns }
             if (lob.isNotEmpty()) {
-                notes += lobKeyNote(tableName, constraint.name, "UNIQUE", lob)
+                val action = lobKeyAction(tableName, constraint.name, "UNIQUE", lob)
+                notes += action.toNote()
+                skipped?.add(action.toSkipped())
                 null
             } else {
                 val nullable = columns.filter { isNullable(table, it) }

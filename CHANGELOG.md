@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Zwei weitere Objektverluste zählten nicht als `skipped_objects`, trotz
+  des v1.5.0-Exit-8-Fixes.** Ein UNIQUE- oder PRIMARY-KEY-Constraint auf
+  einer LOB-Spalte (`NVARCHAR(MAX)`/`VARBINARY(MAX)`/`XML`) auf SQL Server
+  (E057) verschwand aus der DDL, ohne dass `schema generate` das meldete —
+  weder als übersprungenes Objekt noch mit Exit 8. Derselbe stille Verlust
+  traf einen verworfenen Rohtext-Funktions-DEFAULT (E053, z. B. ein
+  PostgreSQL-`ARRAY['NEW'::order_status]` auf einem Ziel ohne diese
+  Syntax) — dieser Filter läuft zentral für alle fünf Dialekte, war aber
+  beim Schließen der sechs anderen Emissionsstellen nicht mitgenommen
+  worden. Beide melden jetzt einen `SkippedObject`-Eintrag wie die sechs
+  bereits gefixten Fälle. Gemeldet von einem Konsumenten gegen 1.5.0.
+
 ## [1.5.0] - 2026-09-14
 
 ### Changed

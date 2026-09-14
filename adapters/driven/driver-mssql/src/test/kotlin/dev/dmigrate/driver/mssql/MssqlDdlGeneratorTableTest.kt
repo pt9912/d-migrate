@@ -303,6 +303,8 @@ class MssqlDdlGeneratorTableTest : FunSpec({
         sql shouldNotContain "[uq_doc]"
         sql shouldContain "[short] NVARCHAR(50) NOT NULL CONSTRAINT [uq_t_short] UNIQUE"
         result.notesWithCode("E057").map { it.objectName } shouldBe listOf("uq_t_email", "uq_doc", "pk_t")
+        result.skippedObjects.filter { it.code == "E057" }.map { it.name } shouldBe
+            listOf("uq_t_email", "uq_doc", "pk_t")
     }
 
     test("UNIQUE on a primary-key column without explicit required does not emit W138") {

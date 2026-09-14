@@ -1,7 +1,7 @@
 ---
 id: skipped-object-erfassung-luecken-unique-funktions-default
 title: "Der v1.5.0-Exit-8-Fix deckt zwei weitere Objektverluste nicht ab"
-status: open
+status: resolved
 ---
 
 # Der v1.5.0-Exit-8-Fix deckt zwei weitere Objektverluste nicht ab
@@ -125,7 +125,12 @@ Keine der sechs beruehrt die beiden hier gemeldeten Pfade.
 - `SchemaGenerateHandlerTest.kt:262-282` („skipped objects surface as
   error-severity findings") haelt das heutige Verhalten bereits als Test
   fest: `ToolCallOutcome.Success` bei nicht-leerem `skippedObjects` — eine
-  absichtliche, aber inkonsistente Entscheidung gegen die eigene KDoc.
+  absichtliche Entscheidung, testgesichert. Die KDoc ist dazu nicht der
+  Massstab: sie ist Kommentar, nicht Vertrag (normativ ist `spec/`), und
+  kann selbst veraltet/aspirationsartig sein. Der Befund ist die
+  Diskrepanz zwischen Kommentar und Code, kein Verstoss gegen eine
+  bindende Zusage — ob der Code oder die KDoc-Zeile nachziehen soll, ist
+  offen.
 
 ## Was zu tun bleibt
 
@@ -148,13 +153,14 @@ Keine der sechs beruehrt die beiden hier gemeldeten Pfade.
    dem MCP-Handler korrekte Daten fuer `severity: error`-Findings, aendern
    aber fuer sich genommen **nichts** an `isError`. Ob `SchemaGenerateHandler.handle()`
    bei nicht-leerem `skippedObjects` kuenftig `ToolCallOutcome.Error` statt
-   `Success` liefern soll (und damit die eigene KDoc-Zusage „clients should
-   treat it as blocking" einloest), ist eine Eigner-Entscheidung — sie
-   aendert das MCP-Vertragsverhalten fuer bestehende Konsumenten und
-   braucht eine bewusste Freigabe, kein automatischer Nebeneffekt der
-   beiden Datenfixe. `SchemaGenerateHandlerTest.kt:262-282` muesste in
-   diesem Fall mit umgeschrieben werden (heute sperrt der Test genau das
-   Gegenteil fest).
+   `Success` liefern soll, ist eine Eigner-Entscheidung — sie aendert das
+   MCP-Vertragsverhalten fuer bestehende Konsumenten und braucht eine
+   bewusste Freigabe, kein automatischer Nebeneffekt der beiden Datenfixe.
+   Die KDoc-Zeile ist dabei kein Argument fuer sich (Kommentar, nicht
+   Vertrag) — sie zeigt nur, dass die Frage schon einmal gestellt wurde.
+   `SchemaGenerateHandlerTest.kt:262-282` muesste im Falle einer Aenderung
+   mit umgeschrieben werden (heute sperrt der Test genau das Gegenteil
+   fest).
 
 ## Herkunft
 
@@ -163,3 +169,32 @@ Konsumentenbefund zum selben Fix-Commit-Paar (`51ec884b7`/`54d9e472f`); der
 Fund zum Funktions-DEFAULT (`E053`) knuepft inhaltlich an den bereits
 gegen v1.3.1 gemeldeten `ARRAY['NEW'::order_status]`-Fall an, der
 `ForeignFunctionDefaultFilter` erst entstehen liess.
+
+## Umgesetzt (2026-09-14)
+
+Beide Emissionsstellen aus „Was zu tun bleibt" Punkt 1 und 2 sind
+geschlossen, im selben Muster wie `54d9e472f`:
+
+- **MSSQL UNIQUE/PK-auf-LOB**: `MssqlColumnConstraintHelper.lobKeyNote()`
+  (gab nur eine `TransformationNote` zurück) wurde zu `lobKeyAction()`
+  (gibt das zugrundeliegende `ManualActionRequired` zurück, das sowohl
+  `.toNote()` als auch `.toSkipped()` kennt). Alle drei Aufrufstellen —
+  `nullabilityAndObjects()` (Spalten-inline UNIQUE), `generateConstraintClause()`s
+  UNIQUE-Zweig (Tabellen-Constraint), `MssqlDdlGenerator.generateTable()`s
+  PK-Zweig — rufen jetzt beides auf. `ColumnContext` trägt dafür neu ein
+  optionales `skipped`-Feld.
+- **Funktions-DEFAULT (E053)**: `ForeignFunctionDefaultFilter.Result` trägt
+  jetzt zusätzlich `skipped: List<SkippedObject>`, befüllt aus denselben
+  Feldern wie die bestehende `TransformationNote`. `AbstractDdlGenerator.generate()`
+  mischt `filtered.skipped` in seine lokale `skipped`-Liste (Phase `PRE_DATA`,
+  analog zu `globalNotes += filtered.notes`).
+
+Beide Fixe sabotage-verifiziert (Fix temporär entfernt, Testfehlschlag
+beobachtet, zurückgesetzt) und gegen `docker-check` ohne `MODULES`-Filter
+gelaufen, da `driver-common`/`AbstractDdlGenerator` von allen fünf
+Dialekten geerbt wird.
+
+**Nicht mitgenommen** (bewusst, siehe „Was zu tun bleibt" Punkt 1 und 3):
+das verwandte FK-Cascade-auf-`NO ACTION`-E057 in `buildForeignKeyClause()`
+(eigener, kleinerer Fix bei Bedarf) und die MCP-`isError`-Frage
+(Eigner-Entscheidung, ändert Vertragsverhalten für bestehende Konsumenten).

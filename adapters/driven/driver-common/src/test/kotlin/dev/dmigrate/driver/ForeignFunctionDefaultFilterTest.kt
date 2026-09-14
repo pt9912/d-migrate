@@ -43,6 +43,10 @@ class ForeignFunctionDefaultFilterTest : FunSpec({
             note.message shouldContain "function default"
             note.message shouldContain "::"
         }
+        val skipped = result.skipped.single()
+        skipped.code shouldBe "E053"
+        skipped.name shouldBe "orders.status_history"
+        skipped.reason shouldBe note.message
     }
 
     test("the same text stays on PostgreSQL, where it is valid") {

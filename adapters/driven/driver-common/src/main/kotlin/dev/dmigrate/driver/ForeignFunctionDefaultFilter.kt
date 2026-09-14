@@ -38,14 +38,23 @@ import dev.dmigrate.core.model.TableDefinition
  */
 object ForeignFunctionDefaultFilter {
 
-    data class Result(val schema: SchemaDefinition, val notes: List<TransformationNote>)
+    data class Result(
+        val schema: SchemaDefinition,
+        val notes: List<TransformationNote>,
+        val skipped: List<SkippedObject> = emptyList(),
+    )
 
     fun apply(schema: SchemaDefinition, target: DatabaseDialect): Result {
         val notes = mutableListOf<TransformationNote>()
+        val skipped = mutableListOf<SkippedObject>()
         val tables = schema.tables.mapValues { (tableName, table) ->
-            filterTable(tableName, table, target, notes)
+            filterTable(tableName, table, target, notes, skipped)
         }
-        return if (notes.isEmpty()) Result(schema, emptyList()) else Result(schema.copy(tables = tables), notes)
+        return if (notes.isEmpty()) {
+            Result(schema, emptyList())
+        } else {
+            Result(schema.copy(tables = tables), notes, skipped)
+        }
     }
 
     private fun filterTable(
@@ -53,6 +62,7 @@ object ForeignFunctionDefaultFilter {
         table: TableDefinition,
         target: DatabaseDialect,
         notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>,
     ): TableDefinition {
         var changed = false
         val columns = LinkedHashMap<String, ColumnDefinition>(table.columns.size)
@@ -62,6 +72,10 @@ object ForeignFunctionDefaultFilter {
                 columns[colName] = col
             } else {
                 notes += refusal
+                skipped += SkippedObject(
+                    type = "column", name = refusal.objectName, reason = refusal.message,
+                    code = refusal.code, hint = refusal.hint,
+                )
                 columns[colName] = col.copy(default = null)
                 changed = true
             }
