@@ -127,6 +127,8 @@ internal object McpToolSchemas {
             output = obj(
                 "dialect" to stringField(),
                 "statementCount" to integerField(),
+                "status" to enumField(SchemaGenerateStatus.COMPLETE, SchemaGenerateStatus.INCOMPLETE),
+                "skippedCount" to integerField(),
                 "summary" to stringField(),
                 "findings" to generatorFindingArray(),
                 "truncated" to booleanField(),
@@ -135,7 +137,10 @@ internal object McpToolSchemas {
                 "executionMeta" to executionMetaField(),
             )
                 .withAllOf(truncatedRequiresField("artifactRef"))
-                .required("dialect", "statementCount", "summary", "findings", "truncated"),
+                .required(
+                    "dialect", "statementCount", "status", "skippedCount",
+                    "summary", "findings", "truncated",
+                ),
         ))
         // LF-012 / LN-038: typed list-tool schemas live in
         // `McpListToolSchemas`; the registry merges them in

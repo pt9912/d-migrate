@@ -2028,6 +2028,17 @@
           "type": "integer",
           "minimum": 0
         },
+        "status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "incomplete"
+          ]
+        },
+        "skippedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
         "summary": {
           "type": "string"
         },
@@ -2092,6 +2103,8 @@
       "required": [
         "dialect",
         "statementCount",
+        "status",
+        "skippedCount",
         "summary",
         "findings",
         "truncated"

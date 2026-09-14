@@ -268,7 +268,7 @@ liefert `capabilities_list.scopeTable` zur Laufzeit.
 | ---- | --- | ----- | ----- |
 | `capabilities_list` | sync | `dmigrate:read` | Server-/Tool-/Scope-Snapshot |
 | `schema_validate` / `schema_compare` / `schema_generate` | sync | `dmigrate:read` | Schema prüfen / vergleichen / rendern |
-| `schema_list` / `schema_staging_readonly` | sync | `dmigrate:read` | Schema-Discovery / read-only-Staging-Upload |
+| `schema_list` | sync | `dmigrate:read` | Schema-Discovery |
 | `profile_list` / `diff_list` / `job_list` / `artifact_list` / `artifact_chunk_get` | sync | `dmigrate:read` | Ressourcen auflisten / Artefakt-Chunk lesen |
 | `job_status_get` | sync | `dmigrate:read` | Job-Status |
 | `schema_reverse_start` / `schema_compare_start` / `data_profile_start` | **async** | `dmigrate:job:start` | read-only Job starten |
@@ -278,13 +278,26 @@ liefert `capabilities_list.scopeTable` zur Laufzeit.
 | `artifact_upload_abort` | sync | `dmigrate:artifact:upload` | Upload-Session abbrechen |
 | `procedure_transform_plan` / `procedure_transform_execute` / `testdata_plan` / `testdata_execute` | sync | `dmigrate:ai:execute` | KI-gestützte Tools (Phase G) |
 
-¹ Method-Level `dmigrate:read`, damit `schema_staging_readonly` ohne Write-Policy
-startbar ist; intent-abhängige Write-Gates greifen im Handler.
+¹ Method-Level `dmigrate:read`, damit der Upload mit `uploadIntent:
+schema_staging_readonly` ohne Write-Policy startbar ist; intent-abhängige
+Write-Gates greifen im Handler. `schema_staging_readonly` ist ein Wert dieses
+Feldes, **kein** eigener Tool-Name.
 
 **Nur als async `*_start`-Job (kein synchrones MCP-Tool):** `schema_reverse`,
 `data_profile`, `data_import`, `data_transfer`. **Kein MCP-Tool für Daten-Export**
 (nur CLI `data export`). **Nicht implementiert:** SSE-Push / `notifications/*`,
 OAuth-Authorization-Server/DCR (ADR 0008/0009).
+
+**Gelungen, aber unvollständig ist kein `isError`.** Wenn ein Tool sein
+Ergebnis liefert, dabei aber etwas ausweisen muss, steht das in einem Feld der
+Antwort — nicht im Transport-Signal. `schema_generate` setzt `status`
+(`complete`/`incomplete`) und `skippedCount`, sobald Objekte nicht in die DDL
+kamen (dieselbe Regel, die die CLI mit Exit `8` beendet, sofern nicht
+`--allow-incomplete` gesetzt ist); `schema_validate` setzt `valid=false` bei
+einem ungültigen Schema; `schema_compare` setzt `status=different` bei
+Unterschieden. `isError=true` bleibt fachlichen Ausführungsfehlern
+(`VALIDATION_ERROR`, `POLICY_REQUIRED`, `TENANT_SCOPE_DENIED`, …) vorbehalten —
+ein fehlgeschlagener Aufruf trägt die `findings` und die erzeugte DDL nicht.
 
 ### 4.6 Asynchrone Jobs
 

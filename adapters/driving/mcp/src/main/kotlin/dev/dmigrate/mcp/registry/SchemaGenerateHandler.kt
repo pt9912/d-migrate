@@ -20,6 +20,7 @@ import dev.dmigrate.mcp.registry.JsonArgs.optObject
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.schema.SchemaContentLoader
 import dev.dmigrate.mcp.schema.SchemaFindingSeverity
+import dev.dmigrate.mcp.schema.SchemaGenerateStatus
 import dev.dmigrate.mcp.schema.SchemaSourceInput
 import dev.dmigrate.mcp.schema.SchemaSourceResolver
 import dev.dmigrate.mcp.server.McpLimitsConfig
@@ -48,7 +49,17 @@ import dev.dmigrate.server.core.artifact.ArtifactKind
  * - `NoteType.WARNING`         → severity `warning`
  * - `NoteType.INFO`            → severity `info`
  * - `SkippedObject`            → severity `error` (the object did not
- *   make it into the DDL — clients should treat it as blocking)
+ *   make it into the DDL)
+ *
+ * Whether an object was skipped is signalled **explicitly** by the `status`
+ * field (`complete` / `incomplete`) plus `skippedCount`, not by parsing the
+ * free-text `summary` or filtering `findings` by severity — see
+ * [SchemaGenerateStatus]. The call stays a success either way
+ * (`isError=false`); this mirrors the CLI, where `schema generate` exits `8`
+ * on a non-empty `skippedObjects` unless `--allow-incomplete` is given, and
+ * mirrors the sibling tools (`schema_validate`'s `valid`, `schema_compare`'s
+ * `status`), which also carry a negative outcome in the payload rather than
+ * as a transport error.
  */
 internal class SchemaGenerateHandler(
     private val resolver: SchemaSourceResolver,
@@ -171,6 +182,8 @@ internal class SchemaGenerateHandler(
     private fun buildPayload(input: PayloadInput): Map<String, Any?> = buildMap {
         put("dialect", input.dialect.name)
         put("statementCount", input.result.statements.size)
+        put("status", generateStatus(input.result))
+        put("skippedCount", input.result.skippedObjects.size)
         put("summary", summary(input.result, input.dialect, input.truncated))
         put("findings", input.findings)
         put("truncated", input.truncated)
@@ -178,6 +191,16 @@ internal class SchemaGenerateHandler(
         if (input.artifactRef != null) put("artifactRef", input.artifactRef)
         put("executionMeta", mapOf("requestId" to input.requestId))
     }
+
+    /**
+     * `incomplete`, sobald ein Objekt nicht in die DDL kam — dieselbe Regel,
+     * die `d-migrate schema generate` mit Exit `8` beendet. Der Aufruf bleibt
+     * trotzdem ein Erfolg (siehe [SchemaGenerateStatus]); ein Konsument, der
+     * hart abbrechen will, prueft dieses Feld statt den Freitext-`summary` zu
+     * parsen oder `findings` nach `severity` zu filtern.
+     */
+    private fun generateStatus(result: DdlResult): String =
+        if (result.skippedObjects.isEmpty()) SchemaGenerateStatus.COMPLETE else SchemaGenerateStatus.INCOMPLETE
 
     private fun writeDdlArtifact(
         dialect: DatabaseDialect,

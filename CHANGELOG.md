@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Der MCP-Aufruf `schema_generate` sagt jetzt explizit, wenn sein Ergebnis
+  unvollständig ist.** Bisher stand die Zahl der übersprungenen Objekte nur im
+  Freitext-`summary` (`"… 3 skipped); DDL returned inline."`) und in den
+  `findings` als Einträge mit `severity: "error"` — ein Konsument musste also
+  entweder einen Satz parsen oder eine Findings-Liste filtern, um zu merken,
+  dass ihm Objekte fehlen. Jetzt trägt die Antwort `status`
+  (`complete`/`incomplete`) und `skippedCount`, analog zu `schema_validate`s
+  `valid` und `schema_compare`s `status`. Der Aufruf bleibt dabei ein Erfolg
+  (`isError=false`): Er hat sein Ergebnis geliefert und benennt nur seinen
+  Mangel — dieselbe Linie wie die CLI, die bei übersprungenen Objekten mit
+  Exit `8` endet, und dieselbe Linie, die `spec/ki-mcp.md` für fachliche
+  Ausführungsfehler zieht. Gemeldet von einem Konsumenten gegen 1.5.2.
+
 ## [1.5.2] - 2026-09-14
 
 ### Added

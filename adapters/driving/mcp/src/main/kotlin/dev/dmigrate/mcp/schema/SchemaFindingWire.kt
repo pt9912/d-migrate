@@ -16,6 +16,28 @@ internal object SchemaFindingSeverity {
     const val INFO: String = "info"
 }
 
+/**
+ * Wire constants for the `status` field on `schema_generate`.
+ *
+ * `incomplete` heisst: der Lauf hat DDL erzeugt, aber mindestens ein Objekt
+ * fiel heraus (`DdlResult.skippedObjects` ist nicht leer). Der Aufruf selbst
+ * ist gelungen — deshalb bleibt er ein `ToolCallOutcome.Success` mit
+ * `isError=false`, genau wie ein ungueltiges Schema bei `schema_validate`
+ * `valid=false` traegt, ohne zum Transport-Fehler zu werden. `skippedCount`
+ * traegt die Anzahl daneben, damit kein Konsument den Freitext-`summary`
+ * parsen muss.
+ *
+ * Verhaelt sich zur CLI wie folgt: `d-migrate schema generate` endet bei
+ * nicht-leerem `skippedObjects` mit Exit `8` (`--allow-incomplete` senkt das
+ * auf `0`). Der MCP-Aufruf hat keinen Exit-Code; `incomplete` ist hier die
+ * Entsprechung, und sie ist **unabhaengig davon immer gesetzt** — der
+ * Aufrufer entscheidet, ob ihn das stoert.
+ */
+internal object SchemaGenerateStatus {
+    const val COMPLETE: String = "complete"
+    const val INCOMPLETE: String = "incomplete"
+}
+
 internal enum class Strictness(val wire: String) {
     LENIENT("lenient"),
     STRICT("strict");

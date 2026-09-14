@@ -473,6 +473,16 @@ Beispiel `data_transfer_start` (DB-zu-DB-Inkrement):
 }
 ```
 
+Ein **gelungener** Aufruf, dessen Ergebnis aber unvollstaendig ist, ist
+kein Fehler: er bleibt `isError=false` und traegt seinen Ausgang in einem
+eigenen Feld der Antwort — nie im Transport-Signal. Beispiele:
+`schema_generate` setzt `status` (`complete`/`incomplete`) plus
+`skippedCount`, wenn Objekte nicht in die DDL kamen; `schema_validate`
+setzt `valid=false` bei einem ungueltigen Schema; `schema_compare` setzt
+`status=different` bei Unterschieden. `isError=true` bleibt fachlichen
+**Ausfuehrungsfehlern** vorbehalten (siehe Wire-Mapping unten) — ein Lauf,
+der sein Ergebnis geliefert hat und dessen Mangel benennt, ist keiner.
+
 Antworten sollten standardmaessig liefern:
 
 - ein kurzes, maschinenlesbares `summary`
@@ -796,7 +806,12 @@ MCP-Wire-Mapping:
 - Fachliche Tool-Ausfuehrungsfehler wie `VALIDATION_ERROR`,
   `POLICY_REQUIRED`, `TENANT_SCOPE_DENIED` oder
   `UNSUPPORTED_TOOL_OPERATION` werden als `tools/call`-Result mit
-  `isError=true` geliefert.
+  `isError=true` geliefert. **Nicht** darunter faellt ein gelungener Aufruf
+  mit unvollstaendigem Ergebnis: `schema_generate` etwa liefert auch dann
+  `isError=false`, wenn `skipped_objects` nicht leer ist — der Ausgang steht
+  in `status`/`skippedCount` der Antwort, damit die `findings` und die
+  erzeugte DDL beim Konsumenten ankommen. Ein Fehler-Payload traegt sie
+  nicht.
 - Die stabilen d-migrate-Fehlercodes stehen dabei in
   `structuredContent.error.code`, nicht im numerischen
   JSON-RPC-`error.code`.

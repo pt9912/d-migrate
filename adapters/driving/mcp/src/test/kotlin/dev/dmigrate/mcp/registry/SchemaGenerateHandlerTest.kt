@@ -281,6 +281,46 @@ class SchemaGenerateHandlerTest : FunSpec({
         finding.get("message").asString shouldBe "skipped: circular dependency"
     }
 
+    test("a non-empty skippedObjects sets status=incomplete and skippedCount, keeping the call a success") {
+        val ddl = DdlResult(
+            statements = emptyList(),
+            skippedObjects = listOf(
+                SkippedObject(type = "view", name = "v1", reason = "circular dependency", code = "E020"),
+                SkippedObject(type = "table", name = "t2", reason = "unsupported type", code = "E053"),
+            ),
+        )
+        val (sut, _, _) = handler(FakeDdlGenerator(DatabaseDialect.POSTGRESQL, ddl))
+        val outcome = sut.handle(
+            ToolCallContext(
+                "schema_generate",
+                args("""{"schema":${SIMPLE_SCHEMA},"targetDialect":"POSTGRESQL"}"""),
+                PRINCIPAL,
+            ),
+        )
+        // Der Aufruf ist gelungen — dieselbe Haltung wie `schema_validate`s
+        // `valid=false` bei ungueltigem Schema.
+        outcome.shouldBeInstanceOf<ToolCallOutcome.Success>()
+        val payload = parsePayload(outcome)
+        payload.get("status").asString shouldBe "incomplete"
+        payload.get("skippedCount").asInt shouldBe 2
+    }
+
+    test("a run without skipped objects sets status=complete and skippedCount=0") {
+        val ddl = DdlResult(statements = emptyList())
+        val (sut, _, _) = handler(FakeDdlGenerator(DatabaseDialect.POSTGRESQL, ddl))
+        val payload = parsePayload(
+            sut.handle(
+                ToolCallContext(
+                    "schema_generate",
+                    args("""{"schema":${SIMPLE_SCHEMA},"targetDialect":"POSTGRESQL"}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        )
+        payload.get("status").asString shouldBe "complete"
+        payload.get("skippedCount").asInt shouldBe 0
+    }
+
     test("missing targetDialect throws VALIDATION_ERROR with field=targetDialect") {
         val (sut, _, _) = handler(FakeDdlGenerator(DatabaseDialect.POSTGRESQL, DdlResult(emptyList())))
         val ex = shouldThrow<ValidationErrorException> {
