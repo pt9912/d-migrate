@@ -1535,7 +1535,7 @@ Verbindungen, die der Agent nutzen darf, kommen aus einer Server-YAML
 (`--connection-config`, secret-frei über benannte Verbindungen).
 
 **Was der Agent dann nutzen kann.** Der Server bietet dieselben Operationen wie
-die CLI als MCP-Tools an:
+die CLI an — als MCP-Tool (`tools/call`) oder als eigene Protokoll-Methode:
 
 - **Schema (synchron):** `schema_validate`, `schema_compare`, `schema_generate`
 - **Asynchron als Job** (Start über `*_start`, Fortschritt per
