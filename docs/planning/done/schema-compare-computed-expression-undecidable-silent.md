@@ -1,7 +1,7 @@
 ---
 id: schema-compare-computed-expression-undecidable-silent
 title: "`schema compare` verschluckt W137 — die unentscheidbare Frage bleibt unausgesprochen"
-status: open
+status: resolved
 ---
 
 # `schema compare` verschluckt W137 — die unentscheidbare Frage bleibt unausgesprochen
@@ -132,3 +132,52 @@ sichtbar, nachdem der ursprüngliche Datenverlust-Befund (Computed-Spalten
 fielen beim Reverse ganz weg) mit `generated-column-expression-dropped.md`
 behoben war. Kein bestehendes Tracking-Dokument für den Gesamt-Audit
 gefunden; dieses Ticket deckt ausschließlich den neuen, konkreten Fund ab.
+
+## Umgesetzt (2026-09-14)
+
+Die W137-Lücke aus „Was zu tun bleibt" ist geschlossen, im selben Muster
+wie die parallelen `SkippedObject`-Fixe dieses Zyklus:
+
+- **`ComputedExpressionDecidability` von `internal` auf public gestellt**
+  (`hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/ComputedExpressionDecidability.kt`) — der MCP-
+  Adapter (`adapters/driving/mcp`) braucht Sichtbarkeit über die
+  Modulgrenze hinweg, um dieselbe Prüfung wie `schema migrate`
+  wiederzuverwenden, statt sie zu duplizieren.
+- **`SchemaCompareRunner.execute()`** ruft `ComputedExpressionDecidability.diagnostics(...)`
+  jetzt mit denselben `source`/`target`-Schemas auf, die auch an den
+  `comparator`-Aufruf gehen (`current = source`, `desired = target` —
+  dieselbe links/rechts-Zuordnung wie `TableComparator.compareTables`).
+  Ergebnis fließt in ein neues `diagnostics: List<DiffDiagnostic>`-Feld auf
+  `SchemaCompareDocument`.
+- **Alle drei CLI-Renderer** (`CompareRendererPlain`/`Json`/`Yaml`) rendern
+  `diagnostics` — im Plain-Modus zusätzlich sofort auf `stderr`, dieselbe
+  Konvention wie bei Operand-Notes/-Skips. Wichtig: der `identical`-Zweig
+  von `CompareRendererPlain` (der sonst früh zurückkehrt) rendert
+  `diagnostics` mit, sonst bliebe die Meldung genau in dem Fall unsichtbar,
+  den das Ticket beschreibt.
+- **`SchemaCompareHandler.handle()`** (MCP) ruft dieselbe Funktion mit
+  `current = left, desired = right` auf und projiziert jeden Treffer als
+  eigenen `W137`/`warning`-Finding-Eintrag (`path` aus dem
+  Backtick-Fragment der Message extrahiert, da `DiffDiagnostic` kein
+  strukturiertes Pfadfeld trägt) — unabhängig von `status`, das weiterhin
+  rein strukturell aus dem Diff folgt. Kein Schema-Änderung an
+  `McpToolSchemas` nötig: `code` ist dort bereits ein freies `stringField()`,
+  keine Enum-Liste.
+- **Message-Wortlaut verallgemeinert**: „A change to it would NOT have been
+  migrated" (migrate-spezifisch) → „would not be detected here" (gilt für
+  beide Aufrufer). KDoc am `object` entsprechend erweitert.
+- **Doku nachgezogen**: `spec/cli-spec.md` (neuer Abschnitt
+  „Vergleichsseitige Diagnose (`diagnostics`)"),
+  `docs/user/anwenderhandbuch.md` §3.4 (Hinweis-Bullet), `CHANGELOG.md`
+  (`### Added`).
+- **Sabotage-verifiziert**: je ein Fix in `SchemaCompareRunner`,
+  `SchemaCompareHandler` und `CompareRendererPlain`s `identical`-Zweig
+  temporär entfernt, Testfehlschlag beobachtet, zurückgesetzt. Gegen den
+  vollen `docker-check` (kein `MODULES`-Filter) gelaufen, da die
+  Sichtbarkeitsänderung eine Modulgrenze überschreitet.
+
+**Nicht mitgenommen** (unverändert seit dem Befund, siehe „Nicht in
+Scope" oben): die Vergleichsregel selbst (Weg C) und die übrigen
+Audit-Punkte (rohe CHECK-Ausdrücke, MSSQL `on_update`/`ON DELETE
+RESTRICT`, `VIEW_CHANGED`, fehlende View-`columns`/`dependencies`,
+`engine: InnoDB`-Info-Funde, irreführendes `custom_types … REMOVED`).
