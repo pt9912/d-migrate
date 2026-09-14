@@ -162,7 +162,13 @@ class SchemaComparator(
                 valueChangeOrNull(left.query, right.query)
             },
             columnsChanged = left.columns != right.columns,
-            sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
+            // `sourceDialect` beschreibt, WOHER ein Objekt gelesen wurde — nicht,
+            // WAS es ist. Er wird darum nicht verglichen: zwei Reverses aus
+            // verschiedenen Dialekten tragen unweigerlich verschiedene Werte
+            // ("postgresql" vs "mssql"), und das ist keine Schema-Aenderung.
+            // Dieselbe Klasse wie der Schemaname/-version-Marker, den
+            // ReverseMarkerNormalizer schon vor dem Vergleich wegwischt.
+            sourceDialect = null,
         )
         return if (diff.hasChanges()) diff else null
     }

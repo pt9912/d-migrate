@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`schema compare` meldete zwischen zwei zurückgelesenen Schemata
+  Unterschiede, die keine waren.** Ein Konsumentenprojekt verglich zwei
+  Reverses gegeneinander und maß eine Falsch-Positiv-Quote von 38 %
+  (PG↔MSSQL), 38 % (PG↔MySQL) und 30 % (MSSQL↔MySQL). Vier Ursachen sind
+  behoben: `NO ACTION` ist der implizite SQL-Default und wird jetzt beim
+  Lesen auf `null` gefaltet, statt als eigener Wert zu gelten — SQL Server
+  liest ihn explizit zurück, PostgreSQL und MySQL nicht, und derselbe
+  Fremdschlüssel galt dadurch als geändert; `sourceDialect` (auf Views) und
+  `engine` (nur MySQL führt einen) werden nicht mehr verglichen, weil beide
+  beschreiben, *woher* ein Objekt stammt statt *was* es ist — der Vergleich
+  fragte cross-dialekt nach etwas, das die Gegenseite nicht ausdrücken kann;
+  und ein Enum, den die Gegenseite nur inline an der Spalte führt, wird als
+  „nicht als Custom-Type vorhanden" gemeldet statt als „entfernt".
+
+  Nicht angefasst: die rohen CHECK- und View-Texte. Sie zu falten hieße, den
+  strikten Modus aufzuweichen, den `schema compare` bewusst zusichert
+  („jeden Unterschied zeigen, auch einen, den das Ziel nicht ausdrücken
+  kann") — das ist eine Vertragsänderung und bleibt eine bewusste
+  Entscheidung, siehe
+  `docs/planning/in-progress/compare-falsch-positive-cross-dialekt.md`.
+
 ## [1.6.0] - 2026-09-14
 
 ### Added

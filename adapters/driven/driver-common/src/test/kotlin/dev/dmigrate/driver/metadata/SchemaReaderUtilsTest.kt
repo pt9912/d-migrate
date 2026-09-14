@@ -29,8 +29,17 @@ class SchemaReaderUtilsTest : FunSpec({
         SchemaReaderUtils.toReferentialAction("RESTRICT") shouldBe ReferentialAction.RESTRICT
     }
 
-    test("NO ACTION maps correctly") {
-        SchemaReaderUtils.toReferentialAction("NO ACTION") shouldBe ReferentialAction.NO_ACTION
+    // `NO ACTION` ist der SQL-Standard-Default: „explizit hingeschrieben" und
+    // „weggelassen" sind derselbe Sachverhalt. Wird es hier auf NO_ACTION
+    // abgebildet, meldet der Vergleich einen unveraenderten Fremdschluessel
+    // als geaendert, sobald eine Seite ein MSSQL-Reverse ist — SQL Server
+    // liest es als "NO ACTION" zurueck, PostgreSQL und MySQL als null.
+    test("NO ACTION maps to null — it is the implicit SQL default") {
+        SchemaReaderUtils.toReferentialAction("NO ACTION").shouldBeNull()
+    }
+
+    test("an explicitly null action and NO ACTION are indistinguishable") {
+        SchemaReaderUtils.toReferentialAction(null) shouldBe SchemaReaderUtils.toReferentialAction("NO ACTION")
     }
 
     test("null maps to null") {

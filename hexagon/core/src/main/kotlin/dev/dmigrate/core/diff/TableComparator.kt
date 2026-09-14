@@ -98,8 +98,7 @@ internal class TableComparator(
 
         val indexDiffs = indexComparator.compareIndices(name, left.indices, right.indices)
         val constraintDiffs = compareConstraints(name, leftNorm, rightNorm)
-        val metadataDiff = if (left.metadata == right.metadata) null
-            else ValueChange(left.metadata, right.metadata)
+        val metadataDiff = metadataChangeOrNull(left.metadata, right.metadata)
         val partitioningDiff = comparePartitioning(left.partitioning, right.partitioning)
 
         val diff = TableDiff(
@@ -145,6 +144,38 @@ internal class TableComparator(
      * derives different bounds; MySQL rejects such a definition anyway, and a
      * partition that states its lower bound is never touched.
      */
+    /**
+     * Wie [TableMetadata] verglichen wird — mit einer Ausnahme beim `engine`.
+     *
+     * Nur MySQL fuehrt einen Storage-Engine im Katalog; PostgreSQL, SQLite,
+     * SQL Server und Oracle setzen keinen. Ein Vergleich „MySQL-Reverse gegen
+     * PG-Reverse" fragt dort etwas, das die Gegenseite gar nicht ausdruecken
+     * **kann**, und meldete pro Tabelle einen Fund. Traegt auch nur eine Seite
+     * keinen Engine, wird das Feld deshalb aus dem Vergleich genommen —
+     * innerhalb eines Dialekts (MySQL gegen MySQL) bleibt er scharf.
+     *
+     * `withoutRowid` ist davon unberuehrt: es ist ein Strukturmerkmal der
+     * Tabelle, kein Katalog-Anhaengsel.
+     *
+     * `null` und ein `TableMetadata` aus lauter Defaults gelten dabei als
+     * dasselbe: die eine Seite fuehrt **gar kein** Metadaten-Objekt (PG),
+     * die andere eines, dessen einziges Feld der Engine war (MySQL). Ohne
+     * diese Gleichsetzung bliebe der Fund bestehen — nur mit leerem `before`
+     * statt mit dem Engine, also schlimmer als vorher.
+     *
+     * Gemeldet wird das unveraenderte Paar; verglichen wird nur die
+     * engine-bereinigte Fassung (dieselbe Linie wie bei den rohen Textfeldern).
+     */
+    private fun metadataChangeOrNull(
+        left: TableMetadata?,
+        right: TableMetadata?,
+    ): ValueChange<TableMetadata?>? {
+        val comparable = left?.engine != null && right?.engine != null
+        val comparableLeft = (if (comparable) left else left?.copy(engine = null)) ?: TableMetadata()
+        val comparableRight = (if (comparable) right else right?.copy(engine = null)) ?: TableMetadata()
+        return if (comparableLeft == comparableRight) null else ValueChange(left, right)
+    }
+
     private fun comparePartitioning(
         left: PartitionConfig?,
         right: PartitionConfig?,

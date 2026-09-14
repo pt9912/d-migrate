@@ -97,6 +97,38 @@ class SchemaComparatorTestPart3 : FunSpec({
         diff.tablesChanged[0].metadata!!.after shouldBe TableMetadata(engine = "MyISAM")
     }
 
+    // Nur MySQL fuehrt einen Storage-Engine im Katalog; PostgreSQL, SQLite,
+    // SQL Server und Oracle setzen keinen. Traegt eine Seite keinen, wird das
+    // Feld aus dem Vergleich genommen — sonst meldete jedes MySQL-Reverse
+    // gegen jedes andere Reverse pro Tabelle einen Fund, den die Gegenseite
+    // gar nicht ausdruecken kann.
+    test("engine on only one side produces no diff — the other dialect cannot express it") {
+        val left = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+            metadata = TableMetadata(engine = "InnoDB"),
+        )))
+        val right = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+        )))
+
+        val diff = comparator.compare(left, right)
+        diff.tablesChanged.shouldBeEmpty()
+    }
+
+    test("engine on one side alone does not hide a withoutRowid change") {
+        val left = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+            metadata = TableMetadata(engine = "InnoDB", withoutRowid = false),
+        )))
+        val right = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+            metadata = TableMetadata(withoutRowid = true),
+        )))
+
+        val diff = comparator.compare(left, right)
+        diff.tablesChanged shouldHaveSize 1
+    }
+
     test("table metadata withoutRowid change detected") {
         val left = schema(tables = mapOf("t" to TableDefinition(
             columns = mapOf("id" to col(NeutralType.Identifier())),

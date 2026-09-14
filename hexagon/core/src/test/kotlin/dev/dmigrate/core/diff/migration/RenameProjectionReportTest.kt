@@ -95,7 +95,15 @@ class RenameProjectionReportTest : FunSpec({
     }
 
     test("structural mismatch fallback: report with renameOperationId=null + fallbackOperationIds populated") {
-        val beforeTable = simpleTable()
+        // Beide Seiten tragen einen Engine, aber einen verschiedenen: nur so ist
+        // es eine Metadaten-Drift und damit das Residual, an dem der Projektor auf
+        // drop+create zurueckfaellt. Ein Engine auf **nur** einer Seite ist
+        // dagegen keine Drift — PostgreSQL setzt gar keinen, MySQL schon, und der
+        // Vergleich nimmt das Feld darum aus, wenn eine Seite es gar nicht
+        // ausdruecken kann.
+        val beforeTable = simpleTable().copy(
+            metadata = dev.dmigrate.core.model.TableMetadata(engine = "myisam"),
+        )
         val afterTable = simpleTable().copy(
             columns = simpleTable().columns + mapOf(
                 "extra_col" to ColumnDefinition(type = NeutralType.Text(maxLength = 50)),

@@ -262,7 +262,7 @@ internal class SchemaCompareHandler(
         addAll(diff.sequencesRemoved.map { removed("SEQUENCE_REMOVED", "sequences.${it.name}") })
         addAll(diff.sequencesChanged.map { changed("SEQUENCE_CHANGED", "sequences.${it.name}") })
         addAll(diff.customTypesAdded.map { added("CUSTOM_TYPE_ADDED", "custom_types.${it.name}") })
-        addAll(diff.customTypesRemoved.map { removed("CUSTOM_TYPE_REMOVED", "custom_types.${it.name}") })
+        addAll(diff.customTypesRemoved.map { customTypeRemoved("custom_types.${it.name}") })
         addAll(diff.customTypesChanged.map { changed("CUSTOM_TYPE_CHANGED", "custom_types.${it.name}") })
         addAll(diff.functionsAdded.map { added("FUNCTION_ADDED", "functions.${it.name}") })
         addAll(diff.functionsRemoved.map { removed("FUNCTION_REMOVED", "functions.${it.name}") })
@@ -335,6 +335,22 @@ internal class SchemaCompareHandler(
     // typically gate deploys on the warning bucket.
     private fun removed(code: String, path: String): Map<String, Any?> =
         finding(SchemaFindingSeverity.WARNING, code, path, "$path was removed")
+
+    /**
+     * Ein Custom-Type, den die Gegenseite nicht als Typ fuehrt, ist nicht
+     * zwangslaeufig verloren: Dialekte ohne benannte Typen (MySQL, SQLite)
+     * tragen einen Enum-Wertevorrat **inline** an der Spalte, etwa als CHECK.
+     * Der Fund bleibt — der Typ *ist* auf dieser Seite nicht vorhanden —, aber
+     * „was removed" behauptet einen Verlust, den es oft nicht gibt.
+     */
+    private fun customTypeRemoved(path: String): Map<String, Any?> =
+        finding(
+            SchemaFindingSeverity.WARNING,
+            "CUSTOM_TYPE_REMOVED",
+            path,
+            "$path is not present as a custom type on the other side — a dialect without named types " +
+                "carries the same values inline on the column",
+        )
 
     private fun changed(code: String, path: String): Map<String, Any?> =
         finding(SchemaFindingSeverity.WARNING, code, path, "$path changed")

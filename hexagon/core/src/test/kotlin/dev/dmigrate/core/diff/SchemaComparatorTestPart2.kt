@@ -336,4 +336,25 @@ class SchemaComparatorTestPart2 : FunSpec({
         diff.sequencesChanged[0].cycle!!.after shouldBe true
     }
 
+    // `sourceDialect` beschreibt, WOHER ein Objekt gelesen wurde — nicht, WAS
+    // es ist. Zwei Reverses aus verschiedenen Dialekten tragen unweigerlich
+    // verschiedene Werte; das ist keine Schema-Aenderung. Dieselbe Klasse wie
+    // der Schemaname/-version-Marker, den ReverseMarkerNormalizer vor dem
+    // Vergleich wegwischt.
+    test("sourceDialect is not compared — it says where a view was read, not what it is") {
+        val left = schema(views = mapOf("v" to view(query = "SELECT 1", sourceDialect = "postgresql")))
+        val right = schema(views = mapOf("v" to view(query = "SELECT 1", sourceDialect = "mssql")))
+
+        val diff = comparator.compare(left, right)
+        diff.viewsChanged.shouldBeEmpty()
+    }
+
+    test("a real view change is still detected when sourceDialect differs") {
+        val left = schema(views = mapOf("v" to view(query = "SELECT 1", sourceDialect = "postgresql")))
+        val right = schema(views = mapOf("v" to view(query = "SELECT 2", sourceDialect = "mssql")))
+
+        val diff = comparator.compare(left, right)
+        diff.viewsChanged shouldHaveSize 1
+    }
+
 })

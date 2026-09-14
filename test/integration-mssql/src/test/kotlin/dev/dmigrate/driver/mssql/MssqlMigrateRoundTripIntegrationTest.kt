@@ -20,7 +20,6 @@ import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.ReferenceDefinition
-import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.validation.ValidationResult
@@ -301,14 +300,14 @@ class MssqlMigrateRoundTripIntegrationTest : FunSpec({
                             name = "fk_children_parent",
                             type = ConstraintType.FOREIGN_KEY,
                             columns = listOf("parent_id"),
-                            // Mit den Aktionen, die der Katalog meldet: ohne sie sieht
-                            // der Vergleich ein geaendertes Paar und der Plan tauscht
-                            // den Fremdschluessel zusaetzlich aus -- eine Churn, die
-                            // den Beweis verdeckt.
+                            // Ohne Aktionen: `NO ACTION` ist der implizite Default und
+                            // wird vom Reader auf `null` gefaltet, hier wie dort. Der
+                            // Vergleich sieht darum kein geaendertes Paar -- frueher
+                            // musste hier das vom Katalog gemeldete
+                            // `ReferentialAction.NO_ACTION` stehen, sonst tauschte der
+                            // Plan den Fremdschluessel zusaetzlich aus.
                             references = ConstraintReferenceDefinition(
                                 table = "parents", columns = listOf("id"),
-                                onDelete = ReferentialAction.NO_ACTION,
-                                onUpdate = ReferentialAction.NO_ACTION,
                             ),
                         )),
                     ),

@@ -15,13 +15,35 @@ object SchemaReaderUtils {
      * Maps a referential action string (CASCADE, SET NULL, etc.)
      * to the neutral [ReferentialAction] enum. Returns null for
      * NO ACTION or unknown values.
+     *
+     * **`NO ACTION` wird bewusst auf `null` gefaltet, nicht auf
+     * [ReferentialAction.NO_ACTION].** Es ist der SQL-Standard-Default:
+     * „explizit hingeschrieben" und „weggelassen" sind derselbe Sachverhalt.
+     * Die Reader sind sich darin uneinig — PostgreSQL
+     * (`mapPgAction`) und MySQL falten es auf `null`, SQL Server liest es als
+     * `"NO ACTION"` zurueck (`MssqlMetadataQueries.actionDesc` ersetzt nur `_`
+     * durch Leerzeichen). Ungefaltet meldet der Vergleich einen unveraenderten
+     * Fremdschluessel als geaendert, sobald eine Seite ein MSSQL-Reverse ist:
+     * `"NO ACTION"` ≠ `null` in der Data-Class-Gleichheit von
+     * `ForeignKeySignature`.
+     *
+     * [ReferentialAction.NO_ACTION] bleibt als Wert bestehen — der Render-Pfad
+     * **setzt** ihn (Cascade-Neutralisierung auf MSSQL), er wird nur nicht
+     * mehr aus einem Read erwartet.
+     *
+     * `RESTRICT` bleibt `RESTRICT` und wird **nicht** gleichgesetzt: PostgreSQL
+     * unterscheidet es von `NO ACTION`, MySQL behandelt beide als Synonym und
+     * faltet sie darum in seinem eigenen Reader auf `null`. Diese
+     * Mehrdeutigkeit ist eine offene Semantik-Frage (siehe
+     * `docs/planning/next/compare-falsch-positive-cross-dialekt.md`) und wird
+     * hier nicht einseitig aufgeloest.
      */
     fun toReferentialAction(action: String?): ReferentialAction? = when (action?.uppercase()) {
         "CASCADE" -> ReferentialAction.CASCADE
         "SET NULL" -> ReferentialAction.SET_NULL
         "SET DEFAULT" -> ReferentialAction.SET_DEFAULT
         "RESTRICT" -> ReferentialAction.RESTRICT
-        "NO ACTION" -> ReferentialAction.NO_ACTION
+        "NO ACTION" -> null
         else -> null
     }
 

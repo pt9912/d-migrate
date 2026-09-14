@@ -28,6 +28,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.string.shouldStartWith
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayInputStream
@@ -124,6 +125,11 @@ private fun schemaJson(name: String, vararg tables: String): String {
     val tablePairs = tables.joinToString(",") { """"$it":{"columns":{"id":{"type":"identifier"}},"primary_key":["id"]}""" }
     return """{"name":"$name","version":"1.0","tables":{$tablePairs}}"""
 }
+
+/** Wie [schemaJson], aber mit einem benannten Enum-Typ — fuer die custom-type-Funde. */
+private fun schemaJsonWithType(name: String, typeName: String): String =
+    """{"name":"$name","version":"1.0","tables":{"t1":{"columns":{"id":{"type":"identifier"}},""" +
+        """"primary_key":["id"]}},"custom_types":{"$typeName":{"kind":"enum","values":["a","b"]}}}"""
 
 /**
  * Builds a single-table schema for LF-012 / LN-027 / LN-028 / LN-038 column-level diff tests.
@@ -623,6 +629,30 @@ class SchemaCompareHandlerTest : FunSpec({
         val content = (outcome as ToolCallOutcome.Success).content.single()
         content.mimeType shouldBe "application/json"
         parsePayload(outcome).getAsJsonObject("executionMeta").get("requestId").asString shouldBe "req-deadbeef"
+    }
+
+    test("a custom type missing on one side is reported as not-present, not as removed") {
+        val setup = setup()
+        // Links fuehrt den Enum als benannten Typ, rechts gar nicht — so sieht es
+        // aus, wenn ein Dialekt ohne benannte Typen (MySQL, SQLite) denselben
+        // Wertevorrat inline an der Spalte traegt.
+        stageSchema(setup, "left", schemaJsonWithType("orders", "order_status"))
+        stageSchema(setup, "right", schemaJson("orders", "t1"))
+        val finding = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        ).getAsJsonArray("findings").map { it.asJsonObject }
+            .single { it.get("code").asString == "CUSTOM_TYPE_REMOVED" }
+
+        finding.get("path").asString shouldBe "custom_types.order_status"
+        // Der Fund bleibt, aber er behauptet keinen Verlust mehr.
+        finding.get("message").asString shouldContain "not present as a custom type"
+        finding.get("message").asString shouldNotContain "was removed"
     }
 
     test(
