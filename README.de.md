@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.5.0** (stabil, [veröffentlicht 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.5.0)).
+**1.5.1** (stabil, [veröffentlicht 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.5.1)).
 
 Die aktuellen Fähigkeiten:
 
@@ -174,7 +174,7 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.5.0** (2026-09-14) — das, was `:latest`,
+- **Aktuelles Stable** · **1.5.1** (2026-09-14) — das, was `:latest`,
   Homebrew und ein `docker pull` ohne Tag liefern. **Die verbliebenen Lücken
   beim Ändern der Erzeugungsart einer Spalte sind geschlossen.** PostgreSQL
   macht jetzt aus einer gewöhnlichen Spalte eine Identity-Spalte (`SET NOT
@@ -197,10 +197,15 @@ Die vollständige Release-History steht in
   `ddl.include_comments: false` legen zwei Schalter direkt offen, die es
   schon gab, aber nur indirekt erreichbar waren. `ddl.postgresql.default_schema`
   qualifiziert jedes erzeugte Objekt mit einem anderen Schema als `public`.
-  Das Container-Image läuft als **non-root** (`uid 10001`); Schreiben in
-  einen Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`. Native
-  Binaries gibt es für `linux-x64` und `windows-x64`; unter macOS führen
-  Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel.
+  1.5.1 schließt zwei weitere Objektverluste, die der Exit-`8`-Fix oben noch
+  nicht abdeckte: ein UNIQUE- oder PRIMARY-KEY-Constraint auf einer
+  LOB-Spalte auf SQL Server (E057) und ein verworfener Rohtext-Funktions-
+  DEFAULT, der auf dem Zieldialekt nicht gilt (E053) — beide melden sich
+  jetzt als übersprungenes Objekt und treiben Exit `8`, wie schon die sechs
+  Stellen oben. Das Container-Image läuft als **non-root** (`uid 10001`);
+  Schreiben in einen Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`.
+  Native Binaries gibt es für `linux-x64` und `windows-x64`; unter macOS
+  führen Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter

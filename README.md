@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.5.0**
-(stable, [released 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.5.0)).
+d-migrate is a working production tool at version **1.5.1**
+(stable, [released 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.5.1)).
 
 The current capabilities:
 
@@ -160,7 +160,7 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.5.0** (2026-09-14) — what `:latest`,
+- **Current stable** · **1.5.1** (2026-09-14) — what `:latest`,
   Homebrew and an unpinned `docker pull` give you. **The remaining gaps in
   column-generation changes are closed.** PostgreSQL can now turn an ordinary
   column into an identity column (`SET NOT NULL` + `ADD GENERATED … AS
@@ -180,7 +180,12 @@ The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
   `--inline-foreign-keys auto|always|never` and `ddl.include_comments: false`
   give direct control over two switches that existed but were only reachable
   indirectly. `ddl.postgresql.default_schema` qualifies every generated
-  object with a schema other than `public`. The container image runs as
+  object with a schema other than `public`. 1.5.1 fixes two more object
+  losses the exit-`8` fix above did not yet cover: a UNIQUE or PRIMARY KEY
+  constraint on a large-object column on SQL Server (E057), and a rejected
+  raw-text function DEFAULT not valid on the target dialect (E053) — both
+  now report as a skipped object and drive exit `8`, like the six sites
+  above already did. The container image runs as
   **non-root** (`uid 10001`), so writing into a bind mount needs `--user
   "$(id -u):$(id -g)"`. Native binaries ship for `linux-x64` and
   `windows-x64`; on macOS use Homebrew, the JVM artefacts or the container
