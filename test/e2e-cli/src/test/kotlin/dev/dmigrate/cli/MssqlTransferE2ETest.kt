@@ -86,7 +86,7 @@ class MssqlTransferE2ETest : FunSpec({
                     """
                     CREATE TABLE customers (
                         id      SERIAL PRIMARY KEY,
-                        email   TEXT NOT NULL UNIQUE,
+                        email   VARCHAR(255) NOT NULL UNIQUE,
                         name    VARCHAR(100) NOT NULL,
                         joined  TIMESTAMPTZ NOT NULL DEFAULT now()
                     )
