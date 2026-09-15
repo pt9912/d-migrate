@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Auch View-Bodies werden jetzt kanonisiert** — dieselbe Regel wie bei den
+  CHECK-Ausdruecken und aus demselben Grund: die Dialekte quoten Bezeichner
+  verschieden (SQL Server `[id]`, MySQL `` `id` ``, PostgreSQL `"id"`) und
+  setzen unterschiedlich viel Whitespace, und das Reverse derselben Sicht
+  ergab damit einen `VIEW_CHANGED`-Fund. Vereinheitlicht werden **nur**
+  Quoting und Whitespace; was die Struktur betrifft — gewaehlte Spalten,
+  `WHERE`-Klauseln, Reihenfolge —, bleibt ein Unterschied. Wie bei den
+  CHECK-Ausdruecken gilt das nur fuer `schema compare`, nicht fuer
+  `schema migrate`.
+
 ### Fixed
 
 - **Eine SQL-Server-Sicht trug keine Spalten.** Der Reader las nur den

@@ -117,9 +117,45 @@ internal class RawTextFolding(
         return desired.copy(generation = desiredComputed.copy(expression = currentComputed.expression))
     }
 
-    /** Der Rumpf einer Sicht — als Text, weil der Vergleich dort feldweise laeuft. */
-    fun viewQuery(viewName: String, current: String?, desired: String?): String? =
-        if (unchanged("view", listOf(viewName), VIEW_QUERY, null, desired, current)) current else desired
+    /**
+     * Der Rumpf einer Sicht — als Text, weil der Vergleich dort feldweise laeuft.
+     *
+     * Zusaetzlich zu Herkunft und Sandkasten greift hier die
+     * **Dialekt-Schreibweise**, wenn der Aufrufer sie angefordert hat: die drei
+     * Dialekte quoten Bezeichner verschieden (`"id"`, `` `id` ``, `[id]`) und
+     * setzen unterschiedlich viel Whitespace. Dasselbe Reverse ergab damit
+     * einen `VIEW_CHANGED`-Fund, obwohl die Abfrage dieselbe war.
+     *
+     * **Bewusst eng.** Vereinheitlicht werden nur Quoting und Whitespace. Was
+     * die Struktur betrifft — gewaehlte Spalten, `WHERE`-Klauseln, die
+     * Reihenfolge —, bleibt ein Unterschied: eine Kanonisierung, die zu viel
+     * gleichsetzt, versteckt echte Aenderungen. Die Grenzfaelle sind in
+     * `ViewQueryCanonicalisationTest` gepinnt.
+     */
+    fun viewQuery(viewName: String, current: String?, desired: String?): String? {
+        if (canonicalizeRawExpressions && canonicallyEqualViewQuery(desired, current)) return current
+        return if (unchanged("view", listOf(viewName), VIEW_QUERY, null, desired, current)) current else desired
+    }
+
+    private fun canonicallyEqualViewQuery(left: String?, right: String?): Boolean {
+        if (left == null || right == null) return left == right
+        if (left == right) return true
+        return left.canonicalViewQuery() == right.canonicalViewQuery()
+    }
+
+    /**
+     * Quoting und Whitespace vereinheitlichen — mehr nicht.
+     *
+     * Die Anfuehrungszeichen sind je Dialekt verschieden (SQL Server `[…]`,
+     * MySQL `` `…` ``, PostgreSQL `"…"`); alle drei umschliessen einen
+     * Bezeichner und bedeuten dasselbe. Alles andere bleibt stehen.
+     */
+    private fun String.canonicalViewQuery(): String = replace(Regex("\\[(\\w+)]"), "$1")
+        .replace(Regex("`(\\w+)`"), "$1")
+        .replace(Regex("\"(\\w+)\""), "$1")
+        .replace(Regex("\\s+"), " ")
+        .replace(Regex("\\s*([,=()])\\s*"), "$1")
+        .trim()
 
     /**
      * Zwei Quellen, dieselbe Entscheidung — die Herkunft zuerst, weil sie den

@@ -677,6 +677,11 @@ umschliessen, Klammern um den ganzen Ausdruck, der PostgreSQL-Operator `~~`
 geschuetzt. Was einen Parser braeuchte — vertauschte Operanden, umgestellte
 Konjunktionen, andere Funktionen — bleibt ein Unterschied.
 
+Dieselbe Regel gilt fuer den **Rumpf einer Sicht**: die Dialekte quoten
+Bezeichner verschieden und setzen unterschiedlich viel Whitespace.
+Vereinheitlicht werden auch dort nur Quoting und Whitespace — gewaehlte
+Spalten, `WHERE`-Klauseln und ihre Reihenfolge bleiben ein Unterschied.
+
 **`schema migrate` kanonisiert bewusst nicht.** Dort kostet eine uebersehene
 Aenderung eine falsch stehende Datenbank, waehrend ein Fehlalarm bei
 `schema compare` nur einen Fund kostet.
