@@ -664,6 +664,23 @@ wird zusaetzlich gemeldet:
   `schema migrate` mit derselben Warnung (`W137`), dort zusaetzlich zum
   Verzicht, die Aenderung zu planen.
 
+**Dialekt-Schreibweise roher Ausdruecke**: `schema compare` vergleicht die
+Ausdruecke von CHECK- und EXCLUDE-Constraints ueber eine **kanonisierte**
+Form. Zwei Reverses desselben Schemas schreiben denselben Ausdruck
+verschieden — `(quantity > 0)` gegen `quantity>(0)`, `(email ~~ '%@%'::text)`
+gegen `email like '%@%'` —, und das ist keine Schema-Aenderung.
+
+Kanonisiert wird ausschliesslich die **Schreibweise**, nicht die Bedeutung:
+Zeilenenden, Whitespace, Klammern, die nur ein Literal oder einen Bezeichner
+umschliessen, Klammern um den ganzen Ausdruck, der PostgreSQL-Operator `~~`
+(der `LIKE` **ist**) und Casts auf den eigenen Typ. String-Literale sind dabei
+geschuetzt. Was einen Parser braeuchte — vertauschte Operanden, umgestellte
+Konjunktionen, andere Funktionen — bleibt ein Unterschied.
+
+**`schema migrate` kanonisiert bewusst nicht.** Dort kostet eine uebersehene
+Aenderung eine falsch stehende Datenbank, waehrend ein Fehlalarm bei
+`schema compare` nur einen Fund kostet.
+
 **Exit-Codes**:
 - `0`: Schemas identisch (keine Unterschiede; auch bei operandseitigen Warnungen wie `W116`)
 - `1`: Unterschiede gefunden (zur Nutzung in Scripting: `if d-migrate schema compare ...`)

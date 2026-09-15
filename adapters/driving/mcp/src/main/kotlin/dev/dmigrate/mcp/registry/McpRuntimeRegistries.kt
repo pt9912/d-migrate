@@ -120,7 +120,9 @@ object McpRuntimeRegistries {
             "schema_compare" to SchemaCompareHandler(
                 resolver = resolver,
                 contentLoader = contentLoader,
-                comparator = dev.dmigrate.core.diff.SchemaComparator(),
+                // Wie der CLI-Pfad: der Vergleich kanonisiert die
+                // Dialekt-Schreibweise roher Ausdruecke (siehe SchemaCompareWiring).
+                comparator = dev.dmigrate.core.diff.SchemaComparator(canonicalizeRawExpressions = true),
                 artifactSink = artifactSink,
                 limits = wiring.limits,
             ),

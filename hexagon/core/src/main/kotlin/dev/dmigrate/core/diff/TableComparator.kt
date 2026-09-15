@@ -35,6 +35,8 @@ internal class TableComparator(
     private val authorship: RawTextAuthorship? = null,
     /** Der Sandkasten als zweite Quelle; siehe [RawTextServerForm]. */
     private val serverForm: RawTextServerForm? = null,
+    /** Dritte Quelle: die Dialekt-Schreibweise; siehe [SchemaComparator]. */
+    private val canonicalizeRawExpressions: Boolean = false,
 ) {
 
     fun compareTables(left: SchemaDefinition, right: SchemaDefinition): TableDiffs {
@@ -54,7 +56,7 @@ internal class TableComparator(
         return TableDiffs(added, removed, changed)
     }
 
-    private val folding = RawTextFolding(authorship, serverForm)
+    private val folding = RawTextFolding(authorship, serverForm, canonicalizeRawExpressions)
     private val indexComparator = TableIndexComparator(targetProjection, folding)
 
     internal fun compareTable(

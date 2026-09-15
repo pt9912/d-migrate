@@ -47,7 +47,12 @@ internal object DefaultSchemaCompareWiringFactory : SchemaCompareWiringFactory {
     override fun build(cliContext: CliContext): SchemaCompareWiringBundle {
         val formatter = OutputFormatter(cliContext, IcuUnicodeTextService())
         val validator = SchemaValidator()
-        val comparator = SchemaComparator()
+        // `schema compare` setzt die Kanonisierung roher Ausdruecke: zwei
+        // Reverses verschiedener Dialekte schreiben denselben CHECK verschieden
+        // (`(quantity > 0)` gegen `quantity>(0)`), und das ist keine Aenderung.
+        // `schema migrate` setzt sie **nicht** — dort kostet eine uebersehene
+        // Aenderung eine falsch stehende Datenbank.
+        val comparator = SchemaComparator(canonicalizeRawExpressions = true)
         return SchemaCompareWiringBundle(
             fileLoader = { op -> loadFileOperand(op, validator) },
             dbLoader = { op, cfgPath -> loadDatabaseOperand(op, cfgPath, validator) },

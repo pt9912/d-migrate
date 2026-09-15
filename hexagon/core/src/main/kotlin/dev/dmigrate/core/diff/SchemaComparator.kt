@@ -25,10 +25,20 @@ class SchemaComparator(
      * Herkunft schweigt.
      */
     private val serverForm: RawTextServerForm? = null,
+    /**
+     * Ob die **Dialekt-Schreibweise** roher Ausdruecke gleichgesetzt wird.
+     *
+     * Default `false` — der konservative Weg, den `schema migrate` braucht:
+     * dort kostet eine uebersehene Aenderung eine falsch stehende Datenbank.
+     * `schema compare` setzt sie, weil ein Fehlalarm dort nur einen Fund
+     * kostet. Das Vergleichsverhalten haengt damit am Aufrufer, nicht am Text.
+     */
+    private val canonicalizeRawExpressions: Boolean = false,
 ) {
 
-    private val tableComparator = TableComparator(targetProjection, authorship, serverForm)
-    private val folding = RawTextFolding(authorship, serverForm)
+    private val tableComparator =
+        TableComparator(targetProjection, authorship, serverForm, canonicalizeRawExpressions)
+    private val folding = RawTextFolding(authorship, serverForm, canonicalizeRawExpressions)
 
     fun compare(left: SchemaDefinition, right: SchemaDefinition): SchemaDiff {
         val metadataDiff = compareMetadata(left, right)

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`schema compare` vergleicht CHECK- und EXCLUDE-Ausdruecke jetzt in einer
+  kanonisierten Form.** Zwei Reverses desselben Schemas schreiben denselben
+  Ausdruck verschieden — `(quantity > 0)` gegen `quantity>(0)`,
+  `(email ~~ '%@%'::text)` gegen `email like '%@%'` —, und der Vergleich meldete
+  das als Aenderung. Kanonisiert wird ausschliesslich die **Schreibweise**:
+  Whitespace, Klammern um ein Literal oder einen Bezeichner, Klammern um den
+  ganzen Ausdruck, der PostgreSQL-Operator `~~` (der `LIKE` **ist**) und Casts
+  auf den eigenen Typ; String-Literale sind dabei geschuetzt. Was einen Parser
+  braeuchte — vertauschte Operanden, umgestellte Konjunktionen — bleibt ein
+  Unterschied.
+
+  **`schema migrate` kanonisiert bewusst nicht.** Dort kostet eine uebersehene
+  Aenderung eine falsch stehende Datenbank, waehrend ein Fehlalarm bei
+  `schema compare` nur einen Fund kostet. Die konservative Linie bleibt damit
+  genau dort erhalten, wo sie schuetzt.
+
 ### Fixed
 
 - **`schema generate --target mysql` erzeugte DDL, die MySQL ablehnt, wenn eine

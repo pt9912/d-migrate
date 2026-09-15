@@ -10,8 +10,10 @@ import dev.dmigrate.core.model.IndexDefinition
  * die Herkunft sagt, dass der **Autor** es nicht angefasst hat.
  *
  * Dann ist die abweichende Schreibweise die des Servers und keine Aenderung.
- * Ohne Herkunft faltet nichts — es bleibt beim Textvergleich, und der plant
- * konservativ.
+ * Ohne Herkunft und ohne Sandkasten faltet nichts — es bleibt beim
+ * Textvergleich, und der plant konservativ. **Ausnahme:** wenn der Aufrufer
+ * [canonicalizeRawExpressions] setzt, entscheidet zusaetzlich die
+ * Dialekt-Schreibweise.
  *
  * Gefaltet wird **nur, woran verglichen wird**. Die gemeldete Aenderung traegt
  * weiterhin die unveraenderten Definitionen; sonst flosse eine
@@ -21,6 +23,17 @@ import dev.dmigrate.core.model.IndexDefinition
 internal class RawTextFolding(
     private val authorship: RawTextAuthorship?,
     private val serverForm: RawTextServerForm? = null,
+    /**
+     * Ob zusaetzlich die **Dialekt-Schreibweise** roher Ausdruecke gleichgesetzt
+     * wird — eine **dritte** Entscheidungsquelle neben Herkunft und Sandkasten,
+     * die ohne beide auskommt.
+     *
+     * Default `false`: der konservative Weg. `schema compare` setzt sie, weil
+     * dort ein Fehlalarm nur einen Fund kostet; `schema migrate` **nicht**, weil
+     * dort eine uebersehene Aenderung eine falsch stehende Datenbank kostet.
+     * Siehe `docs/planning/in-progress/compare-falsch-positive-cross-dialekt.md`.
+     */
+    private val canonicalizeRawExpressions: Boolean = false,
 ) {
 
     /** Der CHECK-Ausdruck eines benannten Constraints. */
@@ -31,6 +44,13 @@ internal class RawTextFolding(
         desired: ConstraintDefinition,
     ): ConstraintDefinition {
         val path = listOf(tableName, constraintName)
+        // Nur wenn angefordert — und nur "unveraendert" kommt dabei heraus:
+        // was sie nicht gleichsetzt, entscheiden die beiden anderen Quellen.
+        if (canonicalizeRawExpressions &&
+            ConstraintDiffContract.canonicallyEqual(desired.expression, current.expression)
+        ) {
+            return desired.copy(expression = current.expression)
+        }
         if (!unchanged("constraint", path, EXPRESSION, null, desired.expression, current.expression)) {
             return desired
         }
