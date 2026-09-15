@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Eine SQL-Server-Sicht trug keine Spalten.** Der Reader las nur den
+  Query-Text; `ViewDefinition.columns` blieb leer, waehrend PostgreSQL und
+  MySQL ihn aus dem Katalog fuellen. Der Vergleich meldete dieselbe Sicht
+  damit als geaendert, sobald eine Seite ein SQL-Server-Reverse war. Die
+  Spalten kommen jetzt aus `sys.columns`/`sys.types` — dieselbe Quelle, die
+  auch fuer Tabellen dient. Gemeldet von einem Konsumenten, der den Punkt
+  selbst als Datenluecke einordnete (kein Vergleichsfehler).
+
 - **MySQL verlor `ON DELETE RESTRICT` beim Lesen.** Der Reader faltete
   `RESTRICT` **und** `NO ACTION` beide auf „keine Aktion" — mit der Begruendung,
   MySQL behandle sie gleich. Das stimmt fuer das **Verhalten**, nicht fuer den

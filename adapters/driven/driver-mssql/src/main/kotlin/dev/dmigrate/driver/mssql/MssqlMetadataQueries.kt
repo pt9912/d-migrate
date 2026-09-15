@@ -389,6 +389,33 @@ internal object MssqlMetadataQueries {
         ).map { row -> ViewRow(name = row.string("view_name"), definition = row.string("definition")) }
 
     /**
+     * Die Spalten je Sicht — Name und Typ.
+     *
+     * `sys.columns` kennt Sichten wie Tabellen (ueber `object_id`); der
+     * Unterschied liegt nur in der Art des Objekts. Ohne diese Angabe trug
+     * eine MSSQL-Sicht gar keine Spalten, und der Vergleich meldete sie gegen
+     * ein Reverse aus PostgreSQL oder MySQL als geaendert — dort fuellen beide
+     * Reader das Feld. Der Befund kam von einem Konsumenten, der den Punkt
+     * selbst als Datenluecke einordnete, nicht als Vergleichsfehler.
+     */
+    fun listViewColumns(session: JdbcOperations, schema: String): Map<String, List<ViewColumnRow>> =
+        session.queryList(
+            """
+            SELECT v.name AS view_name, c.name AS column_name, t.name AS type_name
+            FROM sys.views v
+            JOIN sys.columns c ON c.object_id = v.object_id
+            JOIN sys.types t ON t.user_type_id = c.user_type_id
+            WHERE v.schema_id = SCHEMA_ID(?) AND v.is_ms_shipped = 0
+            ORDER BY v.name, c.column_id
+            """.trimIndent(),
+            schema,
+        ).groupBy { it.string("view_name") }.mapValues { (_, rows) ->
+            rows.map { ViewColumnRow(name = it.string("column_name"), type = it.string("type_name")) }
+        }
+
+    data class ViewColumnRow(val name: String, val type: String?)
+
+    /**
      * IDENTITY-Spalte samt deklariertem Seed/Increment. [lastValue] ist `null`,
      * solange **nie** eine Zeile eingefügt wurde — `DBCC CHECKIDENT … RESEED n`
      * verhält sich dann anders (erster Wert = `n` statt `n + increment`).

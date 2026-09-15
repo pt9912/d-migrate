@@ -24,6 +24,7 @@ import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
+import dev.dmigrate.core.model.ViewColumnDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadOptions
@@ -428,8 +429,9 @@ class MssqlSchemaReader(
         session: JdbcOperations,
         schema: String,
         notes: MutableList<SchemaReadNote>,
-    ): Map<String, ViewDefinition> =
-        MssqlMetadataQueries.listViews(session, schema).associate { view ->
+    ): Map<String, ViewDefinition> {
+        val columnsByView = MssqlMetadataQueries.listViewColumns(session, schema)
+        return MssqlMetadataQueries.listViews(session, schema).associate { view ->
             val query = MssqlViewDefinitionScanner.queryOf(view.definition)
             if (query == null) {
                 notes += SchemaReadNote(
@@ -442,9 +444,16 @@ class MssqlSchemaReader(
             }
             view.name to ViewDefinition(
                 query = query ?: view.definition,
+                // Ohne diese Angabe trug eine MSSQL-Sicht gar keine Spalten und
+                // galt gegen ein Reverse aus PostgreSQL oder MySQL als
+                // geaendert (deren Reader fuellen das Feld).
+                columns = columnsByView[view.name]?.map {
+                    ViewColumnDefinition(name = it.name, type = it.type)
+                },
                 sourceDialect = "mssql",
             )
         }
+    }
 
     private fun readSequences(session: JdbcOperations, schema: String): Map<String, SequenceDefinition> =
         MssqlMetadataQueries.listSequences(session, schema).associate { seq ->

@@ -43,7 +43,16 @@ class MssqlSchemaReaderTest : FunSpec({
         every {
             jdbc.queryList(match { it.contains("FROM sys.fulltext_index_columns") }, any())
         } returns emptyList()
-        every { jdbc.queryList(match { it.contains("FROM sys.views v") }, any()) } returns emptyList()
+        // Die beiden View-Queries unterscheiden sich an ihrem JOIN: `listViews`
+        // zieht die Definition aus `sys.sql_modules`, `listViewColumns` die
+        // Spalten aus `sys.columns`. Ohne diese Unterscheidung faengt ein
+        // Match auf `FROM sys.views v` beide ab.
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.views v") && it.contains("sys.sql_modules") }, any())
+        } returns emptyList()
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.views v") && it.contains("JOIN sys.columns") }, any())
+        } returns emptyList()
         every {
             jdbc.queryList(match { it.contains("FROM sys.objects o") && it.contains("m.definition IS NULL") }, any())
         } returns emptyList()
@@ -280,7 +289,11 @@ class MssqlSchemaReaderTest : FunSpec({
     test("views are read with extracted query; includeViews=false skips them") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
-        every { jdbc.queryList(match { it.contains("FROM sys.views v") }, "dbo") } returns listOf(
+        every {
+            jdbc.queryList(
+                match { it.contains("FROM sys.views v") && it.contains("sys.sql_modules") }, "dbo",
+            )
+        } returns listOf(
             mapOf("view_name" to "v_open", "definition" to "CREATE VIEW dbo.v_open AS SELECT 1 AS one"),
         )
         val (reader, pool) = rig(jdbc)
@@ -293,10 +306,46 @@ class MssqlSchemaReaderTest : FunSpec({
         reader2.read(pool2, SchemaReadOptions(includeViews = false)).schema.views.shouldBeEmptyMap()
     }
 
+    /**
+     * `sys.columns` kennt Sichten wie Tabellen. Ohne diese Angabe trug eine
+     * MSSQL-Sicht gar keine Spalten, und der Vergleich meldete sie gegen ein
+     * Reverse aus PostgreSQL oder MySQL als geaendert — dort fuellen beide
+     * Reader das Feld. Der Befund kam von einem Konsumenten, der ihn selbst
+     * als Datenluecke einordnete, nicht als Vergleichsfehler.
+     */
+    test("views carry their columns from sys.columns") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        every {
+            jdbc.queryList(
+                match { it.contains("FROM sys.views v") && it.contains("sys.sql_modules") }, "dbo",
+            )
+        } returns listOf(
+            mapOf("view_name" to "v_open", "definition" to "CREATE VIEW dbo.v_open AS SELECT 1 AS one"),
+        )
+        every {
+            jdbc.queryList(
+                match { it.contains("FROM sys.views v") && it.contains("JOIN sys.columns") }, "dbo",
+            )
+        } returns listOf(
+            mapOf("view_name" to "v_open", "column_name" to "one", "type_name" to "int"),
+            mapOf("view_name" to "v_open", "column_name" to "two", "type_name" to "nvarchar"),
+        )
+        val (reader, pool) = rig(jdbc)
+        val view = reader.read(pool).schema.views.getValue("v_open")
+
+        view.columns?.map { it.name } shouldBe listOf("one", "two")
+        view.columns?.map { it.type } shouldBe listOf("int", "nvarchar")
+    }
+
     test("unparseable view definition falls back to raw text with R344") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
-        every { jdbc.queryList(match { it.contains("FROM sys.views v") }, "dbo") } returns listOf(
+        every {
+            jdbc.queryList(
+                match { it.contains("FROM sys.views v") && it.contains("sys.sql_modules") }, "dbo",
+            )
+        } returns listOf(
             mapOf("view_name" to "v_broken", "definition" to "EXEC weird_module"),
         )
         val (reader, pool) = rig(jdbc)
