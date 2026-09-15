@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.6.0** (stabil, [veröffentlicht 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.6.0)).
+**1.7.0** (stabil, [veröffentlicht 2026-09-15](https://github.com/pt9912/d-migrate/releases/tag/v1.7.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,7 +175,7 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.6.0** (2026-09-14) — das, was `:latest`,
+- **Aktuelles Stable** · **1.7.0** (2026-09-15) — das, was `:latest`,
   Homebrew und ein `docker pull` ohne Tag liefern. **Die verbliebenen Lücken
   beim Ändern der Erzeugungsart einer Spalte sind geschlossen.** PostgreSQL
   macht jetzt aus einer gewöhnlichen Spalte eine Identity-Spalte (`SET NOT
@@ -210,7 +210,13 @@ Die vollständige Release-History steht in
   Gleichheit (ein Fehlalarm könnte eine teure Tabellen-Neuschreibung
   auslösen), sagte darüber aber bislang nichts; zwei Schemas mit
   inhaltlich unterschiedlicher Formel liefen bisher ohne jede Meldung als
-  identisch durch. 1.6.0 trägt das in den MCP-Server: Der Tool-Call
+  identisch durch. 1.7.0 schließt den Rest eines Konsumenten-Audits: `schema
+  compare` kanonisiert die Dialekt-Schreibweise roher Ausdrücke (CHECK und
+  View-Rümpfe — Quoting, Whitespace), ohne ihre Bedeutung anzutasten; MySQL
+  behält `ON DELETE RESTRICT`, statt es wegzufalten; eine SQL-Server-Sicht
+  trägt ihre Spalten; und erzeugte DDL, die MySQL ablehnen würde, wird
+  übersprungen und benannt (eine `UNIQUE` auf einer unbegrenzten
+  `TEXT`-Spalte). 1.6.0 trägt das in den MCP-Server: Der Tool-Call
   `schema_generate` meldet jetzt `status` (`complete`/`incomplete`) und
   `skippedCount`, ein Agent erfährt also aus einem Feld, dass Objekte
   fehlen, statt einen Freitext-`summary` zu parsen oder Findings nach

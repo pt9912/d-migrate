@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.6.0**
-(stable, [released 2026-09-14](https://github.com/pt9912/d-migrate/releases/tag/v1.6.0)).
+d-migrate is a working production tool at version **1.7.0**
+(stable, [released 2026-09-15](https://github.com/pt9912/d-migrate/releases/tag/v1.7.0)).
 
 The current capabilities:
 
@@ -161,7 +161,7 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.6.0** (2026-09-14) — what `:latest`,
+- **Current stable** · **1.7.0** (2026-09-15) — what `:latest`,
   Homebrew and an unpinned `docker pull` give you. **The remaining gaps in
   column-generation changes are closed.** PostgreSQL can now turn an ordinary
   column into an identity column (`SET NOT NULL` + `ADD GENERATED … AS
@@ -192,7 +192,13 @@ The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
   comparator has always folded that case to equal (a false alarm there
   could trigger an expensive table rewrite), but said nothing about it
   before; two schemas with a genuinely different formula used to compare
-  as identical without any note. 1.6.0 carries that into the MCP server: the
+  as identical without any note. 1.7.0 closes the rest of the audit a consumer
+  project ran: `schema compare` canonicalises the dialect spelling of raw
+  expressions (CHECK and view bodies — quoting, whitespace) without touching
+  their meaning, MySQL keeps `ON DELETE RESTRICT` instead of folding it away,
+  a SQL Server view carries its columns, and generated DDL that MySQL would
+  reject is skipped and named instead (a `UNIQUE` on an unbounded `TEXT`
+  column). 1.6.0 carries that into the MCP server: the
   `schema_generate` tool call now reports `status` (`complete`/`incomplete`)
   and `skippedCount`, so an agent learns from a field that objects were
   dropped instead of parsing a free-text summary or filtering findings by

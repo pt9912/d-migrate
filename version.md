@@ -14,12 +14,12 @@
 ## Aktuell
 
 <a id="aktuell"></a>
-Aktuelle Version: [`v1.6.0`](#v1.6.0) — 2026-09-14 (Stable).
+Aktuelle Version: [`v1.7.0`](#v1.7.0) — 2026-09-15 (Stable).
 
 <a id="docker-tag"></a>
-Aktuelles Docker-Image-Tag: `1.6.0` — Docker-Tags tragen anders als der
-Git-Tag/GitHub-Release kein führendes `v` (`ghcr.io/pt9912/d-migrate:1.6.0`,
-nicht `:v1.6.0`).
+Aktuelles Docker-Image-Tag: `1.7.0` — Docker-Tags tragen anders als der
+Git-Tag/GitHub-Release kein führendes `v` (`ghcr.io/pt9912/d-migrate:1.7.0`,
+nicht `:v1.7.0`).
 
 Aus anderen Dokumenten stabil referenzierbar als `version.md#aktuell` (zeigt immer hierher,
 nie auf eine feste Nummer). Pro Release sind diese Zeile, eine neue Tabellenzeile im Verlauf
@@ -35,7 +35,8 @@ sichtbar, welches der jüngste Stable-Eintrag ist.
 
 | Version | Datum | Art | Release |
 | ------- | ----- | --- | ------- |
-| `v1.6.0` <a id="v1.6.0"></a> | 2026-09-14 | Stable | [Tag v1.6.0](https://github.com/pt9912/d-migrate/releases/tag/v1.6.0) |
+| `v1.7.0` <a id="v1.7.0"></a> | 2026-09-15 | Stable | [Tag v1.7.0](https://github.com/pt9912/d-migrate/releases/tag/v1.7.0) |
+| `v1.6.0` | 2026-09-14 | Stable | [Tag v1.6.0](https://github.com/pt9912/d-migrate/releases/tag/v1.6.0) |
 | `v1.5.2` | 2026-09-14 | Stable | [Tag v1.5.2](https://github.com/pt9912/d-migrate/releases/tag/v1.5.2) |
 | `v1.5.1` | 2026-09-14 | Stable | [Tag v1.5.1](https://github.com/pt9912/d-migrate/releases/tag/v1.5.1) |
 | `v1.5.0` | 2026-09-14 | Stable | [Tag v1.5.0](https://github.com/pt9912/d-migrate/releases/tag/v1.5.0) |
