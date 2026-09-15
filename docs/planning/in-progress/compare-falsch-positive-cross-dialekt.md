@@ -206,3 +206,77 @@ strikten Modus. Alle vier stehen oben begründet.
 **Nachmessung offen:** Die Wirkung auf die FP-Quote (Ausgangslage 38/38/30 %)
 kann nur der Konsument messen — der Slice ändert die Zahl der Funde, nicht ihre
 Darstellung.
+
+## Entscheidungsgrundlage: die rohen CHECK-Ausdruecke (2026-09-15)
+
+Der groesste verbleibende Posten — im gemessenen Vergleich 1 von 13 Funden
+(`order_items_quantity_check`). Gebaut, **gemessen** und wieder
+**zurueckgenommen**, weil er eine dokumentierte Linie kippt:
+
+### Was der Kandidat leistet
+
+`ExpressionCanonicalisationCandidateTest` haelt eine Kanonisierung als
+**Kandidat** (nicht im Produktivpfad) und misst sie an den woertlichen Paaren
+aus dem Konsumenten-Vergleich:
+
+| Paar | Kanonisiert gleich? |
+|---|---|
+| `(quantity > 0)` / `quantity>(0)` | **ja** |
+| `(email ~~ '%@%'::text)` / `email like '%@%'` | **ja** |
+
+Und sie setzt **nicht** gleich, was sie nicht soll: verschiedene Literale,
+verschiedene Operatoren, vertauschte Operanden, umgestellte Konjunktionen,
+**gliedernde** Klammern (`(a + b) * c` bleibt von `a + b * c` verschieden) und
+operator-aehnliche Folgen **im** Literal (`'a~~b'`).
+
+### Warum sie trotzdem nicht drin ist
+
+Sie bricht **fuenf Tests**, die die Gegenposition ausdruecklich festschreiben
+(`SchemaComparatorRawTextProvenanceTest`):
+
+- „ohne Herkunft ist die Schreibweise des Servers eine Aenderung — wie bisher"
+- „ohne Auskunft wird konservativ geplant, nicht geraten"
+- „eine andere Serverform ist sehr wohl eine Aenderung"
+- „die Herkunft hat Vorrang — sie braucht den Server nicht"
+- „ohne Serverform fuer dieses Feld bleibt es beim Textvergleich"
+
+Das ist die Linie aus `RawTextFolding` („ohne Herkunft faltet nichts — es
+bleibt beim Textvergleich, und der plant konservativ"), und sie ist **geteilt**:
+dieselbe Faltung traegt `schema compare` **und** `schema migrate`.
+
+### Die Kernfrage fuer den Eigner
+
+**Gilt „Dialekt-Schreibweise ist keine Aenderung" auch fuer `schema migrate`
+— oder nur fuer `schema compare`?**
+
+Der Unterschied wiegt verschieden schwer:
+
+- Bei `compare` kostet ein Fehlalarm einen Fund zu viel — laestig, harmlos.
+- Bei `migrate` heisst „unentscheidbar → konservativ planen" das Gegenteil:
+  eine **uebersehene** Aenderung laesst die Datenbank falsch stehen.
+
+Wer zwei Serverformen gleichsetzt, die es nicht sind, verliert dort genau die
+Absicherung, die bewusst gewaehlt wurde.
+
+### Ein Befund aus dem Bauen, der in die Entscheidung gehoert
+
+Die erste Fassung des Kandidaten hatte einen **Fehler, der echte Unterschiede
+versteckt haette**: der Platzhalter fuer String-Literale war `" <n> "` — mit
+Leerzeichen. Die Whitespace-Normalisierung zerstoerte ihn, die Literale wurden
+nicht zurueckgelegt, und `note = 'a~~b'` wurde `note = 'a like b'` **gleich**.
+Aufgefallen ist das nur, weil die Gegenprobe im Test stand.
+
+**Das ist das Argument, das man beim Entscheiden mitwiegen sollte:** Eine
+Kanonisierung, die zu viel gleichsetzt, ist gefaehrlicher als eine, die zu
+wenig gleichsetzt — sie versteckt Unterschiede statt sie zu melden, und zwar in
+beiden Pfaden. Ohne Test, der die **Grenze** mitpinnt, faellt das nicht auf.
+
+### Was ein Schnitt braeuchte
+
+1. Eigner-Entscheidung zur Kernfrage oben (bestimmt den ganzen Zuschnitt).
+2. **ADR**, weil eine dokumentierte Linie wechselt.
+3. Die **fuenf Tests** kodifizieren die alte Linie und muessen mit — sie sind
+   der Grund, warum das auffaellt.
+4. **Spec-Update** in `spec/ddl-generation-rules.md` fuer den Migrate-Pfad.
+5. Der Kandidat-Test wandert in den Produktivpfad — oder entfaellt mit der
+   Entscheidung.
