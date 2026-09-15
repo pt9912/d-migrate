@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **MySQL verlor `ON DELETE RESTRICT` beim Lesen.** Der Reader faltete
+  `RESTRICT` **und** `NO ACTION` beide auf „keine Aktion" — mit der Begruendung,
+  MySQL behandle sie gleich. Das stimmt fuer das **Verhalten**, nicht fuer den
+  **Katalog**: gemessen gegen 9.7.2 steht ein mit `ON DELETE RESTRICT` angelegter
+  Fremdschluessel dort als `RESTRICT`, ein weggelassener als `NO ACTION`. Die
+  Faltung verlor also eine Information, die der Server liefert — und liess
+  denselben Fremdschluessel gegen PostgreSQL, das `RESTRICT` ebenfalls behaelt,
+  als geaendert gelten. Jetzt wird nur noch `NO ACTION` gefaltet.
+
 ### Changed
 
 - **`schema compare` vergleicht CHECK- und EXCLUDE-Ausdruecke jetzt in einer

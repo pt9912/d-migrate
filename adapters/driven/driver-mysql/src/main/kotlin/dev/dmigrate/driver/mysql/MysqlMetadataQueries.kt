@@ -107,8 +107,16 @@ object MysqlMetadataQueries {
                 columns = fkRows.map { it["column_name"] as String },
                 referencedTable = first["referenced_table_name"] as String,
                 referencedColumns = fkRows.map { it["referenced_column_name"] as String },
-                onDelete = (first["delete_rule"] as? String)?.takeIf { it != "NO ACTION" && it != "RESTRICT" },
-                onUpdate = (first["update_rule"] as? String)?.takeIf { it != "NO ACTION" && it != "RESTRICT" },
+                // **Nur** `NO ACTION` wird gefaltet, `RESTRICT` nicht.
+                // Gemessen gegen 9.7.2: MySQL unterscheidet die beiden im
+                // Katalog — ein mit `ON DELETE RESTRICT` angelegter
+                // Fremdschluessel steht dort als `RESTRICT`, ein
+                // weggelassener als `NO ACTION`. Beide auf `null` zu falten
+                // (wie es hier stand) verliert die Unterscheidung und liess
+                // denselben Fremdschluessel gegen PostgreSQL als geaendert
+                // gelten.
+                onDelete = (first["delete_rule"] as? String)?.takeIf { it != "NO ACTION" },
+                onUpdate = (first["update_rule"] as? String)?.takeIf { it != "NO ACTION" },
             )
         }
     }

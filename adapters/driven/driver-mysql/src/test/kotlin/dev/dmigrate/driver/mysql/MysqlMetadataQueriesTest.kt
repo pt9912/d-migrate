@@ -96,14 +96,22 @@ class MysqlMetadataQueriesTest : FunSpec({
         result[0].onUpdate shouldBe null // NO ACTION is filtered
     }
 
-    test("listForeignKeys filters RESTRICT as null") {
+    /**
+     * **Gegen 9.7.2 gemessen.** MySQL unterscheidet `RESTRICT` und `NO ACTION`
+     * im Katalog: ein mit `ON DELETE RESTRICT` angelegter Fremdschluessel
+     * steht in `information_schema.referential_constraints` als `RESTRICT`,
+     * ein weggelassener als `NO ACTION`. Beide auf `null` zu falten verliert
+     * die Unterscheidung — und liess denselben Fremdschluessel gegen
+     * PostgreSQL, das `RESTRICT` ebenfalls behaelt, als geaendert gelten.
+     */
+    test("listForeignKeys keeps RESTRICT and filters only NO ACTION") {
         every { jdbc.queryList(match { it.contains("referential_constraints") }, any(), any()) } returns listOf(
             mapOf("constraint_name" to "fk1", "column_name" to "a",
                 "referenced_table_name" to "t", "referenced_column_name" to "b",
                 "delete_rule" to "RESTRICT", "update_rule" to "SET NULL"),
         )
         val result = MysqlMetadataQueries.listForeignKeys(jdbc, "mydb", "x")
-        result[0].onDelete shouldBe null
+        result[0].onDelete shouldBe "RESTRICT"
         result[0].onUpdate shouldBe "SET NULL"
     }
 
