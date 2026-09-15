@@ -8,6 +8,22 @@ Gradle-Testmodul.
 
 - Plan: [`../../docs/planning/done/mcp-real-e2e-scope-matrix.md`](../../docs/planning/done/mcp-real-e2e-scope-matrix.md) (Teil B)
 
+## Die Datenbanken
+
+Der Stack traegt **alle fuenf Dialekte**, die d-migrate unterstuetzt:
+
+| Dienst | Dialekt | Start |
+| ------ | ------- | ----- |
+| `postgres` | PostgreSQL | schnell |
+| `mysql` | MySQL | schnell |
+| `mssql` | SQL Server | ~30 s |
+| `oracle` | Oracle | 2-3 Minuten, nur unter `--profile oracle` |
+| — | SQLite | kein Dienst: eine Datei unter `out/` |
+
+`make mcp-e2e-up` startet die drei schnellen; Oracle kommt nur mit
+`mcp-e2e-roundtrip-oracle` dazu, weil sein Kaltstart die uebrigen Pfade
+aufhalten wuerde.
+
 ## Warum es diesen Harness gibt
 
 Zwei bestehende Testebenen decken das MCP-Protokoll bereits ab
@@ -52,11 +68,47 @@ Deckt sich vollständig mit Teil A
 (`test/e2e-cli/.../McpScopeEnforcementMatrixTest.kt`) — dieser Harness
 prüft dieselbe Matrix zusätzlich gegen das echte, gebaute Image.
 
+## Cross-Dialekt-Hin-und-Her (`smoke-cross-dialect-roundtrip.sh`)
+
+Der Scope-Smoke prueft MCP-Scopes gegen **eine** Postgres-Verbindung;
+`examples/sample-db/` prueft Cross-Dialekt-Migrationen ohne diese
+Dialekt-Matrix. Dieses Skript schliesst die Luecke: der ganze Weg
+
+    Schema -> generate --target X -> anwenden -> reverse -> compare
+
+fuer jeden Dialekt, gegen echte Server und das echte Image.
+
+**Warum die CLI und nicht MCP.** Migrationen brauchen ein „DDL anwenden";
+die MCP-Tools kennen das nicht (sie arbeiten ueber Artefakte und Jobs). Fuer
+die Schema-*Qualitaet* ist die Ebene gleichgueltig — geprueft wird das Image
+und der Server, nicht das Transportmittel. Der MCP-Weg bleibt beim
+Scope-Smoke.
+
+**Was es prueft.** Nicht nur „laeuft durch", sondern dass der Vergleich
+nichts meldet, was keine Aenderung ist: das Skript faellt, sobald ein
+**unveraenderter Fremdschluessel** als geaendert erscheint. Genau den hatte
+ein Konsumentenprojekt gemeldet — SQL Server liest `ON DELETE NO ACTION`
+explizit aus dem Katalog, PostgreSQL laesst die Aktion weg.
+
+Gemessener Stand (2026-09-15, `d-migrate:dev` aus `main`):
+
+| Dialekt | Funde | Erwartung |
+| ------- | ----- | --------- |
+| PostgreSQL | 0 | perfekter Round-Trip |
+| SQLite | 0 | perfekter Round-Trip |
+| MySQL | 2 | Enum inline, CHECK-Text (Backticks) |
+| SQL Server | 3 | Enum inline, berechnete Spalte, zusaetzlicher Enum-CHECK |
+
+Die Funde sind **erwartet und erklaert**, nicht unterdrueckt — der Harness
+pinnt sie nicht, er zeigt sie. Was er **verbietet**, ist der FK-Fehlalarm.
+
 ## Benutzung
 
 ```sh
 make docker-build IMAGE_TAG=dev   # einmalig: d-migrate:dev-Runtime-Image
 make mcp-e2e-smoke                # up + voller Scope-Matrix-Lauf
+make mcp-e2e-roundtrip            # Hin-und-Her-Migrationen, alle schnellen Dialekte
+make mcp-e2e-roundtrip-oracle     # dasselbe mit Oracle (2-3 Min Kaltstart extra)
 make mcp-e2e-down                 # Container stoppen (Volume bleibt)
 make mcp-e2e-purge                # Container + Volume entfernen
 ```

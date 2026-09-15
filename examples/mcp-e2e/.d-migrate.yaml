@@ -3,9 +3,13 @@
 # wird vom YamlConnectionReferenceLoader still verworfen, siehe
 # adapters/driven/connection-config/.../YamlConnectionReferenceLoader.kt).
 #
-# credentialRef verweist auf die Umgebungsvariable MCP_E2E_PG_URL, die der
-# dmigrate-Service-Aufruf setzt (volle URL, nicht nur ein Passwort — der
-# env:-Provider liefert den Wert verbatim als resolved URL zurueck).
+# credentialRef verweist auf Umgebungsvariablen, die der dmigrate-Service
+# setzt (volle URL, nicht nur ein Passwort — der env:-Provider liefert den
+# Wert verbatim als resolved URL zurueck).
+#
+# **Alle fuenf Dialekte**, die d-migrate unterstuetzt. Der Aufbau spiegelt
+# das Konsumenten-Setup (`../d-migrate-mcp-http/`), das genau diese Matrix
+# gegen den MCP-Server faehrt.
 database:
   connections:
     mcp_e2e_pg:
@@ -13,3 +17,28 @@ database:
       dialectId: postgresql
       sensitivity: NON_PRODUCTION
       credentialRef: "env:MCP_E2E_PG_URL"
+
+    mcp_e2e_my:
+      displayName: "MCP E2E MySQL"
+      dialectId: mysql
+      sensitivity: NON_PRODUCTION
+      credentialRef: "env:MCP_E2E_MY_URL"
+
+    mcp_e2e_ms:
+      displayName: "MCP E2E SQL Server"
+      dialectId: mssql
+      sensitivity: NON_PRODUCTION
+      credentialRef: "env:MCP_E2E_MS_URL"
+
+    mcp_e2e_sqlite:
+      displayName: "MCP E2E SQLite"
+      dialectId: sqlite
+      sensitivity: NON_PRODUCTION
+      credentialRef: "env:MCP_E2E_SQLITE_URL"
+
+    # Nur erreichbar, wenn der Stack mit `--profile oracle` laeuft.
+    mcp_e2e_ora:
+      displayName: "MCP E2E Oracle"
+      dialectId: oracle
+      sensitivity: NON_PRODUCTION
+      credentialRef: "env:MCP_E2E_ORA_URL"

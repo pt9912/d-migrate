@@ -1,27 +1,110 @@
 # MCP-E2E-Harness Compose-Stack — Plan: docs/planning/next/mcp-real-e2e-scope-matrix.md Teil B
 #
-# Ein postgres-Service (echte Verbindung fuer connections/list?checkLive=true)
-# und ein dmigrate-Service (echtes d-migrate:dev-MCP-Server-Image). Der
-# dmigrate-Service laeuft nur unter `--profile tools` (kein Auto-Start bei
+# Die echten Datenbanken, gegen die der MCP-Server faehrt. Der Aufbau deckt
+# **alle fuenf Dialekte** ab, die d-migrate unterstuetzt — vier als Container,
+# SQLite als Datei (sie braucht keinen Server).
+#
+# Der dmigrate-Service laeuft nur unter `--profile tools` (kein Auto-Start bei
 # `up`) — `mcp serve --transport stdio` wird per `docker compose run -T`
 # gefahren, NDJSON-Requests per stdin, analog `examples/sample-db/`.
 # Voraussetzung: einmaliger `make docker-build IMAGE_TAG=dev`.
+#
+# **Oracle** steht unter `--profile oracle`: sein Kaltstart dauert 2-3 Minuten
+# (im Schwester-Harness `examples/sample-db/` gemessen), und die uebrigen
+# Migrationspfade sollen darauf nicht warten.
 
 services:
   postgres:
-    image: postgres:17.10-trixie
+    image: postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
     env_file:
       - .env
+    environment:
+      POSTGRES_DB: ${MCP_E2E_PG_DB}
+      POSTGRES_USER: ${MCP_E2E_PG_USER}
+      POSTGRES_PASSWORD: ${MCP_E2E_PG_PASSWORD}
     ports:
       - "127.0.0.1:${MCP_E2E_PG_PORT}:5432"
     volumes:
-      - mcp-e2e-pg-data:/var/lib/postgresql/data
+      # Postgres 18 verlangt den Mount auf /var/lib/postgresql (ohne /data):
+      # es legt die Daten in einem Unterverzeichnis ab, damit `pg_upgrade
+      # --link` ohne Mount-Grenzen funktioniert. Mit dem alten Pfad startet
+      # der Container nicht mehr.
+      - mcp-e2e-pg-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${MCP_E2E_PG_USER} -d ${MCP_E2E_PG_DB}"]
       interval: 5s
       timeout: 3s
       retries: 12
       start_period: 10s
+
+  mysql:
+    image: mysql:9.7.2@sha256:b2cf29815e62fea06b7de22b8b8e57dfe0eb32706e38ce951930bde6faef4ab6
+    env_file:
+      - .env
+    environment:
+      MYSQL_DATABASE: ${MCP_E2E_MY_DB}
+      MYSQL_USER: ${MCP_E2E_MY_USER}
+      MYSQL_PASSWORD: ${MCP_E2E_MY_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MCP_E2E_MY_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:${MCP_E2E_MY_PORT}:3306"
+    volumes:
+      - mcp-e2e-my-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  # Der SQL-Server hat kein docker-entrypoint-initdb.d; Ziel-DBs legt das
+  # Smoke-Skript per sqlcmd an.
+  mssql:
+    # **Nicht** `2025-CU1-ubuntu-24.04` (das Image, das examples/sample-db
+    # nutzt): es startet auf diesem Host nicht, sondern stirbt mit einem
+    # paldumper-Abbild ("fatal error"), auch ohne Compose und mit 18 GB
+    # freiem Speicher. `2025-latest` und `2022-latest` laufen. Die Wahl hier
+    # ist die aktuellere der beiden — der Befund gehoert in ein eigenes
+    # Ticket, weil er den MSSQL-Leg des sample-db-Harness genauso trifft.
+    image: mcr.microsoft.com/mssql/server:2025-latest@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a
+    env_file:
+      - .env
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+      MSSQL_SA_PASSWORD: ${MCP_E2E_MS_PASSWORD}
+    ports:
+      - "127.0.0.1:${MCP_E2E_MS_PORT}:1433"
+    volumes:
+      - mcp-e2e-ms-data:/var/opt/mssql
+    healthcheck:
+      # mssql-tools18 braucht -C (Self-Signed-Zertifikat des Containers).
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+  # Nur unter `--profile oracle`: der Kaltstart dauert 2-3 Minuten.
+  oracle:
+    image: gvenzl/oracle-free:23-slim-faststart@sha256:f5ff19033860d662c821cb04eb10483fa94f14f78eae252d054291ea07028093
+    profiles: ["oracle"]
+    env_file:
+      - .env
+    environment:
+      ORACLE_PASSWORD: ${MCP_E2E_ORA_PASSWORD}
+      APP_USER: ${MCP_E2E_ORA_USER}
+      APP_USER_PASSWORD: ${MCP_E2E_ORA_PASSWORD}
+    ports:
+      - "127.0.0.1:${MCP_E2E_ORA_PORT}:1521"
+    volumes:
+      - mcp-e2e-ora-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
 
   dmigrate:
     # Standard: das JVM-Image d-migrate:dev. Ueberschreibbar auf das
@@ -39,11 +122,22 @@ services:
       - .env
     # env:-CredentialProvider fuer .d-migrate.yaml's credentialRef (volle
     # URL, nicht nur ein Passwort — siehe .d-migrate.yaml-Kommentar).
+    #
+    # Die SQLite-Verbindung ist eine **Datei** im gemounteten /work; sie
+    # braucht keinen Dienst. `?mode=rwc` legt sie beim ersten Zugriff an —
+    # ohne den Parameter scheitert ein Schreibzugriff auf eine fehlende Datei.
     environment:
-      MCP_E2E_PG_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      MCP_E2E_PG_URL: "postgresql://${MCP_E2E_PG_USER}:${MCP_E2E_PG_PASSWORD}@postgres:5432/${MCP_E2E_PG_DB}"
+      MCP_E2E_MY_URL: "mysql://${MCP_E2E_MY_USER}:${MCP_E2E_MY_PASSWORD}@mysql:3306/${MCP_E2E_MY_DB}"
+      MCP_E2E_MS_URL: "mssql://sa:${MCP_E2E_MS_PASSWORD}@mssql:1433/${MCP_E2E_MS_DB}?encrypt=false"
+      MCP_E2E_SQLITE_URL: "sqlite:/work/out/mcp-e2e.sqlite?mode=rwc"
+      MCP_E2E_ORA_URL: "oracle://${MCP_E2E_ORA_USER}:${MCP_E2E_ORA_PASSWORD}@oracle:1521/${MCP_E2E_ORA_DB}"
     volumes:
       - .:/work
     working_dir: /work
 
 volumes:
   mcp-e2e-pg-data:
+  mcp-e2e-my-data:
+  mcp-e2e-ms-data:
+  mcp-e2e-ora-data:

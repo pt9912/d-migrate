@@ -115,7 +115,7 @@ if [ ! -f "$EXAMPLES_DIR/.env" ]; then
 fi
 # shellcheck disable=SC1091
 set -a; . "$EXAMPLES_DIR/.env"; set +a
-: "${POSTGRES_USER:?POSTGRES_USER not set}"
+: "${MCP_E2E_PG_USER:?MCP_E2E_PG_USER not set}"
 
 export MCP_E2E_DMIGRATE_USER="$(id -u):$(id -g)"
 
