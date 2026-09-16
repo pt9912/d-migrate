@@ -71,8 +71,13 @@ internal object ExpressionSpelling {
 
     private val WHITESPACE = Regex("\\s+")
 
-    /** Leerraum um Vergleichs- und Rechenoperatoren. */
-    private val OPERATOR_GAP = Regex("\\s*([=<>!]+|\\*|\\+|-)\\s*")
+    /**
+     * Leerraum um Vergleichs- und Rechenoperatoren — und um das Komma:
+     * ausserhalb eines Literals trennt es immer eine Liste (Werte, Argumente),
+     * der Leerraum daneben ist Schreibweise. Der Sichten-Rumpf faltet es
+     * genauso.
+     */
+    private val OPERATOR_GAP = Regex("\\s*([=<>!]+|\\*|\\+|-|,)\\s*")
 
     /**
      * Entfernt Klammern, die den **ganzen** Ausdruck umschliessen — und nur

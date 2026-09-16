@@ -1,8 +1,8 @@
 # Compare: Restfehlalarme und Projektionslücken aus der Konsumentenmessung
 
 > **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden).
-> **Stand der Pakete:** P8 (nachgetragen, Altbestand) geliefert; offen: P5, P3,
-> P6, P2a, P2b, P1, Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
+> **Stand der Pakete:** geliefert P8 (nachgetragen, Altbestand; `50ee1bd00`)
+> und P5; offen: P3, P6, P2a, P2b, P1, Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
 > geliefert (`c9737f909`).
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
@@ -476,6 +476,17 @@ ADR 0055 entschieden.
 der Stellen genannt, die nicht lokal normalisiert werden. Der Nachzug steht in
 P7.
 
+**Gebaut:** der Zweig steht in `RawTextFolding.index` **vor** dem Guard und
+faltet nur `where` — die Schlüssel-Ausdrücke bleiben wortgleich (ADR 0056,
+Tabelle der Felder). Das Komma steht in derselben Operator-Regel wie `=`/`+`.
+Der Rückzug aus P8 gilt am Index-Prädikat mit (gepinnt).
+**Grenze, bewusst nicht gebaut:** ein **unbenannter** Index wird über einen
+Schlüssel zugeordnet, der das rohe Prädikat enthält
+(`TableIndexComparator.indexKey`). Zwei unbenannte Indizes, deren Prädikat sich
+nur in der Schreibweise unterscheidet, erscheinen deshalb weiter als entfernt +
+hinzugefügt. Reverses benennen jeden Index; betroffen sind nur zwei
+handgeschriebene Dateien. Konservativ (ein Fund zu viel), s. „Offen".
+
 **DoD:** Ein Index-Prädikat mit einer reinen Schreibweise-Differenz (Quoting,
 Whitespace, **Listen-Komma**, Cast) meldet nichts mehr; ein Prädikat mit einer
 **echten** Änderung bleibt ein Fund; `= ANY(ARRAY[…])` gegen `IN (…)` bleibt es
@@ -699,6 +710,10 @@ dieses Slices (s. Kopfzeile), nicht sein Inhalt.
   Handler — der asynchrone Pfad ist von beiden Änderungen nicht erreichbar. Ob
   er sie erben soll, ist eine eigene Entscheidung; heute ist es ein Unterschied,
   den niemand dokumentiert.
+- **Unbenannte Indizes und die Schreibweise.** Der Zuordnungsschlüssel eines
+  unbenannten Index trägt das rohe Prädikat (P5, „Grenze"); ob `schema compare`
+  ihn über die kanonische Form bilden soll, ist nicht entschieden. Heute ist
+  das Ergebnis konservativ: entfernt + hinzugefügt statt „unverändert".
 - **Die Anwendersicht ist hier nicht betroffen** — und das ist begründet: kein
   `docs/user/`-Text zeigt Compare-Funde oder deren `path`, und der Präzedenzfall
   derselben Änderung (VIEW_CHANGED-Vorher/Nachher in 1.7.1) hat `docs/user/`

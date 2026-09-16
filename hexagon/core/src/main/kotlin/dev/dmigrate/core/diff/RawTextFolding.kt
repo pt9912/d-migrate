@@ -57,15 +57,27 @@ internal class RawTextFolding(
         return desired.copy(expression = current.expression)
     }
 
-    /** Praedikat und Ausdrucks-Schluessel eines Index. */
+    /**
+     * Praedikat und Ausdrucks-Schluessel eines Index.
+     *
+     * Die Dialekt-Schreibweise greift — wenn angefordert — **nur** am
+     * Praedikat, und sie steht **vor** dem Guard der beiden anderen Quellen:
+     * `schema compare` setzt weder Herkunft noch Sandkasten, und ein Guard, der
+     * vorher zurueckkehrte, liesse das Praedikat dort ungefaltet. Den Guard
+     * stattdessen zu verschieben, kippte den Migrate-Pfad, der die
+     * Schreibweise nicht faltet (ADR 0056). Die Schluessel-Ausdruecke bleiben
+     * auch in `schema compare` wortgleich.
+     */
     fun index(tableName: String, current: IndexDefinition, desired: IndexDefinition): IndexDefinition {
-        if (authorship == null && serverForm == null) return desired
-        val name = desired.name ?: current.name ?: return desired
+        val spelled = whereSpelling(current, desired)
+        if (authorship == null && serverForm == null) return spelled
+        val name = desired.name ?: current.name ?: return spelled
         val path = listOf(tableName, name)
-        val withWhere = if (unchanged("index", path, WHERE, null, desired.where, current.where)) {
-            desired.copy(where = current.where)
-        } else {
-            desired
+        val withWhere = when {
+            // Schon ueber die Schreibweise als unveraendert erkannt.
+            spelled.where != desired.where -> spelled
+            unchanged("index", path, WHERE, null, desired.where, current.where) -> spelled.copy(where = current.where)
+            else -> spelled
         }
         return withWhere.copy(
             columns = withWhere.columns.mapIndexed { position, key ->
@@ -82,6 +94,17 @@ internal class RawTextFolding(
                 }
             },
         )
+    }
+
+    /**
+     * Das Soll mit dem Praedikat des Ist, wenn beide sich nur in der
+     * Dialekt-Schreibweise unterscheiden — dieselbe Regel wie beim
+     * CHECK-Ausdruck. Sonst unveraendert.
+     */
+    private fun whereSpelling(current: IndexDefinition, desired: IndexDefinition): IndexDefinition {
+        if (!canonicalizeRawExpressions || desired.where == current.where) return desired
+        if (!ConstraintDiffContract.canonicallyEqual(desired.where, current.where)) return desired
+        return desired.copy(where = current.where)
     }
 
     /**
