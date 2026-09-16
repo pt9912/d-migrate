@@ -227,6 +227,36 @@ und die DDL selbst nutzt JSONB/TIMESTAMPTZ samt Hinweis „do NOT port verbatim
 to other dialects" (`V1__server_state_initial.sql`). Wer SQLite als Store
 will, baut **kein** Ein-Statement-Paket, sondern einen Dialekt-Port.
 
+**Nachgemessen 2026-09-16 — der billige Weg ist nicht teilweise, sondern gar
+nicht gangbar.** Ein Sonde-Leg, der `mcp serve` mit `server.state` auf SQLite
+fahrt (reparierte Argumente, Audit als Deckungsnachweis), stirbt im **Start**:
+
+```
+org.sqlite.SQLiteException: [SQLITE_ERROR] SQL error or missing database (unrecognized token: ":")
+```
+
+Kein `persistent backend enabled`, kein `tools/call`, Exit 1 — der Cast-Operator
+aus dem ersten Satz dieses Absatzes, noch vor der ersten Store-Operation. Und der
+Gegenbeweis am Artefakt: die im **selben** Lauf neu erhobenen
+Reachability-Metadaten (1832 Zeilen) enthalten **null** Eintraege fuer die fuenf
+Codecs und **null** fuer `server.persistence.jdbc`. P1 muss also Build-Zeit-
+Konnektivitaet zu einem PG herstellen; ein Ersatz-Store fuer die Sonde existiert
+nicht.
+
+**Was der Leg daraus fuer P1 mitnimmt:** die Sonde braucht einen
+**Deckungsnachweis**, nicht nur eine Startzeile. Die Startzeile beweist die
+**Konstruktion**; ob ein Aufruf die Store-Schicht erreicht hat, zeigt erst der
+Audit-Sink, der jeden `tools/call` mit `toolName`, `outcome` und `errorCode`
+schreibt (`McpRuntimeWiring.kt:101`) — daran ist ein Argument- oder Policy-Fehler
+von einem Store-Fehler unterscheidbar. Ohne ihn meldet ein Leg „ok", sobald der
+Backend startet, auch wenn kein Codec je gelaufen ist.
+
+**Der Leg selbst wurde nach der Messung wieder entfernt** (2026-09-16): er haette
+in jedem kuenftigen Sondenlauf dauerhaft einen Blocker gemeldet, und ein
+Dauerrot wird ueberlesen. Die zwei Dinge, die er richtig macht — Argumente gegen
+die veroeffentlichten Schemata (`additionalProperties=false`) und der
+Deckungsnachweis oben — gehoeren in die Build-Zeit-Kante, die P1 baut.
+
 **DoD:** Der Agent-Lauf erzeugt Eintraege fuer die Wire-Klassen der fuenf
 Codecs — im `git diff` der Metadaten sichtbar. Zu zielen ist auf die
 **verschachtelten Klassen**, nicht auf die Codec-Objekte:
