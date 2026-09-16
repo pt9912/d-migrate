@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.7.0**
-(stable, [released 2026-09-15](https://github.com/pt9912/d-migrate/releases/tag/v1.7.0)).
+d-migrate is a working production tool at version **1.7.1**
+(stable, [released 2026-09-16](https://github.com/pt9912/d-migrate/releases/tag/v1.7.1)).
 
 The current capabilities:
 
@@ -161,8 +161,19 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.7.0** (2026-09-15) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **The remaining gaps in
+- **Current stable** · **1.7.1** (2026-09-16) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **It closes a consumer's
+  findings against 1.7.0.** Oracle now counts the objects it drops — a UNIQUE
+  or PRIMARY KEY on a large-object column (`E057`, the gap SQL Server closed
+  in 1.5.1) and its index losses (`W152`, `E052`) — and its exit code follows,
+  so a run that quietly lost a constraint no longer reports success. A
+  `schemaRef` needs no `format` any more: the reader detects the artifact's
+  encoding. `schema compare` no longer calls a view changed whose columns are
+  merely read unevenly or whose body ends in a server-added semicolon, it
+  names the field when a view really did change, and it canonicalises CHECK
+  expressions in their identifier quoting too. The MySQL reader carries the
+  `FULLTEXT` index kind instead of degrading it to an ordinary index. The
+  lineage below is unchanged: **the remaining gaps in
   column-generation changes are closed.** PostgreSQL can now turn an ordinary
   column into an identity column (`SET NOT NULL` + `ADD GENERATED … AS
   IDENTITY` + a `setval` catch-up past the existing high value, empty tables

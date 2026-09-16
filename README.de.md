@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.7.0** (stabil, [veröffentlicht 2026-09-15](https://github.com/pt9912/d-migrate/releases/tag/v1.7.0)).
+**1.7.1** (stabil, [veröffentlicht 2026-09-16](https://github.com/pt9912/d-migrate/releases/tag/v1.7.1)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,20 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.7.0** (2026-09-15) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Die verbliebenen Lücken
+- **Aktuelles Stable** · **1.7.1** (2026-09-16) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Es schließt die Befunde
+  eines Konsumenten gegen 1.7.0.** Oracle zählt jetzt die Objekte, die es
+  wegwirft — ein UNIQUE oder PRIMARY KEY auf einer LOB-Spalte (`E057`, die
+  Lücke, die SQL Server in 1.5.1 geschlossen hat) und seine Index-Verluste
+  (`W152`, `E052`) —, und der Ausgang folgt: ein Lauf, der still eine
+  Constraint verlor, meldet keinen Erfolg mehr. Ein `schemaRef` braucht kein
+  `format` mehr, der Reader erkennt die Kodierung des Artefakts. `schema
+  compare` nennt eine Sicht nicht mehr geändert, wenn nur die Spalten
+  ungleich gelesen werden oder ihr Rumpf auf einem servergesetzten Semikolon
+  endet, benennt das Feld, wenn sie sich wirklich geändert hat, und
+  kanonisiert CHECK-Ausdrücke auch im Identifier-Quoting. Der MySQL-Reader
+  trägt die Index-Art `FULLTEXT`, statt sie zu einem gewöhnlichen Index zu
+  degradieren. Die Linie darunter ist unverändert: **die verbliebenen Lücken
   beim Ändern der Erzeugungsart einer Spalte sind geschlossen.** PostgreSQL
   macht jetzt aus einer gewöhnlichen Spalte eine Identity-Spalte (`SET NOT
   NULL` + `ADD GENERATED … AS IDENTITY` + ein `setval`-Nachzug über den
