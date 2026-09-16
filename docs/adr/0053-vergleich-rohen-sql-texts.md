@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0056
 date: 2026-09-08
 decision-makers: pt9912
 consulted: docs/planning/open/raw-sql-text-drift.md, docs/adr/0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md
