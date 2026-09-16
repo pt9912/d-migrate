@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`schema_compare` meldet je geaendertem Feld, und jeder Fund nennt seinen
+  Ort im selben Schema.** Eine Sicht, Sequenz, ein benutzerdefinierter Typ,
+  eine Funktion, Prozedur oder ein Trigger mit mehreren geaenderten Feldern
+  ergibt jetzt **einen Fund je Feld**, und `path` endet auf dem Feld
+  (`views.active_orders.query`, `sequences.invoice_seq.min_value`) — wie
+  bisher schon bei Spalten. `VIEW_CHANGED` trug das Feld bis dahin nur im
+  Meldungstext. Der `W137`-Fund trug `order_item.line_total` und heisst jetzt
+  `tables.order_item.columns.line_total.generation.expression`; die Meldung
+  von `W137` nennt denselben Ort, auch in `schema compare` und
+  `schema migrate`. **Fuer MCP-Abnehmer ein Vertragswechsel:** mehr Funde je
+  Objekt und andere `path`-Werte. Das Pfad-Schema steht in
+  `spec/cli-spec.md`.
+
+- **Vergleichsfunde nennen ihr Vorher und Nachher.** Ein geaenderter CHECK
+  erschien in der CLI als `~ constraint ck_x (check) -> ck_x (check)`, und der
+  MCP-Fund hatte gar keine Werte; dasselbe galt fuer ein Index-Praedikat, die
+  Schluessel eines benannten Index und die Aktionen eines Fremdschluessels.
+  Indizes und Constraints erscheinen jetzt als Kurzform mit jedem
+  verglichenen Feld (`ck_qty (check: qty > 0)`,
+  `ix_open [btree] on (status) where status <> 'DONE'`) — im Textreport, im
+  JSON-/YAML-Dokument und in den `details` der MCP-Funde. Die je Feld
+  zerlegten Funde tragen ebenfalls `before`/`after`; ohne Werte bleiben lange
+  Ruempfe und strukturierte Felder.
+
+### Fixed
+
+- **`schema compare` setzt weitere Dialekt-Schreibweisen gleich.** Klammern um
+  die Operanden einer `AND`-/`OR`-Komposition
+  (`((shipped_at IS NULL) OR (shipped_at >= placed_at))` gegen
+  `shipped_at IS NULL OR shipped_at>=placed_at`), Leerraum um Kommas
+  (`IN ('a','b')` gegen `IN ('a', 'b')`) und das **Praedikat eines Index**,
+  das bis dahin gar nicht kanonisiert wurde. `= ANY(ARRAY[…])` gegen `IN (…)`
+  und die Schreibweise von Schluesselwoertern bleiben Unterschiede.
+
+- **… und haelt dabei eine engere Grenze** (ADR 0056). Die Faltung aus 1.7.0/1.7.1
+  setzte Paare gleich, die Verschiedenes bedeuten koennen: einen
+  Zeilenkommentar, dessen Reichweite das Zusammenziehen von Leerraum
+  verschiebt, Dollar-Quoting, einen Cast an einer Spalte (`price::integer`),
+  Leerraum in einem Literal eines Sichten-Rumpfs, Leerraum in einem
+  quotierten Bezeichner und einen Funktionsaufruf gegen einen gleichlautenden
+  Bezeichner (`f(x)` gegen `fx`). Jetzt zieht sich die Faltung bei
+  Kommentaren, Dollar-Quoting, Backslashes und offener Quotierung zurueck, und
+  ein Cast faellt nur noch, wo er den Wert nicht aendern kann (String-Literal
+  auf einen unbegrenzten Texttyp, Ganzzahl-Literal auf `numeric`). **Folge:**
+  einige Paare, die 1.7.1 gleichsetzte, sind wieder Funde — etwa ein Cast an
+  einer Spalte (`(status)::text`) oder auf `bpchar`, `date` oder
+  `double precision`.
+
+- **Der Sequenzname einer Identity-Spalte ist in `schema compare` kein Fund
+  mehr**, sobald eine Seite aus PostgreSQL oder Oracle zurueckgelesen wurde —
+  dort vergibt ihn der Server. PostgreSQL gegen MySQL meldete
+  `sequenceName=public.customer_id_seq` gegen `null`. Der Modus bleibt ein
+  Unterschied, `schema migrate` und der Fingerabdruck sind unberuehrt.
+
 ## [1.7.1] - 2026-09-16
 
 ### Fixed

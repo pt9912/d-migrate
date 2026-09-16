@@ -655,7 +655,10 @@ wird zusaetzlich gemeldet:
 
 - `diagnostics` ist ein optionales Array im JSON-/YAML-Dokument (nur gesetzt,
   wenn mindestens eine offene Frage vorliegt); jeder Eintrag traegt `code`
-  (z.B. `W137`), `severity` (`warning`) und `message`
+  (z.B. `W137`), `severity` (`warning`) und `message`. Die Meldung nennt den
+  betroffenen Ort als **ersten** in Backticks gesetzten Abschnitt, im
+  Pfad-Schema der Vergleichsfunde (unten), etwa
+  `` `tables.order_line.columns.line_total.generation.expression` ``
 - Im Plain-Modus erscheinen dieselben Eintraege zusaetzlich auf `stderr` und
   unter einer eigenen `Diagnostics:`-Sektion im Textreport — auch wenn
   `status: identical` ist, denn genau dort waere die Frage sonst unsichtbar
@@ -664,35 +667,87 @@ wird zusaetzlich gemeldet:
   `schema migrate` mit derselben Warnung (`W137`), dort zusaetzlich zum
   Verzicht, die Aenderung zu planen.
 
-**Dialekt-Schreibweise roher Ausdruecke**: `schema compare` vergleicht die
-Ausdruecke von CHECK- und EXCLUDE-Constraints ueber eine **kanonisierte**
-Form. Zwei Reverses desselben Schemas schreiben denselben Ausdruck
-verschieden — `(quantity > 0)` gegen `quantity>(0)`, `(email ~~ '%@%'::text)`
-gegen `email like '%@%'` —, und das ist keine Schema-Aenderung.
+**Dialekt-Schreibweise roher Ausdruecke**: `schema compare` vergleicht den
+Ausdruck eines CHECK- oder EXCLUDE-Constraints und das **Praedikat eines
+Index** (`where`) ueber eine **kanonisierte** Form. Zwei Reverses desselben
+Schemas schreiben denselben Ausdruck verschieden — `(quantity > 0)` gegen
+`quantity>(0)`, `(email ~~ '%@%'::text)` gegen `email like '%@%'`,
+`((shipped_at IS NULL) OR (shipped_at >= placed_at))` gegen
+`shipped_at IS NULL OR shipped_at>=placed_at` —, und das ist keine
+Schema-Aenderung. Die kanonische Form entscheidet nur ueber „gleich" oder
+„verschieden"; gemeldet werden immer die unveraenderten Texte beider Seiten.
 
 Kanonisiert wird ausschliesslich die **Schreibweise**, nicht die Bedeutung:
-Zeilenenden, Whitespace, Klammern, die nur ein Literal oder einen Bezeichner
-umschliessen, Klammern um den ganzen Ausdruck, der PostgreSQL-Operator `~~`
-(der `LIKE` **ist**), Casts auf den eigenen Typ und das **Identifier-Quoting**
-(ANSI `"x"`, MySQL `` `x` ``, T-SQL `[x]`). String-Literale sind dabei
-geschuetzt, und die Schreibweise bleibt: `"Quantity"` und `quantity` sind
-danach weiterhin verschieden — in PostgreSQL sind sie das auch. Was einen
-Parser braeuchte — vertauschte Operanden, umgestellte Konjunktionen, andere
-Funktionen — bleibt ein Unterschied.
+
+- Zeilenenden und Leerraum, auch um Vergleichs- und Rechenoperatoren und um
+  **Kommas** — ausserhalb eines Literals trennt ein Komma immer eine Liste;
+- das **Identifier-Quoting** eines einfachen Bezeichners (ANSI `"x"`, MySQL
+  `` `x` ``, T-SQL `[x]`); ein `[` direkt hinter einem Namen, einer Klammer
+  oder einem Literal ist ein Index oder Array und kein Quoting;
+- Klammern, die nur ein Zahl-Literal oder einen Bezeichner umschliessen —
+  nicht die Klammern eines Funktionsaufrufs: `f(x)` bleibt verschieden von
+  `fx`;
+- Klammern um den ganzen Ausdruck;
+- die **redundanten Klammern um einen Operanden** einer `AND`-/`OR`-Komposition:
+  eine Klammer faellt, wenn sie links und rechts nur an den Ausdrucksrand, an
+  `AND` oder an `OR` grenzt (an mindestens einer Seite an `AND`/`OR`) und ein
+  einzelnes Vergleichspraedikat umschliesst — einen Vergleichsoperator (`=`,
+  `<>`, `!=`, `<`, `>`, `<=`, `>=`) oder `IS [NOT] NULL` — ohne `AND`, `OR`,
+  `NOT`, `XOR`, `BETWEEN`, `CASE`, eine Abfrage oder `||`/`&&` auf dessen
+  oberster Ebene. Ein Vergleich bindet in allen Dialekten staerker als `AND`
+  und `OR`; diese Klammern tragen keine Bedeutung;
+- der PostgreSQL-Operator `~~` (der `LIKE` **ist**);
+- ein Cast, der den Wert **nicht aendern kann**: ein String-Literal auf `text`,
+  `varchar` oder `character varying`, ein Ganzzahl-Literal (auch in Klammern)
+  auf `numeric` oder `decimal` — jeweils ohne Typmodifikator und ohne `[]`.
+
+**Was ein Unterschied bleibt:** vertauschte Operanden und umgestellte
+Konjunktionen; **gliedernde** Klammern — um eine ganze Komposition
+(`(a = 1 OR b = 2) AND c = 3`), um einen Rechenausdruck (`(a + b) * c`), hinter
+einem Funktionsnamen, hinter `IN` oder `NOT` und auf jeder Ebene, die `BETWEEN`
+enthaelt (dessen `AND` ist keine Konjunktion); andere Literale, Operatoren und
+Funktionen; die Gross-/Kleinschreibung von **Bezeichnern** (`"Quantity"` und
+`quantity` sind in PostgreSQL verschiedene Spalten); jeder Cast, der den Wert
+aendern kann — an einem Bezeichner (`price::integer`), mit Typmodifikator
+(`'abc'::varchar(2)`), als Array oder auf einen anderen Typ; und **zwei Formen
+desselben Praedikats**, etwa `status = ANY (ARRAY['A','B'])` gegen
+`status IN ('A','B')`.
+
+**Nicht festgelegt** ist die Gross-/Kleinschreibung von **Schluesselwoertern**
+(`sum` gegen `SUM`, `is null` gegen `IS NULL`) und ob eine ausgeschriebene
+Aktion `RESTRICT` einer fehlenden gleichsteht. Beides bleibt ein Unterschied,
+bis es festgelegt ist.
+
+**Geschuetzt** sind String-Literale und nicht-einfache quotierte Bezeichner
+(`"my col"`, `[Order Details]`): keine Regel veraendert ihren Inhalt — weder
+Leerraum noch Quoting noch Operator-Folgen.
+
+**Die Faltung zieht sich zurueck**, wo ein Text nicht sicher abzugrenzen ist:
+traegt einer der beiden Texte ausserhalb eines Literals ein Kommentarzeichen
+(`--`, Blockkommentar) oder Dollar-Quoting (`$$…$$`, `$tag$…$tag$`), an
+beliebiger Stelle einen Backslash (ob er ein Anfuehrungszeichen escapet, ist
+dialektabhaengig) oder eine nicht geschlossene Quotierung, wird dieses Feld
+**wortgleich** verglichen. Ein Kommentar, dessen
+Reichweite das Zusammenziehen von Leerraum verschoebe, bleibt so ein
+Unterschied.
+
+Der **Ausdruck eines Index-Schluessels** (`columns[].expression`) wird nicht
+kanonisiert; er bleibt wortgleich.
 
 Das Identifier-Quoting gehoert dazu, weil der Generator die Differenz selbst
 erzeugt: `OracleIdentifierRequoter` quotet die Bezeichner eines
 CHECK-Ausdrucks auf dem Generate-Pfad bewusst, und der Reverse liest nur
 zurueck, was der Generator geschrieben hat.
 
-Dieselbe Regel gilt fuer den **Rumpf einer Sicht**: die Dialekte quoten
-Bezeichner verschieden und setzen unterschiedlich viel Whitespace.
-Vereinheitlicht werden auch dort nur Quoting und Whitespace — gewaehlte
-Spalten, `WHERE`-Klauseln und ihre Reihenfolge bleiben ein Unterschied.
-**Abschliessende Semikola** — eines oder mehrere — fallen mit weg: der Server
-haengt dem gespeicherten `VIEW_DEFINITION`-Text sein eigenes an, und hat die
-angewendete DDL schon eines getragen, stehen dort zwei. Nur abschliessende:
-ein `;` zwischen zwei Anweisungen bleibt Unterschied.
+Fuer den **Rumpf einer Sicht** gilt eine engere Regel: vereinheitlicht werden
+nur das Quoting einfacher Bezeichner und der Leerraum, auch um `,`, `=` und
+Klammern — gewaehlte Spalten, `WHERE`-Klauseln und ihre Reihenfolge bleiben
+ein Unterschied, ebenso Klammern und Casts, die in einem Abfragetext Joins und
+Unterabfragen gliedern. **Abschliessende Semikola** — eines oder mehrere —
+fallen mit weg: der Server haengt dem gespeicherten `VIEW_DEFINITION`-Text sein
+eigenes an, und hat die angewendete DDL schon eines getragen, stehen dort zwei.
+Nur abschliessende: ein `;` zwischen zwei Anweisungen bleibt Unterschied.
+Literalschutz und Rueckzug gelten wie beim Ausdruck.
 
 Die **abgeleiteten Spalten** einer Sicht werden nicht roh verglichen: sie
 sind eine optionale Signatur, die die Reader unterschiedlich gut fuellen.
@@ -700,9 +755,65 @@ Verglichen wird nur, was **beide** Seiten tragen, und nur der **Name** — der
 Typ ist Dialekt-Schreibweise (`text` gegen `nvarchar`). Traegt eine Seite
 keine Spalten, ist das eine Leseluecke und keine Schemaaenderung.
 
+**Sequenzname einer Identity-Spalte**: den Namen der Sequenz hinter einer
+Identity-Spalte vergibt bei PostgreSQL und Oracle der Server; er beschreibt,
+wie die Erzeugung organisiert ist, nicht, was die Spalte ist. `schema compare`
+vergleicht ihn deshalb nicht, sobald eine der beiden Seiten aus einem dieser
+Dialekte zurueckgelesen wurde — erkannt an der Reverse-Markierung im
+`name`/`version`-Paar des Schemas, die jeder Reverse setzt. Zwei
+handgeschriebene Schemata vergleichen ihn weiter. Der **Modus** der
+Identity-Spalte bleibt ein Unterschied, ebenso `stored` einer berechneten
+Spalte.
+
+**Indizes und Constraints im Diff**: sie erscheinen im Textreport und im
+JSON-/YAML-Dokument als Kurzform, die jedes verglichene Feld traegt —
+`ix_open [btree,unique] on (status) include (total) where status <> 'DONE'`,
+`fk_order (foreign_key on [order_id] -> orders[id] on_delete=cascade)`,
+`ck_qty (check: qty > 0)`. Eine Aenderung an einem dieser Felder ergibt damit
+zwei verschiedene Zeilen.
+
 **`schema migrate` kanonisiert bewusst nicht.** Dort kostet eine uebersehene
 Aenderung eine falsch stehende Datenbank, waehrend ein Fehlalarm bei
 `schema compare` nur einen Fund kostet.
+
+**Pfad-Schema der Vergleichsfunde**: wo ein Vergleichsfund einen Ort nennt —
+im `path` eines MCP-Fundes (siehe [MCP-Server](mcp-server.md)) und in der
+Meldung einer Diagnose wie `W137` —, ist es der Ort im **neutralen
+Schema-Dokument** ([Schema-Referenz](schema-reference.md)): dessen Schluessel
+und die Objektnamen, mit Punkten verbunden. Es ist dasselbe Vokabular, das
+`schema validate` fuer seine Befunde benutzt.
+
+```
+pfad        := "name" | "version" | tabelle | objekt
+tabelle     := "tables." NAME [ "." ( "primary_key" | "metadata" )
+                              | ".columns." NAME [ "." spaltenfeld [ ".expression" ] ]
+                              | ".indices." INDEX
+                              | ".constraints." NAME ]
+spaltenfeld := "type" | "required" | "unique" | "default" | "references" | "generation"
+objekt      := abschnitt "." NAME [ "." feld ]
+abschnitt   := "views" | "sequences" | "custom_types"
+             | "functions" | "procedures" | "triggers"
+```
+
+- `feld` ist der Schluessel des geaenderten Feldes im Dokument, je Abschnitt:
+  `views` — `columns`, `query`, `materialized`, `refresh`, `source_dialect`;
+  `sequences` — `start`, `increment`, `min_value`, `max_value`, `cycle`,
+  `cache`; `custom_types` — `kind`, `values`, `base_type`, `precision`,
+  `scale`, `check`, `description`, `fields`; `functions` — `parameters`,
+  `returns`, `language`, `deterministic`, `body`, `source_dialect`,
+  `security`, `definer`, `search_path`, `sql_mode`; `procedures` — dieselben
+  ohne `returns` und `deterministic`; `triggers` — `table`, `event`, `timing`,
+  `for_each`, `condition`, `body`, `source_dialect`.
+- Ein **Aenderungsfund endet auf dem geaenderten Feld**, wo der Vergleich es
+  kennt: bei Spalten und bei den Objekten der uebrigen Abschnitte gibt es einen
+  Fund je geaendertem Feld. Indizes und Constraints vergleicht der Vergleich als
+  Ganzes; ihr Fund endet am Objekt.
+- Ein Fund „hinzugefuegt"/„entfernt" endet am Objekt.
+- `name` und `version` sind Schluessel der obersten Ebene und tragen kein
+  Praefix.
+- `NAME` ist der Objektname unveraendert; ein Punkt darin wird nicht maskiert.
+  `INDEX` ist der Indexname oder, bei einem unbenannten Index, seine Schluessel
+  kommagetrennt.
 
 **Exit-Codes**:
 - `0`: Schemas identisch (keine Unterschiede; auch bei operandseitigen Warnungen wie `W116`)

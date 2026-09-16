@@ -225,6 +225,38 @@ bereits ein JSON-Objekt.
 Dieselbe Aussage trägt das Tool-Schema als `description` am
 `format`-Feld, damit auch ein schema-validierender Client sie sieht.
 
+### `schema_compare` — Funde
+
+`schema_compare` vergleicht wie `schema compare` in der CLI: dieselbe
+Gleichsetzung der Dialekt-Schreibweise, derselbe Umgang mit dem Sequenznamen
+einer Identity-Spalte (beides unter „`schema compare`" in der
+[CLI-Spezifikation](cli-spec.md)). Den Dialekt einer Seite liest der Server
+aus der Reverse-Markierung des referenzierten Schemas. Der Job
+`schema_compare_start` vergleicht wortgleich; ob er die Gleichsetzung
+uebernimmt, ist nicht festgelegt.
+
+Jeder Eintrag in `findings` traegt `severity`, `code`, `path` und `message`,
+optional `details` mit `before` und/oder `after`:
+
+- `path` folgt dem **Pfad-Schema der Vergleichsfunde** der
+  [CLI-Spezifikation](cli-spec.md). Ein Aenderungsfund endet auf dem
+  geaenderten Feld: eine Spalte, eine Sicht, eine Sequenz, ein
+  benutzerdefinierter Typ, eine Funktion, eine Prozedur oder ein Trigger mit
+  mehreren geaenderten Feldern ergibt **einen Fund je Feld**
+  (`views.active_orders.query`, `sequences.invoice_seq.min_value`). Indizes
+  und Constraints ergeben einen Fund am Objekt.
+- Der `W137`-Fund traegt als `path` den Ort, den seine Meldung nennt.
+- `details` nennt die Werte beider Seiten; fehlt eine Seite, war der Wert dort
+  nicht gesetzt. Indizes und Constraints stehen darin als ihre Kurzform, die
+  jedes verglichene Feld traegt (`ck_qty (check: qty > 0)`) — bei einer
+  Aenderung beide Seiten, bei „hinzugefuegt" nur `after`, bei „entfernt" nur
+  `before`. **Ohne** Werte bleiben der Rumpf einer Sicht (`query`), einer
+  Routine oder eines Triggers (`body`), Parameter- und Rueckgabelisten
+  (`parameters`, `returns`), die Felder eines zusammengesetzten Typs
+  (`fields`) sowie die Funde „hinzugefuegt"/„entfernt" ganzer Objekte und
+  Spalten. Die Spalten einer Sicht (`columns`, als Namen) erscheinen nur, wenn
+  beide Seiten welche tragen.
+
 ### `resources/list` und `resources/templates/list`
 
 Walks Jobs → Artifacts → Schemas → Profiles → Diffs → Connections.

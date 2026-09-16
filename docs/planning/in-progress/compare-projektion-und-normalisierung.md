@@ -3,7 +3,10 @@
 > **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden).
 > **Stand der Pakete:** geliefert P8 (nachgetragen, Altbestand; `50ee1bd00`),
 > P5 (`3b30d9f8a`), P3 (`ba263c737`), P6 (`10eb5a1df`), P2a (`a723584ff`),
-> P2b (`b1de205f9`) und P1; offen: Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
+> P2b (`b1de205f9`), P1 (`e08e217fb`) und der Spec-Teil von P7 (Commit
+> „docs(spec): …" direkt danach). Offen bleibt nur die Abnahme am
+> Konsumenten-Repro (Verifikation 3) und die Prüfung von
+> `make doc-immutable` im frischen Klon (lokal nicht belastbar). Der ADR-Teil von P7 ist mit ADR 0056
 > geliefert (`c9737f909`).
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
@@ -698,6 +701,18 @@ Der Repo-eigene Fahrplan für diese Linie steht in
 Die Eigner-Entscheidung holt das Paket **vorher** ein; sie ist die Vorbedingung
 dieses Slices (s. Kopfzeile), nicht sein Inhalt.
 
+**Gebaut (Spec-Teil):** `spec/cli-spec.md` nennt unter „`schema compare`" die
+Faltungsmenge mit Grenze, Literalschutz und Rückzug (P3, P5, P8), die
+Index-Schlüssel-Ausdrücke als wortgleich, den Identity-Sequenznamen (P6), die
+Kurzform von Index und Constraint (P1) und das **Pfad-Schema der
+Vergleichsfunde** als Grammatik (P2a/P2b); die zwei Grenzfragen
+(Schlüsselwort-Case, `RESTRICT`) stehen dort als „nicht festgelegt".
+`spec/mcp-server.md` hat einen Abschnitt „`schema_compare` — Funde" (Fund je
+Feld, `path`, `details`, und dass `schema_compare_start` wortgleich
+vergleicht). `CHANGELOG.md` führt beides unter `[Unreleased]`. `docs/user/`
+ist nicht betroffen: kein Text dort zeigt Fund-Pfade, `details` oder die
+Faltungsmenge (nachgesehen).
+
 **DoD:**
 1. `ADR 0053` trägt `status: superseded by ADR-00NN`; der neue ADR nennt die
    übersteuerte Entscheidung und die neue Grenze und steht in
@@ -812,6 +827,12 @@ dieses Slices (s. Kopfzeile), nicht sein Inhalt.
   eine Tabelle, die sich nur darin unterscheidet, ergibt `status: different`
   ohne Eintrag in `findings`. Beim Bau von P2b gefunden, nicht Teil dieses
   Slices.
+- **Casts an Spalten sind wieder Funde.** Die engere Cast-Regel aus P8 faltet
+  `(status)::text` nicht mehr — PostgreSQL schreibt diesen Cast für jede
+  `varchar`-Spalte in einem CHECK, 1.7.1 hat ihn gefaltet. Ob der Vergleich den
+  Spaltentyp aus dem Schema heranziehen soll, um einen wertgleichen Cast an
+  einer Spalte zu erkennen, ist nicht entschieden (Eigner). Dasselbe gilt für
+  `(0)::double precision`, `'…'::bpchar` und `'…'::date`.
 - **Die Anwendersicht ist hier nicht betroffen** — und das ist begründet: kein
   `docs/user/`-Text zeigt Compare-Funde oder deren `path`, und der Präzedenzfall
   derselben Änderung (VIEW_CHANGED-Vorher/Nachher in 1.7.1) hat `docs/user/`
