@@ -48,6 +48,7 @@ release-assets/
 # und jede Negation darin bliebe wirkungslos.
 .claude/*
 !.claude/skills/
+!.claude/rules/
 
 #
 .kotlin/
