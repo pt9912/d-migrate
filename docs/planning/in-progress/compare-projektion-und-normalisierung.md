@@ -2,7 +2,8 @@
 
 > **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden).
 > **Stand der Pakete:** geliefert P8 (nachgetragen, Altbestand; `50ee1bd00`),
-> P5 (`3b30d9f8a`) und P3; offen: P6, P2a, P2b, P1, Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
+> P5 (`3b30d9f8a`), P3 (`ba263c737`) und P6; offen: P2a, P2b, P1, Spec-Teil
+> von P7. Der ADR-Teil von P7 ist mit ADR 0056
 > geliefert (`c9737f909`).
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
@@ -535,6 +536,34 @@ Zielseite, und Oracle setzt den Namen wie PostgreSQL
 Und die Projektions-Bindung beachten (s. Posten 6): kein zweiter Mechanismus
 neben der vorhandenen Naht.
 
+**Gebaut.** Die Naht ist zerlegt: `capabilityGenerationCanonicalizer`
+setzt sich jetzt aus `capabilityIdentitySequenceNameCanonicalizer`
+(Namens-Teil) und dem Speicherform-Teil zusammen — für den Migrate-Pfad
+verhaltensgleich. `schema compare` bekommt **nur** den Namens-Teil, über einen
+neuen, von `TargetProjection` getrennten Parameter
+`SchemaComparator(comparisonGeneration = …)`; eine gesetzte `TargetProjection`
+hat Vorrang. **Welcher Dialekt:** der der ersten Seite (Quelle vor Ziel), deren
+Reverse den Namen als Server-Buchhaltung liest
+(`namesIdentitySequences = false`, `compareProjectionDialect`); liest keine
+Seite ihn so, bleibt der Vergleich strikt. Der Dialekt einer Seite kommt aus
+ihrer Reverse-Markierung (`reverseSourceDialect`) — für Datei- **und**
+DB-Operanden, weil jeder Reader sie setzt; ein handgeschriebenes Schema hat
+keinen. Dafür reicht der Runner jetzt je Seite ein `CompareSide(schema,
+sourceDialect)` an den Comparator (geteilte Signatur; drei Aufrufstellen in
+`test/integration-mysql` per `make ast-grep` nachgezogen). Beide Baustellen
+(`SchemaCompareWiring`, `McpRuntimeRegistries`) bauen den Comparator je Aufruf.
+Der asynchrone Pfad (`schema_compare_start`) bleibt unberührt (s. „Offen").
+
+**Das DoD trägt in einer Lesart nicht.** „PG↔Oracle bleibt nachweislich
+unverändert" ist mit der Fähigkeits-Naht nur in der Lesart „meldet keine
+Änderung" erreichbar: jeder Dialekt, der PG↔MySQL faltet (PostgreSQL oder
+Oracle, beide `namesIdentitySequences = false`), blendet bei PG↔Oracle
+**beide** Namen aus. Die Lesart „meldet wie heute einen Fund" bräuchte eine
+zweite Regel neben der Naht („nur falten, wenn genau eine Seite …"), die das
+Paket ausdrücklich ausschließt. Gebaut und gepinnt ist deshalb: PG↔Oracle
+meldet den Sequenznamen **nicht** mehr — beide Namen hat ein Server vergeben;
+ein abweichender **Modus** bleibt ein Fund.
+
 **DoD:** PG↔MySQL meldet die Identity nicht mehr; MySQL↔MySQL mit
 unterschiedlichem **Modus** weiterhin schon; PG↔Oracle bleibt nachweislich
 unveraendert (beide Seiten führen einen Namen — der übergebene Dialekt
@@ -725,6 +754,13 @@ dieses Slices (s. Kopfzeile), nicht sein Inhalt.
   unbenannten Index trägt das rohe Prädikat (P5, „Grenze"); ob `schema compare`
   ihn über die kanonische Form bilden soll, ist nicht entschieden. Heute ist
   das Ergebnis konservativ: entfernt + hinzugefügt statt „unverändert".
+- **`schema_compare` (MCP) bereinigt keine Reverse-Markierung.** Anders als
+  der CLI-Runner (`CompareOperandNormalizer`) vergleicht der synchrone
+  MCP-Handler die Schemanamen roh; zwei Reverse-Artefakte aus verschiedenen
+  Dialekten tragen verschiedene Markierungen
+  (`__dmigrate_reverse__:postgresql:…` gegen `…:mysql:…`) und ergeben damit
+  einen `SCHEMA_NAME_CHANGED`-Fund. Aus dem Code gelesen, nicht durch einen
+  Test gepinnt; nicht Teil dieses Slices.
 - **Die Anwendersicht ist hier nicht betroffen** — und das ist begründet: kein
   `docs/user/`-Text zeigt Compare-Funde oder deren `path`, und der Präzedenzfall
   derselben Änderung (VIEW_CHANGED-Vorher/Nachher in 1.7.1) hat `docs/user/`

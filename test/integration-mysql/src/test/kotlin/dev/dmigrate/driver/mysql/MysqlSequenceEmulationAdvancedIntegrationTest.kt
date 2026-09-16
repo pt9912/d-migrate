@@ -169,7 +169,7 @@ class MysqlSequenceEmulationAdvancedIntegrationTest : FunSpec({
         val runner = SchemaCompareRunner(
             fileLoader = { sourceSnapshot },
             dbLoader = { _, _ -> readLiveMysqlOperand() },
-            comparator = { left, right -> SchemaComparator().compare(left, right) },
+            comparator = { left, right -> SchemaComparator().compare(left.schema, right.schema) },
             projectDiff = { DiffView() },
             renderPlain = { doc ->
                 capturedDoc = doc
@@ -242,7 +242,7 @@ class MysqlSequenceEmulationAdvancedIntegrationTest : FunSpec({
             val runner = SchemaCompareRunner(
                 fileLoader = { sourceSnapshot },
                 dbLoader = { _, _ -> readLiveMysqlOperand() },
-                comparator = { left, right -> SchemaComparator().compare(left, right) },
+                comparator = { left, right -> SchemaComparator().compare(left.schema, right.schema) },
                 projectDiff = { DiffView() },
                 renderPlain = { doc ->
                     capturedDoc = doc

@@ -2,8 +2,13 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.validation.ValidationResult
+import dev.dmigrate.driver.DatabaseDialect
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -205,7 +210,7 @@ class SchemaCompareWiringTest : FunSpec({
             diff = null,
         )
 
-        bundle.comparator(schema("same"), schema("same")).isEmpty() shouldBe true
+        bundle.comparator(CompareSide(schema("same")), CompareSide(schema("same"))).isEmpty() shouldBe true
         bundle.renderJson(doc) shouldContain """"status": "identical""""
         bundle.renderYaml(doc) shouldContain "status: identical"
         bundle.renderPlain(doc) shouldContain "Status: IDENTICAL"
@@ -213,6 +218,31 @@ class SchemaCompareWiringTest : FunSpec({
         val scrubbed = bundle.urlScrubber("postgresql://admin:secret@host/db")
         scrubbed shouldNotContain "secret"
         scrubbed shouldContain "***"
+    }
+
+    test("the default comparator folds the identity sequence name only where a reverse reads it as bookkeeping") {
+        val comparator = DefaultSchemaCompareWiringFactory.build(CliContext(quiet = true)).comparator
+        fun withIdentity(sequenceName: String?) = SchemaDefinition(
+            name = "shop", version = "1",
+            tables = mapOf(
+                "customer" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(
+                            type = NeutralType.BigInteger,
+                            generation = ColumnGeneration.Identity(sequenceName = sequenceName, legacySerialSyntax = true),
+                        ),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+        )
+        val postgres = withIdentity("public.customer_id_seq")
+        val mysql = withIdentity(null)
+
+        comparator(CompareSide(postgres, DatabaseDialect.POSTGRESQL), CompareSide(mysql, DatabaseDialect.MYSQL))
+            .isEmpty() shouldBe true
+        // Zwei handgeschriebene Dateien bleiben streng.
+        comparator(CompareSide(postgres), CompareSide(mysql)).isEmpty() shouldBe false
     }
 })
 
@@ -255,7 +285,7 @@ private class RecordingSchemaCompareFactory(
                 raw.replace("secret", "***")
             },
             comparator = { left, right ->
-                comparedSchemas.add(left.name to right.name)
+                comparedSchemas.add(left.schema.name to right.schema.name)
                 comparatorResult
             },
             projectDiff = { diff ->

@@ -37,6 +37,8 @@ internal class TableComparator(
     private val serverForm: RawTextServerForm? = null,
     /** Dritte Quelle: die Dialekt-Schreibweise; siehe [SchemaComparator]. */
     private val canonicalizeRawExpressions: Boolean = false,
+    /** Die Erzeugungs-Projektion ohne Zielseite; siehe [SchemaComparator]. */
+    private val comparisonGeneration: ((ColumnGeneration?) -> ColumnGeneration?)? = null,
 ) {
 
     fun compareTables(left: SchemaDefinition, right: SchemaDefinition): TableDiffs {
@@ -596,14 +598,15 @@ internal class TableComparator(
         targetProjection?.partitioning?.invoke(config) ?: config
 
     /**
-     * Die Erzeugungsart durch die Ziel-Projektion.
+     * Die Erzeugungsart durch die Ziel-Projektion — oder, ohne Zielseite,
+     * durch die des symmetrischen Vergleichs ([comparisonGeneration]).
      *
      * Bewusst kein `?:`-Fallback auf den Eingabewert: die Projektion **darf**
      * `null` liefern (sie blendet etwa den system-vergebenen Sequenznamen
      * aus), und ein Elvis machte daraus wieder den unprojizierten Wert.
      */
     private fun projectGeneration(generation: ColumnGeneration?): ColumnGeneration? {
-        val project = targetProjection?.generation ?: return generation
+        val project = targetProjection?.generation ?: comparisonGeneration ?: return generation
         return project(generation)
     }
 

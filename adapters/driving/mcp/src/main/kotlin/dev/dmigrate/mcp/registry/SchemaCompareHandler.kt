@@ -3,9 +3,10 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import dev.dmigrate.cli.commands.CompareSide
 import dev.dmigrate.cli.commands.ComputedExpressionDecidability
+import dev.dmigrate.cli.commands.reverseSourceDialect
 import dev.dmigrate.core.diff.ColumnDiff
-import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
@@ -36,7 +37,7 @@ import dev.dmigrate.server.core.principal.PrincipalContext
  * - `connectionRef`: connection-backed compares are async and live in
  *   `schema_compare_start` (LF-012 / LN-011 / LN-017 / LN-027). The error message points there.
  *
- * The handler delegates to the existing [SchemaComparator]; no
+ * The handler delegates to the existing `SchemaComparator`; no
  * fachliche logic is duplicated. The `SchemaDiff` is projected into a
  * unified `findings` list using the LF-012 / LN-027 / LN-028 / LN-038 severity policy:
  *
@@ -73,7 +74,11 @@ import dev.dmigrate.server.core.principal.PrincipalContext
 internal class SchemaCompareHandler(
     private val resolver: SchemaSourceResolver,
     private val contentLoader: SchemaContentLoader,
-    private val comparator: SchemaComparator,
+    /**
+     * Vergleicht links (Ist) und rechts (Soll); jede Seite traegt den Dialekt
+     * aus ihrer Reverse-Markierung. Gebaut in `McpRuntimeRegistries`.
+     */
+    private val comparator: (CompareSide, CompareSide) -> SchemaDiff,
     private val artifactSink: ArtifactSink,
     private val limits: McpLimitsConfig,
 ) : ToolHandler {
@@ -84,7 +89,10 @@ internal class SchemaCompareHandler(
         val args = parseArguments(context.arguments)
         val leftSchema = loadSide(args.leftRef, args.format, context.principal)
         val rightSchema = loadSide(args.rightRef, args.format, context.principal)
-        val diff = comparator.compare(leftSchema, rightSchema)
+        val diff = comparator(
+            CompareSide(leftSchema, reverseSourceDialect(leftSchema)),
+            CompareSide(rightSchema, reverseSourceDialect(rightSchema)),
+        )
         // Ein unentscheidbarer Berechnungsausdruck faltet der Comparator auf
         // Gleichheit (kein Fehlalarm) — dieselbe Frage, die `schema migrate`
         // mit W137 beantwortet. left/right hier == current/desired in

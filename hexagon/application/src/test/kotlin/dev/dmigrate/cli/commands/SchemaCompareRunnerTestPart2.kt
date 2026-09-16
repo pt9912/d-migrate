@@ -90,7 +90,9 @@ class SchemaCompareRunnerTestPart2 : FunSpec({
             fileLoader = { op ->
                 ResolvedSchemaOperand(op.path.toString(), reverseSchema, ValidationResult())
             },
-            comparator = { left, right ->
+            comparator = { leftSide, rightSide ->
+                val left = leftSide.schema
+                val right = rightSide.schema
                 // After normalization, both should have same name/version
                 if (left.name != right.name || left.version != right.version) {
                     SchemaDiff(schemaMetadata = SchemaMetadataDiff(

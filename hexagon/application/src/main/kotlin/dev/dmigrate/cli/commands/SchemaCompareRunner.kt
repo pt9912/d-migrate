@@ -2,7 +2,6 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.SchemaDiff
-import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.SchemaReadSeverity
 import java.nio.file.Path
 import kotlin.io.path.writeText
@@ -32,7 +31,12 @@ class SchemaCompareRunner(
     private val fileLoader: (CompareOperand.File) -> ResolvedSchemaOperand,
     private val dbLoader: ((CompareOperand.Database, Path?) -> ResolvedSchemaOperand)? = null,
     private val normalizer: (ResolvedSchemaOperand) -> ResolvedSchemaOperand = CompareOperandNormalizer::normalize,
-    private val comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff,
+    /**
+     * Vergleicht Quelle und Ziel. Jede Seite traegt den Dialekt, aus dem sie
+     * zurueckgelesen wurde — die Erzeugungs-Projektion von `schema compare`
+     * braucht ihn ([compareGenerationCanonicalizer]).
+     */
+    private val comparator: (CompareSide, CompareSide) -> SchemaDiff,
     private val projectDiff: (SchemaDiff) -> DiffView,
     private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
@@ -131,7 +135,12 @@ class SchemaCompareRunner(
 
         cancellationToken.throwIfCancellationRequested()
         // 8. Compare and project (Diff-Phase)
-        val diff = comparator(sourceNormalized.schema, targetNormalized.schema)
+        // Der Dialekt kommt aus der Reverse-Markierung, die der Normalizer
+        // gerade entfernt hat — also aus dem ungefalteten Operanden.
+        val diff = comparator(
+            CompareSide(sourceNormalized.schema, reverseSourceDialect(sourceResolved.schema)),
+            CompareSide(targetNormalized.schema, reverseSourceDialect(targetResolved.schema)),
+        )
         val identical = diff.isEmpty()
         val diffView = if (identical) null else projectDiff(diff)
         // Ein unentscheidbarer Berechnungsausdruck faltet TableComparator auf

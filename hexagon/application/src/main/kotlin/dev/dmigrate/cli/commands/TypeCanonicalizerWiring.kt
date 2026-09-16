@@ -209,22 +209,6 @@ private fun foldMidnight(literal: String, caps: DialectCapabilities): String {
 private const val MIDNIGHT = "00:00:00"
 
 /**
- * Projiziert die Erzeugungsart einer Spalte auf das, was der Ziel-Dialekt
- * davon zurueckmelden **kann**.
- *
- * Betroffen ist nur der Sequenzname einer IDENTITY-Spalte. Wo er nicht
- * vergebbar ist, vergibt ihn der Server (Oracle: `ISEQ${'$'}${'$'}_n`) — ein
- * user-authored Soll-Schema kann ihn nicht kennen, weil er erst beim
- * `CREATE TABLE` entsteht, der Reverse liest ihn aber. Beide Seiten auf
- * denselben Wert, sonst meldete der Post-Compare nach jedem
- * `migrate --execute` Drift fuer eine Spalte, die genau so angelegt wurde
- * wie gewuenscht.
- *
- * Dieselbe Grenze wie bei Typ- und Index-Projektion: `schema compare`
- * bleibt streng und zeigt den Namen, nur der Fingerabdruck-Pfad faltet ihn
- * weg.
- */
-/**
  * Ob dieser Dialekt `identifier` + `auto_increment` und den numerischen Typ
  * mit `generation: identity` zum selben DDL rendert — dann sind beide
  * Schreibweisen dieselbe Spalte, und Abdruck wie Vergleich muessen sie gleich
@@ -249,27 +233,53 @@ fun capabilityConstraintNameCanonicalizer(
 }
 
 /**
+ * Projiziert die Erzeugungsart einer Spalte auf das, was der Ziel-Dialekt
+ * davon zurueckmelden **kann** — zwei Teile:
+ *
+ * - der **Sequenzname** einer IDENTITY-Spalte
+ *   ([capabilityIdentitySequenceNameCanonicalizer]);
+ * - die **Speicherform** einer berechneten Spalte: wo es keine virtuelle Form
+ *   gibt, ist `stored` keine Wahl, der Server legt die Spalte gespeichert an.
+ *
  * [serverVersion] entscheidet mit: ob es eine virtuelle berechnete Spalte gibt,
  * haengt bei PostgreSQL an der Version, nicht am Dialekt. Ohne bekannte Version
  * gilt die aktuellste gemessene — ein Dateiziel hat keine.
+ *
+ * Das ist die Naht des **ziel-bewussten** Vergleichs (Fingerabdruck,
+ * `schema migrate`). `schema compare` hat keine Zielseite und nimmt nur den
+ * Namens-Teil ([compareGenerationCanonicalizer]).
  */
 fun capabilityGenerationCanonicalizer(
     dialect: DatabaseDialect,
     serverVersion: ServerVersion? = null,
 ): (ColumnGeneration?) -> ColumnGeneration? {
-    val capabilities = DialectCapabilities.forTarget(dialect, serverVersion)
-    val dropsSequenceName = !capabilities.namesIdentitySequences
-    // Wo es keine virtuelle Form gibt, ist `stored` keine Wahl: der Server
-    // legt die Spalte gespeichert an, gleich was dastand.
-    val foldsStored = !capabilities.supportsVirtualComputedColumns
-    if (!dropsSequenceName && !foldsStored) return { it }
+    val names = capabilityIdentitySequenceNameCanonicalizer(dialect, serverVersion)
+    if (DialectCapabilities.forTarget(dialect, serverVersion).supportsVirtualComputedColumns) return names
     return { generation ->
-        when (generation) {
-            null -> null
-            is ColumnGeneration.Identity ->
-                if (dropsSequenceName) generation.copy(sequenceName = null) else generation
-            is ColumnGeneration.Computed ->
-                if (foldsStored) generation.copy(stored = true) else generation
+        when (val named = names(generation)) {
+            is ColumnGeneration.Computed -> named.copy(stored = true)
+            else -> named
         }
+    }
+}
+
+/**
+ * Der **Namens-Teil** von [capabilityGenerationCanonicalizer]: blendet den
+ * Sequenznamen einer IDENTITY-Spalte aus, wo der Dialekt ihn als
+ * Server-Buchhaltung fuehrt (`DialectCapabilities.namesIdentitySequences`).
+ *
+ * Dort vergibt ihn der Server (Oracle: `ISEQ${'$'}${'$'}_n`; PostgreSQL
+ * schema-qualifiziert) — ein Soll-Schema kann ihn nicht kennen, weil er erst
+ * beim `CREATE TABLE` entsteht, der Reverse liest ihn aber. Der Name
+ * beschreibt, **wie** der Server die Erzeugung organisiert, nicht, **was**
+ * die Spalte ist.
+ */
+fun capabilityIdentitySequenceNameCanonicalizer(
+    dialect: DatabaseDialect,
+    serverVersion: ServerVersion? = null,
+): (ColumnGeneration?) -> ColumnGeneration? {
+    if (DialectCapabilities.forTarget(dialect, serverVersion).namesIdentitySequences) return { it }
+    return { generation ->
+        if (generation is ColumnGeneration.Identity) generation.copy(sequenceName = null) else generation
     }
 }

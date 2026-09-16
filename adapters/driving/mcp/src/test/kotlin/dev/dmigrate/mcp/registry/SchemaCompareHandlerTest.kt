@@ -96,7 +96,7 @@ private fun setup(limits: McpLimitsConfig = McpLimitsConfig()): HandlerSetup {
     val handler = SchemaCompareHandler(
         resolver = SchemaSourceResolver(schemaStore, limits),
         contentLoader = SchemaContentLoader(artifactStore, contentStore, limits),
-        comparator = SchemaComparator(),
+        comparator = { left, right -> SchemaComparator().compare(left.schema, right.schema) },
         artifactSink = ArtifactSink(artifactStore, contentStore, FIXED_CLOCK),
         limits = limits,
     )

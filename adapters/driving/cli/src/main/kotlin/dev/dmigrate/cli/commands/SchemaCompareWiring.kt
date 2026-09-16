@@ -8,7 +8,6 @@ import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.SchemaComparator
-import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.SchemaReadOptions
@@ -30,7 +29,7 @@ internal data class SchemaCompareWiringBundle(
     val fileLoader: (CompareOperand.File) -> ResolvedSchemaOperand,
     val dbLoader: (CompareOperand.Database, Path?) -> ResolvedSchemaOperand,
     val urlScrubber: (String) -> String,
-    val comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff,
+    val comparator: (CompareSide, CompareSide) -> SchemaDiff,
     val projectDiff: (SchemaDiff) -> DiffView,
     val renderPlain: (SchemaCompareDocument) -> String,
     val renderJson: (SchemaCompareDocument) -> String,
@@ -47,17 +46,25 @@ internal object DefaultSchemaCompareWiringFactory : SchemaCompareWiringFactory {
     override fun build(cliContext: CliContext): SchemaCompareWiringBundle {
         val formatter = OutputFormatter(cliContext, IcuUnicodeTextService())
         val validator = SchemaValidator()
-        // `schema compare` setzt die Kanonisierung roher Ausdruecke: zwei
-        // Reverses verschiedener Dialekte schreiben denselben CHECK verschieden
-        // (`(quantity > 0)` gegen `quantity>(0)`), und das ist keine Aenderung.
-        // `schema migrate` setzt sie **nicht** — dort kostet eine uebersehene
-        // Aenderung eine falsch stehende Datenbank.
-        val comparator = SchemaComparator(canonicalizeRawExpressions = true)
         return SchemaCompareWiringBundle(
             fileLoader = { op -> loadFileOperand(op, validator) },
             dbLoader = { op, cfgPath -> loadDatabaseOperand(op, cfgPath, validator) },
             urlScrubber = LogScrubber::maskUrl,
-            comparator = { left, right -> comparator.compare(left, right) },
+            // `schema compare` setzt die Kanonisierung roher Ausdruecke: zwei
+            // Reverses verschiedener Dialekte schreiben denselben CHECK
+            // verschieden (`(quantity > 0)` gegen `quantity>(0)`), und das ist
+            // keine Aenderung (ADR 0056). Dazu der Namens-Teil der
+            // Erzeugungs-Naht: der Sequenzname einer Identity-Spalte ist dort,
+            // wo ein Reverse ihn liest, Server-Buchhaltung. Welcher Dialekt
+            // uebergeben wird, entscheidet `compareProjectionDialect`.
+            // `schema migrate` setzt beides **nicht** so — dort kostet eine
+            // uebersehene Aenderung eine falsch stehende Datenbank.
+            comparator = { source, target ->
+                SchemaComparator(
+                    canonicalizeRawExpressions = true,
+                    comparisonGeneration = compareGenerationCanonicalizer(source, target),
+                ).compare(source.schema, target.schema)
+            },
             projectDiff = SchemaCompareHelpers::projectDiff,
             renderPlain = SchemaCompareHelpers::renderPlain,
             renderJson = SchemaCompareHelpers::renderJson,

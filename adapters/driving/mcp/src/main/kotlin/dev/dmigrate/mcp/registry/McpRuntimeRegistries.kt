@@ -1,5 +1,7 @@
 package dev.dmigrate.mcp.registry
 
+import dev.dmigrate.cli.commands.compareGenerationCanonicalizer
+import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.mcp.cursor.McpCursorCodec
 import dev.dmigrate.mcp.schema.SchemaContentLoader
@@ -117,15 +119,7 @@ object McpRuntimeRegistries {
                 artifactSink = artifactSink,
                 limits = wiring.limits,
             ),
-            "schema_compare" to SchemaCompareHandler(
-                resolver = resolver,
-                contentLoader = contentLoader,
-                // Wie der CLI-Pfad: der Vergleich kanonisiert die
-                // Dialekt-Schreibweise roher Ausdruecke (siehe SchemaCompareWiring).
-                comparator = dev.dmigrate.core.diff.SchemaComparator(canonicalizeRawExpressions = true),
-                artifactSink = artifactSink,
-                limits = wiring.limits,
-            ),
+            "schema_compare" to schemaCompareHandler(resolver, contentLoader, artifactSink, wiring),
             "artifact_chunk_get" to ArtifactChunkGetHandler(
                 artifactStore = wiring.artifactStore,
                 contentStore = wiring.artifactContentStore,
@@ -288,4 +282,29 @@ object McpRuntimeRegistries {
             auditScope = null,
         )
     }
+
+    /**
+     * Die MCP-Baustelle des `schema_compare`-Comparators — wie der CLI-Pfad
+     * (`SchemaCompareWiring`): der Vergleich kanonisiert die
+     * Dialekt-Schreibweise roher Ausdruecke (ADR 0056) und blendet den
+     * Sequenznamen einer Identity-Spalte aus, wo ein Reverse ihn als
+     * Server-Buchhaltung liest ([compareGenerationCanonicalizer]).
+     */
+    private fun schemaCompareHandler(
+        resolver: SchemaSourceResolver,
+        contentLoader: SchemaContentLoader,
+        artifactSink: ArtifactSink,
+        wiring: McpRuntimeWiring,
+    ): SchemaCompareHandler = SchemaCompareHandler(
+        resolver = resolver,
+        contentLoader = contentLoader,
+        comparator = { source, target ->
+            SchemaComparator(
+                canonicalizeRawExpressions = true,
+                comparisonGeneration = compareGenerationCanonicalizer(source, target),
+            ).compare(source.schema, target.schema)
+        },
+        artifactSink = artifactSink,
+        limits = wiring.limits,
+    )
 }

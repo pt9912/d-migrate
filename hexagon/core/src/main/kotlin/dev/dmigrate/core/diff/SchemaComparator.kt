@@ -34,10 +34,23 @@ class SchemaComparator(
      * kostet. Das Vergleichsverhalten haengt damit am Aufrufer, nicht am Text.
      */
     private val canonicalizeRawExpressions: Boolean = false,
+    /**
+     * Die Erzeugungs-Projektion eines Vergleichs **ohne Zielseite**
+     * (`schema compare`); `null` = strikt.
+     *
+     * Beide Seiten gehen durch dieselbe Funktion, wie bei [TargetProjection] —
+     * aber ohne deren uebrige Folgen (effektiver Primaerschluessel,
+     * Wertevorrat, Typfaltung), die an einem Ziel haengen. Mit
+     * [targetProjection] gesetzt, gilt deren eigene Erzeugungs-Projektion.
+     * Wirkt nur auf die Vergleichsentscheidung; die gemeldete Aenderung traegt
+     * die unveraenderten Definitionen, und der Fingerabdruck sieht sie nicht.
+     */
+    comparisonGeneration: ((ColumnGeneration?) -> ColumnGeneration?)? = null,
 ) {
 
-    private val tableComparator =
-        TableComparator(targetProjection, authorship, serverForm, canonicalizeRawExpressions)
+    private val tableComparator = TableComparator(
+        targetProjection, authorship, serverForm, canonicalizeRawExpressions, comparisonGeneration,
+    )
     private val folding = RawTextFolding(authorship, serverForm, canonicalizeRawExpressions)
 
     fun compare(left: SchemaDefinition, right: SchemaDefinition): SchemaDiff {
