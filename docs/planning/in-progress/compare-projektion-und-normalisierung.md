@@ -5,9 +5,12 @@
 > P5 (`3b30d9f8a`), P3 (`ba263c737`), P6 (`10eb5a1df`), P2a (`a723584ff`),
 > P2b (`b1de205f9`), P1 (`e08e217fb`) und der Spec-Teil von P7 (Commit
 > „docs(spec): …" direkt danach). Offen bleibt nur die Abnahme am
-> Konsumenten-Repro (Verifikation 3) und die Prüfung von
-> `make doc-immutable` im frischen Klon (lokal nicht belastbar). Der ADR-Teil von P7 ist mit ADR 0056
-> geliefert (`c9737f909`).
+> Konsumenten-Repro (Verifikation 3). Der ADR-Teil von P7 ist mit ADR 0056
+> geliefert (`c9737f909`); `make doc-immutable` ist dafür im frischen
+> `--no-local`-Klon geprüft (0 Befunde, Sabotage erkannt — im Arbeits-Repo ist
+> das Gate still grün, s. `../open/doc-immutable-lokal-still-gruen.md`).
+> **Offen: P9** (Eigner-Entscheidung 2026-09-16, nach P8 nachgetragen) — der
+> Cast an einer Spalte wird mit dem Spaltentyp entschieden.
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
 > Meldung nahelegte (Reader statt Kanonisierung), nicht eine andere Tatsache.
@@ -667,6 +670,57 @@ Die Grenzfall-Tests aus 1.7.1 bleiben unverändert grün. Sabotage je Teil
 offene Quotierung). P8 steht **vor** P5, weil P5 das Index-Prädikat an genau
 diese Kanonisierung hängt.
 
+### P9 — Der Cast an einer Spalte wird mit dem Spaltentyp entschieden
+
+**Nachgetragen am 2026-09-16, nach P8.** Die enge Cast-Regel aus P8 holt
+Fehlalarme zurück, die 1.7.1 nicht hatte — und zwar in der häufigsten Form:
+PostgreSQL schreibt bei **jeder** `varchar`-Spalte in einem CHECK
+`(status)::text`, dazu `(0)::double precision`, `'…'::date` und
+`'…'::bpchar`. 1.7.1 strich jeden Cast (falsch, s. P8); P8 streicht fast
+keinen (zu eng für den Zweck des Slices).
+
+**Eigner-Entscheidung (2026-09-16): den Spaltentyp heranziehen.** ADR 0056
+nennt als Schreibweise „einen Cast auf den Typ, den der Operand ohnehin hat";
+für einen Spaltenbezug ist dieser Typ bekannt — der Comparator hält an der
+Faltstelle beide Tabellen (`TableComparator`, Aufruf von `folding.constraint`;
+für den Index-Pfad `TableIndexComparator`). Ein Parser ist dafür nicht nötig:
+erkannt wird nur ein **bloßer** Spaltenbezug (einfach, quotiert oder in
+redundanten Klammern) direkt vor dem Cast.
+
+**Regel** (je Seite mit den Spalten **dieser** Seite; jeweils ohne
+Typmodifikator und ohne `[]`):
+
+| Operand | gefaltet, wenn | bleibt ein Fund |
+| ------- | -------------- | --------------- |
+| Spalte mit Zeichenkettentyp variabler Länge | Cast auf `text`, `varchar`, `character varying` | Spalte mit fester Länge (`char(n)` → `text` streicht Leerzeichen am Ende) |
+| Spalte mit Ganzzahltyp | Cast auf denselben oder einen breiteren Ganzzahltyp, `numeric`, `decimal` | engerer Ganzzahltyp, Gleitkomma |
+| Spalte mit `numeric`/`decimal` | Cast auf `numeric`/`decimal` ohne Modifikator | jeder Ganzzahl- oder Gleitkomma-Cast |
+| Ganzzahl-Literal (auch `(0)`) | zusätzlich `real`, `double precision`, `float` | mehr Stellen, als ein `double` exakt trägt |
+| String-Literal | zusätzlich `date`, `time`, `timestamp`/`timestamptz` (auch ausgeschrieben) und `bpchar` | jeder andere Typ, jeder Modifikator |
+| Bezeichner, der **keine** Spalte der Tabelle ist, jeder Ausdruck | — | immer |
+
+Die Tabelle ist der Vorschlag des Koordinators; wo der Bau eine Zeile nicht
+halten kann (Namensformen der Typen je Dialekt, Abbildung auf die neutralen
+Typen), wird das hier festgehalten, nicht still verschoben. **Bekanntes
+Restrisiko** der zwei Literal-Zeilen: der Cast macht einen Typ ausdrücklich,
+den der Server aus dem Kontext ohnehin ableitet — das gilt, solange der
+Kontext diesen Typ hat. Ein Autorentext, der einem Literal bewusst einen
+**anderen** Typ gibt als der Kontext, wird damit gleichgesetzt. Der Eigner hat
+das mit der Entscheidung in Kauf genommen.
+
+**Nicht:** der Sichten-Rumpf (ADR 0056: dort keine Cast-Faltung), der
+Migrate-Pfad, der Fingerabdruck. Die Spalte wird nur nachgeschlagen, nie
+umgeschrieben; gemeldete Definitionen bleiben unverändert.
+
+**DoD:** `(status)::text` gegen `status` (varchar), `(qty)::bigint` gegen `qty`
+(integer), `(x > (0)::double precision)` gegen `x > 0`, `'…'::date` und
+`'…'::bpchar` gegen das unmarkierte Literal melden nichts mehr — in CHECK
+**und** Index-Prädikat. Je Zeile eine Gegenprobe, die ein Fund bleibt: `char(n)`
+→ `text`, `(price)::integer` bei `numeric`, `(qty)::smallint` bei `integer`,
+ein Cast an einem Namen, der keine Spalte ist, `'…'::varchar(2)`. Der
+Migrate-Pfad bleibt nachweislich unverändert. Spec (`spec/cli-spec.md`,
+Faltungsmenge) zieht nach. Sabotage je Zeile der Tabelle.
+
 ### P7 — Der Vertrag zieht nach: Spec, ADR-Supersede, README
 
 P3 und P5 aendern genau die Menge, die `spec/cli-spec.md:667` **normativ
@@ -745,6 +799,11 @@ Faltungsmenge (nachgesehen).
 7. Die vier Altbestands-Paare aus P8 sind Funde — Kommentar mit wandernder
    Reichweite (CHECK und Sicht), Dollar-Quoting, Cast an einer Spalte,
    Literal im Sichten-Rumpf —, je mit Gegenprobe.
+8. Ein Cast, den der Spaltentyp oder die Literal-Regel als wertgleich
+   ausweist, meldet nichts (P9) — insbesondere PostgreSQLs `(status)::text`
+   bei `varchar`; ein Cast, der den Wert ändern kann, bleibt ein Fund. Das
+   Paar aus AK 7 (`(price::integer > 5)` gegen `price > 5`) bleibt ein Fund,
+   solange `price` kein Ganzzahltyp ist.
 
 ## Verifikation
 
