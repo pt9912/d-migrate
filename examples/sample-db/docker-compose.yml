@@ -16,7 +16,11 @@ services:
     ports:
       - "127.0.0.1:${SAMPLE_DB_PG_PORT}:5432"
     volumes:
-      - sample-db-pg-data:/var/lib/postgresql/data
+      # Postgres 18 verlangt den Mount auf /var/lib/postgresql (ohne /data),
+      # wie in examples/mcp-e2e: mit dem alten Pfad bricht der Container mit
+      # "there appears to be PostgreSQL data in /var/lib/postgresql/data"
+      # ab — auch bei leerem Volume.
+      - sample-db-pg-data:/var/lib/postgresql
       - ./sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
