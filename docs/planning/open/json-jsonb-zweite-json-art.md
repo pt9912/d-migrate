@@ -1,6 +1,13 @@
 # Modellfrage: zweite JSON-Art (`json` gegen `jsonb`)
 
-> **Status:** Vorabklärung / Entscheidung offen (2026-09-16)
+> **Status:** Entschieden (2026-09-16) — wandert bei der Aktivierung des
+> Reader-Slices als eigenes Paket dorthin (Posten B3).
+> **Eigner-Entscheidung: gleichsetzen, aber laut.** Das Modell behält **einen**
+> JSON-Typ (keine Modellerweiterung). Der PostgreSQL-Reverse meldet eine
+> `json`-Spalte mit eigenem Code: sie wird als `jsonb` gerendert, und was `json`
+> bewahrt (Schlüsselreihenfolge, doppelte Schlüssel, Leerraum), geht dabei
+> verloren. Das folgt dem Ziel des Reader-Slices — kein Verlust bleibt still. Die
+> Spec begründet den Rückweg mit.
 > **Trigger:** Konsumentenmessung gegen 1.7.1, festgehalten in
 > [`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md)
 > (Posten B3): eine PostgreSQL-`json`-Spalte kommt nach Reverse und erneuter

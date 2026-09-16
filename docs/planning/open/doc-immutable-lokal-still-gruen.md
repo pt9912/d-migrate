@@ -5,9 +5,10 @@
 > [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md))
 > sollte die Gegenprobe zeigen, dass das Gate eine Kernänderung fängt. Im
 > Arbeits-Repo fing es sie nicht.
-> **Aktivierungsbedingung** (Move nach `../next/`): Entscheidung, ob das
-> Make-Target lokal auf einen frischen Klon ausweicht oder ob der Fix upstream in
-> d-check liegt (s. „Wege").
+> **Eigner-Entscheidung (2026-09-16): Weg 1** — das Target prüft gegen einen
+> frischen `--no-local`-Klon; dazu ein Issue an d-check (ein Lesefehler darf nicht
+> grün enden). Wird nach dem laufenden Compare-Slice gebaut; `make/d-check.mk`
+> ist generiert, die Änderung gehört deshalb nicht dort hinein.
 
 ## Befund
 

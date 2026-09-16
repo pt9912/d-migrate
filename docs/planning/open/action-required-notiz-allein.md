@@ -6,6 +6,12 @@
 > (dort Abschnitt „Restflächen"). Dieser Slice hat die Klasse an **einer** Naht
 > geschlossen („Objektverluste zaehlen — die Naht ersetzt die zwei Mapper",
 > `ff3866e9f`); zwei Stellen fallen weiterhin notiz-allein aus.
+> **Bedingung erfüllt (2026-09-16):** der Zähler trägt inzwischen den Ausgang —
+> `schema generate` endet bei einem fehlenden Objekt mit Exit 8
+> ([`../in-progress/action-required-bestimmt-den-ausgang.md`](../in-progress/action-required-bestimmt-den-ausgang.md),
+> P1), und MCP liefert `skippedCount`. Eine notiz-allein verworfene Stelle ist
+> damit ein Lauf, der als vollständig gilt, obwohl er es nicht ist. Wird nach dem
+> Compare-Slice als `next/`-Plan geschnitten.
 > **Aktivierungsbedingung:** Wird priorisiert, sobald ein Konsument die
 > **Zählung** als Vollständigkeitsmaß nutzt (MCP `skippedCount`, Exit-Code) oder
 > ein Dialekt-Vergleich daran hängt — dann ein `next/`-Plan mit je Dialekt einer

@@ -314,6 +314,15 @@ einem **zweiten** Prozess lesen.
   Byte-Store an den Metadaten-State koppeln oder die Betreiber-Auflage
   dokumentieren.
 
+**Eigner-Entscheidung zum dritten Punkt (2026-09-16): Start verweigern.** Ist
+`server.state.jdbcUrl` gesetzt, muss auch der Byte-Store persistent sein
+(`--mcp-state-dir` auf ein bestehendes Verzeichnis oder S3); sonst bricht der
+Start mit einer Meldung ab, die beide Wege nennt. Fail-closed statt eines
+Deployments, das nach dem ersten Neustart haengende Verweise hat. Die
+Administrationsdoku nennt die Auflage (und korrigiert dabei die zwei
+Ungenauigkeiten aus dem Nebenbefund). Akzeptanzkriterium 5 ist damit auf den
+ersten Weg festgelegt.
+
 **DoD:** Ein frisches Native-Deployment mit `migrations.auto` legt die Store-Tabellen
 an; ein `INTERNAL_AGENT_ERROR` ist im Log mit einer Ausnahme belegt.
 

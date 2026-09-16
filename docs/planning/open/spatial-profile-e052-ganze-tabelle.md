@@ -1,6 +1,18 @@
 # Vertragsfrage: E052 verwirft die ganze Tabelle (SpatiaLite-Profil)
 
-> **Status:** Vorabklärung / Entscheidung offen (2026-09-16)
+> **Status:** Entschieden (2026-09-16) — wandert bei der Aktivierung des
+> Reader-Slices als eigenes Paket dorthin (Posten A6).
+> **Eigner-Entscheidung: NOT NULL nativ.** Gemessen im Tooling-Image
+> (SpatiaLite 5.1.0): `AddGeometryColumn('t','geom',4326,'POINT','XY',1)` legt die
+> Spalte als `"geom" POINT NOT NULL DEFAULT ''` an, eine Zeile ohne Geometrie wird
+> abgewiesen (`violates Geometry constraint`), eine mit Geometrie angenommen.
+> `NOT NULL` ist damit **keine** Metadatenlücke von SpatiaLite; heute blockiert der
+> Generator trotzdem (`column.required` in der Konfliktprüfung von
+> `SqliteTableDdlSupport`). Gebaut wird: `required` über das `not_null`-Argument,
+> `E052` bleibt nur für PK, UNIQUE, Default und Fremdschlüssel. Die Regel „keine
+> partielle DDL" bleibt; die Spec-Stellen unten nennen `NOT NULL` nicht mehr als
+> Auslöser. Einen ADR braucht es dafür nicht: ADR 0016 hat den Generate-Pfad
+> aufgeschoben, nicht festgelegt.
 > **Trigger:** Konsumentenmessung gegen 1.7.1, festgehalten in
 > [`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md)
 > (Posten A6): `schema generate --target sqlite --spatial-profile spatialite` auf
