@@ -143,5 +143,12 @@ data class ViewChangeView(
     val materialized: StringChange? = null,
     val refresh: NullableStringChange? = null,
     val queryChanged: Boolean = false,
+    /**
+     * Die **Namen** der sichtbaren Spalten, links und rechts — leer, wenn
+     * eine Seite keine liefert oder beide dieselben tragen. Ohne dieses Feld
+     * erscheint ein Fund als `VIEW_CHANGED` ohne jede Zeile darunter, und der
+     * Anwender sieht *dass* etwas anders ist, aber nicht *was*.
+     */
+    val columns: NullableStringChange? = null,
     val sourceDialect: NullableStringChange? = null,
 )

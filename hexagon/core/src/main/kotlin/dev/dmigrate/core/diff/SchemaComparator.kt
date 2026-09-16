@@ -171,7 +171,18 @@ class SchemaComparator(
             } else {
                 valueChangeOrNull(left.query, right.query)
             },
-            columnsChanged = left.columns != right.columns,
+            columns = if (left.columns == null || right.columns == null) {
+                // Einseitig vorhanden heisst **nicht** geaendert: die Spalten
+                // sind eine abgeleitete, optionale Signatur, und die Reader
+                // fuellen sie unterschiedlich gut (MySQL und Oracle liefern
+                // gar keine). Vorbild ist `engine` im Tabellenvergleich.
+                null
+            } else {
+                // Und wenn beide sie tragen, zaehlt der **Name**: der Typ ist
+                // Dialekt-Schreibweise (`text` gegen `nvarchar`), keine
+                // Aussage ueber das Schema.
+                valueChangeOrNull(left.columns.map { it.name }, right.columns.map { it.name })
+            },
             // `sourceDialect` beschreibt, WOHER ein Objekt gelesen wurde — nicht,
             // WAS es ist. Er wird darum nicht verglichen: zwei Reverses aus
             // verschiedenen Dialekten tragen unweigerlich verschiedene Werte

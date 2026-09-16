@@ -149,12 +149,24 @@ internal class RawTextFolding(
      * Die Anfuehrungszeichen sind je Dialekt verschieden (SQL Server `[…]`,
      * MySQL `` `…` ``, PostgreSQL `"…"`); alle drei umschliessen einen
      * Bezeichner und bedeuten dasselbe. Alles andere bleibt stehen.
+     *
+     * **Alle abschliessenden Semikola** fallen weg, nicht nur eines: der
+     * Server haengt dem gespeicherten Definitionstext seines an, und hat die
+     * angewendete DDL schon eines getragen, stehen dort zwei. Gemessen an
+     * einem SQL-Server-Reverse: `…customer_id;;`. Ein einzelnes
+     * `removeSuffix(";")` liesse den Rest stehen und meldete weiter
+     * `query: changed` — die Haelfte des Fehlalarms waere nur verschoben.
+     *
+     * Nur **abschliessende**: ein `;` im Rumpf ist Text (zwischen zwei
+     * Anweisungen) oder steht in einem Literal, dessen schliessendes
+     * Anfuehrungszeichen danach kommt.
      */
     private fun String.canonicalViewQuery(): String = replace(Regex("\\[(\\w+)]"), "$1")
         .replace(Regex("`(\\w+)`"), "$1")
         .replace(Regex("\"(\\w+)\""), "$1")
         .replace(Regex("\\s+"), " ")
         .replace(Regex("\\s*([,=()])\\s*"), "$1")
+        .replace(TRAILING_SEMICOLA, "")
         .trim()
 
     /**
@@ -202,5 +214,13 @@ internal class RawTextFolding(
         const val WHERE = "where"
         const val KEY_EXPRESSION = "key-expression"
         const val GENERATION_EXPRESSION = "generation-expression"
+
+        /**
+         * Ein **oder mehrere** abschliessende Semikola, mit etwaigem
+         * Whitespace dazwischen und danach. Der Server haengt seines an den
+         * gespeicherten Text; trug die angewendete DDL schon eines, stehen
+         * dort zwei.
+         */
+        val TRAILING_SEMICOLA = Regex("(?:\\s*;)+\\s*$")
     }
 }

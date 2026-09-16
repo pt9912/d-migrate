@@ -9,6 +9,7 @@ import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
+import dev.dmigrate.core.diff.ViewDiff
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.schema.SchemaContentLoader
@@ -257,7 +258,7 @@ internal class SchemaCompareHandler(
         diff.tablesChanged.forEach { addAll(projectTableDiff(it)) }
         addAll(diff.viewsAdded.map { added("VIEW_ADDED", "views.${it.name}") })
         addAll(diff.viewsRemoved.map { removed("VIEW_REMOVED", "views.${it.name}") })
-        addAll(diff.viewsChanged.map { changed("VIEW_CHANGED", "views.${it.name}") })
+        addAll(diff.viewsChanged.map { viewChanged(it) })
         addAll(diff.sequencesAdded.map { added("SEQUENCE_ADDED", "sequences.${it.name}") })
         addAll(diff.sequencesRemoved.map { removed("SEQUENCE_REMOVED", "sequences.${it.name}") })
         addAll(diff.sequencesChanged.map { changed("SEQUENCE_CHANGED", "sequences.${it.name}") })
@@ -354,6 +355,47 @@ internal class SchemaCompareHandler(
 
     private fun changed(code: String, path: String): Map<String, Any?> =
         finding(SchemaFindingSeverity.WARNING, code, path, "$path changed")
+
+    /**
+     * Eine geaenderte Sicht.
+     *
+     * Der Fund **nennt sein Feld** — ein blankes `views.x changed` liesse den
+     * Aufrufer raten, welcher Bestandteil abweicht, und genau das war der
+     * Konsumentenbefund gegen 1.7.0. Die Spalten tragen ihre Werte als
+     * `before`/`after` in den **vorhandenen** Detailfeldern (Namen, keine
+     * Typen); `compareDetailsSchema()` ist auf genau diese zwei festgelegt
+     * (`additionalProperties: false`), ein eigenes Feld braeuchte eine
+     * Schemaaenderung und einen neuen Golden-Snapshot. Fuer die Query bleibt
+     * es beim benannten Feld ohne Text: sie kann lang sein, und der Aufrufer
+     * hat beide Seiten selbst in der Hand.
+     *
+     * Traegt nur eine Seite Spalten, gibt es dazu gar nichts zu melden — das
+     * ist die Regel aus `SchemaComparator.compareView`.
+     */
+    private fun viewChanged(v: ViewDiff): Map<String, Any?> {
+        val before = v.columns?.before?.joinToString(", ").orEmpty()
+        val after = v.columns?.after?.joinToString(", ").orEmpty()
+        // `compareDetailsSchema()` verlangt je Wert ein Nicht-Whitespace-Zeichen
+        // (`pattern: "\\S"`). Eine leere Liste waere ein Schemaverstoss.
+        if (before.isNotBlank() && after.isNotBlank()) {
+            return finding(
+                SchemaFindingSeverity.WARNING, "VIEW_CHANGED", "views.${v.name}",
+                "views.${v.name} columns changed",
+                details = mapOf("before" to before, "after" to after),
+            )
+        }
+        val field = when {
+            v.query != null -> "query"
+            v.materialized != null -> "materialized"
+            v.refresh != null -> "refresh"
+            else -> null
+        }
+        return if (field != null) {
+            finding(SchemaFindingSeverity.WARNING, "VIEW_CHANGED", "views.${v.name}", "views.${v.name} $field changed")
+        } else {
+            changed("VIEW_CHANGED", "views.${v.name}")
+        }
+    }
 
     /**
      * Walks a [TableDiff] into one finding per change instead of a

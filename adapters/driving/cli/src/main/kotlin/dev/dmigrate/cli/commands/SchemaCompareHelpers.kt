@@ -170,6 +170,7 @@ internal object SchemaCompareHelpers {
         materialized = v.materialized?.let { StringChange(it.before.toString(), it.after.toString()) },
         refresh = v.refresh?.let { NullableStringChange(it.before, it.after) },
         queryChanged = v.query != null,
+        columns = v.columns?.let { NullableStringChange(it.before.joinToString(", "), it.after.joinToString(", ")) },
         sourceDialect = v.sourceDialect?.let { NullableStringChange(it.before, it.after) },
     )
 

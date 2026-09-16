@@ -113,6 +113,9 @@ internal object CompareRendererYaml {
                 v.materialized?.let { sb.appendLine("      materialized: {before: ${it.before}, after: ${it.after}}") }
                 v.refresh?.let { sb.appendLine("      refresh: {before: ${nullable(it.before)}, after: ${nullable(it.after)}}") }
                 if (v.queryChanged) sb.appendLine("      query: changed")
+                v.columns?.let {
+                    sb.appendLine("      columns: " + renderNullableChange(it.before, it.after))
+                }
                 v.sourceDialect?.let {
                     sb.appendLine(
                         "      source_dialect: " +

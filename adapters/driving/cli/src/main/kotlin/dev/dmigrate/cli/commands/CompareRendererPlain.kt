@@ -92,6 +92,7 @@ internal object CompareRendererPlain {
             v.materialized?.let { sb.appendLine("      materialized: ${it.before} -> ${it.after}") }
             v.refresh?.let { sb.appendLine("      refresh: ${it.before} -> ${it.after}") }
             if (v.queryChanged) sb.appendLine("      query: changed")
+            v.columns?.let { sb.appendLine("      columns: ${it.before} -> ${it.after}") }
             v.sourceDialect?.let { sb.appendLine("      source_dialect: ${it.before} -> ${it.after}") }
         }
     }

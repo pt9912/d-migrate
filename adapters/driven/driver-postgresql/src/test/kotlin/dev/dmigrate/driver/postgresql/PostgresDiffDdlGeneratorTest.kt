@@ -544,7 +544,7 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
                 dev.dmigrate.core.diff.ViewDiff(
                     name = "v_x",
                     query = ValueChange(before.query, after.query),
-                    columnsChanged = true,
+                    columns = ValueChange(listOf("id"), listOf("total")),
                 ),
             ),
         )

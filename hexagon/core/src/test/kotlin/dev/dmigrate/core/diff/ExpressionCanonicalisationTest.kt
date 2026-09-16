@@ -134,4 +134,45 @@ class ExpressionCanonicalisationTest : FunSpec({
         SchemaComparator(canonicalizeRawExpressions = true)
             .compare(eighteen, twentyOne).tablesChanged.shouldNotBeEmpty()
     }
+
+    context("Identifier-Quoting (Konsumentenbefund gegen 1.7.0)") {
+
+        /** `compare` — mit Kanonisierung. */
+        fun compareWith(a: String, b: String) =
+            SchemaComparator(canonicalizeRawExpressions = true).compare(schemaWith(a), schemaWith(b))
+
+        test("Oracle's re-quoted identifier is not a change") {
+            // d-migrate erzeugt die Differenz selbst: der Requoter quotet die
+            // Bezeichner eines CHECK-Ausdrucks fuer Oracle, weil der Server
+            // unquotiert auf GROSSSCHREIBUNG faltet. Der Reverse liest nur
+            // zurueck, was der Generator geschrieben hat.
+            compareWith("(quantity > 0)", "(\"quantity\" > 0)").tablesChanged.shouldBeEmpty()
+        }
+
+        test("MySQL's backticks are not a change") {
+            compareWith("(quantity > 0)", "(`quantity` > 0)").tablesChanged.shouldBeEmpty()
+        }
+
+        test("T-SQL's brackets are not a change") {
+            compareWith("(quantity > 0)", "([quantity] > 0)").tablesChanged.shouldBeEmpty()
+        }
+
+        test("the spelling is NOT folded: a differently-cased quoted name stays a change") {
+            // Die Grenze. Quoting faellt weg, die Schreibweise bleibt — in
+            // PostgreSQL sind `"Quantity"` und `quantity` verschiedene Spalten.
+            compareWith("(quantity > 0)", "(\"Quantity\" > 0)").tablesChanged.shouldNotBeEmpty()
+        }
+
+        test("a bracket that is not an identifier stays: an array index is no quoting") {
+            // `[0]` faengt die Regel nicht — sonst wuerde aus einem Array-Index
+            // still ein Bezeichner.
+            compareWith("(data[0] > 0)", "(data[1] > 0)").tablesChanged.shouldNotBeEmpty()
+        }
+
+        test("a quoted string literal is not touched") {
+            // Die Literal-Extraktion laeuft vorher; ein Anfuehrungszeichen
+            // **im** Literal ist Text.
+            compareWith("(note = 'a\"b')", "(note = 'a\"c')").tablesChanged.shouldNotBeEmpty()
+        }
+    }
 })

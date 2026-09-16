@@ -59,6 +59,22 @@ internal object ConstraintDiffContract {
             "\uE000${literals.size - 1}"
         }
         val canonical = skeleton
+            // Identifier-Quoting vereinheitlichen \u2014 dieselbe Regel wie fuer
+            // View-Bodies, und aus demselben Grund: d-migrate erzeugt die
+            // Differenz selbst. `OracleIdentifierRequoter` quotet die
+            // Bezeichner eines CHECK-Ausdrucks auf dem Generate-Pfad bewusst,
+            // weil Oracle unquotiert auf GROSSSCHREIBUNG faltet und d-migrate
+            // wortgetreu quotet anlegt; der Reverse liest nur zurueck, was der
+            // Generator geschrieben hat. Ohne diese drei Zeilen meldet der
+            // Vergleich `TABLE_CONSTRAINT_CHANGED` fuer denselben Ausdruck.
+            //
+            // Nur ein **einfacher** Bezeichner wird entpackt (`"my col"` und
+            // `[0]` bleiben stehen), und die Schreibweise bleibt: `"Quantity"`
+            // und `quantity` sind danach weiterhin verschieden \u2014 in
+            // PostgreSQL sind sie das auch.
+            .replace(ANSI_IDENTIFIER, "$1")
+            .replace(BACKTICK_IDENTIFIER, "$1")
+            .replace(BRACKET_IDENTIFIER, "$1")
             .replace("~~", "like")
             .replace(CAST_SUFFIX, "")
             .replace(REDUNDANT_PARENS, "$1")
@@ -72,6 +88,19 @@ internal object ConstraintDiffContract {
 
     /** Ein einfaches Anfuehrungszeichen, ein verdoppeltes als Escape, Inhalt dazwischen. */
     private val STRING_LITERAL = Regex("'(?:[^']|'')*'")
+
+    /** `"id"` \u2014 ANSI-Quoting (PostgreSQL, SQLite, Oracle). */
+    private val ANSI_IDENTIFIER = Regex("\"([A-Za-z_][A-Za-z0-9_]*)\"")
+
+    /** `` `id` `` \u2014 MySQL. */
+    private val BACKTICK_IDENTIFIER = Regex("`([A-Za-z_][A-Za-z0-9_]*)`")
+
+    /**
+     * `[id]` \u2014 T-SQL. Enger gefasst als die beiden anderen, weil `[` auch in
+     * JSON-Pfaden und Array-Ausdruecken steht; `[0]` faellt damit nicht unter
+     * die Regel.
+     */
+    private val BRACKET_IDENTIFIER = Regex("\\[([A-Za-z_][A-Za-z0-9_]*)]")
 
     /** `::text`, `::numeric(10,2)`, `::"MyType"` — der Cast auf den eigenen Typ. */
     private val CAST_SUFFIX = Regex("::\\s*\"?[A-Za-z_][A-Za-z0-9_]*\"?(\\s*\\([^)]*\\))?")

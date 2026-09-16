@@ -116,6 +116,7 @@ internal object CompareRendererJson {
                 val fields = mutableListOf(""""name": "${esc(v.name)}"""")
                 v.materialized?.let { fields += """"materialized": {"before": "${esc(it.before)}", "after": "${esc(it.after)}"}""" }
                 if (v.queryChanged) fields += """"query": "changed""""
+                v.columns?.let { fields += renderNullableChangeField("columns", it.before, it.after) }
                 v.refresh?.let { fields += """"refresh": {"before": ${nullable(it.before)}, "after": ${nullable(it.after)}}""" }
                 v.sourceDialect?.let {
                     fields += renderNullableChangeField("source_dialect", it.before, it.after)
