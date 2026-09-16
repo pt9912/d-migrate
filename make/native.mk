@@ -20,6 +20,19 @@ NATIVE_IMAGE_TAG ?= d-migrate:native-build
 # alle Luecken statt einer Schicht. NIE fuer ein ausgeliefertes Binary.
 NATIVE_MISSING_REG_MODE ?=
 
+# Bau-Ressourcen des LOKALEN Laufs. Bewusst gedaempft: ungedrosselt nimmt sich native-image
+# `MaxRAMPercentage=80` UND die Kernzahl der Maschine, und sein Speicherbedarf skaliert mit dem
+# Parallelismus — auf einer Entwicklermaschine macht das den Rechner unbenutzbar.
+#
+# **Ein Tauschhandel, kein Freigewinn:** weniger Parallelismus kauft Speicher mit Zeit. Die
+# Messreihe in docs/planning/done/native-macos-build-marginal.md zeigt genau das — dort reichte
+# keine der beiden Schrauben, um den Bau auf 3 Kernen zu retten (Weg 4: Plattform gestrichen,
+# ADR 0044). Hier geht es nicht ums Ueberleben, sondern darum, dass der Rechner benutzbar bleibt.
+#
+# Uebersteuern: `make native-build NATIVE_PARALLELISM=8 NATIVE_MAX_RAM_PERCENTAGE=80`.
+NATIVE_MAX_RAM_PERCENTAGE ?= 50
+NATIVE_PARALLELISM ?= 2
+
 .PHONY: native-build
 native-build: ## Native: das Binary (volle CLI, MainKt) im Container bauen.
 	# --target ist PFLICHT: ohne ihn baut docker die LETZTE Stage der Datei. Als native-agent
@@ -27,6 +40,8 @@ native-build: ## Native: das Binary (volle CLI, MainKt) im Container bauen.
 	# .d-migrate.yaml) statt gegen das Build-Image — der Messlauf war unbrauchbar.
 	$(DOCKER) build -f docker/native-image.Dockerfile --target native-build \
 	  --build-arg NATIVE_MISSING_REG_MODE=$(NATIVE_MISSING_REG_MODE) \
+	  --build-arg NATIVE_MAX_RAM_PERCENTAGE=$(NATIVE_MAX_RAM_PERCENTAGE) \
+	  --build-arg NATIVE_PARALLELISM=$(NATIVE_PARALLELISM) \
 	  -t $(NATIVE_IMAGE_TAG) .
 
 .PHONY: native-diagnose
@@ -42,6 +57,8 @@ native-runtime-build: ## Native: lauffaehiges Runtime-Image bauen (Entrypoint = 
 	# --target native-runtime baut die lauffaehige Stage (Entrypoint = Binary), NICHT die
 	# cat-basierte native-build-Stage. Das Binary ist die volle CLI (MainKt).
 	$(DOCKER) build -f docker/native-image.Dockerfile --target native-runtime \
+	  --build-arg NATIVE_MAX_RAM_PERCENTAGE=$(NATIVE_MAX_RAM_PERCENTAGE) \
+	  --build-arg NATIVE_PARALLELISM=$(NATIVE_PARALLELISM) \
 	  -t $(NATIVE_RUNTIME_TAG) .
 
 # Direkt an den Bestimmungsort im QUELLBAUM — kein Zwischenlager.
@@ -58,6 +75,8 @@ NATIVE_AGENT_OUT ?= adapters/driving/cli/src/main/resources/META-INF/native-imag
 .PHONY: native-agent
 native-agent: ## Native: Reachability-Metadaten per Tracing-Agent erheben (Phase F.2).
 	$(DOCKER) build -f docker/native-image.Dockerfile --target native-agent \
+	  --build-arg NATIVE_MAX_RAM_PERCENTAGE=$(NATIVE_MAX_RAM_PERCENTAGE) \
+	  --build-arg NATIVE_PARALLELISM=$(NATIVE_PARALLELISM) \
 	  -t $(NATIVE_IMAGE_TAG)-agent .
 	@# Einmal-Shell (Backslash-Fortsetzung): make faehrt sonst jede Zeile in einer eigenen Shell,
 	@# und das Temp-Verzeichnis waere in der naechsten Zeile schon vergessen.

@@ -65,9 +65,21 @@ COPY . .
 # Leer = GraalVM-Default `Throw`. `Warn` ist der Diagnosemodus (s. make/native.mk), nie fuer ein
 # ausgeliefertes Binary.
 ARG NATIVE_MISSING_REG_MODE=
+
+# Bau-Ressourcen, leer = die Defaults aus build.gradle.kts. Gesetzt werden sie vom lokalen
+# Makefile (`make/native-build`), das damit die Maschine des Entwicklers schont: ein
+# ungedrosselter Lauf nimmt sich `MaxRAMPercentage=80` UND die Kernzahl der Maschine, und
+# native-image skaliert seinen Speicherbedarf mit dem Parallelismus. CI setzt beide nicht —
+# sie faehrt ihren eigenen, kalibrierten Pfad (`.github/workflows/native-image.yml`).
+ARG NATIVE_MAX_RAM_PERCENTAGE=
+ARG NATIVE_PARALLELISM=
 RUN gradle --no-daemon :adapters:driving:cli:nativeCompile \
       $(test -n "${NATIVE_MISSING_REG_MODE}" \
-        && echo "-PnativeMissingRegistrationMode=${NATIVE_MISSING_REG_MODE}" || true)
+        && echo "-PnativeMissingRegistrationMode=${NATIVE_MISSING_REG_MODE}" || true) \
+      $(test -n "${NATIVE_MAX_RAM_PERCENTAGE}" \
+        && echo "-PnativeMaxRamPercentage=${NATIVE_MAX_RAM_PERCENTAGE}" || true) \
+      $(test -n "${NATIVE_PARALLELISM}" \
+        && echo "-PnativeParallelism=${NATIVE_PARALLELISM}" || true)
 
 # Artefakt-Auslieferung wie die release-assets-Stage der Haupt-Dockerfile: die Stage gibt das
 # Artefakt auf stdout aus, der Aufrufer leitet es um. Kein Mount, kein Schreiben in den Arbeitsbaum.
