@@ -213,30 +213,8 @@ class MysqlSchemaReader(
         constraints += SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
         constraints += SchemaReaderUtils.buildCheckConstraints(checks)
 
-        val indexDefs = indices.filter { it.where != null || !it.isUnique || it.columns.size == 1 }
-            .filter { it.where != null || !(it.isUnique && it.columns.size == 1) }
-            .map { idx ->
-                IndexDefinition(
-                    name = idx.name,
-                    columns = idx.indexColumns,
-                    type = when (idx.type?.uppercase()) {
-                        "HASH" -> IndexType.HASH
-                        // VA3: MySQL meldet räumliche Indizes als index_type=SPATIAL.
-                        "SPATIAL" -> IndexType.SPATIAL
-                        // `information_schema.statistics` meldet einen
-                        // `FULLTEXT KEY` als index_type=FULLTEXT. Ohne diesen
-                        // Zweig kam er als BTREE an, und der Generate-Pfad gab
-                        // ihn als gewoehnlichen Index aus — ein stiller
-                        // Semantikverlust (Volltextsuche), den weder ein
-                        // Finding noch ein Skip benannte. Die vier anderen
-                        // Reader tragen die Art laengst.
-                        "FULLTEXT" -> IndexType.FULLTEXT
-                        else -> IndexType.BTREE
-                    },
-                    unique = idx.isUnique,
-                    where = idx.where,
-                )
-            }
+        val indexDefs = indexDefinitions(indices)
+
 
         val metadata = engine?.let { TableMetadata(engine = it) }
 
@@ -249,6 +227,44 @@ class MysqlSchemaReader(
             // AP6.1 (ADR 0020): Partitionierung aus information_schema.PARTITIONS.
             partitioning = MysqlPartitionReader.read(session, database, metaTable),
         )
+    }
+
+    /**
+     * Die Indizes einer Tabelle als neutrale Definitionen.
+     *
+     * Ausgelagert, weil `readTable` sonst ueber zwei Detekt-Schwellen lief
+     * (Laenge und Cyclomatic Complexity) — die Kette aus Filtern und der
+     * Typ-`when` sind zusammen genug Komplexitaet fuer eine eigene Funktion.
+     */
+    private fun indexDefinitions(
+        indices: List<dev.dmigrate.driver.metadata.IndexProjection>,
+    ): List<IndexDefinition> = indices
+        .filter { it.where != null || !it.isUnique || it.columns.size == 1 }
+        .filter { it.where != null || !(it.isUnique && it.columns.size == 1) }
+        .map { idx ->
+            IndexDefinition(
+                name = idx.name,
+                columns = idx.indexColumns,
+                type = indexType(idx.type),
+                unique = idx.isUnique,
+                where = idx.where,
+            )
+        }
+
+    /**
+     * `information_schema.statistics.index_type` in die neutrale Index-Art.
+     *
+     * `FULLTEXT` gehoert dazu: ohne diesen Zweig kam ein `FULLTEXT KEY` als
+     * [IndexType.BTREE] an, und der Generate-Pfad gab ihn als gewoehnlichen
+     * Index aus — ein stiller Semantikverlust (Volltextsuche), den weder ein
+     * Finding noch ein Skip benannte. Die vier anderen Reader tragen die Art
+     * laengst. `SPATIAL` meldet MySQL ebenfalls ueber dieses Feld (VA3).
+     */
+    private fun indexType(raw: String?): IndexType = when (raw?.uppercase()) {
+        "HASH" -> IndexType.HASH
+        "SPATIAL" -> IndexType.SPATIAL
+        "FULLTEXT" -> IndexType.FULLTEXT
+        else -> IndexType.BTREE
     }
 }
 
