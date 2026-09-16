@@ -758,7 +758,8 @@ class SchemaCompareHandlerTest : FunSpec({
         )
         val findings = compareFindings(setup)
         val view = findings.single { it.get("code").asString == "VIEW_CHANGED" }
-        view.get("path").asString shouldBe "views.v1"
+        // Der Pfad endet auf dem geaenderten Feld (Pfad-Schema von `schema compare`).
+        view.get("path").asString shouldBe "views.v1.columns"
         view.get("message").asString shouldContain "columns changed"
         val details = view.getAsJsonObject("details")
         details.get("before").asString shouldBe "order_id"
@@ -810,6 +811,7 @@ class SchemaCompareHandlerTest : FunSpec({
         stageSchema(setup, "right", schemaJsonWithView("orders", "SELECT id FROM t2"))
         val view = compareFindings(setup).single { it.get("code").asString == "VIEW_CHANGED" }
         view.get("message").asString shouldContain "query changed"
+        view.get("path").asString shouldBe "views.v1.query"
     }
 
     test("eine geaenderte Materialisierung nennt sie") {

@@ -2,8 +2,8 @@
 
 > **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden).
 > **Stand der Pakete:** geliefert P8 (nachgetragen, Altbestand; `50ee1bd00`),
-> P5 (`3b30d9f8a`), P3 (`ba263c737`), P6 (`10eb5a1df`) und P2a; offen: P2b,
-> P1, Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
+> P5 (`3b30d9f8a`), P3 (`ba263c737`), P6 (`10eb5a1df`), P2a (`a723584ff`) und
+> P2b; offen: P1, Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
 > geliefert (`c9737f909`).
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
@@ -405,6 +405,28 @@ folgt, und die MCP-Regex liest ihn.
 das Schema bekommt seinen **normativen Ort** (Spec), und das Rename laeuft ueber
 `make ast-grep` — es geht ueber viele Aufrufstellen, `sed` ist dort das falsche
 Werkzeug.
+**Gebaut — und eine Annahme des Pakets trägt nicht.** Die gewählte Richtung
+ist der **Dokument-Pfad** des neutralen Schemas, dasselbe Vokabular wie
+`schema validate` (`tables.orders.constraints.ck_mail`). In dieser Richtung
+folgten `views.`/`sequences.`/… und `name`/`version` dem Schema **bereits**:
+`name` und `version` sind Schlüssel der obersten Ebene des Dokuments, ein
+erfundenes Präfix (`schema.name`) wäre dort gerade kein Dokument-Pfad. Sie
+bleiben deshalb unverändert. Der tatsächliche Bruch im Aufbau lag eine Ebene
+tiefer: Tabellen melden **je geändertem Feld** mit dem Feld im Pfad
+(`tables.t.columns.c.type`), die übrigen Objekte meldeten **einen** Fund am
+Objekt (`sequences.s`, bei Sichten das Feld nur im Meldungstext). Gebaut ist
+deshalb: ein Fund je geändertem Feld auch für Sichten, Sequenzen,
+benutzerdefinierte Typen, Funktionen, Prozeduren und Trigger
+(`views.v.query`, `sequences.s.min_value`, Schlüssel wie in
+`spec/schema-reference.md`); Indizes und Constraints bleiben Funde am Objekt,
+weil der Vergleich sie als Ganzes führt. Alle Pfade entstehen über
+`SchemaFindingPath`; die Abschnitts-Templates sind per `make ast-grep`
+umgeschrieben. Die Projektion ist dafür aus dem Handler in eigene Bausteine
+gewandert (`SchemaCompareFindings`, `TableCompareFindings`, `CompareFinding`,
+`ObjectDiffFields`) — der Handler stand bei 590 Zeilen. **Für MCP-Abnehmer ein
+Vertragswechsel:** mehr Funde je Objekt, und `VIEW_CHANGED` trägt das Feld im
+Pfad. Der Spec-Eintrag folgt mit dem Spec-Teil von P7.
+
 **DoD:** Ein Test sammelt die Praefixe **aller** Fund-Arten eines nicht-trivialen
 Vergleichs und verlangt **ein** Schema; das Schema steht in der Spec.
 
@@ -769,6 +791,11 @@ dieses Slices (s. Kopfzeile), nicht sein Inhalt.
   (`__dmigrate_reverse__:postgresql:…` gegen `…:mysql:…`) und ergeben damit
   einen `SCHEMA_NAME_CHANGED`-Fund. Aus dem Code gelesen, nicht durch einen
   Test gepinnt; nicht Teil dieses Slices.
+- **Eine Partitionierungs-Änderung hat keinen MCP-Fund.** `TableDiff` trägt
+  `partitioning`, die Projektion von `schema_compare` kennt dafür keinen Code:
+  eine Tabelle, die sich nur darin unterscheidet, ergibt `status: different`
+  ohne Eintrag in `findings`. Beim Bau von P2b gefunden, nicht Teil dieses
+  Slices.
 - **Die Anwendersicht ist hier nicht betroffen** — und das ist begründet: kein
   `docs/user/`-Text zeigt Compare-Funde oder deren `path`, und der Präzedenzfall
   derselben Änderung (VIEW_CHANGED-Vorher/Nachher in 1.7.1) hat `docs/user/`

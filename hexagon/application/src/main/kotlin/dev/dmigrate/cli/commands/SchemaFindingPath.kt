@@ -7,13 +7,40 @@ package dev.dmigrate.cli.commands
  *
  * Ein Pfad ist der Ort im **neutralen Schema-Dokument**: dessen Schluessel
  * und die Objektnamen, mit Punkten verbunden — dasselbe Vokabular wie die
- * Pfade von `schema validate` (`tables.orders.constraints.ck_mail`).
+ * Pfade von `schema validate` (`tables.orders.constraints.ck_mail`). Die
+ * Metadaten des Schemas (`name`, `version`) stehen dort auf der obersten
+ * Ebene und tragen deshalb kein Praefix.
  */
 object SchemaFindingPath {
 
-    fun table(table: String): String = "tables.$table"
+    /** Der Schemaname — ein Schluessel der obersten Ebene. */
+    const val NAME: String = "name"
+
+    /** Die Schemaversion — ein Schluessel der obersten Ebene. */
+    const val VERSION: String = "version"
+
+    /** Die Objekt-Abschnitte des Dokuments, unter ihrem Schluessel. */
+    enum class Section(val key: String) {
+        TABLES("tables"),
+        VIEWS("views"),
+        SEQUENCES("sequences"),
+        CUSTOM_TYPES("custom_types"),
+        FUNCTIONS("functions"),
+        PROCEDURES("procedures"),
+        TRIGGERS("triggers"),
+    }
+
+    /** Ein Objekt der obersten Ebene: `views.active_orders`. */
+    fun of(section: Section, name: String): String = "${section.key}.$name"
+
+    fun table(table: String): String = of(Section.TABLES, table)
 
     fun column(table: String, column: String): String = "${table(table)}.columns.$column"
+
+    /** Ein Index unter seinem Namen — ein unbenannter unter seinen Schluesseln, kommagetrennt. */
+    fun index(table: String, index: String): String = "${table(table)}.indices.$index"
+
+    fun constraint(table: String, constraint: String): String = "${table(table)}.constraints.$constraint"
 
     /** Ein Feld unterhalb eines Ortes, unter seinem Dokument-Schluessel: `….generation.expression`. */
     fun field(path: String, vararg keys: String): String = (listOf(path) + keys).joinToString(".")
