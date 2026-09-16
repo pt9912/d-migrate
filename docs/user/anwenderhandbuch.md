@@ -2789,8 +2789,15 @@ berührt. Der Schalter steht bewusst auf `false`: es braucht das Recht, ein
 Schema anzulegen. Bei Oracle geht dieser Weg nicht, dort **ist** ein Schema ein
 Benutzer.
 
-`schema compare` bleibt von beidem unberührt: dort ist ein Textunterschied
-weiterhin ein Unterschied.
+`schema compare` nutzt weder Herkunft noch Sandkasten. Es setzt stattdessen
+die **Dialekt-Schreibweise** gleich: bei einem CHECK-Ausdruck und einem
+Index-Prädikat Quoting, Leerraum, überflüssige Klammern und Casts, die an
+einem Vergleich nur den Typ der Spalte wiederholen (`(status)::text = 'x'::text`
+gegen `status = 'x'`); beim Rumpf einer Sicht nur Quoting und Leerraum. Was
+eine andere Aussage sein könnte — eine umgeschriebene Bedingung, andere
+Literale, die Schreibweise von Schlüsselwörtern —, bleibt ein Unterschied.
+Findet `schema compare` nichts, heißt das deshalb nicht, dass
+`schema migrate` nichts plant.
 
 ### Migration wird blockiert (Exit 8)
 

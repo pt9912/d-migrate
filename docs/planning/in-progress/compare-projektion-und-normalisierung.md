@@ -1,16 +1,22 @@
 # Compare: Restfehlalarme und Projektionslücken aus der Konsumentenmessung
 
 > **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden).
-> **Stand der Pakete:** geliefert P8 (nachgetragen, Altbestand; `50ee1bd00`),
-> P5 (`3b30d9f8a`), P3 (`ba263c737`), P6 (`10eb5a1df`), P2a (`a723584ff`),
-> P2b (`b1de205f9`), P1 (`e08e217fb`) und der Spec-Teil von P7 (Commit
-> „docs(spec): …" direkt danach). Offen bleibt nur die Abnahme am
-> Konsumenten-Repro (Verifikation 3). Der ADR-Teil von P7 ist mit ADR 0056
-> geliefert (`c9737f909`); `make doc-immutable` ist dafür im frischen
-> `--no-local`-Klon geprüft (0 Befunde, Sabotage erkannt — im Arbeits-Repo ist
-> das Gate still grün, s. `../open/doc-immutable-lokal-still-gruen.md`).
-> **Offen: P9** (Eigner-Entscheidung 2026-09-16, nach P8 nachgetragen) — der
-> Cast an einer Spalte wird mit dem Spaltentyp entschieden.
+> **Geliefert — erster Bauabschnitt:** P8 (Altbestand, `50ee1bd00`), P5
+> (`3b30d9f8a`), P3 (`ba263c737`), P6 (`10eb5a1df`), P2a (`a723584ff`), P2b
+> (`b1de205f9`), P1 (`e08e217fb`), Spec-Teil von P7 (`26ff678ed`); der
+> ADR-Teil von P7 mit ADR 0056 (`c9737f909`; `make doc-immutable` im frischen
+> `--no-local`-Klon geprüft, s. `../open/doc-immutable-lokal-still-gruen.md`).
+> **Geliefert — zweiter Bauabschnitt** (Review und Verifikation, s. dort):
+> P9 in neuer Fassung samt Rückzug, Schlüsselwörtern und Lexik (A–D, H;
+> `13e397475`), MCP-Werte und Index-Pfad (E, F; `58510584d`), Absicherung (G;
+> `522722ad3`), Doku und Plan (I) und die Abnahme am Konsumenten-Repro (J,
+> Verifikation 3) samt `make sample-db-smoke` (Verifikation 4) — Ergebnis
+> unter „Konsumenten-Repro".
+> **Offen in diesem Slice:** nichts mehr zu bauen. Offen bleiben die zwei
+> Eigner-Fragen (Schlüsselwort-Case, `RESTRICT`) und die Befunde, die der
+> Repro neu gezeigt hat (s. „Offen"); Posten 4 (MySQL-Introducer) liegt im
+> Reader-Slice und ist Vorbedingung dafür, dass die MySQL-Beine überhaupt
+> vergleichbar sind.
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
 > Meldung nahelegte (Reader statt Kanonisierung), nicht eine andere Tatsache.
@@ -616,11 +622,20 @@ Paket ausdrücklich ausschließt. Gebaut und gepinnt ist deshalb: PG↔Oracle
 meldet den Sequenznamen **nicht** mehr — beide Namen hat ein Server vergeben;
 ein abweichender **Modus** bleibt ein Fund.
 
-**DoD:** PG↔MySQL meldet die Identity nicht mehr; MySQL↔MySQL mit
-unterschiedlichem **Modus** weiterhin schon; PG↔Oracle bleibt nachweislich
-unveraendert (beide Seiten führen einen Namen — der übergebene Dialekt
-entscheidet, und das Paket schreibt fest, welcher). Der Migrate-Pfad und der
-Fingerabdruck ändern sich **nicht** — ein Test pinnt das.
+**DoD (auf das Gebaute gezogen, zweiter Bauabschnitt):** PG↔MySQL meldet den
+Sequenznamen nicht mehr; MySQL↔MySQL mit unterschiedlichem **Modus**
+weiterhin schon; PG↔Oracle meldet die beiden server-vergebenen Namen **nicht**
+mehr — die ursprüngliche Lesart „bleibt unverändert ein Fund" ist mit der
+Fähigkeits-Naht nicht erreichbar (s. oben), und eine zweite Regel daneben
+schließt das Paket aus; übergeben wird der Dialekt der ersten Seite, deren
+Reverse den Namen als Buchhaltung liest. Der Migrate-Pfad und der
+Fingerabdruck ändern sich **nicht** — gepinnt, seit G auch am verdrahteten
+Comparator.
+**Grenze aus dem Repro:** P6 blendet nur den **Namen** aus. Ein PG-`IDENTITY`
+trägt `legacy_serial_syntax: false`, MySQLs `AUTO_INCREMENT` liest der Reader
+immer als `legacy_serial_syntax: true` — PG↔MySQL meldet solche Spalten
+deshalb weiter; geschlossen ist der Posten nur für PG-`serial`-Spalten (so
+auch im Repro gemessen). Das ist eine eigene Frage (s. „Offen").
 
 ### P8 — Die Faltung hält ihre Grenze (Altbestand 1.7.0/1.7.1)
 
@@ -864,9 +879,14 @@ Vergleichsfunde** als Grammatik (P2a/P2b); die zwei Grenzfragen
 (Schlüsselwort-Case, `RESTRICT`) stehen dort als „nicht festgelegt".
 `spec/mcp-server.md` hat einen Abschnitt „`schema_compare` — Funde" (Fund je
 Feld, `path`, `details`, und dass `schema_compare_start` wortgleich
-vergleicht). `CHANGELOG.md` führt beides unter `[Unreleased]`. `docs/user/`
-ist nicht betroffen: kein Text dort zeigt Fund-Pfade, `details` oder die
-Faltungsmenge (nachgesehen).
+vergleicht). `CHANGELOG.md` führt beides unter `[Unreleased]`. **Korrektur
+(zweiter Bauabschnitt, Review):** die Aussage „`docs/user/` ist nicht
+betroffen" war falsch. Das Anwenderhandbuch sagte im Abschnitt zu
+wiederholt geplanten Sichten und CHECKs, `schema compare` behandle „einen
+Textunterschied weiterhin als Unterschied" — seit 1.7.0 für CHECK und Sicht,
+seit P5 auch für das Index-Prädikat nicht mehr wahr. Die Stelle beschreibt
+jetzt den Ist-Zustand (keine Herkunft, kein Sandkasten, aber die
+Dialekt-Schreibweise ist gleichgesetzt).
 
 **DoD:**
 1. `ADR 0053` trägt `status: superseded by ADR-00NN`; der neue ADR nennt die
@@ -1007,6 +1027,13 @@ Feld aus `ObjectDiffFields` (`cache`) und der Metadaten-Fund entfernt → die
 drei Vollstaendigkeitsfaelle rot; der Spalten-Pfad falsch gebaut → auch die
 beiden Faelle mit echtem Comparator rot (16 von 2278); Ruecknahme bestaetigt.
 
+**I — Doku und Plan.** Das Anwenderhandbuch beschreibt `schema compare`
+jetzt im Ist-Zustand (s. P7, Korrektur); Status-Kopf, P6-DoD, „Offen" und die
+README-Zeile in `in-progress/` sind nachgezogen; der CHANGELOG beschreibt A,
+B, C, E und F. Der Verifier-Hinweis zum Backslash ist am echten MySQL
+bestaetigt (s. „Konsumenten-Repro") und steht als Notiz beim Reader-Slice
+(C1/P6).
+
 **Sabotage-Protokoll A–D, H** (`make docker-test MODULES=":hexagon:core"`,
 fuenf Laeufe mit disjunkten Erwartungen; nach jedem Lauf Ruecknahme per
 Archiv und `diff -r` bestaetigt; danach gruen, 1468 Tests):
@@ -1041,6 +1068,176 @@ Archiv und `diff -r` bestaetigt; danach gruen, 1468 Tests):
 | 5 | Vergleich in Argumentliste/`BETWEEN` | „a comparison inside an argument list or on a BETWEEN level" |
 | 5 | T-SQL-Beleg ignoriert | „where the text shows T-SQL quoting elsewhere", `ViewQueryCanonicalisationTest` (MSSQL-Bein) |
 | 5 | Typmodifikator mitgestrichen | „a cast with a type modifier" (beide Specs) |
+
+### Konsumenten-Repro (Verifikation 3) und Pagila-Baseline (Verifikation 4)
+
+Das Schema des Konsumenten liegt nicht im Repo. Nachgebaut ist eines mit genau
+den gemeldeten Konstrukten: `ck_order_ship_after_place` (`OR`/`IS NULL`),
+`ck_customer_email_shape` (`LIKE`), ein CHECK mit Werteliste auf einer
+`varchar`-Spalte, `ix_order_open` mit Prädikat, Identity-Spalten (eine davon
+als PostgreSQL-`serial`, `customer.id`), `order_item.line_total` berechnet und
+ein `numeric`-CHECK `> 0`.
+
+<details><summary>Schema <code>source.yaml</code></summary>
+
+```yaml
+schema_format: "1.0"
+name: consumer_repro
+version: 1.0.0
+tables:
+  customer:
+    columns:
+      # bigserial: PostgreSQL fuehrt die Spalte als Serial (legacy_serial_syntax)
+      id:
+        type: biginteger
+        required: true
+        generation: { type: identity, mode: by_default, legacy_serial_syntax: true }
+      email: { type: text, max_length: 254, required: true, unique: true, unique_constraint: uq_customer_email }
+    primary_key: [id]
+    constraints:
+      - name: ck_customer_email_shape
+        type: check
+        expression: "email LIKE '%@%'"
+  order:
+    columns:
+      id:
+        type: biginteger
+        required: true
+        generation: { type: identity, mode: by_default }
+      customer_id: { type: biginteger, required: true }
+      status: { type: text, max_length: 20, required: true }
+      placed_at: { type: datetime, required: true }
+      shipped_at: { type: datetime }
+    primary_key: [id]
+    indices:
+      - name: ix_order_open
+        columns: [status]
+        where: "status IN ('NEW', 'PAID')"
+    constraints:
+      - name: fk_order_customer
+        type: foreign_key
+        columns: [customer_id]
+        references: { table: customer, columns: [id] }
+      - name: ck_order_status
+        type: check
+        expression: "status IN ('NEW', 'PAID', 'SHIPPED', 'CANCELLED')"
+      - name: ck_order_ship_after_place
+        type: check
+        expression: "shipped_at IS NULL OR shipped_at >= placed_at"
+  order_item:
+    columns:
+      id:
+        type: biginteger
+        required: true
+        generation: { type: identity, mode: by_default }
+      order_id: { type: biginteger, required: true }
+      quantity: { type: integer, required: true }
+      unit_price: { type: decimal, precision: 12, scale: 2, required: true }
+      line_total:
+        type: decimal
+        precision: 14
+        scale: 2
+        generation:
+          type: computed
+          expression: "quantity * unit_price"
+          stored: true
+    primary_key: [id]
+    constraints:
+      - name: fk_order_item_order
+        type: foreign_key
+        columns: [order_id]
+        references: { table: order, columns: [id] }
+      - name: ck_order_item_quantity
+        type: check
+        expression: "quantity > 0"
+      - name: ck_order_item_price
+        type: check
+        expression: "unit_price > 0"
+```
+
+</details>
+
+**Ablauf** (Stand `522722ad3`, Image `make docker-build`, Server aus
+`make mcp-e2e-up`: PostgreSQL 18.6, MySQL 9.7.2, SQL Server 2025, SQLite 3.45
+als Datei). Aus `examples/mcp-e2e/`, mit `R` als Arbeitsverzeichnis, das
+`source.yaml` enthaelt, und den Variablen aus `.env`:
+
+```bash
+set -a; . ./.env; set +a; export MCP_E2E_DMIGRATE_USER="$(id -u):$(id -g)"
+dmi() { docker compose run --rm -T -v "$R:/repro" dmigrate --config /work/.d-migrate.yaml "$@"; }
+# je Dialekt d und Verbindung c: (postgresql, mcp_e2e_pg) (mysql, mcp_e2e_my)
+# (mssql, mcp_e2e_ms) (sqlite, mcp_e2e_sqlite)
+dmi schema generate --source /repro/source.yaml --target "$d" --output "/repro/generated_$d.sql" --deterministic
+#   Ziel leeren und generated_$d.sql mit dem Client des Dialekts anwenden —
+#   wie in scripts/smoke-cross-dialect-roundtrip.sh (psql, mysql, sqlcmd, sqlite3)
+dmi schema reverse --source "$c" --output "/repro/reversed_$d.yaml"
+# je Paar (a, b): postgresql/mssql, postgresql/mysql, mssql/mysql, postgresql/sqlite
+dmi schema compare --source "file:/repro/reversed_$a.yaml" --target "file:/repro/reversed_$b.yaml"
+docker run --rm -v "$R:/repro" ghcr.io/pt9912/d-migrate:1.7.1 schema compare \
+  --source "file:/repro/reversed_$a.yaml" --target "file:/repro/reversed_$b.yaml"
+```
+
+**Die MySQL-Beine sind ohne den Reader-Fix nicht vergleichbar.** MySQL legt die
+CHECKs mit dem Zeichensatz der Sitzung als Introducer und mit
+Backslash-Escape ab (`CHECK_CLAUSE` = `` (`email` like _latin1\'%@%\') ``,
+Hex `…5C27…`); der Reverse übernimmt beides, und `schema compare` endet für
+PG↔MySQL und MSSQL↔MySQL mit **Exit 3** (`E012`, `_latin1` als Spalte) — in
+1.7.1 genauso. Das ist Posten 4 (Reader-Slice C1/P6). Um den Comparator
+trotzdem auf diesen Beinen zu messen, sind im MySQL-Reverse Introducer und
+`\'` per Skript entfernt (**simuliert**, nicht gebaut: YAML laden, in jedem
+Text `_<zeichensatz>\'` und `\'` durch `'` ersetzen, schreiben). Der
+Befund zum Backslash steht als Notiz beim Reader-Slice (P6): ohne das
+Aufloesen von `\'` zoege sich die Faltung für jeden solchen CHECK zurück.
+
+**Ergebnis** — je Paar die Funde an CHECK, Index und Identity; „1.7.1" und
+„jetzt" auf denselben Reverse-Artefakten:
+
+| Paar | Fund | 1.7.1 | jetzt | Zuordnung |
+| ---- | ---- | ----- | ----- | --------- |
+| PG↔MSSQL | `ck_order_ship_after_place` | Fund | — | **behoben** (P3) |
+| PG↔MSSQL | `ck_customer_email_shape` `((email)::text ~~ '%@%'::text)` gegen `email like '%@%'` | — | — | gleich; nach P8 allein waere es ein Fund gewesen — P9 haelt es gleich |
+| PG↔MSSQL | `ck_order_item_price` `(unit_price > (0)::numeric)` gegen `unit_price>(0)` | — | — | gleich (P9, `numeric`) |
+| PG↔MSSQL | `ix_order_open` `= ANY (…)` gegen `IN (…)` | Fund ohne Werte | Fund mit beiden Prädikaten | **bewusst** (ADR 0055); P1 zeigt die Werte |
+| PG↔MSSQL | `ck_order_status` `= ANY (…)` gegen `OR`-Kette | Fund ohne Werte | Fund mit Werten | **bewusst** (ADR 0055) |
+| PG↔MSSQL | drei Identity-Spalten, `by_default` gegen `always` | Fund | Fund | **bewusst** (P6: der Modus bleibt); **neu** gegenüber der Meldung: SQL Server kennt kein `BY DEFAULT` (`W140`) — s. „Offen" |
+| PG↔MSSQL | `line_total` Typ `decimal(14,2)` gegen `decimal(23,2)` | Fund | Fund | **neu**, nicht dieser Slice (SQL Server leitet den Typ ab) — s. „Offen" |
+| PG↔MSSQL | `W137` an `line_total` | Diagnose, Pfad `order_item.line_total` | Diagnose, Pfad im Pfad-Schema | P2a |
+| PG↔MySQL | alle | Exit 3 (`E012`) | Exit 3 (`E012`) | Posten 4, Reader-Slice C1/P6 |
+| PG↔MySQL* | `customer.id` (PG `serial`), Sequenzname | Fund | — | **behoben** (P6) |
+| PG↔MySQL* | `order.id`, `order_item.id` (PG `IDENTITY`) | Fund | Fund | **neu**: `legacy_serial_syntax` `false` gegen `true` — P6 blendet nur den Namen aus, s. „Offen" |
+| PG↔MySQL* | `ck_customer_email_shape` | — | — | gleich (P9 + simulierter Reader-Fix) |
+| PG↔MySQL* | `ck_order_ship_after_place` | Fund ohne Werte | Fund mit Werten | **bewusst**: Schlüsselwort-Case (`is null`/`or`), die Klammern faltet P3 |
+| PG↔MySQL* | `ck_order_status` `= ANY` gegen `IN` | Fund | Fund | **bewusst** (ADR 0055) |
+| PG↔MySQL* | `ix_order_open` entfernt | Fund | Fund | **bewusst**: MySQL kennt kein Teilindex-Prädikat (`generate`: `E057`) |
+| MSSQL↔MySQL | alle | Exit 3 (`E012`) | Exit 3 (`E012`) | Posten 4 |
+| MSSQL↔MySQL* | drei Identity-Spalten, `always` gegen `by_default` | Fund | Fund | **bewusst** (Modus) / **neu** (`W140`) |
+| MSSQL↔MySQL* | `ck_order_ship_after_place` | Fund | Fund | **bewusst**: Schlüsselwort-Case |
+| MSSQL↔MySQL* | `ck_order_status` `OR`-Kette gegen `IN` | Fund | Fund | **bewusst** (ADR 0055) |
+| MSSQL↔MySQL* | `ix_order_open` entfernt | Fund | Fund | **bewusst** (`E057`) |
+| MSSQL↔MySQL* | `line_total` Typ | Fund | Fund | **neu**, nicht dieser Slice |
+| PG↔SQLite | `ck_order_ship_after_place` | Fund | — | **behoben** (P3) |
+| PG↔SQLite | `ck_customer_email_shape` `~~` gegen `LIKE` | Fund ohne Werte | Fund mit Werten | **bewusst**: Schlüsselwort-Case (`like` gegen `LIKE`) |
+| PG↔SQLite | `ix_order_open`, `ck_order_status` | Fund | Fund | **bewusst** (ADR 0055) |
+| PG↔SQLite | Spaltentypen, Identity als `identifier(auto)` | Fund | Fund | Nullfall: SQLites Typaffinität, nicht dieser Slice |
+
+`*` = mit simuliertem Reader-Fix. **AK 1 im echten Repro:** Posten 6 schließt
+für `serial`-Spalten, nicht für `IDENTITY` (neu, s. oben); Posten 3 schließt
+sein PG↔MSSQL-Bein (und das PG↔SQLite-Bein); Posten 5 zeigt keine reine
+Schreibweise-Differenz mehr — was bleibt, ist die Umschreibung (ADR 0055) bzw.
+das fehlende Prädikat auf MySQL; Posten 1 nennt Vorher und Nachher, Posten 2
+folgt dem Pfad-Schema. Die MySQL-Beine setzen den Reader-Fix voraus.
+
+**Verifikation 4 — `make sample-db-smoke`** (nach allen Aenderungen, Image von
+`522722ad3`): Pagila PG→PG, 22 Tabellen, Zeilenzahlen gleich,
+`schema compare` gleich der gepinnten Baseline — **`Status: IDENTICAL`**.
+**Beim Lauf gefunden, nicht aus diesem Slice:** der Smoke startete gar nicht.
+`examples/sample-db/docker-compose.yml` mountete das Volume fuer
+PostgreSQL 18.6 noch auf `/var/lib/postgresql/data`; das 18er-Image bricht
+damit ab — auch mit leerem Volume („there appears to be PostgreSQL data in
+/var/lib/postgresql/data (unused mount/volume)"). `examples/mcp-e2e` hatte
+denselben Fix schon. Korrigiert ist nur der `postgres`-Dienst (gemessen);
+`postgis` (`postgis/postgis:18-3.6`) mountet genauso und trifft vermutlich
+dasselbe, ist aber nicht gefahren worden (s. „Offen").
 
 ## Akzeptanzkriterien
 
@@ -1157,17 +1354,31 @@ Archiv und `diff -r` bestaetigt; danach gruen, 1468 Tests):
   eine Tabelle, die sich nur darin unterscheidet, ergibt `status: different`
   ohne Eintrag in `findings`. Beim Bau von P2b gefunden, nicht Teil dieses
   Slices.
-- **Casts an Spalten sind wieder Funde.** Die engere Cast-Regel aus P8 faltet
-  `(status)::text` nicht mehr — PostgreSQL schreibt diesen Cast für jede
-  `varchar`-Spalte in einem CHECK, 1.7.1 hat ihn gefaltet. Ob der Vergleich den
-  Spaltentyp aus dem Schema heranziehen soll, um einen wertgleichen Cast an
-  einer Spalte zu erkennen, ist nicht entschieden (Eigner). Dasselbe gilt für
-  `(0)::double precision`, `'…'::bpchar` und `'…'::date`.
-- **Die Anwendersicht ist hier nicht betroffen** — und das ist begründet: kein
-  `docs/user/`-Text zeigt Compare-Funde oder deren `path`, und der Präzedenzfall
-  derselben Änderung (VIEW_CHANGED-Vorher/Nachher in 1.7.1) hat `docs/user/`
-  nicht angefasst. **Eine Ausnahme wandert mit:** der Posten C1/P6 im
-  Reader-Slice verschiebt die Grenze von `E012`, und die steht im
+- **Der Identity-Modus zwischen SQL Server und den anderen.** Der Generator
+  rendert `GENERATED BY DEFAULT` für SQL Server als `IDENTITY(1,1)` (mit
+  `W140`), der Reverse liest das als `mode: always`. PG↔MSSQL und MSSQL↔MySQL
+  melden deshalb jede Identity-Spalte. Der Modus bleibt nach P6 bewusst ein
+  Unterschied; ob `always` die richtige Lesung ist oder der Vergleich die
+  Fähigkeit berücksichtigen soll, ist eine eigene Frage (Eigner). Im Repro
+  gemessen, nicht Teil dieses Slices.
+- **`legacy_serial_syntax` zwischen PostgreSQL und MySQL.** Der MySQL-Reader
+  setzt es für jedes `AUTO_INCREMENT`, ein PG-`IDENTITY` trägt es nicht —
+  PG↔MySQL meldet solche Spalten trotz P6 (s. P6, „Grenze aus dem Repro").
+  Ob das Feld in `schema compare` eine Schema-Eigenschaft ist, entscheidet
+  dieser Slice nicht.
+- **Der Typ einer berechneten Spalte in SQL Server.** SQL Server führt keinen
+  deklarierten Typ; der Reverse liest den aus dem Ausdruck abgeleiteten
+  (`decimal(23,2)` für `quantity * unit_price` bei `decimal(12,2)`), das Soll
+  sagt `decimal(14,2)`. Ein Fund in PG↔MSSQL und MSSQL↔MySQL, schon in 1.7.1;
+  Reader/Generator, nicht dieser Slice.
+- **Der `postgis`-Dienst der Sample-DB** mountet sein Volume wie der
+  `postgres`-Dienst vor der Korrektur auf `/var/lib/postgresql/data`; mit dem
+  18er-Image bricht er vermutlich ebenso ab (`make sample-db-spatial-smoke`,
+  nicht gefahren). Nicht Teil dieses Slices.
+- **Die Anwendersicht.** Der Slice hat `docs/user/` an einer Stelle angefasst
+  (s. P7, Korrektur); Fund-Pfade, `details` und die Faltungsmenge stehen in
+  `spec/`, nicht im Handbuch. **Eine Ausnahme wandert mit:** der Posten C1/P6
+  im Reader-Slice verschiebt die Grenze von `E012`, und die steht im
   Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2125`) — dort zieht der
   Reader-Slice mit.
 

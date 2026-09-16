@@ -312,8 +312,9 @@ Der Introducer steht vor dem Literal; die Ausdrucks-Analyse liest `_utf8mb4` als
 **Spaltenbezug**. Das ist kein Kanonisierungs-, sondern ein **Reader**-Thema: was
 MySQL in `CHECK_CLAUSE` liefert, ist nicht das neutrale Modell, sondern ein
 Server-Text mit Dialekt-Anhang. (Der zweite Teil der Meldung — backslash-escapte
-Anführungszeichen, `\'%@%\'` — ist ohne MySQL-Server nicht entscheidbar; belegt
-ist der `E012`-Pfad.)
+Anführungszeichen, `\'%@%\'` — war ohne MySQL-Server nicht entscheidbar; am
+2026-09-16 gegen MySQL 9.7.2 nachgemessen: `CHECK_CLAUSE` liefert sie
+tatsaechlich, s. P6.)
 
 **Der Praezedenzfall steht im Repo und entscheidet die Frage vor:** der
 MSSQL-Reader streicht den Unicode-Literal-Praefix `N'…'` **im Reader**, weil der
@@ -570,6 +571,18 @@ Unicode-Praefix `N'…'` im Reader (s. C1) — P6 uebertraegt das auf MySQLs
 Charset-Introducer. Die Alternative (die Ausdrucks-Analyse kennt den Introducer)
 faellt damit **weg** — nicht weil sie teurer waere, sondern weil das Repo sie
 fuer dieselbe Konstruktklasse schon einmal verworfen hat.
+
+**Notiz (2026-09-16, aus dem Konsumenten-Repro des Compare-Slices gegen
+MySQL 9.7.2):** `CHECK_CLAUSE` traegt neben dem Introducer auch das
+Backslash-Escape — `` (`email` like _latin1\'%@%\') ``, im Hex `…5C27…`. Der
+Introducer ist der Zeichensatz der **Sitzung**, die den CHECK anlegte
+(`_latin1` bei einem `mysql`-Client mit `latin1`; der Konsument sah
+`_utf8mb4`). **Folge fuer P6:** der Reader muss auch `\'` aufloesen. Sonst
+zieht sich die Schreibweise-Faltung von `schema compare` (Rueckzug bei einem
+Backslash) fuer **jeden** MySQL-CHECK mit String-Literal zurueck, und
+`ck_customer_email_shape` bliebe ein Fund, obwohl `E012` behoben ist. Mit
+beidem entfernt (simuliert, nicht gebaut) meldet PG↔MySQL den CHECK nicht
+mehr; die Messung steht im Compare-Slice unter „Konsumenten-Repro".
 
 **DoD:** PG↔MySQL meldet `ck_customer_email_shape` nicht mehr **und** ein
 MySQL-Reverse mit einem solchen CHECK ist validierbar (`schema validate` ohne
