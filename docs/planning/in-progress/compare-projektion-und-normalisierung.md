@@ -1,7 +1,9 @@
 # Compare: Restfehlalarme und Projektionslücken aus der Konsumentenmessung
 
-> **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden; P1–P7
-> offen, keins gebaut).
+> **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden).
+> **Stand der Pakete:** P8 (nachgetragen, Altbestand) geliefert; offen: P5, P3,
+> P6, P2a, P2b, P1, Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
+> geliefert (`c9737f909`).
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
 > Meldung nahelegte (Reader statt Kanonisierung), nicht eine andere Tatsache.
@@ -517,6 +519,54 @@ unveraendert (beide Seiten führen einen Namen — der übergebene Dialekt
 entscheidet, und das Paket schreibt fest, welcher). Der Migrate-Pfad und der
 Fingerabdruck ändern sich **nicht** — ein Test pinnt das.
 
+### P8 — Die Faltung hält ihre Grenze (Altbestand 1.7.0/1.7.1)
+
+**Nachgetragen am 2026-09-16, nach der Aktivierung.** ADR 0056 („Wann die
+Faltung sich zurückzieht") schreibt den Altbestand nur fest, **soweit** er vier
+Bedingungen erfüllt, und verlangt, ihn sonst anzupassen. Nachgestellt setzte der
+Code aus 1.7.0/1.7.1 vier Paare gleich, die Verschiedenes bedeuten können:
+
+| Feld | Paar | Ursache |
+| ---- | ---- | ------- |
+| CHECK **und** Sicht | `a = 1 -- x⏎AND b = 2` gegen `a = 1 -- x AND b = 2` | `\s+` → Leerzeichen kommentiert den Rest aus |
+| CHECK | `$$a  b$$` gegen `$$a b$$` | Dollar-Quoting ist kein erkanntes Literal |
+| CHECK | `(price::integer > 5)` gegen `price > 5` | `CAST_SUFFIX` strich **jeden** `::typ` |
+| Sicht | `'a  b'` gegen `'a b'`, `'"x"'` gegen `'x'` | kein Literalschutz im Sichten-Rumpf |
+
+**Beim Bau zusätzlich gefunden** (dieselbe Klasse, mitbehoben und gepinnt):
+Leerraum **in** einem nicht-einfachen quotierten Bezeichner (`"my  col"` gegen
+`"my col"`) wurde gefaltet; `REDUNDANT_PARENS` nahm auch die Klammern eines
+Funktionsaufrufs (`f(x)` galt als `fx`); ein nicht geschlossenes Literal ließ
+den Rest ungeschützt; ein MySQL-Backslash-Escape verschiebt die Literalgrenze
+(`'a\'  b\''`).
+
+**Gebaut** (`:hexagon:core`): ein gemeinsames Gerüst (`RawSqlSkeleton`) für
+CHECK, Index-Prädikat und Sichten-Rumpf — String-Literale und nicht-einfache
+quotierte Bezeichner stehen als Platzhalter, einfache quotierte Bezeichner
+entpackt; `[` direkt hinter Name, `]`, `)` oder Platzhalter ist Index/Array,
+kein T-SQL-Quoting. **Rückzug** (das Feld wird wortgleich verglichen): `--`,
+Blockkommentar-Anfang, `$…$`-Dollar-Quoting außerhalb eines Literals, ein
+Backslash irgendwo im Text, eine offene Quotierung. Die Kanonisierer dahinter:
+`ExpressionSpelling` (CHECK/Index) und `QuerySpelling` (Sicht).
+
+**Die Cast-Regel ist enger als der Vorschlag des Koordinators** („`::typ` an
+String- oder Ganzzahl-Literal ohne Modifikator"): gefaltet wird nur ein
+String-Literal auf `text`/`varchar`/`character varying` und ein
+Ganzzahl-Literal (auch `(0)`) auf `numeric`/`decimal` — jeweils ohne
+Modifikator und ohne `[]`. Grund: auch ohne Modifikator ändern Casts den Wert
+(`'abc'::char` ist `char(1)` und kürzt, `70000::smallint` scheitert,
+`'…'::date` deutet um). **Folge:** `(x > (0)::double precision)`,
+`'…'::bpchar`, `'…'::date` und `'…'::timestamp without time zone` bleiben
+Funde. Keine 1.7.1-Zusicherung pinnte einen Spalten- oder Modifikator-Cast als
+gleich — `ExpressionCanonicalisationTest` bleibt unverändert grün.
+
+**DoD:** Jedes der Paare oben ist ein Fund; je Paar steht eine **Gegenprobe**,
+die zeigt, dass die Faltung daneben weiter greift (`SpellingFoldBoundaryTest`).
+Die Grenzfall-Tests aus 1.7.1 bleiben unverändert grün. Sabotage je Teil
+(Rückzug, Literalschutz im Sichten-Rumpf, Cast-Regel, Funktionsaufruf-Klammern,
+offene Quotierung). P8 steht **vor** P5, weil P5 das Index-Prädikat an genau
+diese Kanonisierung hängt.
+
 ### P7 — Der Vertrag zieht nach: Spec, ADR-Supersede, README
 
 P3 und P5 aendern genau die Menge, die `spec/cli-spec.md:667` **normativ
@@ -580,6 +630,9 @@ dieses Slices (s. Kopfzeile), nicht sein Inhalt.
    das Pfad-Schema (P7); die zwei Grenzfragen stehen dort als solche.
 6. Die Grenzfall-Tests aus 1.7.1 bleiben unverändert grün — insbesondere
    `("Quantity" > 0)` gegen `(quantity > 0)` und die Literal-Schutzfälle.
+7. Die vier Altbestands-Paare aus P8 sind Funde — Kommentar mit wandernder
+   Reichweite (CHECK und Sicht), Dollar-Quoting, Cast an einer Spalte,
+   Literal im Sichten-Rumpf —, je mit Gegenprobe.
 
 ## Verifikation
 
@@ -593,6 +646,7 @@ dieses Slices (s. Kopfzeile), nicht sein Inhalt.
    | P2b | `:adapters:driving:mcp` (Praefixe) **und** `spec/` (Pfad-Schema) | `make docker-check` |
    | P3, P5 | `:hexagon:core` | `make docker-check` |
    | P6 | `:hexagon:application` (Helfer) **und** die zwei Comparator-Baustellen `:adapters:driving:cli` + `:adapters:driving:mcp` | `make docker-check` |
+   | P8 | `:hexagon:core` | `make docker-check` |
    | P7 | `docs/adr/` + `spec/` | `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD` |
 
    **Diesen Slice fährt kein Integrationsmodul:** der einzige Posten, der eines

@@ -30,8 +30,8 @@ internal class RawTextFolding(
      *
      * Default `false`: der konservative Weg. `schema compare` setzt sie, weil
      * dort ein Fehlalarm nur einen Fund kostet; `schema migrate` **nicht**, weil
-     * dort eine uebersehene Aenderung eine falsch stehende Datenbank kostet.
-     * Siehe `docs/planning/in-progress/compare-falsch-positive-cross-dialekt.md`.
+     * dort eine uebersehene Aenderung eine falsch stehende Datenbank kostet
+     * (ADR 0056).
      */
     private val canonicalizeRawExpressions: Boolean = false,
 ) {
@@ -126,48 +126,13 @@ internal class RawTextFolding(
      * setzen unterschiedlich viel Whitespace. Dasselbe Reverse ergab damit
      * einen `VIEW_CHANGED`-Fund, obwohl die Abfrage dieselbe war.
      *
-     * **Bewusst eng.** Vereinheitlicht werden nur Quoting und Whitespace. Was
-     * die Struktur betrifft — gewaehlte Spalten, `WHERE`-Klauseln, die
-     * Reihenfolge —, bleibt ein Unterschied: eine Kanonisierung, die zu viel
-     * gleichsetzt, versteckt echte Aenderungen. Die Grenzfaelle sind in
-     * `ViewQueryCanonicalisationTest` gepinnt.
+     * **Bewusst eng** — was dort gleichgesetzt wird und was nicht, steht bei
+     * [QuerySpelling].
      */
     fun viewQuery(viewName: String, current: String?, desired: String?): String? {
-        if (canonicalizeRawExpressions && canonicallyEqualViewQuery(desired, current)) return current
+        if (canonicalizeRawExpressions && QuerySpelling.equal(desired, current)) return current
         return if (unchanged("view", listOf(viewName), VIEW_QUERY, null, desired, current)) current else desired
     }
-
-    private fun canonicallyEqualViewQuery(left: String?, right: String?): Boolean {
-        if (left == null || right == null) return left == right
-        if (left == right) return true
-        return left.canonicalViewQuery() == right.canonicalViewQuery()
-    }
-
-    /**
-     * Quoting und Whitespace vereinheitlichen — mehr nicht.
-     *
-     * Die Anfuehrungszeichen sind je Dialekt verschieden (SQL Server `[…]`,
-     * MySQL `` `…` ``, PostgreSQL `"…"`); alle drei umschliessen einen
-     * Bezeichner und bedeuten dasselbe. Alles andere bleibt stehen.
-     *
-     * **Alle abschliessenden Semikola** fallen weg, nicht nur eines: der
-     * Server haengt dem gespeicherten Definitionstext seines an, und hat die
-     * angewendete DDL schon eines getragen, stehen dort zwei. Gemessen an
-     * einem SQL-Server-Reverse: `…customer_id;;`. Ein einzelnes
-     * `removeSuffix(";")` liesse den Rest stehen und meldete weiter
-     * `query: changed` — die Haelfte des Fehlalarms waere nur verschoben.
-     *
-     * Nur **abschliessende**: ein `;` im Rumpf ist Text (zwischen zwei
-     * Anweisungen) oder steht in einem Literal, dessen schliessendes
-     * Anfuehrungszeichen danach kommt.
-     */
-    private fun String.canonicalViewQuery(): String = replace(Regex("\\[(\\w+)]"), "$1")
-        .replace(Regex("`(\\w+)`"), "$1")
-        .replace(Regex("\"(\\w+)\""), "$1")
-        .replace(Regex("\\s+"), " ")
-        .replace(Regex("\\s*([,=()])\\s*"), "$1")
-        .replace(TRAILING_SEMICOLA, "")
-        .trim()
 
     /**
      * Zwei Quellen, dieselbe Entscheidung — die Herkunft zuerst, weil sie den
@@ -214,13 +179,5 @@ internal class RawTextFolding(
         const val WHERE = "where"
         const val KEY_EXPRESSION = "key-expression"
         const val GENERATION_EXPRESSION = "generation-expression"
-
-        /**
-         * Ein **oder mehrere** abschliessende Semikola, mit etwaigem
-         * Whitespace dazwischen und danach. Der Server haengt seines an den
-         * gespeicherten Text; trug die angewendete DDL schon eines, stehen
-         * dort zwei.
-         */
-        val TRAILING_SEMICOLA = Regex("(?:\\s*;)+\\s*$")
     }
 }
