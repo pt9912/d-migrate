@@ -149,6 +149,23 @@ class SchemaContentLoaderTest : FunSpec({
         schema.version shouldBe "1.0"
     }
 
+    test("a JSON schemaRef loads WITHOUT an explicit format either") {
+        // Die Erkennung muss beide Richtungen koennen: ein Artefakt aus einem
+        // Upload ist JSON, eines aus `schema_reverse` YAML. Ohne diesen Fall
+        // waere nur der YAML-Zweig gepinnt.
+        val artifactStore = InMemoryArtifactStore().apply {
+            val bytes = MINIMAL_JSON_SCHEMA.toByteArray(Charsets.UTF_8)
+            save(artifactRecord("art-json", sizeBytes = bytes.size.toLong()))
+        }
+        val contentStore = InMemoryArtifactContentStore().apply {
+            val bytes = MINIMAL_JSON_SCHEMA.toByteArray(Charsets.UTF_8)
+            write("art-json", ByteArrayInputStream(bytes), bytes.size.toLong())
+        }
+        val loader = SchemaContentLoader(artifactStore, contentStore, McpLimitsConfig())
+        val schema = loader.load(SchemaSource.Reference(schemaEntry("s1", "art-json")), format = null)
+        schema.name shouldBe "orders"
+    }
+
     test("an explicit format still wins over the detected one") {
         // Die Erkennung ist der Rueckfall, keine Uebersteuerung: ein falsch
         // angegebenes `format` bleibt ein benannter Fehler.

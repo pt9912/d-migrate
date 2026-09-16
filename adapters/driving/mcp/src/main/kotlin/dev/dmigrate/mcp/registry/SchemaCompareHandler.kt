@@ -376,7 +376,8 @@ internal class SchemaCompareHandler(
         val before = v.columns?.before?.joinToString(", ").orEmpty()
         val after = v.columns?.after?.joinToString(", ").orEmpty()
         // `compareDetailsSchema()` verlangt je Wert ein Nicht-Whitespace-Zeichen
-        // (`pattern: "\\S"`). Eine leere Liste waere ein Schemaverstoss.
+        // (`pattern: "\\S"`). Traegt eine Seite keine Spaltennamen, bleibt es
+        // beim benannten Feld — ohne Werte.
         if (before.isNotBlank() && after.isNotBlank()) {
             return finding(
                 SchemaFindingSeverity.WARNING, "VIEW_CHANGED", "views.${v.name}",
@@ -384,17 +385,15 @@ internal class SchemaCompareHandler(
                 details = mapOf("before" to before, "after" to after),
             )
         }
+        // `ViewDiff.hasChanges()` garantiert, dass eines der vier gesetzt ist;
+        // die Spalten stehen vorn, weil sie als einzige ihre Werte mitliefern.
         val field = when {
+            v.columns != null -> "columns"
             v.query != null -> "query"
             v.materialized != null -> "materialized"
-            v.refresh != null -> "refresh"
-            else -> null
+            else -> "refresh"
         }
-        return if (field != null) {
-            finding(SchemaFindingSeverity.WARNING, "VIEW_CHANGED", "views.${v.name}", "views.${v.name} $field changed")
-        } else {
-            changed("VIEW_CHANGED", "views.${v.name}")
-        }
+        return finding(SchemaFindingSeverity.WARNING, "VIEW_CHANGED", "views.${v.name}", "views.${v.name} $field changed")
     }
 
     /**

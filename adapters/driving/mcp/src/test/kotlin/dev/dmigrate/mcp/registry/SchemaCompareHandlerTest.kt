@@ -118,6 +118,18 @@ private fun parsePayload(outcome: ToolCallOutcome): JsonObject {
     return JsonParser.parseString(text).asJsonObject
 }
 
+/** Faehrt einen Vergleich der beiden gestagten Refs und liefert die `findings`. */
+private fun compareFindings(setup: HandlerSetup): List<JsonObject> =
+    parsePayload(
+        setup.handler.handle(
+            ToolCallContext(
+                "schema_compare",
+                args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                PRINCIPAL,
+            ),
+        ),
+    ).getAsJsonArray("findings").map { it.asJsonObject }
+
 private fun ref(schemaId: String): String =
     ServerResourceUri(ACME, ResourceKind.SCHEMAS, schemaId).render()
 
@@ -145,6 +157,29 @@ private fun singleTable(
     val pkJson = pk.joinToString(",") { "\"$it\"" }
     return """{"name":"x","version":"1.0","tables":{"$table":{"columns":{$cols},""" +
         """"primary_key":[$pkJson]}}}"""
+}
+
+
+/**
+ * Ein Schema mit genau einer Sicht. [columns] ist die **JSON-Liste** der
+ * Spalten oder `null` fuer „der Reader liefert keine" — genau die
+ * Unterscheidung, die der Vergleich treffen muss. [materialized] und [refresh]
+ * sind typisiert, damit die Fuellung nicht von Raw-String-Escaping abhaengt.
+ */
+private fun schemaJsonWithView(
+    name: String,
+    query: String,
+    columns: String? = null,
+    materialized: Boolean? = null,
+    refresh: String? = null,
+): String {
+    val parts = mutableListOf("\"query\":\"$query\"")
+    if (columns != null) parts += "\"columns\":$columns"
+    if (materialized != null) parts += "\"materialized\":$materialized"
+    if (refresh != null) parts += "\"refresh\":\"$refresh\""
+    return "{\"name\":\"$name\",\"version\":\"1.0\"," +
+        "\"tables\":{\"t1\":{\"columns\":{\"id\":{\"type\":\"identifier\"}},\"primary_key\":[\"id\"]}}," +
+        "\"views\":{\"v1\":{${parts.joinToString(",")}}}}"
 }
 
 class SchemaCompareHandlerTest : FunSpec({
@@ -701,4 +736,104 @@ class SchemaCompareHandlerTest : FunSpec({
         finding.get("path").asString shouldBe "t1.total"
         finding.get("message").asString shouldContain "was not compared"
     }
+
+    // ── Sicht-Funde nennen ihr Feld (Konsumentenbefund gegen 1.7.0) ──────
+    //
+    // Ein blankes `VIEW_CHANGED` ohne Zeile darunter liess den Aufrufer
+    // raten, welcher Bestandteil abweicht. Jeder Zweig von `viewChanged`
+    // wird hier einmal durchlaufen — vorher kannte dieses Modul den Code
+    // `VIEW_CHANGED` ueberhaupt nicht.
+
+    test("eine geaenderte Sicht nennt die Spalten mit beiden Werten") {
+        val setup = setup()
+        stageSchema(
+            setup, "left",
+            schemaJsonWithView("orders", "SELECT id FROM t", """[{"name":"order_id","type":"integer"}]"""),
+        )
+        stageSchema(
+            setup, "right",
+            schemaJsonWithView("orders", "SELECT id FROM t", """[{"name":"total","type":"integer"}]"""),
+        )
+        val findings = compareFindings(setup)
+        val view = findings.single { it.get("code").asString == "VIEW_CHANGED" }
+        view.get("path").asString shouldBe "views.v1"
+        view.get("message").asString shouldContain "columns changed"
+        val details = view.getAsJsonObject("details")
+        details.get("before").asString shouldBe "order_id"
+        details.get("after").asString shouldBe "total"
+    }
+
+    test("dieselben Spaltennamen mit anderen Typen sind keine Aenderung") {
+        // Die Typen sind Dialekt-Schreibweise — `text` gegen `nvarchar`. Der
+        // SQL-Server-Fall des Konsumenten war genau das.
+        val setup = setup()
+        stageSchema(
+            setup, "left",
+            schemaJsonWithView("orders", "SELECT id FROM t", """[{"name":"id","type":"text"}]"""),
+        )
+        stageSchema(
+            setup, "right",
+            schemaJsonWithView("orders", "SELECT id FROM t", """[{"name":"id","type":"nvarchar"}]"""),
+        )
+        compareFindings(setup) shouldBe emptyList()
+    }
+
+    test("eine einseitig fehlende Spaltenliste ist keine Aenderung") {
+        val setup = setup()
+        stageSchema(
+            setup, "left",
+            schemaJsonWithView("orders", "SELECT id FROM t", """[{"name":"id","type":"integer"}]"""),
+        )
+        stageSchema(setup, "right", schemaJsonWithView("orders", "SELECT id FROM t", columns = null))
+        compareFindings(setup) shouldBe emptyList()
+    }
+
+    test("ohne Spaltennamen bleibt es beim benannten Feld, ohne Werte") {
+        // `compareDetailsSchema()` verlangt je Wert ein Nicht-Whitespace-Zeichen;
+        // eine leere Seite darf deshalb keine `details` erzeugen.
+        val setup = setup()
+        stageSchema(setup, "left", schemaJsonWithView("orders", "SELECT id FROM t", "[]"))
+        stageSchema(
+            setup, "right",
+            schemaJsonWithView("orders", "SELECT id FROM t", """[{"name":"id","type":"integer"}]"""),
+        )
+        val view = compareFindings(setup).single { it.get("code").asString == "VIEW_CHANGED" }
+        view.get("message").asString shouldContain "columns changed"
+        view.has("details") shouldBe false
+    }
+
+    test("ein geaenderter Sicht-Rumpf nennt die Query") {
+        val setup = setup()
+        stageSchema(setup, "left", schemaJsonWithView("orders", "SELECT id FROM t"))
+        stageSchema(setup, "right", schemaJsonWithView("orders", "SELECT id FROM t2"))
+        val view = compareFindings(setup).single { it.get("code").asString == "VIEW_CHANGED" }
+        view.get("message").asString shouldContain "query changed"
+    }
+
+    test("eine geaenderte Materialisierung nennt sie") {
+        val setup = setup()
+        stageSchema(setup, "left", schemaJsonWithView("orders", "SELECT id FROM t"))
+        stageSchema(
+            setup, "right",
+            schemaJsonWithView("orders", "SELECT id FROM t", materialized = true),
+        )
+        val view = compareFindings(setup).single { it.get("code").asString == "VIEW_CHANGED" }
+        view.get("message").asString shouldContain "materialized changed"
+    }
+
+    test("eine geaenderte Auffrischung nennt sie") {
+        val setup = setup()
+        stageSchema(
+            setup, "left",
+            schemaJsonWithView("orders", "SELECT id FROM t", materialized = true, refresh = "on_commit"),
+        )
+        stageSchema(
+            setup, "right",
+            schemaJsonWithView("orders", "SELECT id FROM t", materialized = true, refresh = "on_demand"),
+        )
+        val view = compareFindings(setup).single { it.get("code").asString == "VIEW_CHANGED" }
+        view.get("message").asString shouldContain "refresh changed"
+    }
+
+
 })
