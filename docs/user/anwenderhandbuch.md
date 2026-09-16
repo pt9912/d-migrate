@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
+**Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server, Oracle
 
 Dieses Handbuch zeigt, wie Sie mit d-migrate Ihre Aufgaben erledigen — Schemata
 beschreiben, Datenbanken aufbauen, Daten übertragen und Migrationen ausrollen.
@@ -31,7 +31,7 @@ Befehls- und Optionsreferenz finden Sie im [Anhang](#8-anhang).
 d-migrate überträgt Datenbankschemata und -inhalte zwischen verschiedenen
 Datenbanksystemen. Sie beschreiben Ihr Schema einmal in einem
 **neutralen, herstellerunabhängigen Format** und erzeugen daraus das passende
-SQL für PostgreSQL, MySQL/MariaDB, SQLite oder MS SQL Server. Daten lassen sich
+SQL für PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server oder Oracle. Daten lassen sich
 exportieren, importieren und direkt von einer Datenbank in eine andere
 übertragen.
 
