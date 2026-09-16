@@ -3,6 +3,7 @@ package dev.dmigrate.format
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.format.json.JsonSchemaCodec
 import dev.dmigrate.format.yaml.YamlSchemaCodec
+import java.io.InputStream
 import java.nio.file.Path
 import kotlin.io.path.outputStream
 
@@ -73,6 +74,49 @@ object SchemaFileResolver {
             )
         }
     }
+
+    /**
+     * Format-Heuristik fuer Inhalt **ohne** Dateiendung: das erste
+     * Nicht-Whitespace-Zeichen `{` oder `[` bedeutet JSON, sonst YAML.
+     *
+     * Das neutrale Schema ist ein Objekt, JSON beginnt also mit `{`. Die
+     * Heuristik ist bewusst stumpf — sie entscheidet nur zwischen den zwei
+     * Formaten, die dieses Projekt schreibt.
+     *
+     * Drei Aufrufer brauchen sie aus drei Richtungen: die CLI bei `stdin`
+     * (kein Suffix), der MCP-Verweis-Pfad auf ein Artefakt (kein Suffix) und
+     * spaeter jeder weitere Pfad ohne Namen. Deshalb steht sie hier und nicht
+     * mehr privat in einem der beiden.
+     */
+    fun sniffFormat(bytes: ByteArray): String {
+        val firstNonWs = bytes.asSequence()
+            .map { (it.toInt() and 0xFF).toChar() }
+            .firstOrNull { !it.isWhitespace() }
+        return if (firstNonWs == '{' || firstNonWs == '[') "json" else "yaml"
+    }
+
+    /**
+     * Dieselbe Heuristik fuer einen Strom, **ohne ihn zu verbrauchen**:
+     * markieren, die ersten Bytes lesen, zuruecksetzen. Der Aufrufer gibt den
+     * Strom danach unveraendert an den Codec weiter — genau darum geht es,
+     * denn der Inhalt kann gross sein und soll nicht in den Speicher wandern.
+     *
+     * @throws IllegalArgumentException wenn der Strom kein `mark`/`reset` kann
+     */
+    fun sniffFormat(input: InputStream): String {
+        require(input.markSupported()) {
+            "sniffFormat needs mark/reset — wrap the stream in a BufferedInputStream"
+        }
+        input.mark(SNIFF_BYTES)
+        return try {
+            sniffFormat(input.readNBytes(SNIFF_BYTES))
+        } finally {
+            input.reset()
+        }
+    }
+
+    /** Genug fuer das erste Nicht-Whitespace-Zeichen, auch nach einem BOM. */
+    private const val SNIFF_BYTES = 64
 
     /**
      * Writes a schema to the given path, validating that the file

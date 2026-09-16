@@ -57,6 +57,17 @@ private fun schemaEntry(schemaId: String, artifactRef: String): SchemaIndexEntry
 
 private const val MINIMAL_JSON_SCHEMA = """{"name":"orders","version":"1.0","tables":{}}"""
 
+/**
+ * Dieselbe Sicht in der Form, die `schema reverse` schreibt — YAML, und mit
+ * `schema_format` als erstem Token. Genau daran scheiterte der JSON-Codec.
+ */
+private val MINIMAL_YAML_SCHEMA = """
+    schema_format: "1.0"
+    name: orders
+    version: "1.0"
+    tables: {}
+""".trimIndent()
+
 class SchemaContentLoaderTest : FunSpec({
 
     test("inline JSON schema parses into a SchemaDefinition") {
@@ -117,6 +128,42 @@ class SchemaContentLoaderTest : FunSpec({
         val ex = shouldThrow<PayloadTooLargeException> { loader.load(source, format = null) }
         ex.maxBytes shouldBe 4L
         ex.actualBytes shouldBe 8L
+    }
+
+    test("a YAML schemaRef loads WITHOUT an explicit format (Konsumentenbefund gegen 1.7.0)") {
+        // `schema reverse` legt sein Artefakt als YAML ab, der Verweis-Pfad
+        // nahm ohne `format` aber JSON an: jeder Aufruf, der
+        // `schema_reverse_start` mit `schema_generate` verkettete, scheiterte
+        // mit "Unrecognized token 'schema_format'". Jetzt wird erkannt.
+        val artifactStore = InMemoryArtifactStore().apply {
+            val bytes = MINIMAL_YAML_SCHEMA.toByteArray(Charsets.UTF_8)
+            save(artifactRecord("art-yaml", sizeBytes = bytes.size.toLong()))
+        }
+        val contentStore = InMemoryArtifactContentStore().apply {
+            val bytes = MINIMAL_YAML_SCHEMA.toByteArray(Charsets.UTF_8)
+            write("art-yaml", ByteArrayInputStream(bytes), bytes.size.toLong())
+        }
+        val loader = SchemaContentLoader(artifactStore, contentStore, McpLimitsConfig())
+        val schema = loader.load(SchemaSource.Reference(schemaEntry("s1", "art-yaml")), format = null)
+        schema.name shouldBe "orders"
+        schema.version shouldBe "1.0"
+    }
+
+    test("an explicit format still wins over the detected one") {
+        // Die Erkennung ist der Rueckfall, keine Uebersteuerung: ein falsch
+        // angegebenes `format` bleibt ein benannter Fehler.
+        val artifactStore = InMemoryArtifactStore().apply {
+            save(artifactRecord("art-yaml", sizeBytes = MINIMAL_YAML_SCHEMA.length.toLong()))
+        }
+        val contentStore = InMemoryArtifactContentStore().apply {
+            val bytes = MINIMAL_YAML_SCHEMA.toByteArray(Charsets.UTF_8)
+            write("art-yaml", ByteArrayInputStream(bytes), bytes.size.toLong())
+        }
+        val loader = SchemaContentLoader(artifactStore, contentStore, McpLimitsConfig())
+        val ex = shouldThrow<ValidationErrorException> {
+            loader.load(SchemaSource.Reference(schemaEntry("s1", "art-yaml")), format = "json")
+        }
+        ex.violations.map { it.field } shouldContain "schema"
     }
 
     test("schemaRef with unknown format throws VALIDATION_ERROR (not raw IllegalArgumentException)") {

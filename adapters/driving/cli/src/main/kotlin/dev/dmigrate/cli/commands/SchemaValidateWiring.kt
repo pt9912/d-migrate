@@ -23,7 +23,7 @@ internal object SchemaValidateWiring {
             if (isStdin) {
                 // Kein Datei-Suffix bei stdin → Format aus dem Inhalt sniffen, dann parsen.
                 val bytes = System.`in`.readBytes()
-                SchemaFileResolver.codecForFormat(sniffFormat(bytes)).read(bytes.inputStream())
+                SchemaFileResolver.codecForFormat(SchemaFileResolver.sniffFormat(bytes)).read(bytes.inputStream())
             } else {
                 val path = Path.of(options.source)
                 SchemaFileResolver.codecForPath(path).read(path)
@@ -36,16 +36,5 @@ internal object SchemaValidateWiring {
         val result = SchemaValidator().validate(schema)
         formatter.printValidationResult(result, schema, label)
         return if (result.isValid) 0 else 3
-    }
-
-    /**
-     * Format-Heuristik für stdin (ohne Dateiendung): erstes Nicht-Whitespace-Zeichen `{`/`[`
-     * → JSON, sonst YAML. Das neutrale Schema ist ein Objekt; JSON beginnt also mit `{`.
-     */
-    private fun sniffFormat(bytes: ByteArray): String {
-        val firstNonWs = bytes.asSequence()
-            .map { (it.toInt() and 0xFF).toChar() }
-            .firstOrNull { !it.isWhitespace() }
-        return if (firstNonWs == '{' || firstNonWs == '[') "json" else "yaml"
     }
 }
