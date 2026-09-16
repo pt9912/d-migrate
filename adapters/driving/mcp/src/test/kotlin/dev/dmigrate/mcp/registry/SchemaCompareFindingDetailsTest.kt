@@ -1,19 +1,33 @@
 package dev.dmigrate.mcp.registry
 
+import dev.dmigrate.core.diff.ColumnDiff
+import dev.dmigrate.core.diff.CustomTypeDiff
 import dev.dmigrate.core.diff.FunctionDiff
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.SequenceDiff
 import dev.dmigrate.core.diff.TableDiff
+import dev.dmigrate.core.diff.TriggerDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.CustomTypeKind
+import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.ReferenceDefinition
+import dev.dmigrate.core.model.ReferentialAction
+import dev.dmigrate.core.model.RoutineSecurity
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.TableMetadata
+import dev.dmigrate.core.model.TriggerEvent
+import dev.dmigrate.core.model.TriggerForEach
+import dev.dmigrate.core.model.TriggerTiming
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.maps.shouldContainExactly
 import io.kotest.matchers.shouldBe
@@ -115,5 +129,108 @@ class SchemaCompareFindingDetailsTest : FunSpec({
         )
         findings.single { it["path"] == "functions.f.body" }.containsKey("details") shouldBe false
         details(findings.single { it["path"] == "functions.f.definer" }) shouldBe mapOf("before" to "a", "after" to "b")
+    }
+
+    context("Die Werte stehen in der Schreibweise des Schema-Dokuments") {
+
+        test("enum values are lower case, lists are bracketed, trigger events in document order") {
+            val findings = SchemaCompareFindings.of(
+                SchemaDiff(
+                    triggersChanged = listOf(
+                        TriggerDiff(
+                            name = "tr",
+                            event = ValueChange(
+                                setOf(TriggerEvent.INSERT),
+                                linkedSetOf(TriggerEvent.UPDATE, TriggerEvent.INSERT),
+                            ),
+                            timing = ValueChange(TriggerTiming.AFTER, TriggerTiming.INSTEAD_OF),
+                            forEach = ValueChange(TriggerForEach.ROW, TriggerForEach.STATEMENT),
+                        ),
+                    ),
+                    functionsChanged = listOf(
+                        FunctionDiff(
+                            name = "f",
+                            security = ValueChange(null, RoutineSecurity.DEFINER),
+                            searchPath = ValueChange(listOf("public"), listOf("app", "public")),
+                        ),
+                    ),
+                    customTypesChanged = listOf(
+                        CustomTypeDiff(
+                            name = "t",
+                            kind = ValueChange(CustomTypeKind.ENUM, CustomTypeKind.DOMAIN),
+                            values = ValueChange(listOf("a"), listOf("a", "b")),
+                        ),
+                    ),
+                ),
+            )
+            fun at(path: String) = details(findings.single { it["path"] == path })
+            at("triggers.tr.event") shouldBe mapOf("before" to "[insert]", "after" to "[insert, update]")
+            at("triggers.tr.timing") shouldBe mapOf("before" to "after", "after" to "instead_of")
+            at("triggers.tr.for_each") shouldBe mapOf("before" to "row", "after" to "statement")
+            at("functions.f.security") shouldBe mapOf("after" to "definer")
+            at("functions.f.search_path") shouldBe mapOf("before" to "[public]", "after" to "[app, public]")
+            at("custom_types.t.kind") shouldBe mapOf("before" to "enum", "after" to "domain")
+            at("custom_types.t.values") shouldBe mapOf("before" to "[a]", "after" to "[a, b]")
+        }
+
+        test("column and table values use the short form of the comparison") {
+            val findings = SchemaCompareFindings.of(
+                tableDiff(
+                    TableDiff(
+                        name = "orders",
+                        columnsChanged = listOf(
+                            ColumnDiff(
+                                name = "qty",
+                                type = ValueChange(NeutralType.Integer, NeutralType.Text(maxLength = 254)),
+                                default = ValueChange(null, DefaultValue.FunctionCall("current_timestamp")),
+                                references = ValueChange(
+                                    null,
+                                    ReferenceDefinition("items", "id", onDelete = ReferentialAction.SET_NULL),
+                                ),
+                                generation = ValueChange(
+                                    ColumnGeneration.Identity(mode = IdentityMode.BY_DEFAULT, sequenceName = "s"),
+                                    null,
+                                ),
+                            ),
+                        ),
+                        primaryKey = ValueChange(listOf("id"), listOf("id", "qty")),
+                        metadata = ValueChange(null, TableMetadata(engine = "InnoDB")),
+                    ),
+                ),
+            )
+            fun at(path: String) = findings.single { it["path"] == path }
+            details(at("tables.orders.columns.qty.type")) shouldBe mapOf("before" to "integer", "after" to "text(254)")
+            at("tables.orders.columns.qty.type")["message"] shouldBe "type changed from integer to text(254)"
+            details(at("tables.orders.columns.qty.default")) shouldBe mapOf("after" to "current_timestamp()")
+            details(at("tables.orders.columns.qty.references")) shouldBe
+                mapOf("after" to "items.id (on_delete=set_null)")
+            details(at("tables.orders.columns.qty.generation")) shouldBe
+                mapOf("before" to "identity(mode=by_default,sequence=s)")
+            details(at("tables.orders.primary_key")) shouldBe mapOf("before" to "[id]", "after" to "[id, qty]")
+            details(at("tables.orders.metadata")) shouldBe mapOf("after" to "engine=InnoDB")
+        }
+
+        test("no finding carries the Kotlin form of an object") {
+            val kotlinForm = Regex("[A-Z][A-Za-z]+\\(|\\b(AFTER|BEFORE|INSERT|UPDATE|DEFINER|ENUM|ROW)\\b")
+            val findings = SchemaCompareFindings.of(
+                SchemaDiff(
+                    triggersChanged = listOf(
+                        TriggerDiff(name = "tr", timing = ValueChange(TriggerTiming.AFTER, TriggerTiming.BEFORE)),
+                    ),
+                    tablesChanged = listOf(
+                        TableDiff(
+                            name = "t",
+                            columnsChanged = listOf(
+                                ColumnDiff(name = "c", type = ValueChange(NeutralType.Decimal(10, 2), NeutralType.Float())),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            for (finding in findings) {
+                val values = details(finding).orEmpty().values + (finding["message"] as String)
+                values.forEach { kotlinForm.containsMatchIn(it) shouldBe false }
+            }
+        }
     }
 })

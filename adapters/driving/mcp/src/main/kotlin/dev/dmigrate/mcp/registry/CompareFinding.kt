@@ -1,5 +1,6 @@
 package dev.dmigrate.mcp.registry
 
+import dev.dmigrate.cli.commands.CompareValueText
 import dev.dmigrate.mcp.schema.SchemaFindingSeverity
 import dev.dmigrate.server.application.audit.SecretScrubber
 
@@ -42,13 +43,20 @@ internal object CompareFinding {
      * missing operand never lands as `"null"` or `""` in the wire
      * payload; if both sides are blank, `finding(...)` skips the
      * `details` slot entirely (additive/removal-style behaviour).
+     *
+     * Die Werte stehen so, wie das Schema-Dokument sie schreibt
+     * ([CompareValueText]: `after`, `[insert, update]`, `text(254)`) — nie
+     * als Kotlin-Darstellung eines Objekts (`AFTER`, `Text(maxLength=254)`).
      */
     fun beforeAfter(before: Any?, after: Any?): Map<String, String> {
         val result = mutableMapOf<String, String>()
-        before?.toString()?.takeIf { it.isNotBlank() }?.let { result["before"] = it }
-        after?.toString()?.takeIf { it.isNotBlank() }?.let { result["after"] = it }
+        CompareValueText.of(before)?.takeIf { it.isNotBlank() }?.let { result["before"] = it }
+        CompareValueText.of(after)?.takeIf { it.isNotBlank() }?.let { result["after"] = it }
         return result
     }
+
+    /** Ein Wert fuer den Meldungstext — in derselben Schreibweise wie [beforeAfter]. */
+    fun text(value: Any?): String = CompareValueText.of(value) ?: "null"
 
     // Additive changes are non-breaking by default — surface as info
     // so clients can filter the noise out of the warning channel.

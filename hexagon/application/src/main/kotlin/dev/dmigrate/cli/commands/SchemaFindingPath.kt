@@ -1,5 +1,7 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.model.IndexDefinition
+
 /**
  * Der Ort eines Vergleichsfunds — das **Pfad-Schema** von `schema compare`
  * (`spec/cli-spec.md`). Es gilt fuer die `path`-Werte der MCP-`findings` und
@@ -37,8 +39,22 @@ object SchemaFindingPath {
 
     fun column(table: String, column: String): String = "${table(table)}.columns.$column"
 
-    /** Ein Index unter seinem Namen — ein unbenannter unter seinen Schluesseln, kommagetrennt. */
+    /** Ein Index unter einem bereits gebildeten Abschnitt ([indexSegment]). */
     fun index(table: String, index: String): String = "${table(table)}.indices.$index"
+
+    /** Ein Index: unter seinem Namen, ein unbenannter unter [indexSegment]. */
+    fun index(table: String, index: IndexDefinition): String = index(table, indexSegment(index))
+
+    /**
+     * Der Abschnitt eines Index im Pfad — sein Name, bei einem unbenannten
+     * seine Schluessel kommagetrennt: Spaltennamen wortgleich, ein Ausdruck
+     * als Bezeichner-Kurzform ([IndexDefinition.keyLabels]: `lower(t.email)`
+     * wird `lower_t_email`), ohne Sortierrichtung und Praefixlaenge. So traegt
+     * der Abschnitt keinen Punkt, den der Ausdruck mitbraechte. Er ist ein
+     * Ort, keine Identitaet: zwei unbenannte Indizes mit denselben Schluesseln
+     * teilen ihn, ihre `details` trennen sie.
+     */
+    fun indexSegment(index: IndexDefinition): String = index.name ?: index.keyLabels.joinToString(",")
 
     fun constraint(table: String, constraint: String): String = "${table(table)}.constraints.$constraint"
 

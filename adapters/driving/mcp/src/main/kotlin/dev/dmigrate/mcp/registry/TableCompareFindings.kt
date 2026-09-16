@@ -5,12 +5,12 @@ import dev.dmigrate.cli.commands.SchemaFindingPath
 import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
-import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.mcp.registry.CompareFinding.added
 import dev.dmigrate.mcp.registry.CompareFinding.beforeAfter
 import dev.dmigrate.mcp.registry.CompareFinding.changed
 import dev.dmigrate.mcp.registry.CompareFinding.finding
 import dev.dmigrate.mcp.registry.CompareFinding.removed
+import dev.dmigrate.mcp.registry.CompareFinding.text
 import dev.dmigrate.mcp.schema.SchemaFindingSeverity
 
 /** Die Funde einer geaenderten Tabelle — ein Fund je Aenderung. */
@@ -51,7 +51,7 @@ internal object TableCompareFindings {
                     SchemaFindingSeverity.ERROR,
                     "TABLE_PRIMARY_KEY_CHANGED",
                     SchemaFindingPath.field(tablePath, "primary_key"),
-                    "primary key changed from ${it.before} to ${it.after}",
+                    "primary key changed from ${text(it.before)} to ${text(it.after)}",
                     beforeAfter(it.before, it.after),
                 ),
             )
@@ -61,12 +61,12 @@ internal object TableCompareFindings {
         // traegt (CompareSignature) — sonst stuende ein geaenderter CHECK
         // beidseitig gleich da. Die Kurzform ist nie leer, `details` fehlt nie.
         diff.indicesAdded.forEach {
-            add(added("TABLE_INDEX_ADDED", SchemaFindingPath.index(diff.name, indexKey(it)), after(CompareSignature.index(it))))
+            add(added("TABLE_INDEX_ADDED", SchemaFindingPath.index(diff.name, it), after(CompareSignature.index(it))))
         }
         diff.indicesRemoved.forEach {
             add(
                 removed(
-                    "TABLE_INDEX_REMOVED", SchemaFindingPath.index(diff.name, indexKey(it)),
+                    "TABLE_INDEX_REMOVED", SchemaFindingPath.index(diff.name, it),
                     before(CompareSignature.index(it)),
                 ),
             )
@@ -74,7 +74,7 @@ internal object TableCompareFindings {
         diff.indicesChanged.forEach {
             add(
                 changed(
-                    "TABLE_INDEX_CHANGED", SchemaFindingPath.index(diff.name, indexKey(it.before)),
+                    "TABLE_INDEX_CHANGED", SchemaFindingPath.index(diff.name, it.before),
                     beforeAfter(CompareSignature.index(it.before), CompareSignature.index(it.after)),
                 ),
             )
@@ -114,7 +114,7 @@ internal object TableCompareFindings {
                     SchemaFindingSeverity.INFO,
                     "TABLE_METADATA_CHANGED",
                     SchemaFindingPath.field(tablePath, "metadata"),
-                    "table metadata changed from ${it.before} to ${it.after}",
+                    "table metadata changed from ${text(it.before)} to ${text(it.after)}",
                     beforeAfter(it.before, it.after),
                 ),
             )
@@ -128,7 +128,7 @@ internal object TableCompareFindings {
                     SchemaFindingSeverity.ERROR,
                     "TABLE_COLUMN_TYPE_CHANGED",
                     SchemaFindingPath.field(colPath, "type"),
-                    "type changed from ${it.before} to ${it.after}",
+                    "type changed from ${text(it.before)} to ${text(it.after)}",
                     beforeAfter(it.before, it.after),
                 ),
             )
@@ -141,7 +141,7 @@ internal object TableCompareFindings {
                     SchemaFindingSeverity.WARNING,
                     "TABLE_COLUMN_DEFAULT_CHANGED",
                     SchemaFindingPath.field(colPath, "default"),
-                    "default changed from ${it.before} to ${it.after}",
+                    "default changed from ${text(it.before)} to ${text(it.after)}",
                     beforeAfter(it.before, it.after),
                 ),
             )
@@ -152,7 +152,7 @@ internal object TableCompareFindings {
                     SchemaFindingSeverity.WARNING,
                     "TABLE_COLUMN_REFERENCES_CHANGED",
                     SchemaFindingPath.field(colPath, "references"),
-                    "foreign-key references changed from ${it.before} to ${it.after}",
+                    "foreign-key references changed from ${text(it.before)} to ${text(it.after)}",
                     beforeAfter(it.before, it.after),
                 ),
             )
@@ -163,7 +163,7 @@ internal object TableCompareFindings {
                     SchemaFindingSeverity.WARNING,
                     "TABLE_COLUMN_GENERATION_CHANGED",
                     SchemaFindingPath.field(colPath, "generation"),
-                    "generation changed from ${it.before} to ${it.after}",
+                    "generation changed from ${text(it.before)} to ${text(it.after)}",
                     beforeAfter(it.before, it.after),
                 ),
             )
@@ -215,7 +215,4 @@ internal object TableCompareFindings {
     private fun before(signature: String): Map<String, String> = mapOf("before" to signature)
 
     private fun after(signature: String): Map<String, String> = mapOf("after" to signature)
-
-    /** Ein Index unter seinem Namen — ein unbenannter unter seinen Schluesseln. */
-    private fun indexKey(index: IndexDefinition): String = index.name ?: index.columns.joinToString(",")
 }

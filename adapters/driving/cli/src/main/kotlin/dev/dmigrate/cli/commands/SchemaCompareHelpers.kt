@@ -7,57 +7,10 @@ internal object SchemaCompareHelpers {
 
     // ── Canonical string representations ──────────────────────────
 
-    // Parametric/decision-bearing types stay here; parameterless ones go to
-    // [simpleNeutralTypeToString] to keep each dispatch under the complexity limit
-    // (mirrors the simpleNeutralType split in MigrationFingerprint/CanonicalPayload).
-    fun neutralTypeToString(type: NeutralType): String = when (type) {
-        is NeutralType.Identifier -> if (type.autoIncrement) "identifier(auto)" else "identifier"
-        is NeutralType.Text -> if (type.maxLength != null) "text(${type.maxLength})" else "text"
-        is NeutralType.Char -> "char(${type.length})"
-        is NeutralType.Float -> "float(${type.floatPrecision.name.lowercase()})"
-        is NeutralType.Decimal -> "decimal(${type.precision},${type.scale})"
-        is NeutralType.DateTime -> if (type.timezone) "datetime(tz)" else "datetime"
-        is NeutralType.Enum -> enumTypeToString(type)
-        is NeutralType.Array -> "array(${type.elementType})"
-        is NeutralType.Geometry -> geometryTypeToString(type)
-        else -> simpleNeutralTypeToString(type)
-    }
+    // Dieselben Formen wie in den `details` der MCP-Funde (CompareValueText).
+    fun neutralTypeToString(type: NeutralType): String = CompareValueText.type(type)
 
-    private fun simpleNeutralTypeToString(type: NeutralType): String = when (type) {
-        is NeutralType.Integer -> "integer"
-        is NeutralType.SmallInt -> "smallint"
-        is NeutralType.BigInteger -> "biginteger"
-        is NeutralType.BooleanType -> "boolean"
-        is NeutralType.Date -> "date"
-        is NeutralType.Time -> "time"
-        is NeutralType.Uuid -> "uuid"
-        is NeutralType.Json -> "json"
-        is NeutralType.Xml -> "xml"
-        is NeutralType.Binary -> "binary"
-        is NeutralType.Email -> "email"
-        is NeutralType.FullText -> "fulltext"
-        else -> error("simpleNeutralTypeToString called for a parametric NeutralType: $type")
-    }
-
-    private fun enumTypeToString(type: NeutralType.Enum): String = when {
-        type.refType != null -> "enum(ref:${type.refType})"
-        type.values != null -> "enum(${type.values!!.joinToString(",")})"
-        else -> "enum"
-    }
-
-    private fun geometryTypeToString(type: NeutralType.Geometry): String {
-        val gt = type.geometryType.schemaName
-        return if (type.srid != null) "geometry($gt,${type.srid})" else "geometry($gt)"
-    }
-
-    fun defaultValueToString(dv: DefaultValue?): String? = when (dv) {
-        null -> null
-        is DefaultValue.StringLiteral -> "\"${dv.value}\""
-        is DefaultValue.NumberLiteral -> dv.value.toString()
-        is DefaultValue.BooleanLiteral -> dv.value.toString()
-        is DefaultValue.FunctionCall -> "${dv.name}()"
-        is DefaultValue.SequenceNextVal -> "sequence_nextval(${dv.sequenceName})"
-    }
+    fun defaultValueToString(dv: DefaultValue?): String? = dv?.let(CompareValueText::default)
 
     // Dieselbe Kurzform wie in den MCP-Funden; sie traegt jedes Feld, das
     // der Vergleich wertet — sonst rendert ein geaenderter CHECK als
@@ -66,28 +19,9 @@ internal object SchemaCompareHelpers {
 
     fun constraintSignature(c: ConstraintDefinition): String = CompareSignature.constraint(c)
 
-    fun referenceToString(ref: ReferenceDefinition?): String? {
-        if (ref == null) return null
-        return buildString {
-            append("${ref.table}.${ref.column}")
-            val parts = mutableListOf<String>()
-            ref.onDelete?.let { parts += "onDelete=${it.name.lowercase()}" }
-            ref.onUpdate?.let { parts += "onUpdate=${it.name.lowercase()}" }
-            if (parts.isNotEmpty()) append(" (${parts.joinToString(", ")})")
-        }
-    }
+    fun referenceToString(ref: ReferenceDefinition?): String? = ref?.let(CompareValueText::reference)
 
-    fun generationToString(generation: ColumnGeneration?): String? = when (generation) {
-        null -> null
-        is ColumnGeneration.Identity -> buildString {
-            append("identity(mode=${generation.mode.name.lowercase()}")
-            generation.sequenceName?.let { append(",sequence=$it") }
-            if (generation.legacySerialSyntax) append(",legacy_serial_syntax=true")
-            append(")")
-        }
-        is ColumnGeneration.Computed ->
-            "computed(${generation.expression}${if (generation.stored) ", stored" else ""})"
-    }
+    fun generationToString(generation: ColumnGeneration?): String? = generation?.let(CompareValueText::generation)
 
     // ── Projection: SchemaDiff → DiffView ─────────────────────────
 
@@ -190,7 +124,7 @@ internal object SchemaCompareHelpers {
 
     private fun customTypeChanges(diff: CustomTypeDiff): List<String> {
         val changes = mutableListOf<String>()
-        diff.kind?.let { changes += "kind: ${it.before} -> ${it.after}" }
+        diff.kind?.let { changes += "kind: ${CompareValueText.of(it.before)} -> ${CompareValueText.of(it.after)}" }
         diff.values?.let { changes += "values: [${it.before.joinToString(", ")}] -> [${it.after.joinToString(", ")}]" }
         diff.baseType?.let { changes += "baseType: ${it.before} -> ${it.after}" }
         diff.precision?.let { changes += "precision: ${it.before} -> ${it.after}" }

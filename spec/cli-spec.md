@@ -847,10 +847,11 @@ und die Objektnamen, mit Punkten verbunden. Es ist dasselbe Vokabular, das
 ```
 pfad        := "name" | "version" | tabelle | objekt
 tabelle     := "tables." NAME [ "." ( "primary_key" | "metadata" )
-                              | ".columns." NAME [ "." spaltenfeld [ ".expression" ] ]
+                              | ".columns." NAME [ "." spaltenfeld ]
                               | ".indices." INDEX
                               | ".constraints." NAME ]
-spaltenfeld := "type" | "required" | "unique" | "default" | "references" | "generation"
+spaltenfeld := "type" | "required" | "unique" | "default" | "references"
+             | "generation" [ ".expression" ]
 objekt      := abschnitt "." NAME [ "." feld ]
 abschnitt   := "views" | "sequences" | "custom_types"
              | "functions" | "procedures" | "triggers"
@@ -874,7 +875,14 @@ abschnitt   := "views" | "sequences" | "custom_types"
   Praefix.
 - `NAME` ist der Objektname unveraendert; ein Punkt darin wird nicht maskiert.
   `INDEX` ist der Indexname oder, bei einem unbenannten Index, seine Schluessel
-  kommagetrennt.
+  kommagetrennt: Spaltennamen unveraendert, ein Ausdrucks-Schluessel als
+  Bezeichner-Kurzform — jede Folge anderer Zeichen als Buchstaben, Ziffern und
+  `_` wird zu einem `_` (am Rand entfaellt sie), auf 30 Zeichen gekuerzt
+  (`lower(t.email)` wird `lower_t_email`) —, ohne Sortierrichtung und
+  Praefixlaenge. Der Abschnitt
+  ist ein Ort, keine Identitaet: zwei unbenannte Indizes mit denselben
+  Schluesseln teilen ihn; ihre `details` unterscheiden sie.
+- `.expression` folgt nur auf `generation` (der Ort, den `W137` nennt).
 
 **Exit-Codes**:
 - `0`: Schemas identisch (keine Unterschiede; auch bei operandseitigen Warnungen wie `W116`)

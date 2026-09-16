@@ -33,6 +33,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zerlegten Funde tragen ebenfalls `before`/`after`; ohne Werte bleiben lange
   Ruempfe und strukturierte Felder.
 
+- **Die Werte in den `details` der `schema_compare`-Funde stehen in der
+  Schreibweise des Schema-Dokuments.** Bis dahin trugen sie die interne
+  Darstellung (`AFTER`, `[INSERT, UPDATE]`, `ENUM`, `DEFINER`,
+  `Text(maxLength=254)`, `Identity(mode=BY_DEFAULT, …)`). Jetzt: `after`,
+  `[insert, update]`, `enum`, `definer`, `text(254)`,
+  `identity(mode=by_default)` — dieselben Kurzformen wie im Bericht von
+  `schema compare`; auch die Meldungstexte. **Fuer MCP-Abnehmer ein
+  Vertragswechsel**; das Format steht in `spec/mcp-server.md`. Im Bericht von
+  `schema compare` heissen die Aktionen eines Spalten-Fremdschluessels jetzt
+  `on_delete=`/`on_update=` (vorher `onDelete=`/`onUpdate=`) wie in der
+  Kurzform eines Constraints, und die Art eines geaenderten
+  benutzerdefinierten Typs steht klein (`kind: enum -> domain`).
+
+- **Ein unbenannter Index heisst im Fund-Pfad nach seinen Schluesseln ohne
+  Punkt.** Ein Ausdrucks-Schluessel stand dort bisher roh und mit Praefix
+  (`tables.t.indices.expr:lower(t.email) DESC`) — samt Punkt, der das
+  Pfad-Schema brach. Jetzt steht er als Bezeichner-Kurzform
+  (`tables.t.indices.lower_t_email`), Spaltennamen unveraendert, ohne
+  Sortierrichtung und Praefixlaenge.
+
 ### Fixed
 
 - **`schema compare` setzt weitere Dialekt-Schreibweisen gleich.** Klammern um

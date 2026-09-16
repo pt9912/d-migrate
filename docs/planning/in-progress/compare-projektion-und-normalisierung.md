@@ -940,6 +940,37 @@ Zielprojektion gilt nur deren Erzeugungs-Projektion, sonst die des
 Vergleichs, sonst keine); die KDoc sagt das jetzt. `spec/cli-spec.md`
 „hinter … einer Klammer" heisst jetzt „hinter `)`, `]`".
 
+**E — MCP-`details` in der Schreibweise des Dokuments (Review L4).** Die
+Werte gingen durch Kotlins `toString()` (`AFTER`, `[INSERT, UPDATE]`, `ENUM`,
+`DEFINER`, `Text(maxLength=254)`). Gebaut: `CompareValueText`
+(`:hexagon:application`) — Aufzaehlungswerte klein wie im Dokument, Listen als
+`[a, b]` (Trigger-Ereignisse in Dokument-Reihenfolge), die strukturierten
+Spaltenwerte in der Kurzform, die der CLI-Bericht schon trug. Die CLI
+delegiert ihre bisherigen Helfer dorthin; **dabei angeglichen:** die Aktionen
+eines Spalten-Fremdschluessels heissen im CLI-Bericht jetzt `on_delete=`
+(vorher `onDelete=`, anders als die Constraint-Kurzform), und `kind:` eines
+geaenderten Typs steht klein. Die Meldungstexte der MCP-Funde nutzen dieselben
+Formen. Format in `spec/mcp-server.md`. Tests: `CompareValueTextTest`, drei
+neue Faelle in `SchemaCompareFindingDetailsTest` (darunter: kein Fund traegt
+eine Kotlin-Darstellung).
+
+**F — Pfad-Grammatik (Review L5).** Ein unbenannter Index stand im Pfad mit
+`IndexColumn.toString()` — `expr:`-Praefix, rohes SQL mit Punkt, ` DESC`,
+`(n)` —, waehrend die Spec „Schluessel kommagetrennt" sagte; der Punkt brach
+das Muster aus `SchemaCompareFindingPathTest`. Festgelegt (Code und Spec):
+der Abschnitt ist `IndexDefinition.keyLabels` kommagetrennt — Spaltennamen
+wortgleich, ein Ausdruck als Bezeichner-Kurzform (`lower_t_email`), ohne
+Richtung und Praefix; gebaut in `SchemaFindingPath.indexSegment`. Ein Ort,
+keine Identitaet: zwei unbenannte Indizes mit denselben Schluesseln teilen
+ihn, `details` trennt sie. `.expression` steht in der Grammatik nur noch unter
+`generation`. Test mit Ausdrucks-Schluessel im nicht-trivialen Vergleich.
+
+**Sabotage E/F** (`make docker-test MODULES=":adapters:driving:mcp"`, ein
+Lauf): `beforeAfter` wieder ueber `toString()` → drei Faelle der
+Dokument-Schreibweise rot; Index-Abschnitt wieder ueber
+`columns.joinToString` → „every path follows the one schema" und der
+Ausdrucks-Fall rot (5 von 1226); Ruecknahme bestaetigt.
+
 **Sabotage-Protokoll A–D, H** (`make docker-test MODULES=":hexagon:core"`,
 fuenf Laeufe mit disjunkten Erwartungen; nach jedem Lauf Ruecknahme per
 Archiv und `diff -r` bestaetigt; danach gruen, 1468 Tests):

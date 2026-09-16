@@ -29,6 +29,7 @@ import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexSortDirection
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ProcedureDefinition
 import dev.dmigrate.core.model.ReferenceDefinition
@@ -56,9 +57,10 @@ import io.kotest.matchers.shouldBe
 class SchemaCompareFindingPathTest : FunSpec({
 
     val name = "[^.]+"
-    val columnFields = "type|required|unique|default|references|generation"
-    val tablePath = "tables\\.$name(\\.primary_key|\\.metadata|\\.columns\\.$name(\\.($columnFields)(\\.expression)?)?" +
-        "|\\.indices\\.[^.]+|\\.constraints\\.$name)?"
+    // `.expression` gibt es nur unter `generation` (W137).
+    val columnFields = "type|required|unique|default|references|generation(\\.expression)?"
+    val tablePath = "tables\\.$name(\\.primary_key|\\.metadata|\\.columns\\.$name(\\.($columnFields))?" +
+        "|\\.indices\\.$name|\\.constraints\\.$name)?"
     val sectionFields = mapOf(
         "views" to "columns|query|materialized|refresh|source_dialect",
         "sequences" to "start|increment|min_value|max_value|cycle|cache",
@@ -78,6 +80,14 @@ class SchemaCompareFindingPathTest : FunSpec({
     fun column(type: NeutralType = NeutralType.Integer) = ColumnDefinition(type = type)
     val index = IndexDefinition(name = "ix_status", columns = listOf(IndexColumn("status")))
     val unnamedIndex = IndexDefinition(columns = listOf(IndexColumn("a"), IndexColumn("b")))
+
+    /** Ein unbenannter Index ueber einem Ausdruck mit Punkt, Klammern, Richtung und Praefix. */
+    val expressionIndex = IndexDefinition(
+        columns = listOf(
+            IndexColumn.expression("lower(t.email)", IndexSortDirection.DESC),
+            IndexColumn("code", prefixLength = 10),
+        ),
+    )
     val check = ConstraintDefinition(name = "ck_qty", type = ConstraintType.CHECK, expression = "qty > 0")
     val view = ViewDefinition(query = "SELECT 1")
     val sequence = SequenceDefinition()
@@ -108,7 +118,7 @@ class SchemaCompareFindingPathTest : FunSpec({
                     ColumnDiff(name = "status", required = ValueChange(true, false), unique = ValueChange(true, false)),
                 ),
                 primaryKey = ValueChange(listOf("id"), listOf("id", "qty")),
-                indicesAdded = listOf(index),
+                indicesAdded = listOf(index, expressionIndex),
                 indicesRemoved = listOf(unnamedIndex),
                 indicesChanged = listOf(ValueChange(index, index.copy(unique = true))),
                 constraintsAdded = listOf(check.copy(name = "ck_new")),
@@ -218,6 +228,18 @@ class SchemaCompareFindingPathTest : FunSpec({
 
     test("an unnamed index is addressed by its keys") {
         findings.single { it["code"] == "TABLE_INDEX_REMOVED" }["path"] shouldBe "tables.orders.indices.a,b"
+    }
+
+    test("an expression key appears as its identifier short form, without dot, direction or prefix") {
+        val added = findings.filter { it["code"] == "TABLE_INDEX_ADDED" }.map { it["path"] }
+        added shouldContainAll listOf("tables.orders.indices.ix_status", "tables.orders.indices.lower_t_email,code")
+        added.forEach { grammar.matches(it as String) shouldBe true }
+    }
+
+    test("`.expression` only follows `generation`") {
+        grammar.matches("tables.t.columns.c.generation.expression") shouldBe true
+        grammar.matches("tables.t.columns.c.default.expression") shouldBe false
+        grammar.matches("tables.t.columns.c.type.expression") shouldBe false
     }
 })
 

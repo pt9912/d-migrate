@@ -247,7 +247,22 @@ optional `details` mit `before` und/oder `after`:
   und Constraints ergeben einen Fund am Objekt.
 - Der `W137`-Fund traegt als `path` den Ort, den seine Meldung nennt.
 - `details` nennt die Werte beider Seiten; fehlt eine Seite, war der Wert dort
-  nicht gesetzt. Indizes und Constraints stehen darin als ihre Kurzform, die
+  nicht gesetzt. Die Werte stehen in der **Schreibweise des Schema-Dokuments**
+  ([Schema-Referenz](schema-reference.md)), nie in einer internen Darstellung:
+  Text und Zahlen unveraendert, Wahrheitswerte als `true`/`false`,
+  Aufzaehlungswerte klein wie im Dokument (`after`, `instead_of`, `definer`,
+  `enum`, `row`), Listen als `[a, b]` — die Ereignisse eines Triggers in der
+  Reihenfolge des Dokuments (`[insert, update]`). Die strukturierten Werte
+  einer Spalte und einer Tabelle stehen als Kurzform: der Typ als
+  `integer`, `text(254)`, `decimal(10,2)`, `float(double)`, `datetime(tz)`,
+  `char(3)`, `identifier(auto)`, `enum(ref:order_status)`, `enum(a,b)`,
+  `array(text)`, `geometry(point,4326)`; der Default als `"x"`, `0`, `true`,
+  `current_timestamp()`, `sequence_nextval(s)`; der Fremdschluessel als
+  `orders.id (on_delete=cascade, on_update=no_action)`; die Erzeugung als
+  `identity(mode=by_default,sequence=s)` oder `computed(a * b, stored)`; die
+  Tabellen-Metadaten als `engine=InnoDB, without_rowid=true`; der
+  Primaerschluessel als Liste. Dieselben Formen stehen im Meldungstext.
+  Indizes und Constraints stehen darin als ihre Kurzform, die
   jedes verglichene Feld traegt (`ck_qty (check: qty > 0)`) — bei einer
   Aenderung beide Seiten, bei „hinzugefuegt" nur `after`, bei „entfernt" nur
   `before`. **Ohne** Werte bleiben der Rumpf einer Sicht (`query`), einer
