@@ -7,8 +7,17 @@
 SHELL := bash
 .SHELLFLAGS := -o pipefail -c
 
-GRADLE ?= ./gradlew
 DOCKER ?= docker
+
+# Die Gradle-Version hat genau eine Quelle: das `FROM` der `deps`-Stage im
+# Dockerfile (dort begruendet). Einen Wrapper gibt es nicht; gebaut wird im
+# Container. Die Nebendateien (docker/native-image.Dockerfile) bekommen das
+# Image von hier. Leer heisst: die Zeile hat ihre Form verloren — dann lieber
+# laut scheitern als mit einem anderen Gradle bauen.
+GRADLE_IMAGE := $(shell sed -n 's/^FROM \(gradle:[^ ]*\) AS deps$$/\1/p' Dockerfile)
+ifeq ($(strip $(GRADLE_IMAGE)),)
+$(error GRADLE_IMAGE: keine Zeile `FROM gradle:<tag> AS deps` im Dockerfile)
+endif
 
 IMAGE ?= d-migrate
 IMAGE_TAG ?= dev
@@ -18,7 +27,6 @@ DOCKER_COVERAGE_MODULES_HTML_IMAGE ?= $(IMAGE):coverage-modules-html
 RELEASE_ASSETS_IMAGE ?= $(IMAGE):release-assets
 RELEASE_VERSION ?= $(DMIGRATE_VERSION)
 CLI_PROJECT ?= :adapters:driving:cli
-CLI_BIN ?= adapters/driving/cli/build/install/d-migrate/bin/d-migrate
 ARGS ?= --help
 INTEGRATION_TASKS ?=
 CI_BUILD_TASKS ?= build koverVerify --no-build-cache
@@ -70,8 +78,8 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 help:
 	@printf '%s\n' \
 		'Targets:' \
-		'  make dev              Install the local CLI distribution and run --help' \
-		'  make run ARGS="..."   Run the CLI through Gradle with custom arguments' \
+		'  make dev              Build the runtime Docker image and run --help' \
+		'  make run ARGS="..."   Run the CLI from the runtime Docker image (cwd mounted at /work)' \
 		'  make integration      Run Docker-backed integration tests' \
 		'  make docs-check       Verify Markdown links and coverage docs' \
 		'  make solid-suppression-gate  Fail on SOLID detekt suppressions in production Kotlin sources' \
@@ -97,7 +105,7 @@ help:
 		'  make docker-gates     Run Docker build, coverage and smoke gates' \
 		'  make docker-full-gates Run docker-gates plus Docker-backed integration tests' \
 		'  make golden-update    Regenerate pinned tool-schema golden snapshots via Docker' \
-		'  make clean            Run Gradle clean' \
+		'  make clean            Remove local Gradle outputs (build/, .gradle/, .kotlin/) left by an IDE import' \
 		'' \
 		'BI-Demo (examples/bi-demo, Spec: docs/planning/in-progress/bi-demo-compose.md):' \
 		'  make bi-demo-pull     Pull pinned images (postgres + seaweed + aws-cli + metabase)' \
@@ -133,7 +141,7 @@ help:
 		'  make mcp-e2e-purge    Stop containers and remove the named volume' \
 		'' \
 		'Variables:' \
-		'  GRADLE=./gradlew DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
+		'  DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
 		'  DOCKER_OCI_IMAGE=dmigrate/d-migrate:latest' \
 		'  DOCKER_COVERAGE_MODULES_HTML_IMAGE=d-migrate:coverage-modules-html RELEASE_ASSETS_IMAGE=d-migrate:release-assets' \
 		'  RELEASE_VERSION=0.9.7' \
@@ -143,12 +151,14 @@ help:
 		'  PERF_GATE=true (docker-perf: turn baseline budget into a hard gate)' \
 		'  DOCKER_TAG=d-migrate:dev-targeted'
 
-dev:
-	$(GRADLE) $(CLI_PROJECT):installDist
-	$(CLI_BIN) --help
+dev: docker-build
+	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --help
 
+# Baut nicht selbst: `make docker-build` einmal vorweg, dann beliebig oft
+# `make run ARGS=...`. Das Arbeitsverzeichnis liegt unter /work (WORKDIR des
+# Runtime-Images), relative Pfade in ARGS gelten also wie lokal.
 run:
-	$(GRADLE) $(CLI_PROJECT):run --args="$(ARGS)"
+	$(DOCKER) run --rm -v "$(CURDIR):/work" $(IMAGE):$(IMAGE_TAG) $(ARGS)
 
 docker-coverage-modules-html:
 	$(DOCKER) build --target docker-coverage-modules-html \
@@ -388,8 +398,12 @@ docker-smoke: docker-build
 	# Pflicht fuer niemanden, der nur das Image zieht.
 	$(DOCKER) run --rm --entrypoint sh $(IMAGE):$(IMAGE_TAG) -c 'test -s /opt/d-migrate/THIRD-PARTY-NOTICES.md'
 
+# Gebaut wird im Container; im Arbeitsbaum entstehen Gradle-Ausgaben nur durch
+# einen IDE-Import mit lokalem Gradle. `build/` ist ueberall gitignored, ein
+# solches Verzeichnis ist also immer Ausgabe.
 clean:
-	$(GRADLE) clean
+	rm -rf .gradle .kotlin
+	find . -path ./node_modules -prune -o -path ./.git -prune -o -type d -name build -prune -exec rm -rf {} +
 
 # ── BI-Demo (examples/bi-demo) ─────────────────────────────────────
 #

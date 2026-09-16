@@ -115,8 +115,9 @@ make docker-perf PERF_GATE=true
    on the spec's `companion object`.
 5. Call `PerfReport.write(hotpath = "<stable-slug>", sample, smokeMaxMs, baselineMs)`.
 6. Verify the Tag-filter gegenlauf locally:
-   `./gradlew :<module>:test -Dkotest.tags=perf` runs only the spec,
-   `./gradlew :<module>:test -Dkotest.tags=!perf` runs everything except it.
+   `make docker-perf MODULES=":<module>"` runs only the spec,
+   `make docker-test MODULES=":<module>"` runs everything except it
+   (the default test task filters `!perf`).
 
 `<stable-slug>` must match the `kebab-case` form accepted by
 `PerfReport.write` (regex `[a-z0-9][a-z0-9-]*[a-z0-9]`) so trend

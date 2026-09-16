@@ -39,6 +39,7 @@ native-build: ## Native: das Binary (volle CLI, MainKt) im Container bauen.
 	# angehaengt wurde, lief `make native-probe` dadurch gegen das Agent-Image (mit dessen
 	# .d-migrate.yaml) statt gegen das Build-Image — der Messlauf war unbrauchbar.
 	$(DOCKER) build -f docker/native-image.Dockerfile --target native-build \
+	  --build-arg GRADLE_IMAGE=$(GRADLE_IMAGE) \
 	  --build-arg NATIVE_MISSING_REG_MODE=$(NATIVE_MISSING_REG_MODE) \
 	  --build-arg NATIVE_MAX_RAM_PERCENTAGE=$(NATIVE_MAX_RAM_PERCENTAGE) \
 	  --build-arg NATIVE_PARALLELISM=$(NATIVE_PARALLELISM) \
@@ -57,6 +58,7 @@ native-runtime-build: ## Native: lauffaehiges Runtime-Image bauen (Entrypoint = 
 	# --target native-runtime baut die lauffaehige Stage (Entrypoint = Binary), NICHT die
 	# cat-basierte native-build-Stage. Das Binary ist die volle CLI (MainKt).
 	$(DOCKER) build -f docker/native-image.Dockerfile --target native-runtime \
+	  --build-arg GRADLE_IMAGE=$(GRADLE_IMAGE) \
 	  --build-arg NATIVE_MAX_RAM_PERCENTAGE=$(NATIVE_MAX_RAM_PERCENTAGE) \
 	  --build-arg NATIVE_PARALLELISM=$(NATIVE_PARALLELISM) \
 	  -t $(NATIVE_RUNTIME_TAG) .
@@ -75,6 +77,7 @@ NATIVE_AGENT_OUT ?= adapters/driving/cli/src/main/resources/META-INF/native-imag
 .PHONY: native-agent
 native-agent: ## Native: Reachability-Metadaten per Tracing-Agent erheben (Phase F.2).
 	$(DOCKER) build -f docker/native-image.Dockerfile --target native-agent \
+	  --build-arg GRADLE_IMAGE=$(GRADLE_IMAGE) \
 	  --build-arg NATIVE_MAX_RAM_PERCENTAGE=$(NATIVE_MAX_RAM_PERCENTAGE) \
 	  --build-arg NATIVE_PARALLELISM=$(NATIVE_PARALLELISM) \
 	  -t $(NATIVE_IMAGE_TAG)-agent .

@@ -62,7 +62,7 @@ private val PerfTag = NamedTag("perf")
  * ```
  * make docker-perf
  * # or
- * ./gradlew :hexagon:application:test -Dkotest.tags=perf
+ * make docker-perf MODULES=":hexagon:application"
  * ```
  */
 class SchemaMigrateRenderPipelinePerfSpec : FunSpec({

@@ -2320,8 +2320,8 @@ Für Golden-Master-Tests:
 Bei gewollten DDL-Änderungen:
 
 ```bash
-# Golden Masters neu generieren
-./gradlew :adapters:driven:driver-common:updateGoldenMasters
+# Golden Masters neu generieren: je Fixture und Dialekt ueber die CLI
+make run ARGS="schema generate --source <fixture>.yaml --target <dialekt>"
 
 # Diff prüfen
 git diff adapters/driven/formats/src/test/resources/fixtures/ddl/

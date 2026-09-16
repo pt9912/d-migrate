@@ -141,21 +141,14 @@ deshalb direkter Docker-Aufruf statt `make docker-test` — letzteres
 nutzt den Cache):
 
 ```bash
-docker run --rm \
-  -u "$(id -u):$(id -g)" \
-  -e HOME=/tmp/home \
-  -e GRADLE_USER_HOME=/tmp/gradle \
-  -v "$(pwd):/src" \
-  -w /src \
-  --entrypoint /bin/sh \
-  eclipse-temurin:21-jdk-noble \
-  -c 'mkdir -p "$HOME" "$GRADLE_USER_HOME" && ./gradlew --no-daemon --no-build-cache --rerun-tasks build'
+docker build --no-cache --target build \
+  --build-arg GRADLE_TASKS="build --no-build-cache --rerun-tasks" \
+  -t d-migrate:fresh-test .
 ```
 
-Der Lauf verwendet bewusst die aktuelle Host-UID/GID, damit im
-gemounteten Workspace keine root-owned Build-Artefakte entstehen.
-`HOME` und `GRADLE_USER_HOME` werden explizit auf beschreibbare
-Temp-Pfade im Container gesetzt.
+`--no-cache` umgeht den Docker-Layer-Cache, `--no-build-cache` und
+`--rerun-tasks` den Gradle-Build-Cache. Der Lauf bleibt im Container; im
+Arbeitsbaum entstehen keine Build-Artefakte.
 
 ### 3.2 Lokaler Preflight der Release-Assets
 

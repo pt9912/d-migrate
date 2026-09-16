@@ -59,15 +59,12 @@ jobs:
 
     defaults:
       run:
-        # Auch auf Windows (Git-Bash). Haelt die Steps ueber alle drei Legs identisch und laesst
-        # ./gradlew (das Shell-Skript) statt gradlew.bat laufen.
+        # Auch auf Windows (Git-Bash). Haelt die Steps ueber alle Legs identisch und laesst
+        # `gradle` (das Shell-Skript) statt gradle.bat laufen.
         shell: bash
 
-    # Der direkte ./gradlew-Aufruf (nicht über Docker) braucht den bewussten Override des
-    # Local-Gradle-Guards; native-image kann nicht im Docker-Build-Image (JDK 21 ohne GraalVM) laufen.
-    env:
-      DMIGRATE_ALLOW_LOCAL_GRADLE: '1'
-
+    # Gradle laeuft hier direkt auf dem Runner, nicht im Docker-Build-Image: native-image braucht
+    # GraalVM, und das Build-Image hat nur JDK 21.
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -96,6 +93,26 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      # Gradle-Version aus der einzigen Quelle lesen: dem `FROM` der `deps`-Stage im
+      # Dockerfile (dort begruendet). Einen Wrapper gibt es nicht. `tr -d '\r'`, weil der
+      # Windows-Checkout CRLF liefern kann und das verankerte Muster sonst nichts trifft.
+      - name: Gradle-Version aus dem Dockerfile lesen
+        id: gradle-version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(tr -d '\r' < Dockerfile | sed -n 's/^FROM gradle:\([0-9][0-9.]*\)-jdk[0-9]* AS deps$/\1/p')
+          if [ -z "${version}" ]; then
+            echo "::error file=Dockerfile::keine Zeile 'FROM gradle:<version>-jdk<n> AS deps'"
+            exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          gradle-version: ${{ steps.gradle-version.outputs.version }}
+
       - name: Native compile
         id: compile
         # Baut die volle CLI (MainKt). native-image ist rechenintensiv (Linux ~10 min); das
@@ -104,7 +121,7 @@ jobs:
           set -o pipefail
 
           start=$(date +%s)
-          ./gradlew --no-daemon :adapters:driving:cli:nativeCompile 2>&1 | tee native-build.log
+          gradle --no-daemon :adapters:driving:cli:nativeCompile 2>&1 | tee native-build.log
           status=$?
           end=$(date +%s)
           echo "build_seconds=$(( end - start ))" >> "${GITHUB_OUTPUT}"

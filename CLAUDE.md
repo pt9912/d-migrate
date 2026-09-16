@@ -6,7 +6,8 @@ Doku ergibt. Verbindliche Doku-, Spec-, ADR- und Planning-Regeln stehen
 
 ## Bauen und Testen
 
-Gebaut und getestet wird **im Container**, nicht lokal per `./gradlew`. Die
+Gebaut und getestet wird **im Container**; einen Gradle-Wrapper gibt es nicht. Die
+Gradle-Version steht allein im `FROM` der `deps`-Stage des `Dockerfile`. Die
 Einstiegspunkte stehen in `make help`; die wichtigsten:
 
 ```

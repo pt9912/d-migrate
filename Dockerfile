@@ -4,7 +4,7 @@
 # d-migrate — Dockerfile for building and testing the project
 #
 # Usage:
-#   Build image (runs `./gradlew build`, which includes tests):
+#   Build image (runs `gradle build`, which includes tests):
 #     docker build -t d-migrate:dev .
 #
 #   Build image, skipping tests (faster, assembly only):
@@ -51,12 +51,18 @@
 # ---- Stage: dependency warmup ---------------------------------------------
 # Copies only Gradle metadata first so dependency resolution can be cached
 # independently from source code changes.
+#
+# Dieses `FROM` ist die EINZIGE Quelle der Gradle-Version im Repo. Es gibt keinen
+# Wrapper; `native-image.yml`, `dependency-submission.yml` und
+# `docker/native-image.Dockerfile` (ueber `make`) lesen die Version aus genau
+# dieser Zeile. Form und Stage-Name deshalb nicht aendern, ohne die Leser
+# mitzuziehen (`GRADLE_IMAGE` in `Makefile`, Schritt „Gradle-Version" in beiden
+# Workflows).
 FROM gradle:8.14-jdk21 AS deps
 
 WORKDIR /src
 
 COPY --chown=gradle:gradle settings.gradle.kts build.gradle.kts gradle.properties ./
-COPY --chown=gradle:gradle gradle/ gradle/
 # The following per-file COPY block is intentionally verbose so Docker can
 # cache dependency resolution independently from source changes. If the build
 # environment reliably supports `COPY --parents`, these entries can later be

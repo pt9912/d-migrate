@@ -94,8 +94,11 @@ Wichtig:
 
 ### Voraussetzungen
 
-- **JDK 21** oder neuer
-- **Git**
+- **Docker**
+- **Git** und **make**
+
+Ein lokales JDK oder Gradle ist nicht nötig: gebaut und getestet wird im
+Container, und das Repository enthält keinen Gradle-Wrapper.
 
 Repository klonen:
 
@@ -107,10 +110,21 @@ cd d-migrate
 ### Projekt bauen
 
 ```bash
-./gradlew build
+# Runtime-Image d-migrate:dev bauen (ohne Tests)
+make docker-build
+
+# Tests, Detekt und Coverage im Container (MODULES grenzt auf Module ein)
+make docker-check MODULES=":hexagon:core"
+
+# CLI aus dem gebauten Image starten; das aktuelle Verzeichnis liegt unter /work
+make run ARGS="schema validate --source mein-schema.yaml"
 ```
 
-Damit werden alle Module kompiliert und ihre Tests ausgeführt:
+`make help` listet alle Einstiegspunkte. Wer das Projekt in eine IDE importiert,
+braucht dafür ein lokal installiertes Gradle in der Version, die die `deps`-Stage
+des [`Dockerfile`](../../Dockerfile) nennt.
+
+Der Build umfasst diese Module:
 
 - `hexagon:core` — neutrales Schemamodell, Parser, Validator
 - `hexagon:ports` — Port-Interfaces (hexagonale Architektur)
@@ -122,6 +136,11 @@ Damit werden alle Module kompiliert und ihre Tests ausgeführt:
 - `adapters:driving:cli` — Clikt-basiertes Command-Line-Interface
 
 ## Erstes Schema erstellen
+
+Die folgenden Beispiele rufen `d-migrate` direkt auf. Je nach Installationsweg
+steht dafür `./d-migrate-<version>/bin/d-migrate` (Option A),
+`docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest` (Option B)
+oder `make run ARGS="…"` (Option C).
 
 Erstelle eine Datei `mein-schema.yaml` mit folgendem Inhalt:
 
@@ -198,7 +217,7 @@ tables:
 Führe die Validierung mit dem CLI aus:
 
 ```bash
-./gradlew :adapters:driving:cli:run --args="schema validate --source mein-schema.yaml"
+d-migrate schema validate --source mein-schema.yaml
 ```
 
 ### Beispiel-Ausgabe (valides Schema)
@@ -244,10 +263,10 @@ Operanden unterstuetzt (file/file, file/db, db/db).
 
 ```bash
 # Menschenlesbare Diff-Ausgabe
-./gradlew :adapters:driving:cli:run --args="schema compare --source mein-schema.yaml --target mein-schema-v2.yaml"
+d-migrate schema compare --source mein-schema.yaml --target mein-schema-v2.yaml
 
 # Strukturiert nach JSON schreiben
-./gradlew :adapters:driving:cli:run --args="--output-format json schema compare --source mein-schema.yaml --target mein-schema-v2.yaml --output diff.json"
+d-migrate --output-format json schema compare --source mein-schema.yaml --target mein-schema-v2.yaml --output diff.json
 ```
 
 Exit-Codes:
@@ -266,35 +285,35 @@ Nach erfolgreicher Validierung kann DDL für eine Zieldatenbank erzeugt werden:
 
 ```bash
 # PostgreSQL
-./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target postgresql"
+d-migrate schema generate --source mein-schema.yaml --target postgresql
 
 # MySQL
-./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target mysql"
+d-migrate schema generate --source mein-schema.yaml --target mysql
 
 # SQLite
-./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target sqlite"
+d-migrate schema generate --source mein-schema.yaml --target sqlite
 
 # SQL Server
-./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target mssql"
+d-migrate schema generate --source mein-schema.yaml --target mssql
 ```
 
 ### DDL in Datei speichern
 
 ```bash
-./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target postgresql --output schema.sql"
+d-migrate schema generate --source mein-schema.yaml --target postgresql --output schema.sql
 ```
 
 Erzeugt automatisch `schema.sql` (DDL) und `schema.report.yaml` (Transformations-Report).
 Den Report-Pfad explizit überschreiben:
 
 ```bash
-./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target postgresql --output schema.sql --report mein-report.yaml"
+d-migrate schema generate --source mein-schema.yaml --target postgresql --output schema.sql --report mein-report.yaml
 ```
 
 ### Rollback-DDL generieren
 
 ```bash
-./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target mysql --output schema.sql --generate-rollback"
+d-migrate schema generate --source mein-schema.yaml --target mysql --output schema.sql --generate-rollback
 ```
 
 Erzeugt zusätzlich `schema.rollback.sql` mit den inversen DDL-Statements (DROP TABLE, DROP INDEX, etc.).
@@ -557,7 +576,7 @@ die als Erstes veraltet:
 ### Beispiel: JSON-Ausgabe
 
 ```bash
-./gradlew :adapters:driving:cli:run --args="--output-format json schema validate --source mein-schema.yaml"
+d-migrate --output-format json schema validate --source mein-schema.yaml
 ```
 
 ## MySQL-Sequence-Emulation: Reverse und Compare

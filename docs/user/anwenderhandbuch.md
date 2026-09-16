@@ -9,7 +9,7 @@ Befehls- und Optionsreferenz finden Sie im [Anhang](#8-anhang).
 
 > **Aufrufkonvention:** Die Beispiele verwenden das installierte Kommando
 > `d-migrate`. Aus einem Quellcode-Build entspricht das
-> `./gradlew :adapters:driving:cli:run --args="…"`.
+> `make run ARGS="…"` (nach einmaligem `make docker-build`).
 
 ## Inhalt
 

@@ -40,7 +40,7 @@ beschriebenen Regeln sind Repo-Eigenschaften, keine Claude-Code-Spezifika.
 Kurzfassung der wichtigsten Punkte:
 
 - **Bauen/Testen läuft im Container** (`make docker-check`,
-  `make docker-test`, `make integration`), nicht per lokalem `./gradlew`.
+  `make docker-test`, `make integration`); einen Gradle-Wrapper gibt es nicht.
 - **`make docs-check`** prüft Doku/Spec/ADR/Planning-Verweise; läuft in CI,
   aber nicht im Docker-Build — separat fahren bei Änderungen an `docs/`,
   `spec/` oder `docs/adr/`.

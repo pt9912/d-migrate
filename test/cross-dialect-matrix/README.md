@@ -129,9 +129,6 @@ The sweep is part of the default `:test` pass:
 
 ```
 make docker-test MODULES=":test:cross-dialect-matrix"
-
-# or, equivalently
-./gradlew :test:cross-dialect-matrix:test
 ```
 
 It is **not** part of the perf-tag opt-in (`make docker-perf`) — the

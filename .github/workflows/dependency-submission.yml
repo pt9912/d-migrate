@@ -2,9 +2,10 @@
 # Grundlage fuer Dependabot-Alerts: ohne Snapshot kennt GitHub die Dependencies
 # nicht und warnt entsprechend nicht.
 #
-# Warum nicht GitHubs "Automatic dependency submission": die ignoriert den
-# Wrapper-Pin und faehrt mit einer eigenen Gradle-Version. Diese Action nutzt
-# den Wrapper des Projekts (gradle-wrapper.properties).
+# Warum nicht GitHubs "Automatic dependency submission": die faehrt mit einer
+# eigenen Gradle-Version. Diese Action bekommt die Version des Builds — aus dem
+# `FROM` der `deps`-Stage im Dockerfile (dort begruendet; einen Wrapper gibt es
+# nicht).
 #
 # Statisches Parsen reicht hier nicht: die Versionen stehen in
 # gradle.properties und werden interpoliert; nur ein echter Build loest sie auf.
@@ -26,14 +27,6 @@ jobs:
   submit:
     runs-on: ubuntu-latest
 
-    # Der Local-Gradle-Guard in `gradlew` blockt direkte Aufrufe; die
-    # dependency-submission-Action ruft den Wrapper aber genau so auf. Ohne
-    # diesen Override bricht sie ab, bevor irgendetwas aufgeloest wird — und der
-    # Dependency-Graph bleibt leer, ohne dass ein Gate anschlaegt. Dieselbe
-    # Ausnahme setzt native-image.yml aus demselben Grund.
-    env:
-      DMIGRATE_ALLOW_LOCAL_GRADLE: '1'
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,6 +38,21 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+
+      # Gradle-Version aus der einzigen Quelle lesen: dem `FROM` der `deps`-Stage im
+      # Dockerfile (dort begruendet). Einen Wrapper gibt es nicht. `tr -d '\r'`, weil der
+      # Windows-Checkout CRLF liefern kann und das verankerte Muster sonst nichts trifft.
+      - name: Gradle-Version aus dem Dockerfile lesen
+        id: gradle-version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(tr -d '\r' < Dockerfile | sed -n 's/^FROM gradle:\([0-9][0-9.]*\)-jdk[0-9]* AS deps$/\1/p')
+          if [ -z "${version}" ]; then
+            echo "::error file=Dockerfile::keine Zeile 'FROM gradle:<version>-jdk<n> AS deps'"
+            exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
       - name: Resolve and submit dependency graph
         uses: gradle/actions/dependency-submission@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
@@ -68,5 +76,6 @@ jobs:
         # oder teilweise matchen — die verankerte Form trifft in beiden Faellen
         # genau das Gemeinte und nie `testRuntimeClasspath`.
         with:
+          gradle-version: ${{ steps.gradle-version.outputs.version }}
           dependency-graph-include-configurations: '^runtimeClasspath$'
           dependency-graph-include-projects: '^:adapters:driving:cli$'

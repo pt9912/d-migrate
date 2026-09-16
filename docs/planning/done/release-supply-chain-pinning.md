@@ -106,6 +106,6 @@ Gradle-Wrapper ohne `distributionSha256Sum`, keine
 - `Dockerfile:248` (`curl | bash` nodesource)
 - `Dockerfile:271` (yq/jq per `ADD`)
 - `Dockerfile:56`, `Dockerfile:393` (Base-Images nur Tag-gepinnt)
-- `gradle/wrapper/gradle-wrapper.properties:3` (kein `distributionSha256Sum`)
+- `gradle/wrapper/gradle-wrapper.properties:3` (kein `distributionSha256Sum`) <!-- d-check:ignore (historisch: der Gradle-Wrapper ist entfernt, die Version steht im Dockerfile; ADR 0011) -->
 - `adapters/driving/cli/build.gradle.kts:81` (testFixtures im Produktivartefakt)
 - `make/gate.mk:29` (korrektes Gegenmuster: Digest-Pin)

@@ -63,6 +63,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sequenceName=public.customer_id_seq` gegen `null`. Der Modus bleibt ein
   Unterschied, `schema migrate` und der Fingerabdruck sind unberuehrt.
 
+### Removed
+
+- **Kein Gradle-Wrapper mehr** (`gradlew`, `gradlew.bat`, `gradle/wrapper/`).
+  Gebaut und getestet wurde schon vorher im Container; der Wrapper war lokal
+  gesperrt und lief nur noch in zwei Workflows. Die Gradle-Version hat jetzt
+  **eine** Quelle, das `FROM` der `deps`-Stage im `Dockerfile`: `native-image.yml`
+  und `dependency-submission.yml` lesen sie dort und setzen Gradle ueber
+  `gradle/actions` auf, `docker/native-image.Dockerfile` bekommt das Image ueber
+  `make`. Dabei behoben: das native Binary wurde mit Gradle 8.12 gebaut, das
+  JVM-Image mit 8.14. `make dev` und `make run` laufen jetzt ueber das
+  Runtime-Image (vorher scheiterten sie an der Sperre), `make clean` entfernt
+  Gradle-Ausgaben eines IDE-Imports. Fuer den IDE-Import braucht es ein lokal
+  installiertes Gradle in dieser Version.
+
 ## [1.7.1] - 2026-09-16
 
 ### Fixed

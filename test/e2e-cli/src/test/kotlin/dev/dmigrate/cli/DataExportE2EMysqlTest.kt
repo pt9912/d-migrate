@@ -27,7 +27,7 @@ import java.sql.DriverManager
  * Cursor-Streaming via `useCursorFetch=true` und der `information_schema.tables`-
  * basierten `MysqlTableLister`-Auflösung durch.
  *
- * Tagged `integration` — läuft nur mit `./gradlew test -PintegrationTests`
+ * Tagged `integration` — läuft nur mit `make integration` (`-PintegrationTests`)
  * und im `.github/workflows/integration.yml`-Workflow.
  *
  * Verifiziert (analog zum PostgreSQL-Test, aber mit MySQL-Quirks):

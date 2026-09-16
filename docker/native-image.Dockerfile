@@ -1,8 +1,8 @@
 # Lokale GraalVM-Native-Image-Umgebung (Linux) fuer die Metadaten-Schleife des GraalVM-Slices
 # (docs/planning/done/graalvm-native-image-distribution.md, Phase F).
 #
-# Warum ein eigenes Dockerfile und keine Stage in der Haupt-Dockerfile: dort leiten ALLE Stages von
-# `gradle:8.12-jdk21` ab. native-image braucht eine GraalVM-Toolchain, die dieses Image nicht hat —
+# Warum ein eigenes Dockerfile und keine Stage in der Haupt-Dockerfile: dort leiten ALLE Stages vom
+# Gradle-Image ab. native-image braucht eine GraalVM-Toolchain, die dieses Image nicht hat —
 # eine GraalVM-basierte Stage wuerde die Toolchain-Annahme der Datei brechen. Ausserdem wuerde eine
 # angehaengte Stage die "letzte Stage"-Semantik von `docker build .` verschieben.
 #
@@ -15,24 +15,27 @@
 # liesse Gradle `.gradle/`, `.kotlin/` und `build/` in den Arbeitsbaum schreiben; die
 # Haupt-Dockerfile vermeidet das durchgaengig, und `.dockerignore` haelt den Kontext klein.
 
-# Gradle-Quelle: dasselbe Image und dieselbe Version wie jede Stage der Haupt-Dockerfile.
-FROM gradle:8.12-jdk21 AS gradle-dist
+# Gradle-Quelle: dasselbe Image wie die `deps`-Stage der Haupt-Dockerfile. Ohne Default mit Absicht:
+# `make native-*` liest es dort aus und reicht es durch (`GRADLE_IMAGE`). Ein eigener Wert hier
+# driftete — genau so stand diese Zeile auf 8.12, waehrend der JVM-Build auf 8.14 lief. Ein Aufruf
+# ohne Build-Arg scheitert laut, statt still ein anderes Gradle zu nehmen.
+ARG GRADLE_IMAGE
+FROM ${GRADLE_IMAGE} AS gradle-dist
 
 # GraalVM 25 als Basis. Noetig fuer das GraalVM Reachability Metadata Repository: dessen
 # vereinheitlichtes `reachability-metadata.json`-Schema kennt GraalVM 21.0.2 nicht
 # ("provides a reachability-metadata schema, but your GraalVM installation does not").
 FROM ghcr.io/graalvm/native-image-community:25 AS native-build
 
-# findutils liefert `xargs`. Gradle 8.12 verlangt es in SEINEM Startskript
-# (/opt/gradle/bin/gradle Zeile 222, "xargs is not available") — also nicht nur im Wrapper. Das
+# findutils liefert `xargs`. Gradle verlangt es in SEINEM Startskript (/opt/gradle/bin/gradle,
+# "xargs is not available"). Das
 # gradle-Basis-Image bringt findutils mit, das minimale GraalVM-Image nicht; ohne diese Zeile
 # kommt der Build gar nicht erst in Gang.
 RUN microdnf install -y findutils \
     && microdnf clean all
 
-# Gradle aus dem offiziellen Image uebernehmen statt den Wrapper zu benutzen: die Haupt-Dockerfile
-# ruft ebenfalls `gradle --no-daemon`, und der Wrapper wuerde die Distribution bei jedem frischen
-# Container neu herunterladen, obwohl das Basis-Image sie fertig mitbringt.
+# Gradle aus dem offiziellen Image uebernehmen: die Haupt-Dockerfile ruft ebenfalls
+# `gradle --no-daemon`, und das Basis-Image bringt die Distribution fertig mit.
 COPY --from=gradle-dist /opt/gradle /opt/gradle
 ENV GRADLE_HOME=/opt/gradle
 

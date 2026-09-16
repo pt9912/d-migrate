@@ -142,9 +142,9 @@ db/migration/oracle/V1__server_state_initial.sql
 
 Die Generierung ist ein Maintainer-Schritt, aehnlich Golden-File-Updates:
 
-```bash
-./gradlew :adapters:driven:persistence-jdbc:generateServerStateMigrations
-```
+Gradle-Task `:adapters:driven:persistence-jdbc:generateServerStateMigrations`,
+gefahren im Container wie jeder Build (ein lokales Gradle gibt es nicht); ein
+Make-Target, das die erzeugten Dateien aus dem Container holt, gehoert zum Bau.
 
 Ein Drift-Check stellt sicher, dass `schema.yaml` und die eingecheckten SQLs
 zusammenpassen.

@@ -29,7 +29,7 @@ import java.sql.DriverManager
  * Cursor-Streaming (`setFetchSize` + `autoCommit=false`) und der
  * `information_schema`-basierten `PostgresTableLister`-Auflösung durch.
  *
- * Tagged `integration` — läuft nur mit `./gradlew test -PintegrationTests`
+ * Tagged `integration` — läuft nur mit `make integration` (`-PintegrationTests`)
  * und im `.github/workflows/integration.yml`-Workflow. Im Default-Build
  * wird der Spec via Kotest-Tag-Filter komplett übersprungen.
  *

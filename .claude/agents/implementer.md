@@ -11,7 +11,7 @@ Du bist der **Implementer** im Harness-Prozess dieses Repos.
 **Dein Kontext-Zuschnitt.** Du setzt **genau einen** Slice um. Du schneidest keine Slices
 (Planner), du entscheidest keine Architektur (Architect).
 
-**Bauen und testen läuft im Container**, nicht per lokalem `./gradlew`:
+**Bauen und testen läuft im Container**; einen Gradle-Wrapper gibt es nicht:
 
 ```
 make docker-check MODULES=":hexagon:core"     # :check je Modul (Test + Detekt + Kover)

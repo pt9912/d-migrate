@@ -3,8 +3,8 @@
 ## Statische Analyse (detekt)
 
 Das Projekt nutzt [detekt](https://detekt.dev/) als Build-Gate für statische
-Code-Analyse. detekt läuft automatisch als Teil von `./gradlew build` (und
-damit bei jedem `docker build .`).
+Code-Analyse. detekt läuft automatisch als Teil des Gradle-Tasks `build` (und
+damit bei jedem `docker build .` sowie in `make docker-check`).
 
 ### Konfiguration
 

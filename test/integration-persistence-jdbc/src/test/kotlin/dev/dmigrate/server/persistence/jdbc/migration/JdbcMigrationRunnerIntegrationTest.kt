@@ -25,8 +25,8 @@ import javax.sql.DataSource
  *   already-migrated DB is a no-op (Plan LF-012 / LN-011 / LN-017 / LN-027 Akzeptanz)
  * - validate() passes without drift
  *
- * Tagged `integration` so the default `./gradlew test` excludes it.
- * Activated via `./gradlew test -PintegrationTests`.
+ * Tagged `integration` so the default test task excludes it.
+ * Activated via `make integration` (`-PintegrationTests`).
  */
 class JdbcMigrationRunnerIntegrationTest : FunSpec({
 

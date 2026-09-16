@@ -75,7 +75,7 @@ matrix:
 # (Nutzer-CWD, Build-Ausgaben) tragen d-check:ignore-Marker. Begründung +
 # Konvention: ADR 0011.
 codepaths:
-  roots: [adapters, config, docs, examples, gradle, hexagon, ledger, packaging, scripts, spec, test]
+  roots: [adapters, config, docs, examples, hexagon, ledger, packaging, scripts, spec, test]
   scope:
     roots: [docs, spec]
     ignore:

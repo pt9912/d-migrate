@@ -20,8 +20,8 @@ import org.testcontainers.mysql.MySQLContainer
  * Integration tests for MysqlDataReader / MysqlTableLister against a
  * Testcontainers MySQL.
  *
- * Tagged `integration` so the default `./gradlew test` excludes them
- * (build.gradle.kts root config). Run with `./gradlew test -PintegrationTests`
+ * Tagged `integration` so the default test task excludes them
+ * (build.gradle.kts root config). Run with `make integration` (`-PintegrationTests`)
  * or via `.github/workflows/integration.yml`.
  *
  * Verifies (LF-008):

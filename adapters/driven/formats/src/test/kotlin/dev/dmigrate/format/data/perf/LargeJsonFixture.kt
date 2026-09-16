@@ -22,7 +22,7 @@ import kotlin.io.path.absolutePathString
  * ist NICHT Teil des Repos. Der zugehörige Test ist mit
  * `@Tag("perf")` markiert und läuft nicht in der Default-CI, sondern
  * nur in expliziten lokalen Perf-Runs:
- * opt-in via `./gradlew :adapters:driven:formats:test -Dkotest.tags=perf`).
+ * opt-in via `make docker-perf MODULES=":adapters:driven:formats"`).
  *
  * **R7 — Cache-Invalidation via Stamp**: Neben dem Fixture schreibt der
  * Generator eine `<fixture>.stamp`-Datei mit dem SHA-256 über Row-Count,
