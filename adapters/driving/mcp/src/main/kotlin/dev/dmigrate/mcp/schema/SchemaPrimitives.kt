@@ -69,6 +69,18 @@ internal fun enumField(vararg values: String): Map<String, Any> = mapOf(
     "enum" to values.toList(),
 )
 
+/**
+ * Haengt eine JSON-Schema-`description` an ein fertig gebautes Feld.
+ *
+ * Bewusst ein Dekorierer statt eines `description`-Parameters an jedem
+ * Builder: die Beschreibung ist eine Annotation am Draht, keine Aussage
+ * ueber den Typ, und nur wenige Felder tragen ueberhaupt eine. Sie wird
+ * hinten angehaengt, damit die vorhandene Feldreihenfolge im
+ * Golden-Snapshot unveraendert bleibt.
+ */
+internal fun described(field: Map<String, Any>, description: String): Map<String, Any> =
+    field + ("description" to description)
+
 internal fun emptyObject(): Map<String, Any> = mapOf(
     JsonSchemaDialect.SCHEMA_KEYWORD to JsonSchemaDialect.SCHEMA_URI,
     "type" to "object",

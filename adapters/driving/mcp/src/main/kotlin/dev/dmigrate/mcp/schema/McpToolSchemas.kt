@@ -36,6 +36,19 @@ private val JOB_PROGRESS_NUMERIC_KEYS_DATA: List<String> = listOf(
     "bytesWritten",
 )
 
+/**
+ * Die Aussage des `format`-Feldes an `schema_validate`/`schema_compare`/
+ * `schema_generate`: es benennt die Kodierung des **referenzierten
+ * Artefakts** und ist ein Eingabefeld — die Antwort bleibt JSON. Fehlt die
+ * Angabe, erkennt der Server die Kodierung (`SchemaContentLoader`); ein
+ * angegebenes, aber falsches `format` bleibt ein `VALIDATION_ERROR` auf
+ * genau diesem Feld. Derselbe Satz steht in `spec/mcp-server.md`.
+ */
+private const val SCHEMA_FORMAT_DESCRIPTION = "Encoding of the referenced artifact " +
+    "(json/yaml). It names the encoding of the input only — the response is always JSON. " +
+    "Omit it and the server detects the encoding from the artifact's content; " +
+    "an explicit but wrong format stays a VALIDATION_ERROR on this field."
+
 internal object McpToolSchemas {
     // Schema-builder primitives (stringField, obj, schemaPair, …)
     // live as top-level functions in `SchemaPrimitives.kt`.
@@ -66,7 +79,7 @@ internal object McpToolSchemas {
             input = obj(
                 "schema" to objectField(),
                 "schemaRef" to stringField(),
-                "format" to enumField(*FORMAT_NAMES),
+                "format" to described(enumField(*FORMAT_NAMES), SCHEMA_FORMAT_DESCRIPTION),
                 "strictness" to enumField(*Strictness.WIRE_VALUES.toTypedArray()),
             ).build(),
             // LF-012 / LN-027 / LN-028 / LN-038: closed shapes — findings use the shared
@@ -90,7 +103,7 @@ internal object McpToolSchemas {
             input = obj(
                 "left" to schemaSideField(),
                 "right" to schemaSideField(),
-                "format" to enumField(*FORMAT_NAMES),
+                "format" to described(enumField(*FORMAT_NAMES), SCHEMA_FORMAT_DESCRIPTION),
             ).required("left", "right"),
             // LF-012 / LN-027 / LN-028 / LN-038: findings carry an optional compare-specific
             // details slot ({before?, after?} as scrubbed strings,
@@ -113,7 +126,7 @@ internal object McpToolSchemas {
             input = obj(
                 "schema" to objectField(),
                 "schemaRef" to stringField(),
-                "format" to enumField(*FORMAT_NAMES),
+                "format" to described(enumField(*FORMAT_NAMES), SCHEMA_FORMAT_DESCRIPTION),
                 "targetDialect" to enumField(*DIALECT_NAMES),
                 "spatialProfile" to enumField("postgis", "native", "spatialite", "none"),
                 "mysqlNamedSequenceMode" to enumField("action_required", "helper_table"),

@@ -211,6 +211,20 @@ Liefert einen Snapshot der Server-Capabilities:
 Tools antworten mit `ToolsCallResult(isError=true,
 content=[ToolErrorEnvelope(code=UNSUPPORTED_TOOL_OPERATION, ...)])`.
 
+### `format` an den Schema-Tools
+
+`schema_validate`, `schema_compare` und `schema_generate` nehmen ein
+optionales `format` (`json`/`yaml`). Es benennt die **Kodierung des
+referenzierten Artefakts** — ein Eingabefeld, kein Ausgabefeld: die
+Antwort ist immer JSON. Fehlt die Angabe, erkennt der Server die
+Kodierung des Artefakts (`SchemaContentLoader`); ein angegebenes
+`format` gilt, und ein falsches bleibt ein `VALIDATION_ERROR` auf dem
+Feld `format`. Der Inline-Pfad (`schema`) erkennt nicht — er trägt
+bereits ein JSON-Objekt.
+
+Dieselbe Aussage trägt das Tool-Schema als `description` am
+`format`-Feld, damit auch ein schema-validierender Client sie sieht.
+
 ### `resources/list` und `resources/templates/list`
 
 Walks Jobs → Artifacts → Schemas → Profiles → Diffs → Connections.

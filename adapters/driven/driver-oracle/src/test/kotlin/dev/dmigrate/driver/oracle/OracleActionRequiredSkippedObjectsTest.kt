@@ -10,8 +10,10 @@ import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.SpatialProfile
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
@@ -205,6 +207,41 @@ class OracleActionRequiredSkippedObjectsTest : FunSpec({
         skipped.code shouldBe "E057"
         // Ausnahme von der Block-Regel: das Statement waere POST_DATA, und der
         // Index-Block wird von `tagNewSkips` gar nicht erreicht.
+        skipped.phase shouldBe DdlPhase.POST_DATA
+        result.skippedObjectsForPhase(DdlPhase.POST_DATA) shouldHaveSize 1
+    }
+
+    test("ein mehrspaltiger Spatial-Index steht in skippedObjects, mit POST_DATA") {
+        // Oracle Spatial deckt genau eine Spalte ab (ORA-29851); ein Index
+        // ueber zwei Geometriespalten faellt aus der Ausgabe. Die Stelle war
+        // bis hier nur als Kommentar belegt — der Zaehler selbst unbewacht.
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "a" to ColumnDefinition(NeutralType.Geometry()),
+                "b" to ColumnDefinition(NeutralType.Geometry()),
+            ),
+            primaryKey = listOf("id"),
+            indices = listOf(
+                IndexDefinition(
+                    name = "sx_multi",
+                    columns = listOf(IndexColumn("a"), IndexColumn("b")),
+                    type = IndexType.SPATIAL,
+                ),
+            ),
+        )
+        // Die Geometriespalten brauchen den NATIVE-Profil, sonst blockiert
+        // schon die Tabelle (`E052` aus `AbstractDdlGenerator`).
+        val result = generator.generate(
+            schemaWith(table),
+            DdlGenerationOptions(SpatialProfile.NATIVE),
+        )
+        val skipped = result.skippedObjects.single()
+        skipped.type shouldBe "index"
+        skipped.name shouldBe "sx_multi"
+        skipped.code shouldBe "E052"
+        // Ausnahme von der Block-Regel, wie beim Volltext-Index oben: das
+        // Statement waere POST_DATA, `tagNewSkips` erreicht es nicht.
         skipped.phase shouldBe DdlPhase.POST_DATA
         result.skippedObjectsForPhase(DdlPhase.POST_DATA) shouldHaveSize 1
     }

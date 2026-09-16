@@ -4,11 +4,15 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.SpatialProfile
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
@@ -53,6 +57,93 @@ class MssqlIndexActionRequiredSkippedObjectsTest : FunSpec({
         val skipped = result.skippedObjects.single()
         skipped.type shouldBe "index"
         skipped.name shouldBe "ix_expr"
+        skipped.code shouldBe "E057"
+    }
+
+    test("zwei clustered Indizes stehen beide in skippedObjects (E066)") {
+        // SQL Server hat genau eine Ablage je Tabelle. Welcher der beiden
+        // gemeint ist, ist nicht entscheidbar — beide fallen raus, beide
+        // muessen gezaehlt werden.
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "name" to ColumnDefinition(NeutralType.Text(100), required = true),
+                "state" to ColumnDefinition(NeutralType.Text(20), required = true),
+            ),
+            primaryKey = listOf("id"),
+            indices = listOf(
+                IndexDefinition(name = "ix_a", columns = listOf(IndexColumn("name")), clustered = true),
+                IndexDefinition(name = "ix_b", columns = listOf(IndexColumn("state")), clustered = true),
+            ),
+        )
+        val result = generator.generate(schemaWith(table))
+        result.skippedObjects shouldHaveSize 2
+        result.skippedObjects.map { it.name } shouldBe listOf("ix_a", "ix_b")
+        result.skippedObjects.map { it.code } shouldBe listOf("E066", "E066")
+        result.skippedObjects.map { it.type } shouldBe listOf("index", "index")
+    }
+
+    test("ein Volltext-Index ohne Schluesselindex steht in skippedObjects (E070)") {
+        // Ohne einspaltigen, eindeutigen, nicht nullbaren Index kann SQL Server
+        // den Volltext-Index nicht adressieren; er faellt aus der Ausgabe.
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "body" to ColumnDefinition(NeutralType.Text(1000), required = true),
+            ),
+            primaryKey = emptyList(),
+            indices = listOf(
+                IndexDefinition(name = "fx_body", columns = listOf(IndexColumn("body")), type = IndexType.FULLTEXT),
+            ),
+        )
+        val result = generator.generate(schemaWith(table))
+        val skipped = result.skippedObjects.single()
+        skipped.type shouldBe "index"
+        skipped.name shouldBe "fx_body"
+        skipped.code shouldBe "E070"
+    }
+
+    test("mehrere Volltext-Indizes auf einer Tabelle stehen in skippedObjects (E071)") {
+        // SQL Server erlaubt genau einen Volltext-Index je Tabelle — jeder der
+        // beiden faellt weg und wird gezaehlt.
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "body" to ColumnDefinition(NeutralType.Text(1000), required = true),
+                "title" to ColumnDefinition(NeutralType.Text(200), required = true),
+            ),
+            primaryKey = listOf("id"),
+            indices = listOf(
+                IndexDefinition(name = "fx_body", columns = listOf(IndexColumn("body")), type = IndexType.FULLTEXT),
+                IndexDefinition(name = "fx_title", columns = listOf(IndexColumn("title")), type = IndexType.FULLTEXT),
+            ),
+        )
+        val result = generator.generate(schemaWith(table))
+        result.skippedObjects shouldHaveSize 2
+        result.skippedObjects.map { it.name } shouldBe listOf("fx_body", "fx_title")
+        result.skippedObjects.map { it.code } shouldBe listOf("E071", "E071")
+        result.skippedObjects.map { it.type } shouldBe listOf("index", "index")
+    }
+
+    test("ein nicht renderbarer raeumlicher Index steht in skippedObjects (E057)") {
+        // Planes `geometry` verlangt BOUNDING_BOX-Tessellation, die das
+        // neutrale Modell nicht traegt — der Index kommt nicht in die Ausgabe.
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "shape" to ColumnDefinition(NeutralType.Geometry(GeometryType("polygon"), 3857)),
+            ),
+            primaryKey = listOf("id"),
+            indices = listOf(
+                IndexDefinition(name = "sx_shape", columns = listOf(IndexColumn("shape")), type = IndexType.SPATIAL),
+            ),
+        )
+        // Ohne NATIVE-Profil blockierte schon die Tabelle; hier geht es um den
+        // Index-Pfad.
+        val result = generator.generate(schemaWith(table), DdlGenerationOptions(SpatialProfile.NATIVE))
+        val skipped = result.skippedObjects.single()
+        skipped.type shouldBe "index"
+        skipped.name shouldBe "sx_shape"
         skipped.code shouldBe "E057"
     }
 })

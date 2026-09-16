@@ -10,7 +10,7 @@ import io.kotest.matchers.string.shouldContain
  * SchemaCompareDocument mit voll besetztem [DiffView] (Tabellen/Views/
  * CustomTypes mit allen Change-Feldern, PrimaryKey-Aenderung,
  * Default/References/Generation auf Spalten, ViewChangeView mit
- * materialized/queryChanged/refresh/sourceDialect) und prueft, dass
+ * materialized/queryChanged/columns/refresh/sourceDialect) und prueft, dass
  * jeder Branch in den drei Renderern eine erkennbare Ausgabe
  * produziert.
  */
@@ -84,6 +84,7 @@ class CompareRendererDiffTest : FunSpec({
                 materialized = StringChange("false", "true"),
                 refresh = NullableStringChange(before = null, after = "ON COMMIT"),
                 queryChanged = true,
+                columns = NullableStringChange(before = "order_id, email", after = "order_id"),
                 sourceDialect = NullableStringChange(before = "postgresql", after = "mysql"),
             ),
         ),
@@ -190,6 +191,9 @@ class CompareRendererDiffTest : FunSpec({
             json shouldContain """"materialized":"""
             json shouldContain """"query": "changed""""
             json shouldContain """"refresh":"""
+            // Akzeptanzkriterium 7 fuer die CLI: ein wirklicher Spalten-
+            // unterschied nennt das Feld, statt nur "geaendert" zu sagen.
+            json shouldContain """"columns": {"before": "order_id, email", "after": "order_id"}"""
             json shouldContain """"source_dialect":"""
         }
 
@@ -247,6 +251,7 @@ class CompareRendererDiffTest : FunSpec({
             yaml shouldContain "users"
             yaml shouldContain "active_users"
             yaml shouldContain "users_summary"
+            yaml shouldContain """columns: {before: "order_id, email", after: "order_id"}"""
             // YAML/JSON renderer omits per-name lists for sequences/functions/
             // procedures/triggers — only the summary counts are surfaced
             // (verified separately in the summary block).
@@ -290,6 +295,7 @@ class CompareRendererDiffTest : FunSpec({
             plain shouldContain "active_users"
             plain shouldContain "user_id_seq"
             plain shouldContain "trg_users_audit"
+            plain shouldContain "columns: order_id, email -> order_id"
         }
 
         test("renders table change details") {

@@ -6,6 +6,7 @@ import io.kotest.inspectors.forAll
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 
 /**
  * §12.16 verbindlich: MCP-protocol method names that must NOT be
@@ -116,6 +117,24 @@ class McpToolSchemasTest : FunSpec({
         mapValue(props["strictness"])["enum"] shouldBe listOf("lenient", "strict")
         // No required keys: presence is checked by the resolver.
         pair.inputSchema.containsKey("required") shouldBe false
+    }
+
+    test("das format-Feld der Schema-Tools benennt die Kodierung des referenzierten Artefakts") {
+        // Vertrag aus spec/mcp-server.md, Abschnitt „format an den
+        // Schema-Tools": format ist ein **Eingabefeld** und beschreibt die
+        // Quelle; die Antwort bleibt JSON. Der Satz stand vorher nur in
+        // spec/ki-mcp.md (Entwurfs-Zielbild) und im Handbuch — also nicht am
+        // Vertrag. Ohne die description am Feld sieht ihn kein
+        // schema-validierender Client.
+        for (toolName in listOf("schema_validate", "schema_compare", "schema_generate")) {
+            val props = mapValue(McpToolSchemas.forTool(toolName)!!.inputSchema["properties"])
+            val format = mapValue(props["format"])
+            format["enum"] shouldBe listOf("json", "yaml")
+            val description = format["description"] as? String
+                ?: error("$toolName.input.properties.format has no description")
+            description shouldContain "referenced artifact"
+            description shouldContain "always JSON"
+        }
     }
 
     test("LF-012 / LN-027 / LN-028 / LN-038: schema_generate output uses generatorFindings + truncated→artifactRef") {

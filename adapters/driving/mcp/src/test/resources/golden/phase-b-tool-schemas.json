@@ -1766,7 +1766,8 @@
           "enum": [
             "json",
             "yaml"
-          ]
+          ],
+          "description": "Encoding of the referenced artifact (json/yaml). It names the encoding of the input only — the response is always JSON. Omit it and the server detects the encoding from the artifact's content; an explicit but wrong format stays a VALIDATION_ERROR on this field."
         }
       },
       "required": [
@@ -1983,7 +1984,8 @@
           "enum": [
             "json",
             "yaml"
-          ]
+          ],
+          "description": "Encoding of the referenced artifact (json/yaml). It names the encoding of the input only — the response is always JSON. Omit it and the server detects the encoding from the artifact's content; an explicit but wrong format stays a VALIDATION_ERROR on this field."
         },
         "targetDialect": {
           "type": "string",
@@ -2357,7 +2359,8 @@
           "enum": [
             "json",
             "yaml"
-          ]
+          ],
+          "description": "Encoding of the referenced artifact (json/yaml). It names the encoding of the input only — the response is always JSON. Omit it and the server detects the encoding from the artifact's content; an explicit but wrong format stays a VALIDATION_ERROR on this field."
         },
         "strictness": {
           "type": "string",
