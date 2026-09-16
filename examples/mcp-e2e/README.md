@@ -90,17 +90,31 @@ nichts meldet, was keine Aenderung ist: das Skript faellt, sobald ein
 ein Konsumentenprojekt gemeldet — SQL Server liest `ON DELETE NO ACTION`
 explizit aus dem Katalog, PostgreSQL laesst die Aktion weg.
 
-Gemessener Stand (2026-09-15, `d-migrate:dev` aus `main`):
+Die Quellfixture traegt zwei Konstrukte, an denen zwei offene
+Konsumentenbefunde haengen: ein benanntes UNIQUE auf einer **ungebundenen**
+`text`-Spalte (`uq_customer_external_ref`) und die Sicht `order_summary`.
+Ohne sie sieht der Vergleich sie nicht — und der Reverse liest Sichten nur mit
+`--include-views`, das der Lauf deshalb setzt.
 
-| Dialekt | Funde | Erwartung |
-| ------- | ----- | --------- |
+Gemessener Stand (2026-09-15, `d-migrate:dev` aus `main`, 1.8.0-SNAPSHOT):
+
+| Dialekt | Funde | Zusammensetzung |
+| ------- | ----- | --------------- |
 | PostgreSQL | 0 | perfekter Round-Trip |
-| SQLite | 0 | perfekter Round-Trip |
-| MySQL | 2 | Enum inline, CHECK-Text (Backticks) |
-| SQL Server | 3 | Enum inline, berechnete Spalte, zusaetzlicher Enum-CHECK |
+| MySQL | 4 | 3 Tabellen, 1 Typ |
+| SQL Server | 4 | 3 Tabellen, 1 Typ |
+| SQLite | 5 | 3 Tabellen (Typdynamik), 1 Typ, 1 Sicht |
+| Oracle | 4 | 3 Tabellen (Identity-Metadaten, Enum inline), 1 Typ |
 
 Die Funde sind **erwartet und erklaert**, nicht unterdrueckt — der Harness
 pinnt sie nicht, er zeigt sie. Was er **verbietet**, ist der FK-Fehlalarm.
+
+**Jeder Dialekt wird angewandt.** Der Lauf faehrt die erzeugte DDL gegen den
+echten Server, bevor er zurueckliest — PostgreSQL, MySQL und SQL Server ueber
+ihren Client im Container, **SQLite** ueber `sqlite3` auf dem Host (die Datei
+liegt im gemounteten `out/`) und **Oracle** ueber `sqlplus` im Oracle-Image.
+Ohne diesen Schritt laese der Reverse eine leere Datenbank zurueck, und jede
+Fundzeile waere eine Aussage ueber den fehlenden Apply statt ueber das Schema.
 
 ## Benutzung
 
@@ -113,7 +127,9 @@ make mcp-e2e-down                 # Container stoppen (Volume bleibt)
 make mcp-e2e-purge                # Container + Volume entfernen
 ```
 
-Voraussetzungen am Host: `docker`, `docker compose`, `jq`. Der Stack bleibt
+Voraussetzungen am Host: `docker`, `docker compose`, `jq` sowie **`sqlite3`**
+(fuer den SQLite-Leg des Roundtrips — die Datenbank ist eine Datei, es gibt
+keinen Dienst). Der Stack bleibt
 nach dem Lauf stehen (Cleanup über `mcp-e2e-down`/`-purge`).
 
 ## Sicherheit

@@ -124,13 +124,16 @@ services:
     # URL, nicht nur ein Passwort — siehe .d-migrate.yaml-Kommentar).
     #
     # Die SQLite-Verbindung ist eine **Datei** im gemounteten /work; sie
-    # braucht keinen Dienst. `?mode=rwc` legt sie beim ersten Zugriff an —
-    # ohne den Parameter scheitert ein Schreibzugriff auf eine fehlende Datei.
+    # braucht keinen Dienst. Kein Query-String am Pfad: die Verbindung wird
+    # aus der strukturierten Form aufgeloest, und der Wert geht **verbatim**
+    # als Dateipfad durch — ein `?mode=rwc` landete damit im Dateinamen, der
+    # Lauf las eine leere Zweitdatei. Die Datei legt der Roundtrip selbst an
+    # (Apply-Schritt); ein Lese-Open auf eine fehlende Datei scheitert sonst.
     environment:
       MCP_E2E_PG_URL: "postgresql://${MCP_E2E_PG_USER}:${MCP_E2E_PG_PASSWORD}@postgres:5432/${MCP_E2E_PG_DB}"
       MCP_E2E_MY_URL: "mysql://${MCP_E2E_MY_USER}:${MCP_E2E_MY_PASSWORD}@mysql:3306/${MCP_E2E_MY_DB}"
       MCP_E2E_MS_URL: "mssql://sa:${MCP_E2E_MS_PASSWORD}@mssql:1433/${MCP_E2E_MS_DB}?encrypt=false"
-      MCP_E2E_SQLITE_URL: "sqlite:/work/out/mcp-e2e.sqlite?mode=rwc"
+      MCP_E2E_SQLITE_URL: "sqlite:/work/out/mcp-e2e.sqlite"
       MCP_E2E_ORA_URL: "oracle://${MCP_E2E_ORA_USER}:${MCP_E2E_ORA_PASSWORD}@oracle:1521/${MCP_E2E_ORA_DB}"
     volumes:
       - .:/work

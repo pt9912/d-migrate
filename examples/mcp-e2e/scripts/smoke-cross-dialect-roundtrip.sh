@@ -71,6 +71,13 @@ log "all healthy"
 # auseinanderlaufen: Enum-Typ, berechnete Spalte, Identity, CHECK,
 # benanntes UNIQUE, Fremdschluessel, Index. Es ist bewusst **nicht** das
 # Konsumenten-Schema, sondern das Minimum, das dieselben Kanten trifft.
+#
+# Zwei Konstrukte tragen zwei offene Konsumentenbefunde (2026-09-15):
+# `uq_customer_external_ref` auf einer **ungebundenen** `text`-Spalte und
+# die Sicht `order_summary`. Beide sind hier, weil der Vergleich sie sonst
+# nicht sieht: die erste trifft Oracles `isUnkeyable`, die zweite die
+# View-Spalten-Wertung. Was sie melden, ist gemessen und in der README
+# benannt — nicht unterdrueckt.
 SCHEMA="$OUT_DIR/roundtrip/source.yaml"
 mkdir -p "$OUT_DIR/roundtrip"
 cat > "$SCHEMA" <<'YAML'
@@ -86,6 +93,9 @@ tables:
     columns:
       id: { type: identifier, auto_increment: true }
       email: { type: text, max_length: 255, required: true, unique: true, unique_constraint: uq_customer_email }
+      # text OHNE max_length: Oracle fuehrt das als unkeyable (isUnkeyable),
+      # MySQL nimmt es ohne Praefix-Laenge nicht als Schluessel (W125).
+      external_ref: { type: text, required: true, unique: true, unique_constraint: uq_customer_external_ref }
     primary_key: [id]
   orders:
     columns:
@@ -117,6 +127,12 @@ tables:
       - name: ck_items_quantity
         type: check
         expression: "quantity > 0"
+views:
+  # Der Rumpf ist bewusst in PostgreSQL-Schreibweise und unquotiert — genau
+  # die Form, in der zwei Reverses bis auf die Spalten-Metadaten
+  # uebereinstimmen.
+  order_summary:
+    query: "SELECT o.id AS order_id, c.email FROM orders o JOIN customers c ON c.id = o.customer_id"
 YAML
 
 # --- 2. Die Wege -------------------------------------------------------
@@ -183,7 +199,29 @@ for target in "${TARGETS[@]}"; do
         sqlite)
             rm -f "$OUT_DIR/mcp-e2e.sqlite"
             ;;
-        oracle) : ;;
+        oracle)
+            # Ein zweiter Lauf faende sonst das Schema des ersten und die DDL
+            # scheiterte an "already exists" (`ORA-00955`). Aufgeraeumt wird
+            # **als APP_USER** ueber `user_objects` — kein DBA-Recht, kein
+            # `DROP USER`, also auch keine Neuvergabe der Grants. Fehlschlaege
+            # im Einzelnen sind erwartbar (ein Index verschwindet mit seiner
+            # Tabelle) und werden geschluckt.
+            docker exec -i "$(docker compose -f "$COMPOSE_FILE" "${profiles[@]}" ps -q oracle)" \
+                sqlplus -S -L "$MCP_E2E_ORA_USER/$MCP_E2E_ORA_PASSWORD@//localhost:1521/$MCP_E2E_ORA_DB" <<'SQL' > /dev/null 2>&1 || true
+                BEGIN
+                  FOR o IN (SELECT object_name, object_type FROM user_objects
+                             WHERE object_type IN ('TABLE','VIEW','SEQUENCE','PROCEDURE',
+                                                   'FUNCTION','TRIGGER','TYPE','INDEX')) LOOP
+                    BEGIN
+                      EXECUTE IMMEDIATE 'DROP ' || o.object_type || ' "' || o.object_name || '"' ||
+                        CASE WHEN o.object_type = 'TABLE' THEN ' CASCADE CONSTRAINTS' ELSE '' END;
+                    EXCEPTION WHEN OTHERS THEN NULL;
+                    END;
+                  END LOOP;
+                END;
+                /
+SQL
+            ;;
     esac
 
     # 2b. Anwenden — ueber den Dialekt-Client, nicht ueber d-migrate.
@@ -208,17 +246,53 @@ for target in "${TARGETS[@]}"; do
                 -d "$MCP_E2E_MS_DB" -b -i /tmp/ddl.sql > "$dir/apply.log" 2>&1 \
                 || fail "$dialect: DDL wurde vom Server abgelehnt, siehe $dir/apply.log"
             ;;
-        oracle|sqlite) : ;; # Oracle legt per Reverse an; SQLite ohnehin.
+        sqlite)
+            # Kein Dienst, kein Container: die Datenbank ist eine Datei im
+            # gemounteten out/. `sqlite3` laeuft deshalb **auf dem Host** —
+            # wie `jq` eine Voraussetzung des Skripts (siehe README).
+            sqlite3 "$OUT_DIR/mcp-e2e.sqlite" < "$dir/generated.sql" > "$dir/apply.log" 2>&1 \
+                || fail "$dialect: DDL wurde vom Client abgelehnt, siehe $dir/apply.log"
+            ;;
+        oracle)
+            # `sqlplus` steckt im Oracle-Image; der SQL*Plus-Client ist der
+            # einzige, der die erzeugten PL/SQL-Bloecke (Abschluss `/` in
+            # eigener Zeile) versteht. Als APP_USER gegen den PDB-Service.
+            #
+            # `WHENEVER SQLERROR EXIT FAILURE` ist **Pflicht**: ohne es meldet
+            # SQL*Plus auch bei abgelehntem DDL Exit 0, und der Lauf liest
+            # danach eine Datenbank zurueck, der eine Tabelle fehlt — der Fund
+            # erscheint dann als "Tables removed" statt als Fehler des Servers.
+            docker cp "$dir/generated.sql" "$(docker compose -f "$COMPOSE_FILE" "${profiles[@]}" ps -q oracle):/tmp/ddl.sql"
+            docker exec -i "$(docker compose -f "$COMPOSE_FILE" "${profiles[@]}" ps -q oracle)" \
+                sqlplus -S -L "$MCP_E2E_ORA_USER/$MCP_E2E_ORA_PASSWORD@//localhost:1521/$MCP_E2E_ORA_DB" <<'SQL' \
+                > "$dir/apply.log" 2>&1 \
+                || fail "$dialect: DDL wurde vom Server abgelehnt, siehe $dir/apply.log"
+                WHENEVER SQLERROR EXIT FAILURE
+                @/tmp/ddl.sql
+SQL
+            ;;
     esac
 
     # 2c. Her: zuruecklesen und gegen die Quelle stellen
-    dmi schema reverse --source "$conn" --output "/work/out/roundtrip/$dialect/reversed.yaml" \
+    # `--include-views` ist hier **Pflicht**, nicht Kosmetik: ohne es liest
+    # der Reverse die Sichten nicht zurueck, die der Lauf eben angelegt hat.
+    # Der Vergleich meldete dann „Views removed: 1" fuer jede Sicht — eine
+    # Aussage ueber den Leser, nicht ueber das Schema — und die
+    # View-Spalten-Wertung wurde nie ausgeuebt. Genau dort sass ein
+    # Konsumentenbefund (2026-09-15).
+    dmi schema reverse --source "$conn" --include-views \
+        --output "/work/out/roundtrip/$dialect/reversed.yaml" \
         > "$dir/reverse.log" 2>&1 || fail "$dialect: reverse scheiterte, siehe $dir/reverse.log"
 
     dmi schema compare --source /work/out/roundtrip/source.yaml \
         --target "/work/out/roundtrip/$dialect/reversed.yaml" \
         > "$dir/compare.txt" 2>&1
-    changes=$(grep -cE '^      [+~-] ' "$dir/compare.txt" || true)
+    # Die Zahl kommt aus dem Vergleich selbst, nicht aus einer
+    # Einrueckungs-Heuristik: die zaehlte nur Blaetter (sechs Leerzeichen)
+    # und uebersah jede Fundzeile auf oberster Ebene — „Views removed: 1"
+    # etwa stand als `  - order_summary` und galt damit als 0 Funde.
+    changes=$(sed -n 's/^Summary: \([0-9]*\) change(s).*/\1/p' "$dir/compare.txt" | head -1)
+    changes="${changes:-0}"
     log "$dialect: $changes Fund(e)"
     summary="${summary}${dialect}|${changes}"$'\n'
 
