@@ -282,12 +282,12 @@ diagnostische Warning-Note" fest.
 **Was bleibt, ist ein Nachtrag am Tracker, kein Slice-Posten:** die Familie hat
 einen offenen Ort,
 [`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md)
-— und `interval` fehlt in dessen Kandidatenliste (`:31-39`). Der Nachtrag beruehrt
-**zwei** Dateien: die Liste dort **und** die Übersichtszeile in
-[`../open/README.md`](../open/README.md), die die Kandidaten namentlich aufzaehlt
-(`inet`, `cidr`, `tsquery`, Range/Multirange, `ltree`, `hstore`, `money`, …) —
-ohne sie bliebe der Eintrag unauffindbar. Eine Zeile je Datei, kein Paket hier.
-Der Nachtrag ist **nicht** in diesem Slice gemacht (s. „Offen").
+— und `interval` fehlte in dessen Kandidatenliste (`:31-39`). Der Nachtrag ist
+beim Aufnehmen dieses Befunds **erfolgt** (2026-09-16) und beruehrte **zwei**
+Dateien: die Liste dort (als **Mechanik**-Zeile, nicht als Bedarfsmeldung — der
+Tracker aktiviert sonst „sobald ein konkreter Fidelity-Bedarf auftritt", und
+genau den hat B4 widerlegt) **und** die Übersichtszeile in
+[`../open/README.md`](../open/README.md), die die Kandidaten namentlich aufzaehlt.
 
 ## Ziel
 
@@ -597,24 +597,19 @@ zurueckgenommener Meldung faellt.
   schreibt den heutigen Effekt an drei Stellen fest (`spec/cli-spec.md:467`,
   `spec/neutral-model-spec.md:1503`, `spec/ddl-generation-rules.md:2688`)
   und begruendet ihn („keine partielle DDL"). Zu entscheiden ist, ob die
-  Spalte allein entfallen darf oder die Tabelle mit Hinweis angelegt wird. Der
-  Ort fuer diese Entscheidung **fehlt** — sie braucht vor der Graduation einen
-  eigenen `open/`-Eintrag (heute traegt kein Eintrag dort SpatiaLite-Generate
-  oder E052), sonst ist sie nach dem Move nach `done/` weg. Zu beachten:
+  Spalte allein entfallen darf oder die Tabelle mit Hinweis angelegt wird. **Der
+  Ort ist angelegt:** [`../open/spatial-profile-e052-ganze-tabelle.md`](../open/spatial-profile-e052-ganze-tabelle.md)
+  (2026-09-16) traegt die drei Wege samt Preis. Zu beachten:
   [`ADR 0016`](../../adr/0016-spatialite-metadata-bootstrap.md) traegt
   `status: accepted` und ist damit im Kern eingefroren (`make doc-immutable`) —
   die dort aufgeschobene Generate-Grenze laesst sich nicht im Vorbeigehen
   nachziehen, sondern nur ueber einen neuen ADR oder eine Statusaenderung.
-- **Der `interval`-Nachtrag am Tracker** (aus B4): eine Zeile in
-  [`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md)
-  **und** in der Übersichtszeile von [`../open/README.md`](../open/README.md).
-  Es ist eine **Mechanik**-Zeile, keine Bedarfsmeldung: der Tracker aktiviert
-  einen Typ sonst „sobald ein konkreter Fidelity-Bedarf auftritt", und genau den
-  hat B4 widerlegt.
 - **Eine zweite JSON-Art** (`json` gegen `jsonb`, aus B3) braucht eine eigene
-  Entscheidung **und einen eigenen Ablageort**: die Kandidatenfamilie
+  Entscheidung — **der Ort ist angelegt:**
+  [`../open/json-jsonb-zweite-json-art.md`](../open/json-jsonb-zweite-json-art.md)
+  (2026-09-16); sie braucht ihn, weil die Kandidatenfamilie
   [`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md)
-  schliesst `json`/`jsonb` ausdruecklich aus. Zu beachten bei der Begruendung:
+  `json`/`jsonb` ausdruecklich ausschliesst. Zu beachten bei der Begruendung:
   `spec/neutral-model-spec.md:148` ist eine **Soll**-Tabelle fuer die
   **Render**richtung und sagt zum Rueckweg `jsonb` → `json` nichts — der Fall
   beruht also auf der Render-Haelfte, und die ist gedeckt.
