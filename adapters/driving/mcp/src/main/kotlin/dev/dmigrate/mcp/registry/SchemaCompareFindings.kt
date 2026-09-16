@@ -121,14 +121,24 @@ internal object SchemaCompareFindings {
      * Ein Fund je geaendertem Feld eines Objekts, der Pfad endet auf dem
      * Dokument-Schluessel des Feldes — derselbe Aufbau wie bei den Spalten
      * einer Tabelle (`tables.t.columns.c.type`).
+     *
+     * Die Werte stehen als `before`/`after` darin; fehlt eine Seite, war das
+     * Feld dort nicht gesetzt. Ausgenommen sind die Felder in
+     * [WITHOUT_VALUES]: lange Rumpf-Texte und strukturierte Werte — der
+     * Aufrufer hat beide Seiten selbst in der Hand.
      */
     private fun fieldChanges(
         code: String,
         objectPath: String,
         fields: List<Pair<String, ValueChange<*>?>>,
     ): List<Map<String, Any?>> = fields.mapNotNull { (key, change) ->
-        change?.let { changed(code, SchemaFindingPath.field(objectPath, key)) }
+        change?.let {
+            val details = if (key in WITHOUT_VALUES) null else beforeAfter(it.before, it.after)
+            changed(code, SchemaFindingPath.field(objectPath, key), details)
+        }
     }
+
+    private val WITHOUT_VALUES = setOf("query", "body", "parameters", "returns", "fields")
 
     /**
      * Eine geaenderte Sicht — ein Fund je Feld, wie bei den uebrigen Objekten.

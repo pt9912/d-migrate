@@ -1,5 +1,6 @@
 package dev.dmigrate.mcp.registry
 
+import dev.dmigrate.cli.commands.CompareSignature
 import dev.dmigrate.cli.commands.SchemaFindingPath
 import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.TableDiff
@@ -55,19 +56,38 @@ internal object TableCompareFindings {
                 ),
             )
         }
+        // Indizes und Constraints vergleicht der Comparator als Ganzes; der
+        // Fund nennt sie deshalb mit ihrer Kurzform, die jedes gewertete Feld
+        // traegt (CompareSignature) — sonst stuende ein geaenderter CHECK
+        // beidseitig gleich da. Die Kurzform ist nie leer, `details` fehlt nie.
         diff.indicesAdded.forEach {
-            add(added("TABLE_INDEX_ADDED", SchemaFindingPath.index(diff.name, indexKey(it))))
+            add(added("TABLE_INDEX_ADDED", SchemaFindingPath.index(diff.name, indexKey(it)), after(CompareSignature.index(it))))
         }
         diff.indicesRemoved.forEach {
-            add(removed("TABLE_INDEX_REMOVED", SchemaFindingPath.index(diff.name, indexKey(it))))
+            add(
+                removed(
+                    "TABLE_INDEX_REMOVED", SchemaFindingPath.index(diff.name, indexKey(it)),
+                    before(CompareSignature.index(it)),
+                ),
+            )
         }
         diff.indicesChanged.forEach {
-            add(changed("TABLE_INDEX_CHANGED", SchemaFindingPath.index(diff.name, indexKey(it.before))))
+            add(
+                changed(
+                    "TABLE_INDEX_CHANGED", SchemaFindingPath.index(diff.name, indexKey(it.before)),
+                    beforeAfter(CompareSignature.index(it.before), CompareSignature.index(it.after)),
+                ),
+            )
         }
         diff.constraintsAdded.forEach {
             // Tightening: a new constraint may reject pre-existing
             // rows; surface as warning, not info.
-            add(changed("TABLE_CONSTRAINT_ADDED", SchemaFindingPath.constraint(diff.name, it.name)))
+            add(
+                changed(
+                    "TABLE_CONSTRAINT_ADDED", SchemaFindingPath.constraint(diff.name, it.name),
+                    after(CompareSignature.constraint(it)),
+                ),
+            )
         }
         diff.constraintsRemoved.forEach {
             add(
@@ -76,11 +96,17 @@ internal object TableCompareFindings {
                     "TABLE_CONSTRAINT_REMOVED",
                     SchemaFindingPath.constraint(diff.name, it.name),
                     "constraint ${it.name} was removed",
+                    before(CompareSignature.constraint(it)),
                 ),
             )
         }
         diff.constraintsChanged.forEach {
-            add(changed("TABLE_CONSTRAINT_CHANGED", SchemaFindingPath.constraint(diff.name, it.before.name)))
+            add(
+                changed(
+                    "TABLE_CONSTRAINT_CHANGED", SchemaFindingPath.constraint(diff.name, it.before.name),
+                    beforeAfter(CompareSignature.constraint(it.before), CompareSignature.constraint(it.after)),
+                ),
+            )
         }
         diff.metadata?.let {
             add(
@@ -185,6 +211,10 @@ internal object TableCompareFindings {
                 beforeAfter(true, false),
             )
         }
+
+    private fun before(signature: String): Map<String, String> = mapOf("before" to signature)
+
+    private fun after(signature: String): Map<String, String> = mapOf("after" to signature)
 
     /** Ein Index unter seinem Namen — ein unbenannter unter seinen Schluesseln. */
     private fun indexKey(index: IndexDefinition): String = index.name ?: index.columns.joinToString(",")

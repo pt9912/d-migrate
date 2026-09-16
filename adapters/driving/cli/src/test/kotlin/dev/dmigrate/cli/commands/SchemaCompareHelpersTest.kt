@@ -330,13 +330,13 @@ Tables:
 
     test("index signature is stable") {
         val idx = IndexDefinition(name = "idx_a", columns = listOf("a").map(::IndexColumn), type = IndexType.BTREE)
-        SchemaCompareHelpers.indexSignature(idx) shouldBe "idx_a [btree]"
+        SchemaCompareHelpers.indexSignature(idx) shouldBe "idx_a [btree] on (a)"
     }
 
     test("unnamed index signature uses columns") {
         val idx = IndexDefinition(name = null, columns = listOf("a", "b").map(::IndexColumn),
             type = IndexType.HASH, unique = true)
-        SchemaCompareHelpers.indexSignature(idx) shouldBe "a,b [hash,unique]"
+        SchemaCompareHelpers.indexSignature(idx) shouldBe "a,b [hash,unique] on (a, b)"
     }
 
     test("constraint signature is stable") {
@@ -424,7 +424,7 @@ Tables:
         view.tablesAdded[0].columnCount shouldBe 1
         view.tablesChanged[0].columnsChanged[0].type!!.before shouldBe "text(100)"
         view.tablesChanged[0].columnsChanged[0].type!!.after shouldBe "text(200)"
-        view.tablesChanged[0].indicesAdded[0] shouldBe "idx_a [btree]"
+        view.tablesChanged[0].indicesAdded[0] shouldBe "idx_a [btree] on (a)"
         view.tablesChanged[0].constraintsAdded[0] shouldContain "uq_email"
         view.customTypesChanged[0].changes[0] shouldContain "values"
     }

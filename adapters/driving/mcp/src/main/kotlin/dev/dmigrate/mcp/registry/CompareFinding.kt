@@ -52,14 +52,14 @@ internal object CompareFinding {
 
     // Additive changes are non-breaking by default — surface as info
     // so clients can filter the noise out of the warning channel.
-    fun added(code: String, path: String): Map<String, Any?> =
-        finding(SchemaFindingSeverity.INFO, code, path, "$path was added")
+    fun added(code: String, path: String, details: Map<String, String>? = null): Map<String, Any?> =
+        finding(SchemaFindingSeverity.INFO, code, path, "$path was added", details)
 
     // Removed/changed objects are potentially breaking; clients
     // typically gate deploys on the warning bucket.
-    fun removed(code: String, path: String): Map<String, Any?> =
-        finding(SchemaFindingSeverity.WARNING, code, path, "$path was removed")
+    fun removed(code: String, path: String, details: Map<String, String>? = null): Map<String, Any?> =
+        finding(SchemaFindingSeverity.WARNING, code, path, "$path was removed", details)
 
-    fun changed(code: String, path: String): Map<String, Any?> =
-        finding(SchemaFindingSeverity.WARNING, code, path, "$path changed")
+    fun changed(code: String, path: String, details: Map<String, String>? = null): Map<String, Any?> =
+        finding(SchemaFindingSeverity.WARNING, code, path, "$path changed", details)
 }

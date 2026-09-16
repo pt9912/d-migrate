@@ -2,8 +2,8 @@
 
 > **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden).
 > **Stand der Pakete:** geliefert P8 (nachgetragen, Altbestand; `50ee1bd00`),
-> P5 (`3b30d9f8a`), P3 (`ba263c737`), P6 (`10eb5a1df`), P2a (`a723584ff`) und
-> P2b; offen: P1, Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
+> P5 (`3b30d9f8a`), P3 (`ba263c737`), P6 (`10eb5a1df`), P2a (`a723584ff`),
+> P2b (`b1de205f9`) und P1; offen: Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
 > geliefert (`c9737f909`).
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
@@ -352,6 +352,22 @@ in Ordnung, aber es soll es **sagen**.
 (`takeIf { it.isNotBlank() }`, `:325-326`), und `finding` gibt eine **leere**
 Detail-Map gar nicht aus (`:298`). Ist eine Seite blank, entstehen wieder
 **detail-lose** Funde — genau der Zustand, den das Paket behebt.
+
+**Gebaut — über den CHECK hinaus.** Eine gemeinsame Kurzform
+(`CompareSignature`, `:hexagon:application`) trägt jedes Feld, das der
+Vergleich an Index und Constraint wertet: Schlüssel, Art, `unique`,
+`clustered`, `INCLUDE`, Text-Search-Konfiguration und Prädikat; Spalten, Ziel,
+`on_delete`/`on_update` und Ausdruck. Der Mangel war also breiter als
+beschrieben: auch eine geänderte Schlüsselspalte eines **benannten** Index und
+eine geänderte FK-Aktion standen beidseitig gleich da. Die CLI rendert damit
+(`ck_qty (check: qty > 0) -> ck_qty (check: qty > 1)`), und die MCP-Funde
+tragen sie als `details` — bei `…_CHANGED` beide Seiten, bei `…_ADDED` nur
+`after`, bei `…_REMOVED` nur `before`. Weil die Kurzform den Namen trägt, ist
+keine Seite je blank; die Falle im Helfer greift nicht mehr. Die je Feld
+zerlegten Funde der übrigen Objekte (P2b) tragen `before`/`after` ebenfalls —
+**ohne** Werte bleiben `query`, `body`, `parameters`, `returns` und `fields`
+(lange Rümpfe, strukturierte Werte). Ohne `details` bleiben weiterhin die
+Funde „hinzugefügt"/„entfernt" ganzer Objekte und Spalten.
 
 **DoD:** Ein geaenderter CHECK nennt in **CLI und MCP** beide Ausdruecke; ein
 Test pinnt den CHECK-Fall, den Fall **blanker** Seite und den Index-Fund. Der

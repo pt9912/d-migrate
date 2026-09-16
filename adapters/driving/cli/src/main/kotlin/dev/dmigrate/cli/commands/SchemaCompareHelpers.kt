@@ -59,21 +59,12 @@ internal object SchemaCompareHelpers {
         is DefaultValue.SequenceNextVal -> "sequence_nextval(${dv.sequenceName})"
     }
 
-    fun indexSignature(idx: IndexDefinition): String = buildString {
-        if (idx.name != null) append(idx.name) else append(idx.columns.joinToString(","))
-        append(" [${idx.type.name.lowercase()}")
-        if (idx.unique) append(",unique")
-        append("]")
-    }
+    // Dieselbe Kurzform wie in den MCP-Funden; sie traegt jedes Feld, das
+    // der Vergleich wertet — sonst rendert ein geaenderter CHECK als
+    // `ck_x (check) -> ck_x (check)`.
+    fun indexSignature(idx: IndexDefinition): String = CompareSignature.index(idx)
 
-    fun constraintSignature(c: ConstraintDefinition): String = buildString {
-        append("${c.name} (${c.type.name.lowercase()}")
-        val cols = c.columns
-        if (!cols.isNullOrEmpty()) append(" on [${cols.joinToString(",")}]")
-        val refs = c.references
-        if (refs != null) append(" -> ${refs.table}[${refs.columns.joinToString(",")}]")
-        append(")")
-    }
+    fun constraintSignature(c: ConstraintDefinition): String = CompareSignature.constraint(c)
 
     fun referenceToString(ref: ReferenceDefinition?): String? {
         if (ref == null) return null
