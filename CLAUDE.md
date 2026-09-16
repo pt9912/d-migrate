@@ -52,6 +52,12 @@ in CI, an einer Aufrufstelle, die lokal nie gebaut wurde.
   **zweite** Kernänderung: der Lauf ist rot, der nächste Push ohne weitere
   Berührung wieder grün.
 
+  **Im Arbeits-Repo ist das Gate still grün** — eine echte Kernänderung ergibt
+  dort 0 Befunde (gemessen; Befund in
+  `docs/planning/open/doc-immutable-lokal-still-gruen.md`). Belastbar ist der
+  Lauf nur gegen einen frischen `git clone --no-local`, mit demselben
+  `docker run` wie im Target.
+
 ## Grün heißt nicht geprüft
 
 `BUILD SUCCESSFUL` belegt nur, dass nichts fehlgeschlagen ist — nicht, dass

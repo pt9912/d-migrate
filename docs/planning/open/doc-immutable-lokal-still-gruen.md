@@ -1,0 +1,54 @@
+# `make doc-immutable` ist im Arbeits-Repo still grün
+
+> **Status:** Befund (Gate-Infrastruktur), gemessen 2026-09-16.
+> **Trigger:** Beim Übersteuern von ADR 0053 (Slice
+> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md))
+> sollte die Gegenprobe zeigen, dass das Gate eine Kernänderung fängt. Im
+> Arbeits-Repo fing es sie nicht.
+> **Aktivierungsbedingung** (Move nach `../next/`): Entscheidung, ob das
+> Make-Target lokal auf einen frischen Klon ausweicht oder ob der Fix upstream in
+> d-check liegt (s. „Wege").
+
+## Befund
+
+`make doc-immutable` fährt das d-check-Modul `vcs` gegen das eingehängte
+Arbeits-Repo (`make/d-check.mk`, Target `doc-immutable`). In diesem Repo liest es
+den Objektbestand nicht vollständig, und zwar auf zwei Arten:
+
+| Lauf | Arbeits-Repo (bzw. Hardlink-Klon) | frischer Klon (`git clone --no-local`) |
+| ---- | --------------------------------- | -------------------------------------- |
+| Range über `ff3d3403e` (in CI rot, Kern von ADR 0055 geändert) | **Abbruch**: `Range-Basis "abcfcaa8…" nicht auflösbar: reference not found`, obwohl `git rev-parse` den Commit kennt | **1 Befund** `core-drift-vcs` — wie in CI |
+| Sabotage: Rumpfzeile von ADR 0053 geändert und committet, Range ab `origin/main` | **0 Befunde, Exit 0** | **1 Befund** `core-drift-vcs`, Exit 1 |
+| Die legitime Änderung aus `c9737f909` (nur Statuszeile) | 0 Befunde | 0 Befunde |
+
+Der zweite Fall ist der gefährliche: das Gate meldet keinen Fehler, es meldet
+**Erfolg**. `CLAUDE.md` empfiehlt genau diesen Lauf vor dem Push; ein grünes
+Ergebnis dort belegt also nichts.
+
+**CI ist nicht betroffen.** Der Job arbeitet auf einem frischen Checkout, und dort
+war das Gate beim Kernbruch in `ff3d3403e` rot.
+
+## Vermutete Ursache (nicht nachgewiesen)
+
+Das Arbeits-Repo trägt neben regulären Packs `loose-*`-Packs und einen
+`multi-pack-index` (`.git/objects/pack/`). Ein Hardlink-Klon übernimmt diesen
+Aufbau und verhält sich gleich; ein `--no-local`-Klon packt neu und liest sich
+korrekt. Naheliegend ist, dass die Git-Bibliothek in d-check einen Teil dieses
+Aufbaus nicht liest und einen nicht gefundenen Blob als „unverändert" wertet
+statt als Fehler. Belegt ist nur der Unterschied zwischen den beiden Klonarten,
+nicht der Mechanismus.
+
+## Wege
+
+1. **Make-Target härten:** `doc-immutable` klont vor dem Lauf mit
+   `git clone --no-local` in ein temporäres Verzeichnis und hängt das ein. Kostet
+   Sekunden, wirkt sofort, braucht keine Änderung an d-check.
+2. **Upstream in d-check:** nicht lesbare Objekte als Fehler melden statt als
+   „unverändert"; den Pack-Aufbau unterstützen. Das ist die eigentliche
+   Korrektur. Unabhängig davon bleibt die Frage, warum ein Lesefehler still grün
+   ausgeht.
+3. **Lokal umpacken** (`git repack -a -d`, `multi-pack-index` entfernen): wirkt nur
+   bis zur nächsten Wartung und nur auf diesem Rechner. Kein Gate-Fix.
+
+Bis dahin gilt als Arbeitsweise: die Range in einem frischen Klon prüfen
+(`git clone --no-local`, dann dasselbe `docker run` wie im Target gegen den Klon).
