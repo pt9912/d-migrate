@@ -49,6 +49,7 @@ release-assets/
 .claude/*
 !.claude/skills/
 !.claude/rules/
+!.claude/agents/
 
 #
 .kotlin/
