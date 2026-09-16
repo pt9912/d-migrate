@@ -573,6 +573,16 @@ zurueckgenommener Meldung faellt.
    fahrt PostGIS→Oracle, nie ein Oracle-Reverse; `make sample-db-spatial-smoke`
    fahrt PG↔MySQL; und `sample-db-spatial-ora-smoke` laeuft in **keiner**
    Workflow-Datei (die einzige Spatial-Workflow-Datei fahrt den anderen Smoke).
+
+   **Nulllinie gemessen 2026-09-16** (alle drei Module, in denen die Pakete ihre
+   Abnahme finden): `:test:integration-oracle`, `:test:integration-postgresql`
+   und `:test:integration-mysql` laufen unter `-PintegrationTests` grün; kein
+   Modul hat eine Selbstueberspringung (`assumeTrue`/`Assumptions`/`@Disabled`
+   kommen in keinem vor), und die Test-Tasks standen als `executed` im Lauf —
+   nicht als `SKIPPED`/`UP-TO-DATE`. Ein roter Lauf **nach** einem Paket bedeutet
+   damit etwas; ohne diese Nulllinie waere „grün" von „nichts gefahren"
+   ununterscheidbar. `OracleSpatialIntegrationTest` traegt acht
+   Testdeklarationen, davon die A1-relevante Pinnung `:340-389`.
 3. Je Paket der Ort: P1/P2a `:adapters:driven:driver-oracle`; P3 und P4
    `:adapters:driven:driver-postgresql` — Typ-Mapping **und** dessen
    Kanonisierer-Projektion, denn in `hexagon/ports-common` liegt nur das

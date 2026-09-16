@@ -257,6 +257,15 @@ Dauerrot wird ueberlesen. Die zwei Dinge, die er richtig macht — Argumente geg
 die veroeffentlichten Schemata (`additionalProperties=false`) und der
 Deckungsnachweis oben — gehoeren in die Build-Zeit-Kante, die P1 baut.
 
+**Und die Gegenprobe auf der JVM steht** (2026-09-16):
+`:test:integration-server-state:test` laeuft unter `-PintegrationTests` grün
+(zwei Klassen, sechs Tests: Sweeper-Exactly-once, Pipeline-Happy-Path,
+Rate-Limit, Cancel-Queued, Idempotency-Replay — alle gegen ein echtes Postgres;
+keine Selbstueberspringung im Modul, Task `executed`). Der **Store-Pfad selbst
+ist damit intakt**: der Native-Defekt sitzt in den Reflexionsmetadaten, nicht im
+Adapter. Das ist die Trennung, die der Befund oben behauptet — und sie ist jetzt
+gemessen statt geschlossen.
+
 **DoD:** Der Agent-Lauf erzeugt Eintraege fuer die Wire-Klassen der fuenf
 Codecs — im `git diff` der Metadaten sichtbar. Zu zielen ist auf die
 **verschachtelten Klassen**, nicht auf die Codec-Objekte:
