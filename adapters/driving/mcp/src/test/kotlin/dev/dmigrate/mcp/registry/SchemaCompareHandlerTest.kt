@@ -733,7 +733,9 @@ class SchemaCompareHandlerTest : FunSpec({
         val finding = findings.single().asJsonObject
         finding.get("code").asString shouldBe "W137"
         finding.get("severity").asString shouldBe "warning"
-        finding.get("path").asString shouldBe "t1.total"
+        // Derselbe Aufbau wie die uebrigen Funde — `tables.<t>.columns.<c>…` —,
+        // gelesen aus dem ersten quotierten Abschnitt der Meldung.
+        finding.get("path").asString shouldBe "tables.t1.columns.total.generation.expression"
         finding.get("message").asString shouldContain "was not compared"
     }
 

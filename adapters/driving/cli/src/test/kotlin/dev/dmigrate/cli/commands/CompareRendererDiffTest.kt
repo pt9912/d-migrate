@@ -147,7 +147,7 @@ class CompareRendererDiffTest : FunSpec({
     // aber sichtbar — genau der Fall, den `identical` allein nicht zeigt.
     val undecidedDiagnostic = DiffDiagnostic(
         code = "W137",
-        message = "The computed expression of column `t1.total` was not compared: undecidable.",
+        message = "The computed expression at `tables.t1.columns.total.generation.expression` was not compared: undecidable.",
         severity = DiffDiagnostic.Severity.WARNING,
     )
 
@@ -232,7 +232,7 @@ class CompareRendererDiffTest : FunSpec({
             json shouldContain """"diagnostics":"""
             json shouldContain """"severity": "warning""""
             json shouldContain """"code": "W137""""
-            json shouldContain "t1.total"
+            json shouldContain "tables.t1.columns.total.generation.expression"
         }
     }
 
@@ -277,7 +277,7 @@ class CompareRendererDiffTest : FunSpec({
             yaml shouldContain "diagnostics:"
             yaml shouldContain "severity: warning"
             yaml shouldContain "W137"
-            yaml shouldContain "t1.total"
+            yaml shouldContain "tables.t1.columns.total.generation.expression"
         }
     }
 
@@ -314,7 +314,7 @@ class CompareRendererDiffTest : FunSpec({
             plain shouldContain "Status: IDENTICAL"
             plain shouldContain "Diagnostics:"
             plain shouldContain "warning [W137]"
-            plain shouldContain "t1.total"
+            plain shouldContain "tables.t1.columns.total.generation.expression"
         }
     }
 })

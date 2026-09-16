@@ -49,7 +49,11 @@ object ComputedExpressionDecidability {
                 val currentExpression = expressionOf(currentTable.columns[columnName]?.generation) ?: continue
                 // Wortgleich braucht keine Quelle.
                 if (desiredExpression == currentExpression) continue
-                val path = "$tableName.$columnName"
+                // Der Ort folgt dem Pfad-Schema der uebrigen Vergleichsfunde;
+                // der MCP-Handler liest ihn aus der Meldung.
+                val path = SchemaFindingPath.field(
+                    SchemaFindingPath.column(tableName, columnName), "generation", "expression",
+                )
                 // `true` (belegt geaendert) erzeugt hier **nichts** mehr: daraus
                 // wird eine `AlterColumnGeneration`, und ob der Zielserver sie
                 // ausfuehren kann, weiss allein der Renderer — er kennt Dialekt
@@ -65,7 +69,7 @@ object ComputedExpressionDecidability {
 
     private fun undecidedNote(path: String) = DiffDiagnostic(
         code = UNDECIDED,
-        message = "The computed expression of column `$path` was not compared: its authored form and the " +
+        message = "The computed expression at `$path` was not compared: its authored form and the " +
             "form the server keeps never match literally, and neither a `raw-text-provenance` overlay nor " +
             "the raw-SQL sandbox was available to decide. A change to it would not be detected here.",
         severity = DiffDiagnostic.Severity.WARNING,

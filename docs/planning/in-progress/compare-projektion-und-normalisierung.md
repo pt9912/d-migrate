@@ -2,8 +2,8 @@
 
 > **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden).
 > **Stand der Pakete:** geliefert P8 (nachgetragen, Altbestand; `50ee1bd00`),
-> P5 (`3b30d9f8a`), P3 (`ba263c737`) und P6; offen: P2a, P2b, P1, Spec-Teil
-> von P7. Der ADR-Teil von P7 ist mit ADR 0056
+> P5 (`3b30d9f8a`), P3 (`ba263c737`), P6 (`10eb5a1df`) und P2a; offen: P2b,
+> P1, Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
 > geliefert (`c9737f909`).
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
@@ -389,6 +389,14 @@ bzw. [`spec/mcp-server.md`](../../../spec/mcp-server.md).
 **P2a — der eine divergente Ort.** `ComputedExpressionDecidability.kt:52` zieht
 `order_item.line_total` auf `tables.…`; die Regex im MCP-Handler wird mitgepinnt
 (`SchemaCompareHandler.kt:310`).
+**Gebaut:** `W137` nennt `tables.<tabelle>.columns.<spalte>.generation.expression`
+— bis aufs Feld, wie `schema validate` den Berechnungsausdruck adressiert
+(`E134` ff.). Gebaut wird der Ort über `SchemaFindingPath` in
+`:hexagon:application`, den P2b auch für die übrigen Funde nutzt; damit hängen
+beide Wege an einer Stelle. Die Meldung heißt jetzt „The computed expression at
+`<pfad>` …"; weil `schema migrate` dieselbe Diagnose ausgibt, ändert sich dort
+derselbe Text mit.
+
 **DoD:** Der W137-Fund traegt einen Pfad, der dem Schema der uebrigen Funde
 folgt, und die MCP-Regex liest ihn.
 

@@ -428,7 +428,7 @@ class SchemaCompareRunnerTestPart2 : FunSpec({
         capturedDoc!!.status shouldBe "identical"
         capturedDoc!!.diagnostics.size shouldBe 1
         capturedDoc!!.diagnostics.single().code shouldBe "W137"
-        capturedDoc!!.diagnostics.single().message shouldContain "t1.total"
+        capturedDoc!!.diagnostics.single().message shouldContain "tables.t1.columns.total.generation.expression"
         h.stderr.joined() shouldContain "W137"
     }
 })

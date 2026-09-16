@@ -310,9 +310,11 @@ internal class SchemaCompareHandler(
 
     /**
      * Projects a [ComputedExpressionDecidability] result onto the same
-     * finding shape as everything else — `path` is pulled out of the
-     * backtick-quoted `table.column` the message already carries, since
-     * [DiffDiagnostic] itself has no structured path field.
+     * finding shape as everything else — `path` is pulled out of the first
+     * backtick-quoted section of the message, since [DiffDiagnostic] itself
+     * has no structured path field. The diagnostic writes its location there
+     * in the finding path schema (`SchemaFindingPath`), so the value follows
+     * the same structure as every other finding.
      */
     private fun undecidedFinding(d: DiffDiagnostic): Map<String, Any?> {
         val path = Regex("`([^`]+)`").find(d.message)?.groupValues?.get(1) ?: "-"

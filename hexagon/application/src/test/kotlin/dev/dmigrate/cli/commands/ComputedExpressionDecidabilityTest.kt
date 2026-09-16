@@ -48,7 +48,11 @@ class ComputedExpressionDecidabilityTest : FunSpec({
         val diagnostics = diagnose()
 
         diagnostics.single().code shouldBe ComputedExpressionDecidability.UNDECIDED
-        diagnostics.single().message shouldContain "order_line.line_total"
+        // Der Ort folgt dem Pfad-Schema der uebrigen Vergleichsfunde, und er
+        // steht als erster quotierter Abschnitt — der MCP-Handler liest ihn dort.
+        diagnostics.single().message shouldContain "`tables.order_line.columns.line_total.generation.expression`"
+        Regex("`([^`]+)`").find(diagnostics.single().message)!!.groupValues[1] shouldBe
+            SchemaFindingPath.field(SchemaFindingPath.column("order_line", "line_total"), "generation", "expression")
         diagnostics.single().message shouldContain "would not be detected here"
     }
 
