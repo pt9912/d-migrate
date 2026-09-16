@@ -333,7 +333,7 @@ Kein Verlust bleibt still. Wo Information nicht erhalten werden kann, wird sie
 benutzen, statt mit einem je Dialekt neu gebauten.
 
 Das hat fuenf Ausgaenge, und sie in einen Satz zu zwingen waere die erste
-Ungenauigkeit (Muster: [`compare-projektion-und-normalisierung.md`](compare-projektion-und-normalisierung.md),
+Ungenauigkeit (Muster: [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
 das dieselbe Zerlegung braucht):
 
 1. **Der Verlust ist unvermeidbar und wird benannt** — A1 (der SRID einer

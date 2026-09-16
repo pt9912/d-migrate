@@ -1,13 +1,14 @@
 # Compare: Restfehlalarme und Projektionslücken aus der Konsumentenmessung
 
-> **Status:** Entwurf mit Scope (2026-09-16, Review-Runden 1 und 2 eingearbeitet).
+> **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden; P1–P7
+> offen, keins gebaut).
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
 > Meldung nahelegte (Reader statt Kanonisierung), nicht eine andere Tatsache.
 > **Vorbedingung / Gate:** Die **zwei** verbliebenen Grenzfragen
 > (Schlüsselwort-Case, `RESTRICT` gegen implizit) gehören dem Eigner und werden
 > **hier nicht** entschieden; `RESTRICT` ist in
-> [`../in-progress/compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md)
+> [`compare-falsch-positive-cross-dialekt.md`](compare-falsch-positive-cross-dialekt.md)
 > verankert, der Schlüsselwort-Case hat noch keinen Ort (s. „Offen"). Die dritte
 > Frage der ersten Fassung — `= ANY(ARRAY[…])` gegen `IN (…)` — ist **keine
 > offene Frage**: sie ist in
@@ -19,7 +20,21 @@
 > Der Linienwechsel ist Teil dieses Slices (P7) und läuft über eine
 > **Statusänderung** auf `superseded by`, nicht über einen zweiten ADR daneben —
 > sonst stünden zwei akzeptierte ADRs im Widerspruch und **kein Gate merkte es**.
-> **Aktivierung:** Move nach `../in-progress/` beim ersten Implementierungs-Commit.
+> **Eigner-Entscheidung zur Linie (2026-09-16): voller Umfang.** `ADR 0053` wird
+> von einem neuen ADR übersteuert, der den Stand von 1.7.1 festschreibt (die
+> Dialekt-Schreibweise von CHECK- und Sichten-Text faltet nur `schema compare`)
+> und ihn um P3 und P5 erweitert; `schema migrate` und der Fingerabdruck bleiben
+> streng. Der neue ADR übernimmt die weiter geltenden Punkte aus 0053
+> (Server-Form gegen Server-Form, Herkunft, `CanonicalPayload`) und fasst nur
+> Entscheidung 1 und 4 neu. Die Vorbedingung ist damit erfüllt; die zwei
+> Grenzfragen oben bleiben offen.
+> **Der Widerspruch steht schon heute im Repo:** 1.7.1 faltet in `schema compare`
+> bereits CHECK- und Sichten-Text (`canonicalizeRawExpressions = true`,
+> `SchemaCompareWiring.kt:55`, `McpRuntimeRegistries.kt:125`), und
+> `spec/cli-spec.md` beschreibt das — während `ADR 0053` weiter „`schema compare`
+> bleibt streng" sagt. P7 schliesst also nicht nur die Erweiterung ab, sondern
+> auch diesen Altbestand.
+> **Aktiviert** am 2026-09-16 (Move aus `../next/`).
 
 ## Befund (gemeldet gegen 1.7.1, im Code nachgemessen)
 
@@ -270,7 +285,7 @@ wäre die erste Ungenauigkeit:
 
 **Posten 4 ist am 2026-09-16 aus diesem Slice heraus:** er ist ein Reader-Thema
 und steht als Posten C1 mit Paket P6 im
-[Reader-Slice](reader-treue-spatial-array-json.md) — dieselbe Messung, dieselbe
+[Reader-Slice](../next/reader-treue-spatial-array-json.md) — dieselbe Messung, dieselbe
 Woche. Die Postennummer hier bleibt frei, damit die Querverweise in beiden
 Dokumenten stabil bleiben.
 
@@ -419,7 +434,7 @@ Nachzug in P7 ist Teil des Paketabschlusses, keine Zutat.
 ### P4 — entfällt hier: der Posten steht im Reader-Slice
 
 Der MySQL-Introducer ist ein **Reader**-Thema (Abschnitt 4) und am 2026-09-16
-mit seinem Paket in den [Reader-Slice](reader-treue-spatial-array-json.md)
+mit seinem Paket in den [Reader-Slice](../next/reader-treue-spatial-array-json.md)
 gewandert — dort als Posten C1 mit Paket P6, samt DoD und Modulzeile. Die Nummer
 bleibt hier frei, damit die Querverweise stabil bleiben.
 
@@ -649,6 +664,6 @@ Herkunfts-Feld, das als Schema-Eigenschaft gewertet wird (P6). Und er bewegt
 dabei eine ADR-Linie — das ist kein Nebeneffekt, sondern P7.
 
 **Nicht mehr hier:** Posten 4 (MySQL-Reader) ist am 2026-09-16 in den
-[Reader-Slice](reader-treue-spatial-array-json.md) gewandert, als Posten C1 mit
+[Reader-Slice](../next/reader-treue-spatial-array-json.md) gewandert, als Posten C1 mit
 Paket P6. **Nicht behoben** wird die Umschreibung `= ANY(…)` gegen `IN (…)`:
 sie ist in ADR 0055 entschieden.

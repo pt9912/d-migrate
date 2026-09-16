@@ -289,6 +289,13 @@ fährt bisher `McpRealCliSubprocessTest` und `McpS3SubprocessE2ETest` — beide 
 JDBC-Store. Die Suite bekommt einen Fall, der gegen einen **bestandsgefüllten**
 JDBC-State liest, plus die CI-Verdrahtung.
 
+**Eigner-Entscheidung (2026-09-16): P3 übernimmt die Verdrahtung ganz.** Der offene
+Rest von [`native-e2e-regression-gate.md`](native-e2e-regression-gate.md) geht in
+diesem Paket auf, statt daneben weiterzulaufen. Dessen offene Entscheidungen sind
+damit getroffen: ein **eigenes Make-Target** (`native-e2e`, kettet `native-build`
+und die Subprozess-Suite über `DMIGRATE_CLI_BIN`), ausgelöst per **Tag und
+Dispatch**, **kein** PR-Gate. Mit dem Abschluss von P3 schliesst der Gate-Plan mit.
+
 **DoD:** Das Gate fällt mit zurückgenommener P1/P2-Metadatenänderung. Und es fällt
 nicht auf einem **leeren** Store — der Fall muss einen Datensatz anlegen und ihn in
 einem **zweiten** Prozess lesen.

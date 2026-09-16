@@ -2,6 +2,10 @@
 
 - **Status**: Draft mit Scope (nach `next/` 2026-07-20). Der Hebel ist gebaut und hat sich bewiesen;
   offen ist die **CI-Verdrahtung**. Aktiv erst beim ersten Implementierungs-Commit.
+  **Geht in [`native-server-state-defekte.md`](native-server-state-defekte.md) P3 auf**
+  (Eigner-Entscheidung 2026-09-16): die Verdrahtung baut jenes Paket, die offenen
+  Entscheidungen unten sind dort getroffen (eigenes Make-Target `native-e2e`, Tag und
+  Dispatch, kein PR-Gate). Dieser Plan schliesst mit P3.
 - **Trigger**: Beim Härten des GraalVM-Native-Binaries
   ([graalvm-native-image-distribution](../done/graalvm-native-image-distribution.md), Phase F.4)
   fielen **zwei native Defekte auf, die der Sondenlauf NICHT fand**: `mcp serve` antwortete mit einem
