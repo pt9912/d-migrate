@@ -209,8 +209,7 @@ internal class MysqlColumnConstraintHelper(
                 reason = "EXCLUDE constraint '${constraint.name}' is not supported in MySQL.",
                 hint = "Consider using CHECK constraints or application-level validation instead.",
             )
-            notes += action.toNote()
-            skipped?.add(action.toSkipped())
+            action.record(notes, skipped)
             null
         }
         ConstraintType.FOREIGN_KEY -> {

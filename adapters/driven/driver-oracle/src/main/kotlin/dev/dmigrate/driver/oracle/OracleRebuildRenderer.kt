@@ -135,7 +135,7 @@ internal object OracleRebuildRenderer {
         if (target.primaryKey.isNotEmpty()) {
             val lobKeys = target.primaryKey.filter { it in unkeyable }
             if (lobKeys.isNotEmpty()) {
-                notes += columnHelper.unkeyableKeyNote(table, "pk_$table", "PRIMARY KEY", lobKeys)
+                notes += columnHelper.unkeyableKeyAction(table, "pk_$table", "PRIMARY KEY", lobKeys).toNote()
             } else {
                 val cols = target.primaryKey.joinToString(", ") { ctx.sql.quote(it) }
                 statements += "ALTER TABLE ${ctx.sql.quote(table)} ADD CONSTRAINT " +

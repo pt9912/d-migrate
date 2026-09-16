@@ -12,6 +12,7 @@ import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.IndexPrefixDropNote
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.RawSqlExpressionPortability
@@ -33,8 +34,13 @@ internal class MssqlIndexDdlHelper(
 ) {
 
     /** [lobColumns]: Spalten, die als LOB gerendert werden (siehe [MssqlColumnConstraintHelper.lobColumns]). */
-    fun generateIndices(tableName: String, table: TableDefinition, lobColumns: Set<String>): List<DdlStatement> =
-        table.indices.map { generateIndex(tableName, table, it, lobColumns) }
+    fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        lobColumns: Set<String>,
+        skipped: MutableList<SkippedObject>? = null,
+    ): List<DdlStatement> =
+        table.indices.map { generateIndex(tableName, table, it, lobColumns, skipped) }
 
     /**
      * Ein einzelner Index — der Eintrittspunkt fuer den Diff-Pfad, der Indizes
@@ -47,11 +53,12 @@ internal class MssqlIndexDdlHelper(
         table: TableDefinition,
         index: IndexDefinition,
         lobColumns: Set<String>,
+        skipped: MutableList<SkippedObject>? = null,
     ): DdlStatement {
         val indexName = index.name ?: "idx_${tableName}_${index.keyLabels.joinToString("_")}"
         val columns = table.columns
 
-        expressionRefusal(tableName, index, indexName)?.let { return it }
+        expressionRefusal(tableName, index, indexName, skipped)?.let { return it }
 
         // ADR 0025: Volltext braucht in SQL Server einen Katalog und einen
         // Schluesselindex — beides traegt das Modell nicht. Der Katalog wird je
@@ -73,38 +80,32 @@ internal class MssqlIndexDdlHelper(
                         ),
                     ),
                 )
-                MssqlFullTextDdl.Verdict.NoKeyIndex -> actionRequired(
-                    ManualActionRequired(
-                        code = "E070", objectType = "index", objectName = indexName,
-                        reason = "Full-text index '$indexName' on table '$tableName' is not rendered: SQL Server " +
-                            "needs a single-column, unique, non-nullable index as its key, and the table has none.",
-                        hint = "Give the table a single-column primary key or a NOT NULL unique constraint.",
-                    ),
-                )
-                is MssqlFullTextDdl.Verdict.MoreThanOne -> actionRequired(
-                    ManualActionRequired(
-                        code = "E071", objectType = "index", objectName = indexName,
-                        reason = "Table '$tableName' declares ${verdict.count} full-text indexes; SQL Server " +
-                            "allows exactly one per table, and it is not decidable which one is meant.",
-                        hint = "Merge them into one full-text index over all the columns.",
-                    ),
-                )
+                MssqlFullTextDdl.Verdict.NoKeyIndex -> ManualActionRequired(
+                    code = "E070", objectType = "index", objectName = indexName,
+                    reason = "Full-text index '$indexName' on table '$tableName' is not rendered: SQL Server " +
+                        "needs a single-column, unique, non-nullable index as its key, and the table has none.",
+                    hint = "Give the table a single-column primary key or a NOT NULL unique constraint.",
+                ).skippedStatement(skipped)
+                is MssqlFullTextDdl.Verdict.MoreThanOne -> ManualActionRequired(
+                    code = "E071", objectType = "index", objectName = indexName,
+                    reason = "Table '$tableName' declares ${verdict.count} full-text indexes; SQL Server " +
+                        "allows exactly one per table, and it is not decidable which one is meant.",
+                    hint = "Merge them into one full-text index over all the columns.",
+                ).skippedStatement(skipped)
             }
         }
         // Genau eine Ablage je Tabelle. Beanspruchen sie zwei Indizes, ist nicht
         // entscheidbar, welcher gemeint ist -- geraten waere schlimmer als geblockt.
         if (index.clustered && MssqlClusteredStorage.hasConflictingClaims(table.indices)) {
-            return actionRequired(
-                ManualActionRequired(
+            return ManualActionRequired(
                     code = "E066", objectType = "index", objectName = indexName,
                     reason = "Table '$tableName' declares more than one clustered index; SQL Server allows " +
                         "exactly one, so '$indexName' is not rendered.",
                     hint = "Decide which index carries the table's storage and drop `clustered` from the others.",
-                ),
-            )
+                ).skippedStatement(skipped)
         }
         if (index.isSpatialGeometryIndex { columns[it]?.type }) {
-            return spatialIndex(tableName, table, index, indexName, lobColumns)
+            return spatialIndex(tableName, table, index, indexName, lobColumns, skipped)
         }
         index.columns.firstOrNull { it.name in lobColumns }?.let { offending ->
             return DdlStatement(
@@ -163,6 +164,7 @@ internal class MssqlIndexDdlHelper(
         index: IndexDefinition,
         indexName: String,
         lobColumns: Set<String>,
+        skipped: MutableList<SkippedObject>?,
     ): DdlStatement {
         val column = index.columns.singleOrNull()
         val geodetic = column != null && isGeodeticColumn(table.columns[column.name]?.type)
@@ -176,13 +178,11 @@ internal class MssqlIndexDdlHelper(
             else -> null
         }
         if (blocker != null) {
-            return actionRequired(
-                ManualActionRequired(
+            return ManualActionRequired(
                     code = "E057", objectType = "index", objectName = indexName,
                     reason = "Spatial index '$indexName' on table '$tableName' is not rendered for SQL Server: $blocker.",
                     hint = "Run CREATE SPATIAL INDEX manually on the target once the prerequisites are met.",
-                ),
-            )
+                ).skippedStatement(skipped)
         }
         return DdlStatement(
             "CREATE SPATIAL INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)} " +
@@ -204,25 +204,21 @@ internal class MssqlIndexDdlHelper(
         tableName: String,
         index: IndexDefinition,
         indexName: String,
+        skipped: MutableList<SkippedObject>?,
     ): DdlStatement? {
         val key = index.columns.firstOrNull { it.expression != null } ?: return null
-        return actionRequired(
-            ManualActionRequired(
+        return ManualActionRequired(
                 code = "E057", objectType = "index", objectName = indexName,
                 reason = "Index '$indexName' on table '$tableName' is defined over the expression " +
                     "'${key.expression}'; SQL Server can only index a persisted computed column, " +
                     "which the neutral model does not carry.",
                 hint = "Add a persisted computed column for the expression and index that instead.",
-            ),
-        )
+            ).skippedStatement(skipped)
     }
 
     private fun renderIndexColumn(column: IndexColumn): String = buildString {
         append(quoteIdentifier(column.name))
         if (column.direction == IndexSortDirection.DESC) append(" DESC")
     }
-
-    private fun actionRequired(action: ManualActionRequired): DdlStatement =
-        DdlStatement("", listOf(action.toNote()))
 
 }

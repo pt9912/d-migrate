@@ -9,9 +9,6 @@ internal class PostgresRoutineDdlHelper(
     /** postgresql-default-schema-context.md: fuer Views/Funktionen/Prozeduren/Aggregate und ihre Ziel-Tabelle (Trigger). */
     private val quoteQualified: (String) -> String,
 ) {
-    private fun actionRequired(action: ManualActionRequired): DdlStatement =
-        DdlStatement(sql = "", notes = listOf(action.toNote()))
-
     // ── Views ────────────────────────────────────
 
     fun generateViews(
@@ -42,8 +39,7 @@ internal class PostgresRoutineDdlHelper(
                 hint = "Rewrite the view body with PostgreSQL-compatible syntax and re-run.",
                 sourceDialect = view.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
@@ -76,8 +72,7 @@ internal class PostgresRoutineDdlHelper(
                 reason = "Function '$name' has no body and must be manually implemented.",
                 hint = "Provide a function body in the schema definition.",
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         if (RoutineBodyOrigin.isForeign(fn.sourceDialect, DatabaseDialect.POSTGRESQL)) {
@@ -87,8 +82,7 @@ internal class PostgresRoutineDdlHelper(
                 hint = "Rewrite the function body using PostgreSQL-compatible syntax.",
                 sourceDialect = fn.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         val params = fn.parameters.joinToString(", ") { param ->
@@ -171,8 +165,7 @@ internal class PostgresRoutineDdlHelper(
                 hint = "Re-implement '$name' as a PostgreSQL aggregate with SQL/plpgsql transition functions.",
                 sourceDialect = aggregate.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
         val args = if (aggregate.inputTypes.isEmpty()) "*" else aggregate.inputTypes.joinToString(", ") { it.uppercase() }
         val clauses = buildList {
@@ -211,8 +204,7 @@ internal class PostgresRoutineDdlHelper(
                 reason = "Procedure '$name' has no body and must be manually implemented.",
                 hint = "Provide a procedure body in the schema definition.",
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         if (RoutineBodyOrigin.isForeign(proc.sourceDialect, DatabaseDialect.POSTGRESQL)) {
@@ -222,8 +214,7 @@ internal class PostgresRoutineDdlHelper(
                 hint = "Rewrite the procedure body using PostgreSQL-compatible syntax.",
                 sourceDialect = proc.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         val params = proc.parameters.joinToString(", ") { param ->
@@ -273,8 +264,7 @@ internal class PostgresRoutineDdlHelper(
                 reason = "Trigger '$name' has no body and must be manually implemented.",
                 hint = "Provide a trigger body in the schema definition.",
             )
-            skipped += action.toSkipped()
-            return listOf(actionRequired(action))
+            return listOf(action.skippedStatement(skipped))
         }
 
         if (RoutineBodyOrigin.isForeign(trigger.sourceDialect, DatabaseDialect.POSTGRESQL)) {
@@ -284,8 +274,7 @@ internal class PostgresRoutineDdlHelper(
                 hint = "Rewrite the trigger body using PostgreSQL-compatible syntax.",
                 sourceDialect = trigger.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return listOf(actionRequired(action))
+            return listOf(action.skippedStatement(skipped))
         }
 
         val statements = mutableListOf<DdlStatement>()

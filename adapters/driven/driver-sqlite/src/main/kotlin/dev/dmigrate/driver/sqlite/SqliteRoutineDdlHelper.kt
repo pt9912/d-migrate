@@ -4,9 +4,6 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 
 internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> String) {
-    private fun actionRequired(action: ManualActionRequired): DdlStatement =
-        DdlStatement(sql = "", notes = listOf(action.toNote()))
-
     // -- Views -------------------------------------------------
 
     fun generateViews(
@@ -37,8 +34,7 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
                 hint = "Rewrite the view body with SQLite-compatible syntax and re-run.",
                 sourceDialect = view.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         // Materialized views are not supported in SQLite; emit as regular VIEW with warning
@@ -131,8 +127,7 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
                 reason = "Trigger '$name' has no body and must be manually implemented.",
                 hint = "Provide a trigger body in the schema definition.",
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         if (RoutineBodyOrigin.isForeign(trigger.sourceDialect, DatabaseDialect.SQLITE)) {
@@ -142,8 +137,7 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
                 hint = "Rewrite the trigger body using SQLite-compatible syntax with BEGIN...END;.",
                 sourceDialect = trigger.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         val timing = trigger.timing.name

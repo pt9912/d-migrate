@@ -371,8 +371,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 hint = "Re-implement '$name' as a MySQL loadable aggregate UDF, or express the aggregation " +
                     "in application code / built-in functions.",
             )
-            skipped += action.toSkipped()
-            DdlStatement("", notes = listOf(action.toNote()))
+            action.skippedStatement(skipped)
         }
     }
 

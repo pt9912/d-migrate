@@ -362,8 +362,7 @@ internal class SqliteSequenceDdlSupport {
                     reason = "Sequence '$name' is not supported in SQLite without helper_table mode.",
                     hint = "Add --sqlite-named-sequences helper_table to enable sequence emulation.",
                 )
-                skipped += action.toSkipped()
-                DdlStatement("", listOf(action.toNote()))
+                action.skippedStatement(skipped)
             }
         }
 
@@ -379,8 +378,7 @@ internal class SqliteSequenceDdlSupport {
                     "(${collision.objectType}) lives in the d-migrate-reserved namespace.",
                 hint = "Rename the existing ${collision.objectType} or use --sqlite-named-sequences action_required.",
             )
-            skipped += action.toSkipped()
-            statements += DdlStatement("", listOf(action.toNote()))
+            statements += action.skippedStatement(skipped)
             supportObjectsBlocked = true
             return statements
         }
@@ -441,8 +439,7 @@ internal class SqliteSequenceDdlSupport {
                     reason = "Support object name collision: '$userCollision' already exists in the neutral schema.",
                     hint = "Rename the existing trigger or use --sqlite-named-sequences action_required.",
                 )
-                skipped += action.toSkipped()
-                statements += DdlStatement("", listOf(action.toNote()))
+                statements += action.skippedStatement(skipped)
                 continue
             }
 
@@ -462,8 +459,7 @@ internal class SqliteSequenceDdlSupport {
                     hint = "Rename one of the colliding sequences or columns to disambiguate the hash; " +
                         "this is extremely rare (10-hex SHA-256 prefix).",
                 )
-                skipped += action.toSkipped()
-                statements += DdlStatement("", listOf(action.toNote()))
+                statements += action.skippedStatement(skipped)
                 continue
             }
 

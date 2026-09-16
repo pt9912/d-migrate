@@ -112,4 +112,25 @@ data class SkippedObject(
     val code: String? = null,
     val hint: String? = null,
     val phase: DdlPhase? = null,
-)
+) {
+    companion object {
+        /**
+         * Der uebersprungene Eintrag zu einer Notiz, die einen Objektverlust
+         * meldet.
+         *
+         * Die allgemeine Form der Naht: [ManualActionRequired.record] deckt die
+         * `ACTION_REQUIRED`-Faelle ab, hier kommt eine **Warnung** dazu, die
+         * genauso ein Objekt kostet (Oracle `W152`: ein Index auf einer
+         * LOB-Spalte). Die Notiz-Stufe bleibt dabei unangetastet — sie zu heben
+         * waere eine zweite Aenderung.
+         */
+        fun from(note: TransformationNote, type: String): SkippedObject = SkippedObject(
+            type = type,
+            name = note.objectName,
+            reason = note.message,
+            code = note.code,
+            hint = note.hint,
+            phase = note.phase,
+        )
+    }
+}

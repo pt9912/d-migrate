@@ -164,6 +164,27 @@ class OracleDdlGeneratorTableTest : FunSpec({
         sql shouldNotContain "CONSTRAINT \"df_"
     }
 
+    test("der Berechnungsausdruck wird requotet (ORA-00904 sonst)") {
+        // Oracle faltet einen unquoted Bezeichner auf GROSSSCHREIBUNG und
+        // findet die wortgetreu angelegte Spalte nicht. Live gemessen: ein
+        // roh durchgereichtes `quantity * unit_price` liess das CREATE TABLE
+        // an `ORA-00904: "UNIT_PRICE": invalid identifier` scheitern, und die
+        // Tabelle fehlte danach ganz. Dieselbe Requotierung wie beim CHECK.
+        val table = TableDefinition(
+            columns = mapOf(
+                "quantity" to ColumnDefinition(type = NeutralType.Integer, ordinal = 1),
+                "unit_price" to ColumnDefinition(type = NeutralType.Decimal(12, 2), ordinal = 2),
+                "line_total" to ColumnDefinition(
+                    type = NeutralType.Decimal(14, 2),
+                    generation = ColumnGeneration.Computed("quantity * unit_price", stored = true),
+                    ordinal = 3,
+                ),
+            ),
+        )
+        val sql = tableSql(schema(mapOf("t" to table)))
+        sql shouldContain """GENERATED ALWAYS AS ("quantity" * "unit_price") MATERIALIZED"""
+    }
+
     test("Identifier autoIncrement folds to NUMBER(9) GENERATED ALWAYS AS IDENTITY") {
         val table = TableDefinition(
             columns = mapOf("id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true), ordinal = 1)),

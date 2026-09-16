@@ -62,8 +62,6 @@ class OracleDdlGenerator private constructor(
     )
     private val indexBuilder = OracleIndexDdlBuilder(quoteIdentifier = ::quoteIdentifier)
 
-    private fun actionRequired(action: ManualActionRequired): DdlStatement = DdlStatement("", listOf(action.toNote()))
-
     // ── Quoting ──────────────────────────────────
 
     override fun quoteIdentifier(name: String): String = SqlIdentifiers.quoteIdentifier(name, dialect)
@@ -143,7 +141,8 @@ class OracleDdlGenerator private constructor(
         // Spalten-Pfad fuer den ungenannten Fall.
         for ((colName, constraintName) in NamedUniqueConstraints.named(table)) {
             if (colName in unkeyableColumns) {
-                notes += columnHelper.unkeyableKeyNote(name, constraintName, "UNIQUE", listOf(colName))
+                columnHelper.unkeyableKeyAction(name, constraintName, "UNIQUE", listOf(colName))
+                    .record(notes, skipped)
             } else {
                 lines += NamedUniqueConstraints.clause(colName, constraintName, ::quoteIdentifier)
             }
@@ -160,7 +159,8 @@ class OracleDdlGenerator private constructor(
         if (table.primaryKey.isNotEmpty()) {
             val lobKeys = table.primaryKey.filter { it in unkeyableColumns }
             if (lobKeys.isNotEmpty()) {
-                notes += columnHelper.unkeyableKeyNote(name, "pk_$name", "PRIMARY KEY", lobKeys)
+                columnHelper.unkeyableKeyAction(name, "pk_$name", "PRIMARY KEY", lobKeys)
+                    .record(notes, skipped)
             } else {
                 val pkCols = table.primaryKey.joinToString(", ") { quoteIdentifier(it) }
                 lines += "CONSTRAINT ${quoteIdentifier("pk_$name")} PRIMARY KEY ($pkCols)"
@@ -194,7 +194,7 @@ class OracleDdlGenerator private constructor(
         skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         val unkeyableColumns = unkeyableColumns(table)
-        return table.indices.map { indexBuilder.render(tableName, table, it, unkeyableColumns) }
+        return table.indices.map { indexBuilder.render(tableName, table, it, unkeyableColumns, skipped) }
     }
 
     // ── Circular / deferred foreign keys ──────────
@@ -262,8 +262,7 @@ class OracleDdlGenerator private constructor(
                 hint = "Rewrite the view body with Oracle-compatible syntax and re-run.",
                 sourceDialect = view.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
         val notes = mutableListOf<TransformationNote>()
         if (view.materialized) {
@@ -272,8 +271,7 @@ class OracleDdlGenerator private constructor(
                     code = "E053", objectType = "materialized_view", objectName = name,
                     reason = problem.reason, hint = problem.hint, sourceDialect = view.sourceDialect,
                 )
-                skipped += action.toSkipped()
-                return actionRequired(action)
+                return action.skippedStatement(skipped)
             }
         }
         val (portableQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
@@ -382,8 +380,7 @@ class OracleDdlGenerator private constructor(
             hint = "Implement the aggregate as an ODCIAggregate type, or express it with built-in functions.",
             sourceDialect = aggregate.sourceDialect,
         )
-        skipped += action.toSkipped()
-        actionRequired(action)
+        action.skippedStatement(skipped)
     }
 
     /**
@@ -404,8 +401,7 @@ class OracleDdlGenerator private constructor(
             hint = problem.hint,
             sourceDialect = sourceDialect,
         )
-        skipped += action.toSkipped()
-        return actionRequired(action)
+        return action.skippedStatement(skipped)
     }
 
     // ── Rollback ─────────────────────────────────

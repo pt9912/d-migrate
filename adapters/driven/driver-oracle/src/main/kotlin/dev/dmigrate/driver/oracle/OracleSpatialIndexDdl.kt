@@ -6,6 +6,7 @@ import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.TransformationNote
 
@@ -61,21 +62,20 @@ internal object OracleSpatialIndexDdl {
         index: IndexDefinition,
         indexName: String,
         quoteIdentifier: (String) -> String,
+        skipped: MutableList<SkippedObject>? = null,
     ): DdlStatement {
         if (index.columns.size != 1) {
-            return DdlStatement(
-                "",
-                listOf(
-                    ManualActionRequired(
-                        code = "E052", objectType = "index", objectName = indexName,
-                        reason = "Spatial index '$indexName' on table '$tableName' covers " +
-                            "${index.columns.size} columns; an Oracle spatial index covers exactly one " +
-                            "(ORA-29851), and splitting it would change what a query matches.",
-                        hint = "Index a single geometry column, or create the index manually on the target.",
-                    ).toNote(DdlPhase.POST_DATA),
-                ),
-                phase = DdlPhase.POST_DATA,
-            )
+            val notes = mutableListOf<TransformationNote>()
+            // `POST_DATA` wie das Statement, das hier ausgefallen waere — siehe
+            // die Begruendung in `OracleFullTextDdl.render`.
+            ManualActionRequired(
+                code = "E052", objectType = "index", objectName = indexName,
+                reason = "Spatial index '$indexName' on table '$tableName' covers " +
+                    "${index.columns.size} columns; an Oracle spatial index covers exactly one " +
+                    "(ORA-29851), and splitting it would change what a query matches.",
+                hint = "Index a single geometry column, or create the index manually on the target.",
+            ).record(notes, skipped, DdlPhase.POST_DATA)
+            return DdlStatement("", notes, phase = DdlPhase.POST_DATA)
         }
         val column = quoteIdentifier(index.columns.single().name)
         val create = "CREATE INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)} " +

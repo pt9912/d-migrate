@@ -83,8 +83,7 @@ internal class MysqlSequenceDdlSupport(
                     reason = "Sequence '$name' is not supported in MySQL without helper_table mode.",
                     hint = "Add --mysql-named-sequences helper_table to enable sequence emulation.",
                 )
-                skipped += action.toSkipped()
-                DdlStatement("", listOf(action.toNote()))
+                action.skippedStatement(skipped)
             }
         }
 
@@ -100,8 +99,7 @@ internal class MysqlSequenceDdlSupport(
                     "already exists in the neutral schema.",
                 hint = "Rename the existing table or use --mysql-named-sequences action_required.",
             )
-            skipped += action.toSkipped()
-            statements += DdlStatement("", listOf(action.toNote()))
+            statements += action.skippedStatement(skipped)
             supportObjectsBlocked = true
             return statements
         }
@@ -142,8 +140,7 @@ internal class MysqlSequenceDdlSupport(
                     reason = "Support object name collision: '$routineName' already exists in the neutral schema.",
                     hint = "Rename the existing function or use --mysql-named-sequences action_required.",
                 )
-                skipped += action.toSkipped()
-                statements += DdlStatement("", listOf(action.toNote()))
+                statements += action.skippedStatement(skipped)
                 supportObjectsBlocked = true
                 return statements
             }
@@ -192,8 +189,7 @@ internal class MysqlSequenceDdlSupport(
                     reason = "Support object name collision: '$triggerName' already exists in the neutral schema.",
                     hint = "Rename the existing trigger or use --mysql-named-sequences action_required.",
                 )
-                skipped += action.toSkipped()
-                statements += DdlStatement("", listOf(action.toNote()))
+                statements += action.skippedStatement(skipped)
             }
         }
 

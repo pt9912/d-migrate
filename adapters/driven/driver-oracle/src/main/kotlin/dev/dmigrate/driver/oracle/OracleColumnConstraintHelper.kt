@@ -49,7 +49,7 @@ internal class OracleColumnConstraintHelper(
         skipped: MutableList<SkippedObject>? = null,
     ): String {
         val type = col.type
-        val ctx = ColumnContext(tableName, colName, col, notes, inlineNamedConstraints)
+        val ctx = ColumnContext(tableName, colName, col, notes, inlineNamedConstraints, skipped)
         val generation = col.generation
 
         // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
@@ -65,13 +65,30 @@ internal class OracleColumnConstraintHelper(
                 colName, computed.expression, DatabaseDialect.ORACLE,
             )
             if (refusal != null) {
+                // Notiz und Skip ueber die gemeinsame Abbildung: der Text nennt
+                // das Objekt als `column`, der uebersprungene Eintrag als
+                // `computed_expression` — die beiden Typen duerfen sich
+                // unterscheiden, die Zuordnung aber soll nicht von Hand
+                // danebenstehen.
                 notes += refusal
-                skipped?.add(SkippedObject("computed_expression", colName, refusal.message, code = refusal.code))
+                skipped?.add(SkippedObject.from(refusal, "computed_expression"))
             } else {
+                // Dieselbe Requotierung wie beim CHECK-Ausdruck, und aus
+                // demselben Grund: Oracle faltet einen unquoted Bezeichner
+                // auf GROSSSCHREIBUNG und findet die wortgetreu angelegte
+                // Spalte nicht. Ohne sie scheitert das `CREATE TABLE` live
+                // an `ORA-00904: "UNIT_PRICE": invalid identifier` — und die
+                // Tabelle fehlt danach ganz.
+                val expression = OracleIdentifierRequoter.requote(
+                    computed.expression, OracleIdentifierRequoter.knownIdentifiers(schema), quoteIdentifier,
+                )
                 return listOf(
                     quoteIdentifier(colName),
                     typeMapper.toSql(type),
-                    ComputedColumnClause.clause(computed, if (computed.stored) "MATERIALIZED" else "VIRTUAL"),
+                    ComputedColumnClause.clause(
+                        computed.copy(expression = expression),
+                        if (computed.stored) "MATERIALIZED" else "VIRTUAL",
+                    ),
                 ).joinToString(" ")
             }
         }
@@ -107,6 +124,13 @@ internal class OracleColumnConstraintHelper(
          * [columnLevelConstraintClauses] nach.
          */
         val inlineNamedConstraints: Boolean = true,
+        /**
+         * Der Verlust-Zaehler des Aufrufers. Ein inline weggelassenes UNIQUE
+         * auf einer LOB-Spalte (E057) ist ein Objektverlust wie jeder andere
+         * und muss dort landen — vorher trug der Kontext die Liste gar nicht,
+         * und der Verlust blieb ungezaehlt.
+         */
+        val skipped: MutableList<SkippedObject>? = null,
     )
 
     // ── Identity ─────────────────────────────────
@@ -330,7 +354,8 @@ internal class OracleColumnConstraintHelper(
         if (ctx.col.required) parts += "NOT NULL"
         if (NamedUniqueConstraints.rendersInline(ctx.col) && ctx.inlineNamedConstraints) {
             if (lob) {
-                ctx.notes += unkeyableKeyNote(ctx.tableName, "uq_${ctx.tableName}_${ctx.colName}", "UNIQUE", listOf(ctx.colName))
+                unkeyableKeyAction(ctx.tableName, "uq_${ctx.tableName}_${ctx.colName}", "UNIQUE", listOf(ctx.colName))
+                    .record(ctx.notes, ctx.skipped)
             } else {
                 parts += uniqueClause(ctx.tableName, ctx.colName)
             }
@@ -341,8 +366,22 @@ internal class OracleColumnConstraintHelper(
     private fun uniqueClause(tableName: String, colName: String): String =
         "CONSTRAINT ${quoteIdentifier("uq_${tableName}_$colName")} UNIQUE"
 
-    /** E057: UNIQUE/PRIMARY KEY auf LOB-Spalten ist in Oracle nicht erzeugbar (ORA-02329). */
-    fun unkeyableKeyNote(tableName: String, constraintName: String, kind: String, columns: List<String>): TransformationNote =
+    /**
+     * E057: UNIQUE/PRIMARY KEY auf LOB-Spalten ist in Oracle nicht erzeugbar
+     * (ORA-02329).
+     *
+     * Gibt den [ManualActionRequired] zurueck statt schon die Notiz: der
+     * Aufrufer meldet ueber [ManualActionRequired.record] beides in einem Zug —
+     * die Notiz **und** den uebersprungenen Eintrag. Die Vorform rief nur
+     * `toNote()` und liess `toSkipped()` liegen; Oracle zaehlte seine
+     * Objektverluste deshalb nicht (Konsumentenbefund gegen 1.7.0).
+     */
+    fun unkeyableKeyAction(
+        tableName: String,
+        constraintName: String,
+        kind: String,
+        columns: List<String>,
+    ): ManualActionRequired =
         ManualActionRequired(
             code = "E057", objectType = "constraint", objectName = constraintName,
             reason = "$kind constraint '$constraintName' on table '$tableName' was skipped: column(s) " +
@@ -350,7 +389,7 @@ internal class OracleColumnConstraintHelper(
                 "(ORA-02329) — large objects (CLOB/BLOB) or TIMESTAMP WITH TIME ZONE.",
             hint = "Bound a textual column (max_length <= 4000), or drop the time zone from a timestamp key, " +
                 "or enforce the constraint manually.",
-        ).toNote()
+        )
 
     // ── Foreign keys / table constraints ─────────
 
@@ -413,10 +452,9 @@ internal class OracleColumnConstraintHelper(
             // DDL.
             val verdict = RawSqlExpressionPortability.assess(constraint.expression, DatabaseDialect.ORACLE)
             if (!verdict.portable) {
-                notes += RawSqlExpressionPortability.notPortableNote(
+                RawSqlExpressionPortability.notPortableAction(
                     "constraint", constraint.name, "CHECK expression", verdict.reason, DatabaseDialect.ORACLE,
-                )
-                skipped?.add(SkippedObject("constraint", constraint.name, verdict.reason.orEmpty(), code = "E053"))
+                ).record(notes, skipped)
                 null
             } else {
                 val expression = OracleIdentifierRequoter.requote(
@@ -429,20 +467,18 @@ internal class OracleColumnConstraintHelper(
             val columns = constraint.columns.orEmpty()
             val lob = columns.filter { it in unkeyableColumns }
             if (lob.isNotEmpty()) {
-                notes += unkeyableKeyNote(tableName, constraint.name, "UNIQUE", lob)
+                unkeyableKeyAction(tableName, constraint.name, "UNIQUE", lob).record(notes, skipped)
                 null
             } else {
                 "CONSTRAINT ${quoteIdentifier(constraint.name)} UNIQUE (${columns.joinToString(", ") { quoteIdentifier(it) }})"
             }
         }
         ConstraintType.EXCLUDE -> {
-            val action = ManualActionRequired(
+            ManualActionRequired(
                 code = "E054", objectType = "constraint", objectName = constraint.name,
                 reason = "EXCLUDE constraint '${constraint.name}' is not supported in Oracle.",
                 hint = "Enforce the exclusion with a trigger or application-level validation instead.",
-            )
-            notes += action.toNote()
-            skipped?.add(action.toSkipped())
+            ).record(notes, skipped)
             null
         }
         ConstraintType.FOREIGN_KEY -> {

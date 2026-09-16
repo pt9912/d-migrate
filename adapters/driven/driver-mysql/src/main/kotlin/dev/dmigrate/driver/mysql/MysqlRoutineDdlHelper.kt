@@ -5,9 +5,6 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 
 internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> String) {
-    private fun actionRequired(action: ManualActionRequired): DdlStatement =
-        DdlStatement(sql = "", notes = listOf(action.toNote()))
-
     // ── Views ────────────────────────────────────
 
     fun generateViews(
@@ -38,8 +35,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 hint = "Rewrite the view body with MySQL-compatible syntax and re-run.",
                 sourceDialect = view.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         val notes = mutableListOf<TransformationNote>()
@@ -80,8 +76,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 reason = "Function '$name' has no body and must be manually implemented.",
                 hint = "Provide a function body in the schema definition.",
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         if (RoutineBodyOrigin.isForeign(fn.sourceDialect, DatabaseDialect.MYSQL)) {
@@ -91,8 +86,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 hint = "Rewrite the function body using MySQL-compatible syntax.",
                 sourceDialect = fn.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         val params = fn.parameters.joinToString(", ") { param ->
@@ -142,8 +136,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 reason = "Procedure '$name' has no body and must be manually implemented.",
                 hint = "Provide a procedure body in the schema definition.",
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         if (RoutineBodyOrigin.isForeign(proc.sourceDialect, DatabaseDialect.MYSQL)) {
@@ -153,8 +146,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 hint = "Rewrite the procedure body using MySQL-compatible syntax.",
                 sourceDialect = proc.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         val params = proc.parameters.joinToString(", ") { param ->
@@ -194,8 +186,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 reason = "Trigger '$name' has no body and must be manually implemented.",
                 hint = "Provide a trigger body in the schema definition.",
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         if (RoutineBodyOrigin.isForeign(trigger.sourceDialect, DatabaseDialect.MYSQL)) {
@@ -205,8 +196,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 hint = "Rewrite the trigger body using MySQL-compatible syntax.",
                 sourceDialect = trigger.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
 
         val timing = trigger.timing.name

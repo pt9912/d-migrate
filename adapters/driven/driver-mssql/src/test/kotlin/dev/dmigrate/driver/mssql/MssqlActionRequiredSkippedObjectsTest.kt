@@ -4,6 +4,8 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -17,6 +19,44 @@ import io.kotest.matchers.shouldBe
  * mit fremder Grammatik und ein EXCLUDE-Constraint spurlos aus dem Bestand,
  * den der Aufrufer zaehlen kann.
  */
+/**
+ * Die Index-Seite desselben Vertrags. Sie kam spaeter als die Constraint-Seite
+ * und war bis dahin **unvollstaendig**: der Index-Helfer baute fuenf
+ * Verluststellen ueber eine private Funktion, die nur die Notiz erzeugte —
+ * `E066`, `E070`, `E071`, „Spatial nicht renderbar" und der Ausdrucks-Index
+ * fielen aus der Ausgabe, ohne in `skippedObjects` zu stehen. Dieselbe Klasse
+ * wie der Konsumentenbefund gegen 1.7.0, eine Datei weiter.
+ */
+class MssqlIndexActionRequiredSkippedObjectsTest : FunSpec({
+
+    val generator = MssqlDdlGenerator()
+
+    fun schemaWith(table: TableDefinition) = SchemaDefinition(
+        name = "t", version = "1.0", tables = mapOf("orders" to table),
+    )
+
+    test("ein Ausdrucks-Index, den SQL Server nicht bauen kann, steht in skippedObjects") {
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "email" to ColumnDefinition(NeutralType.Text(100), required = true),
+            ),
+            primaryKey = listOf("id"),
+            indices = listOf(
+                IndexDefinition(
+                    name = "ix_expr",
+                    columns = listOf(IndexColumn.expression("lower(email)")),
+                ),
+            ),
+        )
+        val result = generator.generate(schemaWith(table))
+        val skipped = result.skippedObjects.single()
+        skipped.type shouldBe "index"
+        skipped.name shouldBe "ix_expr"
+        skipped.code shouldBe "E057"
+    }
+})
+
 class MssqlActionRequiredSkippedObjectsTest : FunSpec({
 
     val generator = MssqlDdlGenerator()

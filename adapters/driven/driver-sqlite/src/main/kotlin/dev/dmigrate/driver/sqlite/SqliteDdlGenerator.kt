@@ -116,8 +116,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             reason = "User-defined aggregate '$name' is not supported in SQLite.",
             hint = "Re-express the aggregation in application code or register a custom aggregate at runtime.",
         )
-        skipped += action.toSkipped()
-        DdlStatement("", notes = listOf(action.toNote()))
+        action.skippedStatement(skipped)
     }
 
     override fun generateProcedures(

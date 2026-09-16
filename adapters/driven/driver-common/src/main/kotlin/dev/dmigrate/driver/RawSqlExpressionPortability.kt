@@ -134,7 +134,21 @@ object RawSqlExpressionPortability {
         field: String,
         reason: String?,
         target: DatabaseDialect,
-    ): TransformationNote = ManualActionRequired(
+    ): TransformationNote = notPortableAction(objectType, objectName, field, reason, target).toNote()
+
+    /**
+     * Derselbe Befund als [ManualActionRequired] — fuer Aufrufer, die Notiz
+     * **und** uebersprungenes Objekt melden. Vorbild ist
+     * [ManualActionRequired.record]; die Vorform rief hier sofort `toNote()`
+     * und liess den Aufrufer den [SkippedObject] daneben von Hand bauen.
+     */
+    fun notPortableAction(
+        objectType: String,
+        objectName: String,
+        field: String,
+        reason: String?,
+        target: DatabaseDialect,
+    ): ManualActionRequired = ManualActionRequired(
         code = "E053",
         objectType = objectType,
         objectName = objectName,
@@ -142,5 +156,5 @@ object RawSqlExpressionPortability {
             "${target.name.lowercase()} (${reason ?: "unsupported syntax"}); d-migrate does not translate raw " +
             "SQL expressions between dialects, so it was not rendered.",
         hint = "Rewrite the expression with ${target.name.lowercase()}-compatible syntax and re-run.",
-    ).toNote()
+    )
 }

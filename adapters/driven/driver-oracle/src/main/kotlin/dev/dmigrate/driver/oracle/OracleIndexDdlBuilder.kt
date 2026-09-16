@@ -8,6 +8,7 @@ import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.renderKey
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.RawSqlExpressionPortability
@@ -33,7 +34,19 @@ internal class OracleIndexDdlBuilder(
     fun effectiveName(tableName: String, index: IndexDefinition): String =
         index.name ?: "idx_${tableName}_${index.keyLabels.joinToString("_")}"
 
-    fun render(tableName: String, table: TableDefinition, index: IndexDefinition, unkeyableColumns: Set<String>): DdlStatement {
+    fun render(
+        tableName: String,
+        table: TableDefinition,
+        index: IndexDefinition,
+        unkeyableColumns: Set<String>,
+        /**
+         * Der Verlust-Zaehler des Aufrufers. Ein Index, den Oracle nicht
+         * erzeugen kann, verschwindet aus der Ausgabe und ist damit ein
+         * Objektverlust wie jeder andere — vorher trug dieser Pfad die Liste
+         * nicht und der Verlust blieb ungezaehlt.
+         */
+        skipped: MutableList<SkippedObject>? = null,
+    ): DdlStatement {
         val indexName = effectiveName(tableName, index)
         RawSqlExpressionPortability.indexRefusal(index, indexName, DatabaseDialect.ORACLE)?.let { return it }
         val columns = table.columns
@@ -42,26 +55,26 @@ internal class OracleIndexDdlBuilder(
         // gewoehnlichen Index kein zulaessiger Schluessel, fuer einen
         // Oracle-Text-Index dagegen der Normalfall.
         if (index.type == IndexType.FULLTEXT) {
-            return OracleFullTextDdl.render(tableName, index, indexName, quoteIdentifier)
+            return OracleFullTextDdl.render(tableName, index, indexName, quoteIdentifier, skipped)
         }
         // Ebenfalls vor dem LOB-Waechter: eine Geometriespalte ist fuer einen
         // gewoehnlichen Index kein zulaessiger Schluessel, fuer einen
         // raeumlichen der Normalfall.
         if (index.isSpatialGeometryIndex { columns[it]?.type }) {
-            return OracleSpatialIndexDdl.render(tableName, index, indexName, quoteIdentifier)
+            return OracleSpatialIndexDdl.render(tableName, index, indexName, quoteIdentifier, skipped)
         }
         index.columns.firstOrNull { it.name in unkeyableColumns }?.let { offending ->
-            return DdlStatement(
-                "",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.WARNING, code = "W152", objectName = indexName,
-                        message = "Index '$indexName' on column '${offending.name}' was skipped: the column is a " +
-                            "large-object type (CLOB/BLOB) which Oracle does not allow as an index key.",
-                        hint = "Index a bounded VARCHAR2(n) column instead.",
-                    ),
-                ),
+            // Die Notiz bleibt eine **Warnung** (W152) — nur der
+            // Objektverlust wird jetzt gezaehlt. Die Stufe zu heben waere eine
+            // zweite Aenderung, die hier niemand verlangt hat.
+            val note = TransformationNote(
+                type = NoteType.WARNING, code = "W152", objectName = indexName,
+                message = "Index '$indexName' on column '${offending.name}' was skipped: the column is a " +
+                    "large-object type (CLOB/BLOB) which Oracle does not allow as an index key.",
+                hint = "Index a bounded VARCHAR2(n) column instead.",
             )
+            skipped?.add(SkippedObject.from(note, "index"))
+            return DdlStatement("", listOf(note))
         }
 
         val notes = mutableListOf<TransformationNote>()

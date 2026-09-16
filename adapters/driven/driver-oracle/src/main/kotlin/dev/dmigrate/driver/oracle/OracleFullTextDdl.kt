@@ -1,9 +1,11 @@
 package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.TransformationNote
 
 /**
@@ -46,21 +48,25 @@ internal object OracleFullTextDdl {
         index: IndexDefinition,
         indexName: String,
         quoteIdentifier: (String) -> String,
+        skipped: MutableList<SkippedObject>? = null,
     ): DdlStatement {
         if (index.columns.size != 1) {
-            return DdlStatement(
-                "",
-                listOf(
-                    ManualActionRequired(
-                        code = "E057", objectType = "index", objectName = indexName,
-                        reason = "Full-text index '$indexName' on table '$tableName' covers " +
-                            "${index.columns.size} columns; an Oracle Text index covers exactly one " +
-                            "(ORA-29851), and splitting it would change what a search matches.",
-                        hint = "Index a single column, or create a MULTI_COLUMN_DATASTORE preference and the " +
-                            "index manually on the target.",
-                    ).toNote(),
-                ),
-            )
+            val notes = mutableListOf<TransformationNote>()
+            // `POST_DATA` wie das Statement, das hier ausgefallen waere: der
+            // Index wird in einem `POST_DATA`-Statement erzeugt, und
+            // `AbstractDdlGenerator.tagNewSkips` vergibt die Phase nach
+            // **Block** — dieser Block wird gar nicht getaggt. Ohne die
+            // ausdrueckliche Phase faende `skippedObjectsForPhase` den Verlust
+            // in keinem der beiden Eimer.
+            ManualActionRequired(
+                code = "E057", objectType = "index", objectName = indexName,
+                reason = "Full-text index '$indexName' on table '$tableName' covers " +
+                    "${index.columns.size} columns; an Oracle Text index covers exactly one " +
+                    "(ORA-29851), and splitting it would change what a search matches.",
+                hint = "Index a single column, or create a MULTI_COLUMN_DATASTORE preference and the " +
+                    "index manually on the target.",
+            ).record(notes, skipped, DdlPhase.POST_DATA)
+            return DdlStatement("", notes, phase = DdlPhase.POST_DATA)
         }
         val column = quoteIdentifier(index.columns.single().name)
         val sql = "CREATE INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)} ($column) " +

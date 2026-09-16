@@ -184,9 +184,8 @@ class MssqlDdlGenerator private constructor(
         if (effective.primaryKey.isNotEmpty()) {
             val lobKeys = effective.primaryKey.filter { it in lobColumns }
             if (lobKeys.isNotEmpty()) {
-                val action = columnHelper.lobKeyAction(name, MssqlConstraintNames.primaryKey(name), "PRIMARY KEY", lobKeys)
-                notes += action.toNote()
-                skipped += action.toSkipped()
+                columnHelper.lobKeyAction(name, MssqlConstraintNames.primaryKey(name), "PRIMARY KEY", lobKeys)
+                    .record(notes, skipped)
             } else {
                 val pkCols = effective.primaryKey.joinToString(", ") { quoteIdentifier(it) }
                 val pkClause = MssqlClusteredStorage.primaryKeyClause(effective)
@@ -228,7 +227,7 @@ class MssqlDdlGenerator private constructor(
                 ::quoteIdentifier, schema,
             ) as? MssqlHashPartitionOutcome.Planned
             )?.plan?.table ?: table
-        return indexHelper.generateIndices(tableName, effective, typeResolver.lobColumns(effective, schema))
+        return indexHelper.generateIndices(tableName, effective, typeResolver.lobColumns(effective, schema), skipped)
     }
 
     // ── Foreign keys outside CREATE TABLE ────────
@@ -286,8 +285,7 @@ class MssqlDdlGenerator private constructor(
                 hint = "Rewrite the view body with T-SQL-compatible syntax and re-run.",
                 sourceDialect = view.sourceDialect,
             )
-            skipped += action.toSkipped()
-            return actionRequired(action)
+            return action.skippedStatement(skipped)
         }
         val notes = mutableListOf<TransformationNote>()
         if (view.materialized) {
@@ -373,8 +371,7 @@ class MssqlDdlGenerator private constructor(
             hint = "Implement the aggregate as a CLR assembly or express it with built-in functions.",
             sourceDialect = aggregate.sourceDialect,
         )
-        skipped += action.toSkipped()
-        actionRequired(action)
+        action.skippedStatement(skipped)
     }
 
 
@@ -391,12 +388,8 @@ class MssqlDdlGenerator private constructor(
             hint = problem.hint,
             sourceDialect = sourceDialect,
         )
-        skipped += action.toSkipped()
-        return actionRequired(action)
+        return action.skippedStatement(skipped)
     }
-
-    private fun actionRequired(action: ManualActionRequired): DdlStatement =
-        DdlStatement("", listOf(action.toNote()))
 
     // ── Rollback ─────────────────────────────────
 

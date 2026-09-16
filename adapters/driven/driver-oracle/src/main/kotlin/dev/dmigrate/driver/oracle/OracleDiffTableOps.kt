@@ -89,7 +89,7 @@ internal object OracleDiffTableOps {
         if (table.primaryKey.isNotEmpty()) {
             val lobKeys = table.primaryKey.filter { it in unkeyableColumns }
             if (lobKeys.isNotEmpty()) {
-                notes += columnHelper.unkeyableKeyNote(tableName, "pk_$tableName", "PRIMARY KEY", lobKeys)
+                notes += columnHelper.unkeyableKeyAction(tableName, "pk_$tableName", "PRIMARY KEY", lobKeys).toNote()
             } else {
                 val pkCols = table.primaryKey.joinToString(", ") { ctx.sql.quote(it) }
                 lines += "CONSTRAINT ${ctx.sql.quote("pk_$tableName")} PRIMARY KEY ($pkCols)"

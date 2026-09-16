@@ -379,8 +379,7 @@ internal class MssqlColumnConstraintHelper(
                     "UNIQUE",
                     listOf(ctx.colName),
                 )
-                ctx.notes += action.toNote()
-                ctx.skipped?.add(action.toSkipped())
+                action.record(ctx.notes, ctx.skipped)
             } else {
                 ctx.objects += uniqueObject(ctx)
                 if (isNullable(ctx.table, ctx.colName)) {
@@ -518,8 +517,7 @@ internal class MssqlColumnConstraintHelper(
             val lob = columns.filter { it in lobColumns }
             if (lob.isNotEmpty()) {
                 val action = lobKeyAction(tableName, constraint.name, "UNIQUE", lob)
-                notes += action.toNote()
-                skipped?.add(action.toSkipped())
+                action.record(notes, skipped)
                 null
             } else {
                 val nullable = columns.filter { isNullable(table, it) }
@@ -535,8 +533,7 @@ internal class MssqlColumnConstraintHelper(
                 reason = "EXCLUDE constraint '${constraint.name}' is not supported in SQL Server.",
                 hint = "Enforce the exclusion with a trigger or application-level validation instead.",
             )
-            notes += action.toNote()
-            skipped?.add(action.toSkipped())
+            action.record(notes, skipped)
             null
         }
         ConstraintType.FOREIGN_KEY -> {
