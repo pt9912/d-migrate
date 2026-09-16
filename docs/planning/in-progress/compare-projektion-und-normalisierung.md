@@ -1,8 +1,8 @@
 # Compare: Restfehlalarme und Projektionslücken aus der Konsumentenmessung
 
 > **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden).
-> **Stand der Pakete:** geliefert P8 (nachgetragen, Altbestand; `50ee1bd00`)
-> und P5; offen: P3, P6, P2a, P2b, P1, Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
+> **Stand der Pakete:** geliefert P8 (nachgetragen, Altbestand; `50ee1bd00`),
+> P5 (`3b30d9f8a`) und P3; offen: P6, P2a, P2b, P1, Spec-Teil von P7. Der ADR-Teil von P7 ist mit ADR 0056
 > geliefert (`c9737f909`).
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
@@ -408,6 +408,17 @@ Je Paket Sabotage — die Trennung haelt einen Teilstand entscheidbar.
 gilt weiter:** nur Klammern, die *keine* Bedeutung tragen, und nur Wortstellung,
 die nichts umstellt. Der Wächter aus 1.7.1 bleibt: eine Kanonisierung, die zu
 viel gleichsetzt, versteckt echte Unterschiede.
+
+**Gebaut — enger als oben beschrieben, nach ADR 0056** (`OperandParens`,
+`:hexagon:core`): eine Klammer fällt nur, wenn sie links und rechts nur an
+Ausdrucksrand, `AND` oder `OR` grenzt (an mindestens einer Seite an `AND`/`OR`)
+**und** ein einzelnes Vergleichsprädikat umschließt — einen Vergleichsoperator
+(`=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`; `@>` zählt nicht) oder `IS [NOT] NULL` —
+ohne `AND`/`OR`/`NOT`/`XOR`/`BETWEEN`/`CASE`/Abfrage oder MySQLs `||`/`&&` auf
+seiner obersten Ebene. Über den ADR hinaus: auf einer Ebene mit `BETWEEN` fällt
+**keine** Klammer — dessen `AND` ist keine Konjunktion, und `BETWEEN` bindet in
+PostgreSQL stärker als `=` (`x BETWEEN 1 AND (y = 2)`). `IN`, `LIKE` und
+andere Operatoren gelten nicht als Vergleich; ihre Klammern bleiben.
 
 **DoD:** Der **PG↔MSSQL**-Leg des gemeldeten Vergleichs meldet
 `ck_order_ship_after_place` nicht mehr. Die zwei MySQL-Beine bleiben es

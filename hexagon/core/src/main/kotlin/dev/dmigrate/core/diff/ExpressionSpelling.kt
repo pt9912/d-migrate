@@ -35,6 +35,7 @@ internal object ExpressionSpelling {
             .replace(OPERATOR_GAP, "$1")
             .trim()
             .let(::stripOuterParens)
+            .let(OperandParens::fold)
         return skeleton.restore(folded)
     }
 
