@@ -971,6 +971,42 @@ Dokument-Schreibweise rot; Index-Abschnitt wieder ueber
 `columns.joinToString` → „every path follows the one schema" und der
 Ausdrucks-Fall rot (5 von 1226); Ruecknahme bestaetigt.
 
+**G — Absicherung (Verifikation 1, Review L6).**
+
+- **AK 4 an der echten Stelle.** Die Sabotage `canonicalizeRawExpressions =
+  true` in `SchemaMigrateWiring` blieb im ersten Bauabschnitt gruen (1039
+  Tests) — kein Test sah die Comparatoren, die der Befehl verdrahtet. Sie
+  stehen jetzt in `SchemaMigrateComparators` (die Verdrahtung verweist
+  darauf), und `SchemaMigrateComparatorsTest` prueft sie zweifach: **durch
+  den Befehl** (`schema migrate` Datei gegen Datei, PostgreSQL: ein CHECK und
+  ein Index-Praedikat, die `schema compare` gleichsetzt, erscheinen im Plan;
+  die Kontrolle mit derselben Datei plant nichts) und **am Objekt** (beide
+  Comparatoren melden eine reine Schreibweise-Differenz, der strikte auch
+  einen abweichenden Identity-Sequenznamen — keine Erzeugungs-Projektion von
+  `schema compare`). Das Testpaar ist bewusst kein Wertevorrat: `status = 'x'`
+  faltet der ziel-bewusste Vergleich als Enum-CHECK (ADR 0055), zu Recht.
+- **Vollstaendigkeit `ObjectDiffFields`.** `ObjectDiffFieldsCompletenessTest`
+  zaehlt per Java-Reflection (ohne `kotlin-reflect`) die `ValueChange`-Felder
+  der sechs Diff-Klassen und verlangt je Feld einen Dokument-Schluessel und
+  einen Fund; dasselbe fuer `ColumnDiff` und `TableDiff`. Bei `TableDiff` ist
+  `partitioning` als **bekannte Luecke** ausgenommen (s. „Offen") und
+  zusaetzlich gepinnt — kommt ein Fund dazu, faellt der Test auf.
+- **P2b-DoD mit dem echten Comparator.** `SchemaCompareFindingPathTest` stellt
+  zwei Schemata, die sich in jeder meldbaren Art unterscheiden, durch
+  `SchemaComparator(canonicalizeRawExpressions = true)` und die
+  `W137`-Diagnose und verlangt dieselbe Grammatik und die Feld-Enden. Nicht
+  darunter: `TABLE_COLUMN_UNIQUE_*` und `TABLE_COLUMN_REFERENCES_CHANGED` —
+  der Comparator fuehrt einspaltiges UNIQUE und einspaltige Fremdschluessel
+  als Constraint; diese Codes entstehen nur aus einem handgebauten Diff.
+
+**Sabotage G** (`make docker-test MODULES=":adapters:driving:cli
+:adapters:driving:mcp"`, ein Lauf): S9 wiederholt (Faltung in beiden
+Migrate-Comparatoren) → der Befehls- und der Objekttest rot; die
+Erzeugungs-Projektion im strikten Comparator → der Sequenzname-Fall rot; ein
+Feld aus `ObjectDiffFields` (`cache`) und der Metadaten-Fund entfernt → die
+drei Vollstaendigkeitsfaelle rot; der Spalten-Pfad falsch gebaut → auch die
+beiden Faelle mit echtem Comparator rot (16 von 2278); Ruecknahme bestaetigt.
+
 **Sabotage-Protokoll A–D, H** (`make docker-test MODULES=":hexagon:core"`,
 fuenf Laeufe mit disjunkten Erwartungen; nach jedem Lauf Ruecknahme per
 Archiv und `diff -r` bestaetigt; danach gruen, 1468 Tests):

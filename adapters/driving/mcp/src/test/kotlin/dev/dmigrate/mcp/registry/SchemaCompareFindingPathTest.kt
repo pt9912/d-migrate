@@ -12,6 +12,7 @@ import dev.dmigrate.core.diff.NamedTable
 import dev.dmigrate.core.diff.NamedTrigger
 import dev.dmigrate.core.diff.NamedView
 import dev.dmigrate.core.diff.ProcedureDiff
+import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.SchemaMetadataDiff
 import dev.dmigrate.core.diff.SequenceDiff
@@ -27,6 +28,7 @@ import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FunctionDefinition
+import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexSortDirection
@@ -236,6 +238,61 @@ class SchemaCompareFindingPathTest : FunSpec({
         added.forEach { grammar.matches(it as String) shouldBe true }
     }
 
+    context("die Ausgabe des echten Comparators") {
+
+        // Zwei Schemata, die sich in jeder Art unterscheiden, die der
+        // Comparator melden kann — durch denselben Comparator und dieselbe
+        // Diagnose, die `schema_compare` benutzt.
+        val left = realSchema(before = true)
+        val right = realSchema(before = false)
+        val realDiff = SchemaComparator(canonicalizeRawExpressions = true).compare(left, right)
+        val realFindings = SchemaCompareFindings.of(realDiff) +
+            ComputedExpressionDecidability.diagnostics(left, right, authorship = null, serverForm = null)
+                .map(SchemaCompareFindings::undecided)
+
+        test("the comparison yields every finding kind the comparator can produce") {
+            // Nicht darunter: TABLE_COLUMN_UNIQUE_* und
+            // TABLE_COLUMN_REFERENCES_CHANGED — der Comparator fuehrt ein
+            // einspaltiges UNIQUE und einen einspaltigen Fremdschluessel als
+            // Constraint und meldet sie dort.
+            realFindings.map { it["code"] }.toSet() shouldContainAll listOf(
+                "SCHEMA_NAME_CHANGED", "SCHEMA_VERSION_CHANGED",
+                "TABLE_ADDED", "TABLE_REMOVED",
+                "TABLE_COLUMN_ADDED", "TABLE_COLUMN_REMOVED", "TABLE_COLUMN_TYPE_CHANGED",
+                "TABLE_COLUMN_REQUIRED_TIGHTENED", "TABLE_COLUMN_REQUIRED_RELAXED",
+                "TABLE_COLUMN_DEFAULT_CHANGED", "TABLE_COLUMN_GENERATION_CHANGED",
+                "TABLE_PRIMARY_KEY_CHANGED",
+                "TABLE_INDEX_ADDED", "TABLE_INDEX_REMOVED", "TABLE_INDEX_CHANGED",
+                "TABLE_CONSTRAINT_ADDED", "TABLE_CONSTRAINT_REMOVED", "TABLE_CONSTRAINT_CHANGED",
+                "TABLE_METADATA_CHANGED",
+                "VIEW_ADDED", "VIEW_REMOVED", "VIEW_CHANGED",
+                "SEQUENCE_ADDED", "SEQUENCE_REMOVED", "SEQUENCE_CHANGED",
+                "CUSTOM_TYPE_ADDED", "CUSTOM_TYPE_REMOVED", "CUSTOM_TYPE_CHANGED",
+                "FUNCTION_ADDED", "FUNCTION_REMOVED", "FUNCTION_CHANGED",
+                "PROCEDURE_ADDED", "PROCEDURE_REMOVED", "PROCEDURE_CHANGED",
+                "TRIGGER_ADDED", "TRIGGER_REMOVED", "TRIGGER_CHANGED",
+                ComputedExpressionDecidability.UNDECIDED,
+            )
+        }
+
+        test("every path of the real comparison follows the one schema") {
+            for (finding in realFindings) {
+                withClue("${finding["code"]} -> ${finding["path"]}") {
+                    grammar.matches(finding["path"] as String) shouldBe true
+                }
+            }
+        }
+
+        test("the real comparison ends change findings at the field") {
+            for (finding in realFindings.filter { fieldLevelCodes.matches(it["code"] as String) }) {
+                val path = finding["path"] as String
+                withClue("${finding["code"]} -> $path") {
+                    path.split('.').size shouldBe if (path.startsWith("tables.")) 5 else 3
+                }
+            }
+        }
+    }
+
     test("`.expression` only follows `generation`") {
         grammar.matches("tables.t.columns.c.generation.expression") shouldBe true
         grammar.matches("tables.t.columns.c.default.expression") shouldBe false
@@ -256,3 +313,86 @@ private fun computedSchema(expression: String) = SchemaDefinition(
         ),
     ),
 )
+
+/**
+ * Ein Schema in zwei Fassungen, die sich in jeder Fund-Art unterscheiden.
+ * [before] waehlt die Fassung.
+ */
+private fun realSchema(before: Boolean): SchemaDefinition {
+    fun pick(a: String, b: String) = if (before) a else b
+    val orders = TableDefinition(
+        columns = mapOf(
+            "id" to ColumnDefinition(NeutralType.Integer, required = true),
+            "qty" to ColumnDefinition(
+                if (before) NeutralType.Integer else NeutralType.BigInteger,
+                required = !before,
+                default = if (before) null else DefaultValue.NumberLiteral(0),
+            ),
+            "note" to ColumnDefinition(NeutralType.Text(), required = before),
+            "serial" to ColumnDefinition(
+                NeutralType.BigInteger,
+                generation = ColumnGeneration.Identity(
+                    mode = if (before) IdentityMode.BY_DEFAULT else IdentityMode.ALWAYS,
+                ),
+            ),
+            "total" to ColumnDefinition(
+                NeutralType.Decimal(10, 2),
+                generation = ColumnGeneration.Computed(pick("qty * 2", "(qty)::numeric * 2"), stored = true),
+            ),
+            pick("legacy", "added") to ColumnDefinition(NeutralType.Text()),
+        ),
+        primaryKey = if (before) listOf("id") else listOf("id", "qty"),
+        indices = listOf(
+            IndexDefinition(name = "ix_note", columns = listOf(IndexColumn("note")), unique = !before),
+            IndexDefinition(name = pick("ix_old", "ix_new"), columns = listOf(IndexColumn("qty"))),
+            IndexDefinition(columns = listOf(IndexColumn.expression(pick("lower(note)", "upper(orders.note)")))),
+        ),
+        constraints = listOf(
+            ConstraintDefinition(name = "ck_qty", type = ConstraintType.CHECK, expression = pick("qty > 0", "qty > 1")),
+            ConstraintDefinition(
+                name = pick("ck_old", "ck_new"), type = ConstraintType.CHECK, expression = "note <> ''",
+            ),
+        ),
+        metadata = TableMetadata(engine = pick("InnoDB", "MyISAM")),
+    )
+    return SchemaDefinition(
+        name = pick("shop", "store"),
+        version = pick("1", "2"),
+        tables = mapOf(
+            "orders" to orders,
+            pick("gone", "fresh") to TableDefinition(columns = mapOf("id" to ColumnDefinition(NeutralType.Integer))),
+        ),
+        views = mapOf(
+            "v_orders" to ViewDefinition(query = pick("SELECT id FROM orders", "SELECT qty FROM orders"), materialized = !before),
+            pick("v_gone", "v_fresh") to ViewDefinition(query = "SELECT 1"),
+        ),
+        sequences = mapOf(
+            "s_orders" to SequenceDefinition(start = if (before) 1L else 10L),
+            pick("s_gone", "s_fresh") to SequenceDefinition(),
+        ),
+        customTypes = mapOf(
+            "t_status" to CustomTypeDefinition(
+                kind = CustomTypeKind.ENUM,
+                values = if (before) listOf("a") else listOf("a", "b"),
+            ),
+            pick("t_gone", "t_fresh") to CustomTypeDefinition(kind = CustomTypeKind.ENUM, values = listOf("x")),
+        ),
+        functions = mapOf(
+            "f_total" to FunctionDefinition(body = pick("RETURN 1;", "RETURN 2;")),
+            pick("f_gone", "f_fresh") to FunctionDefinition(body = "RETURN 0;"),
+        ),
+        procedures = mapOf(
+            "p_sync" to ProcedureDefinition(body = "BEGIN NULL; END;", sqlMode = if (before) null else "ANSI"),
+            pick("p_gone", "p_fresh") to ProcedureDefinition(body = "BEGIN NULL; END;"),
+        ),
+        triggers = mapOf(
+            "tr_audit" to TriggerDefinition(
+                table = "orders", events = setOf(TriggerEvent.INSERT),
+                timing = if (before) TriggerTiming.AFTER else TriggerTiming.BEFORE,
+            ),
+            pick("tr_gone", "tr_fresh") to TriggerDefinition(
+                table = "orders", events = setOf(TriggerEvent.UPDATE), timing = TriggerTiming.AFTER,
+            ),
+        ),
+    )
+}

@@ -9,7 +9,6 @@ import dev.dmigrate.cli.config.resolveEffectiveHashPartitions
 import dev.dmigrate.cli.config.RoutineCapabilityConfigResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.cancel.CancellationTokenSource
-import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.validation.SchemaValidator
@@ -153,10 +152,8 @@ internal object SchemaMigrateWiring {
                 )
             },
             dbLoader = { op, cfgPath -> loadFromDb(op, cfgPath, validator) },
-            comparator = { left, right -> SchemaComparator().compare(left, right) },
-            targetAwareComparator = { left, right, projection, authorship, serverForm ->
-                SchemaComparator(projection, authorship, serverForm).compare(left, right)
-            },
+            comparator = SchemaMigrateComparators.strict,
+            targetAwareComparator = SchemaMigrateComparators.targetAware,
             rendererFor = MigrateRendererRegistry::forDialect,
             executor = SegmentAwareMigrationExecutor::executeWithDefaults,
             sqliteLiveCatalogProbe = SqliteLiveCatalogProbeRunner::probe,
