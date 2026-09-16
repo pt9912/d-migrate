@@ -172,7 +172,15 @@ class OracleTransferE2ETest : FunSpec({
                 "--deterministic",
             ),
         )
-        withClue("generate stderr:\n${generate.stderr}") { generate.exitCode shouldBe 0 }
+        // **Exit 8, nicht 0.** `email` ist ein unbegrenztes `TEXT` und faellt
+        // auf `CLOB`; Oracle laesst darauf keinen Schluessel zu (`ORA-02329`),
+        // also faellt `customers_email_key` aus der Ausgabe. Das ist ein
+        // Objektverlust und wird als solcher gemeldet — vorher lief derselbe
+        // Lauf auf Exit 0, und die Constraint verschwand still. Der Lauf
+        // erzeugt trotzdem, was entstehen kann; die Datenpruefungen unten
+        // bleiben davon unberuehrt.
+        withClue("generate stderr:\n${generate.stderr}") { generate.exitCode shouldBe 8 }
+        generate.stderr shouldContain "customers_email_key"
         script.readText() shouldContain "GENERATED ALWAYS AS IDENTITY"
 
         applyGeneratedDdl(script)
