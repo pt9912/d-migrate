@@ -1,7 +1,7 @@
 # Native: der JDBC-Server-State ist im Native-Binary nicht benutzbar
 
 > **Status:** Entwurf mit Scope (2026-09-16). Reproduziert gegen das **ausgelieferte**
-> `ghcr.io/pt9912/d-migrate:1.7.1-native`.
+> Image `d-migrate:1.7.1-native`.
 > **Vorbedingung / Gate:** keins. Der Slice baut auf
 > [`native-e2e-regression-gate.md`](native-e2e-regression-gate.md) auf — dessen Hebel
 > (`DMIGRATE_CLI_BIN`) ist gebaut und bewiesen, offen ist dort die CI-Verdrahtung.
@@ -69,7 +69,7 @@ Die Sonde kennt diese Fehlerklasse und benennt sie selbst: das Audit-Log dient a
 Deckungsnachweis, und ein früherer Stand führte vor, wie „beide Male sah der Lauf
 richtig aus" (`export flyway` berührte die Flyway-Library nie).
 
-### Ursache 2 — Flyway kann im Native-Image keine `resource:`-Location scannen
+### Ursache 2 — Flyway scheitert zweifach: Scanner **und** fehlende Migrationen im Image
 
 Im Native-stderr, zweimal je Start:
 
@@ -87,7 +87,7 @@ trotzdem bei jedem Start.
 
 **Und es hat zwei unabhaengige Ursachen, nicht eine.** Die Migrationen sind
 naemlich **gar nicht im Image**: die beiden Dateien liegen in
-`persistence-jdbc/src/main/resources/db/migration/`, aber die einzige
+`adapters/driven/persistence-jdbc/src/main/resources/db/migration/`, aber die einzige
 Ressourcen-Registrierung fuer native-image ist
 `-H:IncludeResourceBundles=messages.messages` (`cli/build.gradle.kts:104`) — es
 gibt **kein** `resource-config.json`, und die `resources`-Liste der Metadaten
@@ -130,8 +130,12 @@ zeigt damit ins Leere (`artifact not found`) — ein Deployment mit persistentem
 State ist so nicht betreibbar, unabhaengig vom Native-Binary.
 
 **Ausdruecklich kein Native-Defekt:** beide Artefakte scheitern hier gleich —
-die JVM kommt nur weiter und laeuft dann in denselben fehlenden Verweis. Der
-Befund gehoert deshalb neben diesen Slice, nicht in seine Ursachenliste.
+die JVM kommt nur weiter und laeuft dann in denselben fehlenden Verweis.
+
+**Trotzdem im Slice** (P4, dritter Punkt; Akzeptanzkriterium 5): der Befund ist
+beim Nachmessen *dieses* Vorhabens aufgefallen, er braucht eine Entscheidung, und
+er hat sonst niemanden. Ein Satz „gehoert nicht hierher" neben einem Paket, das
+ihn fuehrt, waere ein Widerspruch — der erste Entwurf hatte genau den.
 
 Ob das ein Default-Fehler ist (dann muesste `server.state` einen persistenten
 Byte-Store erzwingen oder verlangen) oder eine Betreiber-Aufgabe (dann gehoert
@@ -193,9 +197,26 @@ dem Host.
 `PolicyDecision.RequiresApproval`-Zweig (`JdbcIdempotencyStore.kt:187`), und
 `QuotaJson` nur im erlaubten Pfad. Ohne `--policy-file` ist die Regelliste leer
 und der Default `Deny("policy:no-rule")` — jeder Start endet als `PolicyDenied`,
-und beide Codecs werden **nie** getraced. Der Harness weiss das:
-`examples/mcp-e2e/policy-rules.yaml` ist genau dafuer da, samt
-`challenge`-Regel.
+und beide Codecs werden **nie** getraced.
+
+**Und die Vorlage reicht dafuer nicht.** `examples/mcp-e2e/policy-rules.yaml`
+traegt **genau eine** Regel — `- effect: allow`, universell. Eine
+`effect: challenge`-Regel gibt es in **keiner** Fixture des Repos (gemessen:
+repo-weit null Treffer; nur die Format-Doku in `spec/mcp-server.md` kennt den
+Wert). Wer der Vorlage folgt, erzeugt also **keine**
+`ApprovalChallengeJson$…`-Eintraege — obwohl genau die in der DoD stehen.
+
+**Das Paket muss die Regel also selbst schreiben**, nicht nur eine Datei
+mitgeben: eine `challenge`-Regel fuer den Reverse-Start. Sonst ist ein Teil der
+DoD unerreichbar.
+
+**Und eine erreichbare Quelle gehoert dazu.** `schema_reverse_start` verlangt
+eine `connectionId` (`McpToolSchemas.kt:241`), aufzuloesen gegen eine
+konfigurierte Verbindung samt Credential (Muster:
+`examples/mcp-e2e/.d-migrate.yaml`). Ohne sie kommt der Reverse nicht durch —
+und `JobRecordJson`, `SchemaIndexEntryJson` und `ArtifactRecordJson`, drei der
+fuenf DoD-Codecs, bleiben ungetraced. P1 sichert also **zwei** Voraussetzungen:
+den State-Store **und** eine Quellverbindung, beide zur Bauzeit.
 
 **SQLite ist der naheliegende billige Weg und gemessen untauglich — und zwar
 breit, nicht an einer Stelle.** Im Adapter ist die **ganze Flaeche**
