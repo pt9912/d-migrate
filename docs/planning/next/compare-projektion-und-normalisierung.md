@@ -1,11 +1,24 @@
 # Compare: Restfehlalarme und Projektionslücken aus der Konsumentenmessung
 
-> **Status:** Entwurf mit Scope (2026-09-16). Gemeldet gegen `1.7.1`, im Code
-> nachgemessen.
-> **Vorbedingung / Gate:** Die **drei** Grenzfragen (Schlüsselwort-Case,
-> `= ANY(ARRAY[…])` gegen `IN (…)`, `RESTRICT` gegen implizit) gehören dem Eigner
-> und werden **hier nicht** entschieden — sie stehen am Ende als Verweis auf
-> [`../in-progress/compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md).
+> **Status:** Entwurf mit Scope (2026-09-16, Review-Runden 1 und 2 eingearbeitet).
+> Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
+> **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
+> Meldung nahelegte (Reader statt Kanonisierung), nicht eine andere Tatsache.
+> **Vorbedingung / Gate:** Die **zwei** verbliebenen Grenzfragen
+> (Schlüsselwort-Case, `RESTRICT` gegen implizit) gehören dem Eigner und werden
+> **hier nicht** entschieden; `RESTRICT` ist in
+> [`../in-progress/compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md)
+> verankert, der Schlüsselwort-Case hat noch keinen Ort (s. „Offen"). Die dritte
+> Frage der ersten Fassung — `= ANY(ARRAY[…])` gegen `IN (…)` — ist **keine
+> offene Frage**: sie ist in
+> [`ADR 0055`](../../adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md)
+> entschieden, samt Grenze („`schema compare` bleibt streng").
+> **Und P3/P5 bewegen eine Linie, die ein akzeptierter ADR besitzt:**
+> [`ADR 0053`](../../adr/0053-vergleich-rohen-sql-texts.md) schliesst lokale
+> Normalisierung rohen SQL-Texts aus und nennt `IndexDefinition.where` namentlich.
+> Der Linienwechsel ist Teil dieses Slices (P7) und läuft über eine
+> **Statusänderung** auf `superseded by`, nicht über einen zweiten ADR daneben —
+> sonst stünden zwei akzeptierte ADRs im Widerspruch und **kein Gate merkte es**.
 > **Aktivierung:** Move nach `../in-progress/` beim ersten Implementierungs-Commit.
 
 ## Befund (gemeldet gegen 1.7.1, im Code nachgemessen)
@@ -33,7 +46,13 @@ während Spalten- und Typ-Funde welche liefern. Wer die verbleibenden
 CHECK-Fehlalarme beurteilen will, muss die Artefakte von Hand gegenlesen.
 
 **Dieselbe Lücke wurde in dieser Serie für den `VIEW_CHANGED`-Fund geschlossen**
-(1.7.1, `viewChanged`); der Constraint-Zweig wurde nicht mitgenommen.
+(1.7.1, `viewChanged`) — aber nur zur **Hälfte**: `details` entstehen dort nur im
+Spalten-Fall und nur, wenn beide Seiten nicht-blank sind
+(`SchemaCompareHandler.kt:375-387`); der Query-Fall fällt in den detail-losen
+Zweig (`:390-396`), und die CLI rendert für ihn ohnehin `query: changed` statt
+eines Vorher/Nachher (`CompareRendererPlain.kt:94`). Der Präzedenzfall ist damit
+eng — und es ist genau der Fall (View-Rumpf), den Abschnitt 3 als Beispiel
+benutzt.
 
 ### 2 — Zwei Pfad-Vokabulare im selben Dokument (verifiziert)
 
@@ -68,7 +87,7 @@ also **nicht**; sie schließt ein Bein von dreien.
 Das ist dieselbe Klasse wie beim View-Rumpf (`sum` gegen `SUM`): die
 Schlüsselwort-Schreibweise ist **durchgängig** nicht gefaltet, nicht nur dort.
 
-### 4 — MySQLs Charset-Introducer macht das Schema ungültig (gemessen)
+### 4 — MySQLs Charset-Introducer macht das Schema ungültig (gemessen) — **Posten wandert in den Reader-Slice**
 
 Der Konsument meldete `ck_customer_email_shape` als Fehlalarm „nur wo MySQL
 beteiligt ist"; Ursache sei `_utf8mb4'%@%'`. **Nachgemessen ist es mehr als ein
@@ -88,12 +107,25 @@ Modell, sondern ein Server-Text mit Dialekt-Anhang.
 
 **Der Konsument hat den zweiten Teil selbst gesehen:** die backslash-escapten
 Anführungszeichen darin (`\'%@%\'`) sehen nach einem Serialisierungsartefakt
-aus. Beides zusammen deutet auf **eine** Stelle im Reader, nicht auf zwei.
+aus. Beides zusammen deutet für MySQL auf **eine** Stelle im Reader — die
+Aussage „eine Stelle" gilt aber nur je Dialekt: der MSSQL-Reader hat eine
+zweite solche Stelle (`MssqlMetadataQueries.kt:344`).
 
-**Offen und Teil des Pakets:** ob der Reader den Introducer streichen soll (dann
-verschwindet beides) oder ob er ihn bewahrt und die Analyse ihn kennen muss.
-Das ist eine Entscheidung am Modell, nicht am Text — der Plan nimmt sie nicht
-vorweg.
+**Und die Entscheidung ist zu neunzig Prozent vorgezeichnet.** Der MSSQL-Reader
+hat dieselbe Frage für den Unicode-Literal-Präfix `N'…'` schon entschieden und
+begründet — **im Reader streichen**, weil der Validator das `N` sonst als
+Spaltenbezug liest und jedes reverse-gelesene MSSQL-Schema mit `E012` abweist
+(`MssqlTypeMapping.kt:312-314`, gepinnt in `MssqlTypeMappingTest.kt:203-222`).
+`_utf8mb4'…'` ist dieselbe Klasse Konstrukt; die zweite Fassung („die Analyse
+kennt den Introducer") hat damit einen Vorläufer, der sich dagegen entschieden
+hat.
+
+**Der Posten ist am 2026-09-16 in den Reader-Slice gewandert** — er ist der
+einzige Reader-Posten dieser Messung, und der Reader-Slice führt für genau diese
+Klasse einen eigenen Strang („Modell-Reinheit: der Reader nimmt ZUVIEL auf").
+Dort steht er als Posten C1 mit Paket P6; dieser Slice führt ihn nur noch als
+Befund und **behält die Postennummer**, damit die Querverweise in beiden Slices
+stabil bleiben.
 
 ### 5 — Index-Prädikat ohne jede Faltung (verifiziert) — **und mehr als das**
 
@@ -118,31 +150,45 @@ Frage als `W137`. Der Index-Pfad hat **kein** solches Gegenstueck, und das ist
 der Unterschied. „Einziges" waere die Einladung, dort eine zweite Regel
 nachzuruesten, die es schon gibt.
 
-**(b) Der gemeldete Fall ist keine Schreibweise.** Nachgemessen an präparierten
-Dateien:
+**(b) Der gemeldete Fall ist keine Schreibweise — und die Messung des ersten
+Entwurfs war falsch.** Nachgemessen an präparierten Dateien; die erste Zeile ist
+gegenüber dem ersten Entwurf **korrigiert**:
 
 ```
 # BEIDE Zeilen als CHECK-Constraint gemessen — auf dem CHECK-Pfad, wo die
 # Faltung aktiv ist. Ueber den INDEX-Pfad waeren sie beide DIFFERENT, weil
 # dort (a) gar nicht faltet; das ist genau der Befund von (a).
 status = ANY (ARRAY['NEW'::text, 'PAID'::text])  <->  status = ANY (ARRAY['NEW','PAID'])
-  → IDENTICAL      (der Cast faellt — Schreibweise, auf dem CHECK-Pfad)
+  → DIFFERENT      (der Cast faellt, die Komma-Luecke bleibt)
 
 status = ANY (ARRAY['NEW','PAID'])                <->  status IN ('NEW','PAID')
   → DIFFERENT      (der Rest ist eine Umschreibung — auf JEDEM Pfad)
 ```
 
-Die zweite Zeile traegt die Aussage: selbst **mit** aktiver Faltung bleibt
-`= ANY(ARRAY[…])` gegen `IN (…)` verschieden. Die erste zeigt nur, dass die
-vorhandene Faltung Casts strippt — **nicht**, dass der Index-Pfad das täte.
+**Die erste Zeile stand im ersten Entwurf als `IDENTICAL`** („der Cast faellt —
+Schreibweise, auf dem CHECK-Pfad"). Das ist widerlegt: `canonicalForm`
+(`ConstraintDiffContract.kt:81`) faltet Whitespace nur um `[=<>!]+ | * | + | -`,
+**nicht** um `,` — zwischen den beiden Literalen bleibt links `', '` und rechts
+`','`. Der View-Kanonisierer daneben faltet Kommas sehr wohl
+(`RawTextFolding.kt:168`: `\s*([,=()])\s*`). **Zwei Kanonisierer, zwei
+Regelwerke** — die Faltung hat damit **zwei** fehlende Zweige, nicht einen: den
+ganzen Index-Pfad (a) und die Listen-Kommas im CHECK-Pfad. Beide gehören zu P5;
+ohne den zweiten bleibt dessen DoD („reine Schreibweise-Differenz meldet nichts
+mehr") unerfuellt.
 
-`= ANY(ARRAY[…])` und `IN (…)` sind **nicht** dieselbe Schreibweise, sondern
-zwei Formen desselben Prädikats. Sie gleichzusetzen ist eine
-**Bedeutungs**-Entscheidung — dieselbe Klasse wie die Grenzfragen unten,
-nicht ein fehlender Zweig. Der gemeldete `ix_order_open`-Fall wird von (a)
-allein also **nicht** geschlossen.
+`= ANY(ARRAY[…])` und `IN (…)` sind **nicht** dieselbe Schreibweise, sondern zwei
+Formen desselben Prädikats. Sie gleichzusetzen ist eine
+**Bedeutungs**-Entscheidung — und sie ist **nicht offen**: [`ADR 0055`](../../adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md)
+hat sie für den **zielbewussten** Vergleich entschieden und festgehalten, dass
+„`schema compare` streng bleibt"; `EnumCheckProjection.kt:22-31` liest genau
+diese Form und schreibt sie in **eine** Schreibweise (`canonicalText`, `:132-135`).
+Der gemeldete `ix_order_open`-Fall wird von (a) allein also nicht geschlossen —
+und ihn zu schliessen hiesse, die Grenze aus ADR 0055 zu verschieben. Das ist
+damit **keine Eigner-Frage**, sondern eine ADR-Frage: sie gehört zur Linie, die
+P7 nachzieht (s. „Offen").
 
-**Folge für den Zuschnitt:** (a) ist ein Paket, (b) ist eine Eigner-Frage.
+**Folge für den Zuschnitt:** (a) ist ein Paket — P5, mit **beiden** fehlenden
+Zweigen; (b) ist **nicht** Teil dieses Slices.
 
 ### 6 — Der Identity-`sequenceName` ist PG-Buchhaltung (verifiziert, Zuordnung korrigiert)
 
@@ -156,10 +202,18 @@ MysqlTypeMapping.kt:42      ColumnGeneration.Identity(legacySerialSyntax = true)
 ```
 
 MySQL setzt bei `AUTO_INCREMENT` **nie** einen Sequenznamen. Der Posten ist damit
-weder ein MySQL- noch ein Reader-Thema: der Vergleich wertet ein Feld, das nur
-**eine** Seite führt und das beschreibt, **wie** der Server die Erzeugung
-organisiert — nicht, **was** die Spalte ist. Dieselbe Klasse wie `sourceDialect`
-(AP2) und `engine` (AP3) im Compare-Slice.
+weder ein MySQL- noch ein Reader-Thema: der Vergleich wertet ein Feld, das
+beschreibt, **wie** der Server die Erzeugung organisiert — nicht, **was** die
+Spalte ist. Dieselbe Klasse wie `sourceDialect` (AP2) und `engine` (AP3) im
+Compare-Slice.
+
+**Und „nur eine Seite führt es" gilt nur fuer die PG↔MySQL-Paarung.** Oracles
+Reverse setzt den Namen ebenfalls (`OracleTypeMapping.kt:83`,
+`sequenceName = input.identitySequenceName`), und `OracleCapabilities` ist wie
+`PostgresCapabilities` `false` (`:63`). PG↔Oracle vergleicht also **zwei** Namen,
+und eine Naht, die `namesIdentitySequences` auswertet, wuerde dort beide Seiten
+ausblenden. P6 muss deshalb sagen, **welcher Dialekt** der symmetrischen Naht
+übergeben wird — zwei Reverses haben keine Zielseite.
 
 **Die Naht existiert bereits und ist dialektabhängig:**
 
@@ -184,9 +238,11 @@ MSSQL- und MySQL-Artefakte haben sich geändert. Der PG-Reader ist also
 unberührt; die Verbesserungen sitzen im Comparator und in den MSSQL-/MySQL-
 Readern. **Folge für diesen Slice:** keine PG-Reader-Arbeit.
 
-Der einzige **Reader**-Posten ist **4** (MySQL). Posten 6 sitzt **nicht** dort —
-er ist ein Vergleichs-Thema (die Naht ist nur nicht verdrahtet), und sein Fix
-liegt in `:hexagon:application`. Alles uebrige sitzt im Comparator oder in der
+Der einzige **Reader**-Posten war **4** (MySQL) — er ist am 2026-09-16 in den
+Reader-Slice gewandert, dieser Slice führt keinen mehr. Posten 6 sitzt ebenfalls
+**nicht** dort — er ist ein Vergleichs-Thema (die Naht ist nur nicht verdrahtet),
+und verdrahtet wird er in den beiden Comparator-Baustellen der Driving-Adapter
+(s. P6). Alles uebrige sitzt im Comparator oder in der
 Projektion.
 
 ## Ziel
@@ -195,17 +251,28 @@ Drei **verschiedene** Ausgänge, je nach Posten — sie in einen Satz zu zwingen
 wäre die erste Ungenauigkeit:
 
 - **Fehlalarme hören auf** — bei 3 in **einem Bein von dreien**, bei 6 ganz,
-  bei 5 zur Hälfte. Dieselbe Sache in zwei Schreibweisen ist keine Änderung;
-  was keine Schreibweise ist, bleibt ein Fund:
+  bei 5 für die Schreibweise. Dieselbe Sache in zwei Schreibweisen ist keine
+  Änderung; was keine Schreibweise ist, bleibt ein Fund:
   - **3**: PG↔MSSQL schliesst die Klammer-Faltung. Die zwei MySQL-Beine
     brauchen zusaetzlich die Schlüsselwort-Case-Entscheidung (Abgrenzung).
-  - **5**: die Schreibweise-Differenz schliesst der fehlende Zweig; die
-    **Umschreibung** (`= ANY(ARRAY[…])` gegen `IN (…)`) bleibt (Abgrenzung).
-  - **6**: schliesst ganz.
+  - **5**: die Schreibweise-Differenzen schliessen **zwei** fehlende Zweige —
+    den Index-Pfad und die Listen-Kommas (s. Abschnitt 5). Die
+    **Umschreibung** (`= ANY(ARRAY[…])` gegen `IN (…)`) bleibt: sie ist
+    ADR-entschieden (0055, „`schema compare` bleibt streng") und nicht Teil
+    dieses Slices.
+  - **6**: schliesst ganz, und nur auf **einer** Seite der Paarung (PG↔MySQL).
 - **Funde sagen, was sich geändert hat** (1) und folgen **einem** Pfad-Schema
   (2) — sie werden nicht weniger, sie werden brauchbar.
-- **Das Modell ist gültig** (4): ein MySQL-Reverse mit einem solchen CHECK läßt
-  sich validieren und vergleichen, statt an `E012` zu scheitern.
+- **Eine Linie wird bewegt, und der Vertrag zieht nach** (3, 5): P3 und P5
+  normalisieren rohen SQL-Text, den [`ADR 0053`](../../adr/0053-vergleich-rohen-sql-texts.md)
+  bislang ausdrücklich ausnimmt. Das ist **kein** Nebeneffekt — der Linienwechsel
+  steht in P7 mit Statusänderung, README-Zeile und Spec-Nachzug.
+
+**Posten 4 ist am 2026-09-16 aus diesem Slice heraus:** er ist ein Reader-Thema
+und steht als Posten C1 mit Paket P6 im
+[Reader-Slice](reader-treue-spatial-array-json.md) — dieselbe Messung, dieselbe
+Woche. Die Postennummer hier bleibt frei, damit die Querverweise in beiden
+Dokumenten stabil bleiben.
 
 ## Abgrenzung (nicht in diesem Slice)
 
@@ -216,11 +283,19 @@ wäre die erste Ungenauigkeit:
   der PG↔MSSQL-Fall fällt nicht darunter, und dort differiert nur
   `sum`/`SUM` plus Whitespace. Das Falten von **Schlüsselwörtern** wäre eng —
   das Falten von **Bezeichnern** wäre falsch (`"MyCol"` ≠ `mycol` in
-  PostgreSQL). Die Grenze zu ziehen ist eine Eigner-Entscheidung; sie gehört
-  zum Compare-Slice, nicht als Nebenfix hierher.
-- **`= ANY(ARRAY[…])` gegen `IN (…)`** (Posten 5, Teil b). Zwei Formen desselben
-  Prädikats, und keine ist Schreibweise der anderen — sie gleichzusetzen ist eine
-  Bedeutungs-Entscheidung. Gehört zu den Grenzfragen, nicht in einen Nebenfix.
+  PostgreSQL). Die Grenze zu ziehen ist eine Eigner-Entscheidung; **sie hat
+  noch keinen Ort** (s. „Offen"). Und „nirgends normativ gefasst" stimmt nur
+  halb: `spec/ddl-generation-rules.md:2067` schreibt „Schlüsselwörter:
+  **UPPERCASE**" fest (Generate-Pfad), und `spec/cli-spec.md:673` sagt,
+  kanonisiert werde „**ausschliesslich** die **Schreibweise**, nicht die
+  Bedeutung" — mit der Gross-/Kleinschreibung von **Bezeichnern** in der Liste
+  (`:678-679`). Die Grenze liegt also normativ **vor**, nur nicht für den
+  Vergleich roher SQL-Texte.
+- **`= ANY(ARRAY[…])` gegen `IN (…)`** (Posten 5, Teil b) — **keine offene
+  Frage.** [`ADR 0055`](../../adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md)
+  hat sie für den **zielbewussten** Vergleich entschieden und `schema compare`
+  ausdrücklich streng gelassen. Sie gehört damit zur ADR-Linie, die P7 nachzieht;
+  sie zu verschieben wäre eine Statusänderung an 0055 (s. „Offen").
 - **`RESTRICT` gegen implizit** — dieselbe offene Eigner-Frage, dort begründet.
 - **Die MySQL-View-Formatierung.** Bleibt laut Harness-Erwartung bewusst ein
   Fund; der Punkt des Konsumenten (PG↔MSSQL, nur `sum`+Whitespace) ist oben
@@ -261,69 +336,134 @@ Detail-Map gar nicht aus (`:298`). Ist eine Seite blank, entstehen wieder
 **detail-lose** Funde — genau der Zustand, den das Paket behebt.
 
 **DoD:** Ein geaenderter CHECK nennt in **CLI und MCP** beide Ausdruecke; ein
-Test pinnt den CHECK-Fall, den Fall **blanker** Seite und den Index-Fund (der
-nach P5 stehen bleibt und seinen `where` zeigen muss).
+Test pinnt den CHECK-Fall, den Fall **blanker** Seite und den Index-Fund. Der
+Index-Fall braucht eine **echte** Praedikats-Aenderung: nach P5 bleibt eine
+Schreibweise-Differenz kein Fund mehr, und ein Fixture mit einer solchen pinnte
+nach dem anderen Paket nichts.
 
 ### P2 — Ein Pfad-Schema fuer alle Funde
 
-**Der „Pfad" ist kein Feld.** `DiffDiagnostic` traegt gar keinen
-(`DiffDiagnostic.kt:12-18`); der MCP-Fund zieht ihn per **Regex aus dem
-Meldungstext** (`SchemaCompareHandler.kt:303-312`), und das CLI-Dokument fuehrt
+**Der „Pfad" ist nur bei W137 kein Feld.** `DiffDiagnostic` traegt keinen
+(`DiffDiagnostic.kt:12-18`), und fuer den W137-Fund zieht der MCP-Handler ihn per
+**Regex aus dem Meldungstext** (`SchemaCompareHandler.kt:303-312`). Fuer **jeden
+anderen** Fund ist `path` dagegen ein **Pflichtfeld des Wire-Vertrags**
+(`McpToolSchemas.kt:763`/`:771` stehen in `required`, gesetzt in
+`SchemaCompareHandler.kt:296`); das Vokabular, das P2 vereinheitlichen will, sitzt
+in den **Werten** dieses Feldes (`:256-276`, `:421-575`). Das CLI-Dokument fuehrt
 nur `code`/`severity`/`message` (`SchemaCompareProjection.kt:35`,
-`spec/cli-spec.md:657`). Das Paket aendert also einen **Meldungstext** (und
-die Regex-Vertraeglichkeit dazu) — nicht ein Feld. Wer ein Feld erwartet, baut
-am falschen Ende.
+`spec/cli-spec.md:657`) — dort ist es wirklich Text. Ein Paket, das nur die Regex
+anfasst, erreicht also den W137-Fund und sonst nichts.
 
-**Und „die uebrigen Funde" sind mehrere Domaenen.** Neben `tables.…` stehen
-`views.`/`sequences.`/`custom_types.`/`functions.`/`procedures.`/`triggers.`
-(`SchemaCompareHandler.kt:259-276`). Ein Schema heisst: alle folgen demselben
-Aufbau — die Richtung ist Teil des Pakets.
+**Und „die uebrigen Funde" sind mehrere Domaenen.** Neben `tables.…` (mit
+`…columns.…`, `…indices.…`, `…constraints.…`, `…metadata`) stehen `views.`,
+`sequences.`, `custom_types.`, `functions.`, `procedures.`, `triggers.`
+(`SchemaCompareHandler.kt:256-276`, `:421-482`) — und `name`/`version` (`:240`,
+`:249`) tragen gar kein Domaenen-Praefix. Ein Schema heisst: alle folgen
+demselben Aufbau; die Richtung ist Teil des Pakets. Das ist ein Rename ueber
+viele Aufrufstellen — Werkzeug dafuer ist `make ast-grep`, nicht `sed`.
 
-**DoD:** Ein Test sammelt die Praefixe aller Fund-Arten eines nicht-trivialen
-Vergleichs und verlangt **ein** Schema; die MCP-Regex liest den neuen Text.
+**Und das neue Vokabular braucht einen normativen Ort.** Es ist maschinenlesbar
+gedacht („Für maschinelle Auswertung ist das ein Bruch") und steht in keiner
+Spec; P7 zieht heute nur die Faltungsmenge nach. Ein Pfad-Schema, das ein
+Abnehmer auswertet, gehört in [`spec/cli-spec.md`](../../../spec/cli-spec.md)
+bzw. [`spec/mcp-server.md`](../../../spec/mcp-server.md).
+
+**P2a — der eine divergente Ort.** `ComputedExpressionDecidability.kt:52` zieht
+`order_item.line_total` auf `tables.…`; die Regex im MCP-Handler wird mitgepinnt
+(`SchemaCompareHandler.kt:310`).
+**DoD:** Der W137-Fund traegt einen Pfad, der dem Schema der uebrigen Funde
+folgt, und die MCP-Regex liest ihn.
+
+**P2b — die uebrigen Domaenen.** `views.`/`sequences.`/`custom_types.`/
+`functions.`/`procedures.`/`triggers.` und `name`/`version` auf denselben Aufbau;
+das Schema bekommt seinen **normativen Ort** (Spec), und das Rename laeuft ueber
+`make ast-grep` — es geht ueber viele Aufrufstellen, `sed` ist dort das falsche
+Werkzeug.
+**DoD:** Ein Test sammelt die Praefixe **aller** Fund-Arten eines nicht-trivialen
+Vergleichs und verlangt **ein** Schema; das Schema steht in der Spec.
+
+Je Paket Sabotage — die Trennung haelt einen Teilstand entscheidbar.
 
 ### P3 — Zusammengesetzte Ausdrücke kanonisieren
 
-`OR`/`AND`-Komposition und die gruppierenden Klammern um Operanden. **Die enge
-Fassung gilt weiter:** nur Klammern, die *keine* Bedeutung tragen, und nur
-Wortstellung, die nichts umstellt. Der Wächter aus 1.7.1 bleibt: eine
-Kanonisierung, die zu viel gleichsetzt, versteckt echte Unterschiede.
+`OR`/`AND`-Komposition und die **redundanten** Klammern um einen Operanden
+(Terminologie: s. u. — „gruppierend" wäre das Gegenteil). **Die enge Fassung
+gilt weiter:** nur Klammern, die *keine* Bedeutung tragen, und nur Wortstellung,
+die nichts umstellt. Der Wächter aus 1.7.1 bleibt: eine Kanonisierung, die zu
+viel gleichsetzt, versteckt echte Unterschiede.
 
 **DoD:** Der **PG↔MSSQL**-Leg des gemeldeten Vergleichs meldet
 `ck_order_ship_after_place` nicht mehr. Die zwei MySQL-Beine bleiben es
 **zunächst** — sie brauchen die Schlüsselwort-Case-Entscheidung (Abgrenzung).
-Die Grenzfall-Tests aus `ExpressionCanonicalisationTest` bleiben grün.
+Die Grenzfall-Tests aus `ExpressionCanonicalisationTest` bleiben grün; der
+Faltungs-Nachzug in P7 ist erledigt.
 
-### P4 — Der MySQL-Reader traegt keinen Dialekt-Anhang ins Modell
+**Terminologie, an der ein Nachbau scheitert:** die wegfallenden Klammern sind
+die **redundanten um einen Operanden**. „Gliedernd" heisst im Repo das
+**Gegenteil** — der Wächter-Test schützt genau die gliedernden Klammern („hier
+gliedern die Klammern den Ausdruck, sie sind nicht redundant",
+`ExpressionCanonicalisationTest.kt:74-78`). Wer sie „gruppierend" nennt, baut
+die Regel nach, die `(a + b) * c` verfälscht.
 
-Die Stelle sitzt im **Reader**, nicht in der Kanonisierung: was MySQL in
-`CHECK_CLAUSE` liefert, kommt als `_utf8mb4'…'` (und offenbar mit
-backslash-escapten Quotes) ins neutrale Modell — und macht es ungueltig
-(`E012`, s. Abschnitt 4). Eine Kanonisierung im Vergleich wuerde daran nichts
-aendern: der Fehlalarm ist die **Folge**, nicht die Ursache.
+**Warum sie redundant sind — die Begründung gehört zum Paket,** weil der
+Schlusssatz des Plans sie als „unstrittig" führt: jeder Operand einer
+`OR`/`AND`-Komposition ist selbst ein Vergleich, und der Vergleich bindet
+stärker als die Konjunktion; die Klammern gliedern dort nichts. Um eine **ganze**
+Komposition oder um ein Produkt gliedern sie sehr wohl — die bleiben.
 
-**Zu entscheiden im Paket:** streicht der Reader den Introducer (dann
-verschwindet beides), oder bewahrt er den Server-Text und die Ausdrucks-Analyse
-muss ihn kennen? Die zweite Variante ist teurer und beruehrt `E012`.
+**Und das Paket bewegt eine ADR-Linie.** [`ADR 0053`](../../adr/0053-vergleich-rohen-sql-texts.md)
+führt `ConstraintDefinition.expression` unter den vier Stellen rohen SQL-Texts,
+die nicht lokal normalisiert werden. P3 erweitert die Faltung genau dort; der
+Nachzug in P7 ist Teil des Paketabschlusses, keine Zutat.
 
-**DoD:** PG↔MySQL meldet `ck_customer_email_shape` nicht mehr **und** ein
-MySQL-Reverse mit einem solchen CHECK ist validierbar (`schema validate` ohne
-`E012`). PG↔MSSQL war vorher sauber und bleibt es.
+### P4 — entfällt hier: der Posten steht im Reader-Slice
 
-### P5 — Das Index-Prädikat in die Faltung aufnehmen
+Der MySQL-Introducer ist ein **Reader**-Thema (Abschnitt 4) und am 2026-09-16
+mit seinem Paket in den [Reader-Slice](reader-treue-spatial-array-json.md)
+gewandert — dort als Posten C1 mit Paket P6, samt DoD und Modulzeile. Die Nummer
+bleibt hier frei, damit die Querverweise stabil bleiben.
 
-`RawTextFolding.index` bekommt denselben `canonicalizeRawExpressions`-Zweig wie
-`constraint` und `viewQuery`. Das ist die eigentliche Lücke — kein fehlender
-Sonderfall, sondern ein **fehlender Zweig**.
+Der Grund für den Umzug: der Reader-Slice führt diese Klasse als eigenen Strang
+(„Modell-Reinheit: der Reader nimmt ZUVIEL auf"), die Entscheidung ist durch den
+MSSQL-Präzedenzfall vorgezeichnet, und hier wäre das Paket ein Fremdkörper
+zwischen lauter Comparator-Paketen — es ist das einzige, das `make integration`
+braucht.
 
-**Dieses Paket schließt den gemeldeten `ix_order_open`-Fall NICHT** (s. Posten 5,
-Teil b): dort steht eine Umschreibung, keine Schreibweise. Es schließt die
-Schreibweise-Differenzen, die heute alle gemeldet werden.
+### P5 — Zwei fehlende Zweige in der Faltung
+
+**Zweig 1 — der Index-Pfad.** `RawTextFolding.index` bekommt denselben
+`canonicalizeRawExpressions`-Zweig wie `constraint` und `viewQuery`. Kein
+fehlender Sonderfall, sondern ein **fehlender Zweig**.
+
+**Zweig 2 — die Listen-Kommas im CHECK-Pfad.** `canonicalForm`
+(`ConstraintDiffContract.kt:81`) faltet Whitespace um `[=<>!]+ | * | + | -`,
+**nicht** um `,`; der View-Kanonisierer daneben faltet Kommas sehr wohl
+(`RawTextFolding.kt:168`: `\s*([,=()])\s*`). Zwei Kanonisierer, zwei Regelwerke
+— ohne diesen Zweig bleibt eine reine Listen-Whitespace-Differenz
+(`IN ('a','b')` gegen `IN ('a', 'b')`) ein Fund, und das DoD unten waere nicht
+erfuellt. Das ist die Messung aus Abschnitt 5, Teil b.
+
+**Nicht der naive Fix.** Den Guard in `index()` zu verschieben, statt den
+`canonicalizeRawExpressions`-Zweig wie in `constraint()` voranzustellen, kippt
+den **Migrate**-Pfad: beide KDoc-Stellen halten fest, dass `schema compare` die
+Faltung setzt und `schema migrate` **nicht** (`RawTextFolding.kt:31-34`,
+`ConstraintDiffContract.kt:32-41`). Migrate und Fingerabdruck bleiben
+unveraendert — ein Test pinnt das.
+
+**Der gemeldete `ix_order_open`-Fall wird von P5 NICHT geschlossen** (Posten 5,
+Teil b): dort steht eine Umschreibung, und die Gleichsetzung ist in
+ADR 0055 entschieden.
+
+**Und P5 bewegt dieselbe ADR-Linie wie P3** — `IndexDefinition.where` ist in
+[`ADR 0053`](../../adr/0053-vergleich-rohen-sql-texts.md) namentlich als eine
+der Stellen genannt, die nicht lokal normalisiert werden. Der Nachzug steht in
+P7.
 
 **DoD:** Ein Index-Prädikat mit einer reinen Schreibweise-Differenz (Quoting,
-Whitespace, Cast) meldet nichts mehr; ein Prädikat mit einer **echten**
-Änderung bleibt ein Fund; `= ANY(ARRAY[…])` gegen `IN (…)` bleibt es
-**zunächst auch** — bis zur Eigner-Entscheidung.
+Whitespace, **Listen-Komma**, Cast) meldet nichts mehr; ein Prädikat mit einer
+**echten** Änderung bleibt ein Fund; `= ANY(ARRAY[…])` gegen `IN (…)` bleibt es
+(ADR 0055); der Migrate-Pfad und der Fingerabdruck sind nachweislich unveraendert
+— ein Test pinnt das.
 
 ### P6 — Die Identitäts-Naht in den Compare-Pfad ziehen
 
@@ -338,20 +478,31 @@ foldsStored       = !capabilities.supportsVirtualComputedColumns   // NICHT
 
 Sie ist ausserdem **ziel- und versionsparametrisiert** (`DialectCapabilities.forTarget`),
 und ein symmetrischer Vergleich hat keine Zielseite: `SchemaDefinition` traegt
-keinen Dialekt, der MCP-Compare baut den Comparator ohne
-(`McpRuntimeRegistries.kt:125`). In den Compare-Pfad gehoert deshalb nur der
-**Namens**-Teil; `stored` bleibt sichtbar — laut `TargetProjection.kt:20` heisst
-`null` dort ausdruecklich **strikter** Vergleich.
+keinen Dialekt. In den Compare-Pfad gehoert deshalb nur der **Namens**-Teil;
+`stored` bleibt sichtbar — laut `TargetProjection.kt:20` heisst `null` dort
+ausdruecklich **strikter** Vergleich.
+
+**Und verdrahtet wird in den Adaptern, nicht im Hexagon.** Der Helfer
+`capabilityGenerationCanonicalizer` (`TypeCanonicalizerWiring.kt:256-275`) liegt
+in `:hexagon:application` und ist heute **nur** auf dem Migrate-Pfad verdrahtet
+(`SchemaMigrateRunner.kt:601-611`). Übergeben muss ihn eine der beiden
+Comparator-Baustellen:
+[`SchemaCompareWiring.kt:55`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareWiring.kt)
+(CLI) und `McpRuntimeRegistries.kt:125` (MCP). Das Paket nennt **beide** und
+sagt, **welcher Dialekt** übergeben wird — bei zwei Reverses gibt es keine
+Zielseite, und Oracle setzt den Namen wie PostgreSQL
+(`OracleTypeMapping.kt:83`, `OracleCapabilities.kt:63` = `false`).
 
 Und die Projektions-Bindung beachten (s. Posten 6): kein zweiter Mechanismus
 neben der vorhandenen Naht.
 
 **DoD:** PG↔MySQL meldet die Identity nicht mehr; MySQL↔MySQL mit
-unterschiedlichem **Modus** weiterhin schon; ein Oracle-Reverse
-(`namesIdentitySequences = false`) bleibt unverändert. Der Migrate-Pfad und der
+unterschiedlichem **Modus** weiterhin schon; PG↔Oracle bleibt nachweislich
+unveraendert (beide Seiten führen einen Namen — der übergebene Dialekt
+entscheidet, und das Paket schreibt fest, welcher). Der Migrate-Pfad und der
 Fingerabdruck ändern sich **nicht** — ein Test pinnt das.
 
-### P7 — Spec und ADR nachziehen
+### P7 — Der Vertrag zieht nach: Spec, ADR-Supersede, README
 
 P3 und P5 aendern genau die Menge, die `spec/cli-spec.md:667` **normativ
 aufzaehlt** — und die Spec sagt dort ausdruecklich, dass „umgestellte
@@ -359,26 +510,60 @@ Konjunktionen" ein Unterschied **bleiben**. P5 nimmt zusaetzlich die
 Index-Praedikate auf, die die Spec an dieser Stelle gar nicht nennt (sie spricht
 von CHECK/EXCLUDE und Sichten).
 
-Der Repo-eigene Fahrplan fuer diese Linie steht in
-`compare-falsch-positive-cross-dialekt.md:274-282` und verlangt **Eigner-Entscheidung,
-ADR, Spec-Update, Testumzug** — in dieser Reihenfolge. Das Paket zieht den
-Spec-Teil nach; die Eigner-Entscheidung holt es **vorher** ein.
+**Der Kern des Pakets ist eine Statusänderung — kein zweiter ADR daneben.** Die
+bewegte Linie gehört einem akzeptierten ADR:
+[`ADR 0053`](../../adr/0053-vergleich-rohen-sql-texts.md) (Entscheidung 1: „Rohes
+SQL wird **nicht** lokal normalisiert. Kein Zeichen-Scanner, kein Parser";
+Entscheidung 4: „`schema compare` bleibt streng") — und er nennt
+`IndexDefinition.where` und `ConstraintDefinition.expression` **namentlich**.
+Dieselbe Linie wiederholen
+[`0048`](../../adr/0048-enum-wertevorrat-im-fingerprint.md),
+[`0049`](../../adr/0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md),
+[`0050`](../../adr/0050-overlay-bindung-uebergang-vs-darstellung.md) und
+[`0055`](../../adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md) in ihren
+Abgrenzungen.
 
-**DoD:** Ein **ADR** haelt den Linienwechsel fest (der Fahrplan verlangt ihn
-ausdruecklich, `compare-falsch-positive-cross-dialekt.md:277`); `spec/cli-spec.md`
-nennt die erweiterte Faltungsmenge; die drei Grenzfragen stehen dort als solche;
-`make docs-check` und `make doc-immutable RANGE=origin/main..HEAD` gruen.
+**Warum ein zweiter ADR daneben nicht genügt:** akzeptierte ADRs sind im Kern
+eingefroren (`make doc-immutable`), und **kein Gate prüft, ob zwei akzeptierte
+ADRs sich widersprechen**. Stellte man den neuen ADR nur daneben, bliebe 0053
+`accepted`, alle Gates blieben grün — und der Widerspruch stünde im Repo. Die
+eine erlaubte Kernänderung ist die Statuszeile: `0053` wechselt auf
+`status: superseded by ADR-00NN` (`.d-check.yml` lässt genau diese Form zu).
+
+Der Repo-eigene Fahrplan für diese Linie steht in
+`compare-falsch-positive-cross-dialekt.md:274-282` und verlangt
+**Eigner-Entscheidung, ADR, Spec-Update, Testumzug** — in dieser Reihenfolge.
+Die Eigner-Entscheidung holt das Paket **vorher** ein; sie ist die Vorbedingung
+dieses Slices (s. Kopfzeile), nicht sein Inhalt.
+
+**DoD:**
+1. `ADR 0053` trägt `status: superseded by ADR-00NN`; der neue ADR nennt die
+   übersteuerte Entscheidung und die neue Grenze und steht in
+   [`docs/adr/README.md`](../../adr/README.md).
+2. `spec/cli-spec.md` nennt die erweiterte Faltungsmenge (P3/P5) **und** das
+   Pfad-Schema (P2b); die verbliebenen Grenzfragen stehen dort als solche.
+3. `make docs-check` und `make doc-immutable RANGE=origin/main..HEAD` grün.
+   **Und das ist falsifizierbar:** wer 0053 ohne Statusänderung im Kern anfasst,
+   macht `doc-immutable` rot; ein bloss danebengestellter ADR lässt beide Gates
+   grün und ist damit **nicht** die Erfüllung dieses DoD.
 
 ## Akzeptanzkriterien
 
-1. Im gemeldeten Repro: **6** meldet nichts mehr, **3** in seinem
-   PG↔MSSQL-Bein, **5** seine Schreibweise-Differenzen; 1 nennt Vorher und
-   Nachher; 2 folgt dem Pfad-Schema der übrigen Funde; 4 ist validierbar.
-   Was bleibt, bleibt **bewusst** (drei Grenzfragen) — ein Abnehmer, der die
-   ganze Dreier-Matrix erwartet, erwartet zu viel.
-2. Jeder Test fällt nachweislich, wenn man seinen Fix zurücknimmt.
-3. Die Pfad-Präfixe aller Fund-Arten folgen **einem** Schema.
-4. Die Grenzfall-Tests aus 1.7.1 bleiben unverändert grün — insbesondere
+1. Im gemeldeten Repro: **6** meldet nichts mehr (PG↔MySQL), **3** in seinem
+   PG↔MSSQL-Bein, **5** seine Schreibweise-Differenzen (Index-Prädikat **und**
+   Listen-Komma); 1 nennt Vorher und Nachher; 2 folgt dem Pfad-Schema der
+   übrigen Funde. Was bleibt, bleibt **bewusst** — die zwei Grenzfragen und die
+   ADR-entschiedene Umschreibung; ein Abnehmer, der die ganze Dreier-Matrix
+   erwartet, erwartet zu viel.
+2. Jeder Test fällt nachweislich, wenn man seinen Fix zurücknimmt — je Paket,
+   und bei P2 je Teilpaket.
+3. Die Pfad-Präfixe aller Fund-Arten folgen **einem** Schema (P2b), und der
+   W137-Fund ist darauf gezogen (P2a).
+4. Der Migrate-Pfad und der Fingerabdruck sind nachweislich unverändert (P5,
+   P6) — gepinnt.
+5. `ADR 0053` ist übersteuert **und** die Spec nennt die neue Faltungsmenge sowie
+   das Pfad-Schema (P7); die zwei Grenzfragen stehen dort als solche.
+6. Die Grenzfall-Tests aus 1.7.1 bleiben unverändert grün — insbesondere
    `("Quantity" > 0)` gegen `(quantity > 0)` und die Literal-Schutzfälle.
 
 ## Verifikation
@@ -389,21 +574,28 @@ nennt die erweiterte Faltungsmenge; die drei Grenzfragen stehen dort als solche;
    | Paket | Modul | womit |
    | ----- | ----- | ----- |
    | P1 | `:adapters:driving:cli` (Signatur) **und** `:adapters:driving:mcp` (`details`) | `make docker-check` |
-   | P2 | `:hexagon:application` (Meldungstext) **und** `:adapters:driving:mcp` (Regex) | `make docker-check` |
+   | P2a | `:hexagon:application` (Pfad) **und** `:adapters:driving:mcp` (Regex) | `make docker-check` |
+   | P2b | `:adapters:driving:mcp` (Praefixe) **und** `spec/` (Pfad-Schema) | `make docker-check` |
    | P3, P5 | `:hexagon:core` | `make docker-check` |
-   | P4 | `:adapters:driven:driver-mysql` | `make docker-check` |
-   | P6 | `:hexagon:application` | `make docker-check` |
-   | P4-DoD (Reverse validierbar) | — | `make integration` (`-PintegrationTests`) |
+   | P6 | `:hexagon:application` (Helfer) **und** die zwei Comparator-Baustellen `:adapters:driving:cli` + `:adapters:driving:mcp` | `make docker-check` |
+   | P7 | `docs/adr/` + `spec/` | `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD` |
 
-   Ohne `-PintegrationTests` ueberspringen sich die Integrations-Tasks
-   **lautlos** und Gradle meldet trotzdem `BUILD SUCCESSFUL`.
+   **Diesen Slice fährt kein Integrationsmodul:** der einzige Posten, der eines
+   brauchte (4, MySQL-Reader), ist in den Reader-Slice gewandert — dort läuft er
+   als `make integration INTEGRATION_TASKS=":test:integration-mysql:test"`.
+   Zur Erinnerung für alles Künftige: ohne `-PintegrationTests` überspringen
+   sich die Integrations-Tasks **lautlos** und Gradle meldet trotzdem
+   `BUILD SUCCESSFUL`.
 
 2. **Sabotage je Paket** — Fix zuruecknehmen, Fehlschlag sehen, zuruecksetzen.
    Und die Ruecknahme danach **verifizieren**: die Ausgabe lesen, nicht annehmen.
 
-3. **Der Konsumenten-Repro ist die Abnahme**: PG-Reverse gegen
-   MSSQL/MySQL/SQLite-Reverse, dieselbe Dreier-Matrix. `examples/mcp-e2e` faehrt
-   sie **nicht** (es vergleicht Quelle gegen je einen Reverse).
+3. **Der Konsumenten-Repro ist die Abnahme**: PG-Reverse gegen MSSQL-, MySQL-
+   und SQLite-Reverse. Die **Paare ausschreiben** — „Dreier-Matrix" heisst im
+   Dokument sonst die Comparator-Matrix (PG↔MSSQL, PG↔MySQL, MSSQL↔MySQL), und
+   SQLite kommt in keinem Posten vor: es ist der **Nullfall** (dort gibt es
+   keine Kanonisierung zu prüfen). `examples/mcp-e2e` fährt die Matrix **nicht**
+   (es vergleicht Quelle gegen je einen Reverse).
 
 4. **Der Harness mit gepinnten Erwartungen ist ein anderer**:
    `examples/sample-db/expected/pagila-smoke.compare.txt` plus Byte-Diff-Abbruch
@@ -411,17 +603,52 @@ nennt die erweiterte Faltungsmenge; die drei Grenzfragen stehen dort als solche;
    `examples/mcp-e2e` **pinnt nicht** — sein README
    sagt das ausdruecklich („der Harness pinnt sie nicht, er zeigt sie").
 
-5. `make docs-check` (P7 fasst `spec/` an) und `make solid-suppression-gate`.
+5. **Vertrags-Gates:** `make docs-check` (P7 fasst `spec/` an),
+   `make doc-immutable RANGE=origin/main..HEAD` (P7 ändert eine ADR-Statuszeile —
+   und muss **rot** werden, wenn jemand `ADR 0053` ohne Statusänderung im Kern
+   anfasst) und `make solid-suppression-gate`.
+
+## Offen (nicht Teil dieses Slices)
+
+- **Der Schlüsselwort-Case** (`sum` gegen `SUM`) — Eigner-Frage **ohne Ort**. Der
+  Plan hat für die beiden anderen Fragen einen Anker; für diese nicht. Sie
+  braucht einen eigenen `open/`-Eintrag (Muster:
+  [`../open/spatial-profile-e052-ganze-tabelle.md`](../open/spatial-profile-e052-ganze-tabelle.md)
+  und [`../open/json-jsonb-zweite-json-art.md`](../open/json-jsonb-zweite-json-art.md)
+  — beide am 2026-09-16 aus derselben Messreihe entstanden) **oder** einen
+  Abschnitt im in-progress-Slice, der die Linie laut eigenem Text besitzt. Ohne
+  das ist die Frage nach der Graduation weg.
+- **`= ANY(ARRAY[…])` gegen `IN (…)`** — keine offene Frage, sondern eine
+  **ADR-entschiedene**: [`ADR 0055`](../../adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md)
+  setzt sie für den zielbewussten Vergleich gleich und lässt `schema compare`
+  streng. Sie zu verschieben wäre eine Statusänderung an 0055 — dieselbe Linie
+  wie P7, aber eine **andere** Entscheidung.
+- **Die zweite MCP-Oberfläche fehlt im Plan.** `schema_compare_start` baut den
+  Comparator **ohne** `canonicalizeRawExpressions`
+  (`McpCoreJobWorkerFactory.kt:142`) und publiziert den rohen `SchemaDiff` als
+  JSON (`:318-323`). P1 und P5 sprechen von „MCP" und meinen den synchronen
+  Handler — der asynchrone Pfad ist von beiden Änderungen nicht erreichbar. Ob
+  er sie erben soll, ist eine eigene Entscheidung; heute ist es ein Unterschied,
+  den niemand dokumentiert.
+- **Die Anwendersicht ist hier nicht betroffen** — und das ist begründet: kein
+  `docs/user/`-Text zeigt Compare-Funde oder deren `path`, und der Präzedenzfall
+  derselben Änderung (VIEW_CHANGED-Vorher/Nachher in 1.7.1) hat `docs/user/`
+  nicht angefasst. **Eine Ausnahme wandert mit:** der Posten C1/P6 im
+  Reader-Slice verschiebt die Grenze von `E012`, und die steht im
+  Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2125`) — dort zieht der
+  Reader-Slice mit.
 
 ## Was der Slice bewusst nicht tut
 
-Er entscheidet **keine** Grenzfrage. **Drei** sind oben benannt — **eine**
-davon ist im Compare-Slice begründet (`RESTRICT` gegen implizit,
-`compare-falsch-positive-cross-dialekt.md:119`), die anderen zwei haben dort
-**keinen** Anker: der Schlüsselwort-Case ist im Repo nirgends normativ gefasst,
-und `= ANY(ARRAY[…])` steht nur als Beispiel in
-[`../open/check-ausdruck-analyse-per-parser.md`](../open/check-ausdruck-analyse-per-parser.md).
-Wer sie entscheiden will, braucht fuer beide einen eigenen Ort. Dieser Slice behebt nur, was unstrittig
-falsch ist — ein fehlendes Vorher/Nachher (P1), zwei Pfad-Schemata (P2), einen
-fehlenden Faltungs-Zweig (P5), einen Dialekt-Anhang im Modell (P4) und ein
-Herkunfts-Feld, das als Schema-Eigenschaft gewertet wird (P6).
+Er entscheidet **keine** Grenzfrage: die zwei verbliebenen gehören dem Eigner,
+die dritte ist ADR-entschieden. Er behebt, was unstrittig falsch ist — und trägt
+die Begründung mit: ein fehlendes Vorher/Nachher (P1), zwei Pfad-Schemata
+(P2a/P2b), **redundante** Klammern um einen Operanden (P3, samt der Begründung,
+warum sie redundant sind), zwei fehlende Faltungszweige (P5) und ein
+Herkunfts-Feld, das als Schema-Eigenschaft gewertet wird (P6). Und er bewegt
+dabei eine ADR-Linie — das ist kein Nebeneffekt, sondern P7.
+
+**Nicht mehr hier:** Posten 4 (MySQL-Reader) ist am 2026-09-16 in den
+[Reader-Slice](reader-treue-spatial-array-json.md) gewandert, als Posten C1 mit
+Paket P6. **Nicht behoben** wird die Umschreibung `= ANY(…)` gegen `IN (…)`:
+sie ist in ADR 0055 entschieden.

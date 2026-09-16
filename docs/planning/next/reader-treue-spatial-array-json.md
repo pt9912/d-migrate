@@ -1,12 +1,13 @@
 # Reader-Treue: stille Typverluste bei Spatial, Array und JSON
 
 > **Status:** Entwurf mit Scope (2026-09-16, Review-Runden 1 und 2 eingearbeitet).
-> Gemeldet gegen `1.7.1`. Zwei Angaben je Posten, getrennt gefuehrt:
-> **Belegart** — *nachgemessen* (A1, A5, B3, B4) oder *blosse Meldung* (A2, A3,
-> A4, B1, B2); bei den Meldungen ist im Code nur die **Vorbedingung** geprueft,
-> nicht die Zahl oder der Objektname (s. „Verifikation", Punkt 5).
-> **Verbleib** — Paket (A1→P1, A2/A3→P2a/P2b, A4→P3, A5→P4, B1→P5), „Offen"
-> (A6, B3) oder widerlegt und entfallen (B4).
+> Gemeldet gegen `1.7.1` (C1 stammt aus der Compare-Messung und ist am
+> 2026-09-16 uebernommen). Zwei Angaben je Posten, getrennt gefuehrt:
+> **Belegart** — *nachgemessen* (A1, A5, B3, B4, C1) oder *blosse Meldung*
+> (A2, A3, A4, B1, B2); bei den Meldungen ist im Code nur die **Vorbedingung**
+> geprueft, nicht die Zahl oder der Objektname (s. „Verifikation", Punkt 5).
+> **Verbleib** — Paket (A1→P1, A2/A3→P2a/P2b, A4→P3, A5→P4, B1→P5, C1→P6),
+> „Offen" (A6, B3) oder widerlegt und entfallen (B4).
 > **Vorbedingung / Gate:** **eines, halb** — die Eigner-Frage aus A1 (s.
 > Abgrenzung) ist mit P1 zur Haelfte beruehrt: die „Fund"-Seite (Note) nimmt P1
 > vor, die „Block"-Seite bleibt offen. Sonst keins. Der Spatial-Vertrag, den A1
@@ -25,9 +26,10 @@
 
 ## Der gemeinsame Nenner
 
-Neun lebende Posten (ein zehnter, B4, ist in Review-Runde 1 widerlegt und
-entfallen), **zwei** Muster — die Einleitung des ersten Entwurfs tat sie in
-eines, und das trug nicht:
+Zehn lebende Posten — neun aus der Reader-Messung (ein zehnter, B4, ist in
+Review-Runde 1 widerlegt und entfallen) und **C1**, am 2026-09-16 aus der
+Compare-Messung uebernommen. **Zwei** Muster — die Einleitung des ersten Entwurfs
+tat sie in eines, und das trug nicht:
 
 1. **Fidelity: der Reader verliert Information oder der Generator verwirft ein
    Objekt — und sagt es nicht.** Mehrfach gibt es auf demselben Weg fuer einen
@@ -36,11 +38,13 @@ eines, und das trug nicht:
    nicht meldet (B1) — Oracle rendert ihn als `JSON`, MSSQL als `NVARCHAR(MAX)`;
    MSSQL meldet seinen `geography`-Sonderfall mit `R345` (A5). Das ist kein
    Zufall: die Meldewege sind je Dialekt einzeln gebaut, nicht aus einer Naht.
-2. **Modell-Reinheit: der Reader nimmt ZUVIEL auf** (A2, A3). Hier geht nichts
-   verloren — es kommt Fremdes hinzu: Oracles interne `MDRS_*`-Sequenz und rund
-   1000 PostGIS-Funktionen wandern als Anwenderobjekte ins Artefakt. Der Filter,
-   den P2a/P2b bauen, **erzeugt** den Verlust erst, den er dann melden soll; das
-   ist ein eigener Strang und in „Ziel" getrennt gefuehrt.
+2. **Modell-Reinheit: der Reader nimmt ZUVIEL auf** (A2, A3, C1). Hier geht
+   nichts verloren — es kommt Fremdes hinzu: Oracles interne `MDRS_*`-Sequenz und
+   rund 1000 PostGIS-Funktionen wandern als Anwenderobjekte ins Artefakt (A2,
+   A3), und MySQLs Charset-Introducer wandert als **Server-Text** ins Modell und
+   macht es ungültig (C1). Der Filter, den P2a/P2b bauen, **erzeugt** den Verlust
+   erst, den er dann melden soll; das ist ein eigener Strang und in „Ziel"
+   getrennt gefuehrt.
 
 Die Gegenprobe, die der Konsument selbst gefuehrt hat, gehoert dazu: **kein
 Befund** ist, dass Oracles `-slim`-Image Spatial und Locator nicht enthaelt
@@ -289,6 +293,39 @@ Tracker aktiviert sonst „sobald ein konkreter Fidelity-Bedarf auftritt", und
 genau den hat B4 widerlegt) **und** die Übersichtszeile in
 [`../open/README.md`](../open/README.md), die die Kandidaten namentlich aufzaehlt.
 
+### C — Modell-Reinheit (aus der Compare-Messung uebernommen)
+
+**C1 — MySQLs Charset-Introducer macht das Schema ungueltig (gemessen; Quelle:
+Compare-Messung, dort Posten 4 — am 2026-09-16 hierher gewandert, weil es der
+einzige Reader-Posten jener Messung ist).** Der Konsument meldete
+`ck_customer_email_shape` als Fehlalarm „nur wo MySQL beteiligt ist"; Ursache sei
+`_utf8mb4'%@%'`. Nachgemessen ist es mehr als ein Fehlalarm — eine Datei mit
+diesem Ausdruck ist **ungueltig**:
+
+```
+$ d-migrate schema validate --source cs_my.yaml
+  ✗ Error [E012]: Check expression 'ck_mail' references unknown column '_utf8mb4'
+    → tables.orders.constraints.ck_mail
+```
+
+Der Introducer steht vor dem Literal; die Ausdrucks-Analyse liest `_utf8mb4` als
+**Spaltenbezug**. Das ist kein Kanonisierungs-, sondern ein **Reader**-Thema: was
+MySQL in `CHECK_CLAUSE` liefert, ist nicht das neutrale Modell, sondern ein
+Server-Text mit Dialekt-Anhang. (Der zweite Teil der Meldung — backslash-escapte
+Anführungszeichen, `\'%@%\'` — ist ohne MySQL-Server nicht entscheidbar; belegt
+ist der `E012`-Pfad.)
+
+**Der Praezedenzfall steht im Repo und entscheidet die Frage vor:** der
+MSSQL-Reader streicht den Unicode-Literal-Praefix `N'…'` **im Reader**, weil der
+Validator das `N` sonst als Spaltenbezug liest und jedes reverse-gelesene
+MSSQL-Schema mit `E012` abweist (`MssqlTypeMapping.kt:312-314`, gepinnt in
+`MssqlTypeMappingTest.kt:203-222`). `_utf8mb4'…'` ist dieselbe Klasse Konstrukt —
+die Alternative („die Analyse kennt den Introducer") hat damit einen Vorläufer,
+der sich dagegen entschieden hat.
+
+**Und der Posten bringt eine Anwenderstelle mit:** die Grenze von `E012` steht im
+Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2125`) — dort zieht P6 mit.
+
 ## Ziel
 
 Kein Verlust bleibt still. Wo Information nicht erhalten werden kann, wird sie
@@ -308,10 +345,11 @@ das dieselbe Zerlegung braucht):
    `R401` entsteht, nennt aber weder Grund noch Ausweg.
 3. **Der Verlust ist ein Defekt und wird behoben** — A5 (`geography` wird als
    Enum statt als Geometrie gelesen).
-4. **Fremdes gehoert nicht ins Modell** — A2, A3. Eigener Strang (s. „Der
-   gemeinsame Nenner"): hier wird nichts bewahrt, sondern **ausgeschlossen**. Ob
-   ein solcher Ausschluss stumm oder mit Hinweis geschieht, entscheidet das
-   Paket.
+4. **Fremdes gehoert nicht ins Modell** — A2, A3, C1. Eigener Strang (s. „Der
+   gemeinsame Nenner"): hier wird nichts bewahrt, sondern **ausgeschlossen**. Bei
+   C1 ist der Ausschluss nicht optional — der Fremdteil macht das Schema
+   **ungueltig** (`E012`). Ob ein Ausschluss sonst stumm oder mit Hinweis
+   geschieht, entscheidet das Paket.
 5. **Der Ausgang ist bereits laut oder vertragsgleich und wird nicht angefasst** —
    A6 (`E052` nennt Spalte und Wirkung), B3 (`json` → `JSONB` ist die kanonische
    Modellform), B4 (widerlegt: `R301` meldet `interval`).
@@ -525,6 +563,19 @@ Renderweg ist genau das.
 Registrierungsorte sind nachgezogen; der Code trägt einen Test, der mit
 zurueckgenommener Meldung faellt.
 
+### P6 — MySQL: der Introducer gehoert nicht ins Modell (C1)
+
+**Der Praezedenzfall entscheidet die Frage vor:** der MSSQL-Reader streicht den
+Unicode-Praefix `N'…'` im Reader (s. C1) — P6 uebertraegt das auf MySQLs
+Charset-Introducer. Die Alternative (die Ausdrucks-Analyse kennt den Introducer)
+faellt damit **weg** — nicht weil sie teurer waere, sondern weil das Repo sie
+fuer dieselbe Konstruktklasse schon einmal verworfen hat.
+
+**DoD:** PG↔MySQL meldet `ck_customer_email_shape` nicht mehr **und** ein
+MySQL-Reverse mit einem solchen CHECK ist validierbar (`schema validate` ohne
+`E012`). PG↔MSSQL war vorher sauber und bleibt es. Dazu der `docs/user/`-Nachtrag:
+die Grenze von `E012` steht im Anwenderhandbuch (`:2125`) und zieht mit.
+
 ## Akzeptanzkriterien
 
 1. Der Oracle-Reverse einer **quotiert kleingeschriebenen** Tabelle mit
@@ -540,6 +591,8 @@ zurueckgenommener Meldung faellt.
 6. Der Array-Verlust auf MySQL ist mit eigenem Code benannt (B1/P5); die Kette
    `integer[]` → `JSON` → `json` ist als **erwarteter** Ausgang gepinnt (B2).
 7. Jeder Test faellt nachweislich mit zurueckgenommenem Fix (Sabotage je Paket).
+8. Ein MySQL-Reverse mit Charset-Introducer ist validierbar (`schema validate`
+   ohne `E012`) und der CHECK meldet im Vergleich nicht mehr (C1/P6).
 
 ## Verifikation
 
@@ -587,13 +640,17 @@ zurueckgenommener Meldung faellt.
    `:adapters:driven:driver-postgresql` — Typ-Mapping **und** dessen
    Kanonisierer-Projektion, denn in `hexagon/ports-common` liegt nur das
    Interface (`NeutralTypeCanonicalizer.kt`), die PG-Projektion liegt im Treiber;
-   P5 `:adapters:driven:driver-mysql`; P2b `:adapters:driven:driver-postgresql`.
+   P5 und P6 `:adapters:driven:driver-mysql`; P2b
+   `:adapters:driven:driver-postgresql`.
    Die Abnahmefaelle fuer P1/P2a liegen in `:test:integration-oracle` (s.
-   Punkt 2). Sabotage je Paket, auch je Teilpaket von P2.
+   Punkt 2), die fuer P6 in `:test:integration-mysql`
+   (`make integration INTEGRATION_TASKS=":test:integration-mysql:test"` — die
+   Nulllinie dieses Moduls ist gemessen, s. Punkt 2). Sabotage je Paket, auch je
+   Teilpaket von P2.
 4. `make docs-check` — P1, P4 und P5 fassen Spec-Bezuege an (P1 beide
    „exakt passend"-Stellen, P4 beide Mapping-Seiten, P5 vier Registrierungsorte);
-   die uebrigen Pakete nicht. P3 und P5 fassen zusaetzlich `docs/user/` an — das
-   Gate prueft das mit, aber nur auf Verweise, nicht auf Inhalt.
+   die uebrigen Pakete nicht. P3, P5 und P6 fassen zusaetzlich `docs/user/` an —
+   das Gate prueft es mit, aber nur auf Verweise, nicht auf Inhalt.
 5. **Was nachgemessen ist und was nicht.** Die Posten A2, A3, A4, B1, B2 stammen
    aus der Konsumentenmessung; geprueft ist im Repo jeweils die **Vorbedingung**
    (der Filter fehlt an genau dieser Stelle; der Zweig fehlt; die Note nennt
@@ -645,8 +702,9 @@ Vertragsfragen (s. „Offen"). Er fasst **A6 nicht an**: der Ausgang ist laut
 (`E052`) und die Spec schreibt ihn fest. Und er **lockert den SRID-Abgleich
 nicht** (s. A1) — obwohl genau das der naheliegende Fix waere.
 
-Und er behebt **nicht** „alles": von den neun lebenden Posten ist **einer** ein
-Defekt mit Fix (A5), **einer** eine Meldung, die handelbar wird (A4), **drei**
-sind Verluste, die benannt werden (A1, B1 und das unvermeidbare B2), **zwei**
-sind Fremdobjekte, die ausgeschlossen werden (A2, A3), und **zwei** sind
-spec-konform (A6, B3). B4 ist widerlegt und war nie Teil der neun.
+Und er behebt **nicht** „alles": von den **zehn** lebenden Posten sind **zwei**
+Defekte mit Fix (A5, C1), **einer** eine Meldung, die handelbar wird (A4),
+**drei** Verluste, die benannt werden (A1, B1 und das unvermeidbare B2), **zwei**
+Fremdobjekte, die ausgeschlossen werden (A2, A3), und **zwei** spec-konform
+(A6, B3). B4 ist widerlegt und war nie Teil der zehn; C1 ist am 2026-09-16 aus
+der Compare-Messung uebernommen und bringt dort seinen Praezedenzfall mit.
