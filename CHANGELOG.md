@@ -32,6 +32,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schon benutzte. Ein angegebenes `format` gilt weiterhin und ein falsches
   bleibt ein benannter Fehler.
 
+- **MySQL traegt die Index-Art `FULLTEXT` zurueck.** Ein `FULLTEXT KEY` kam
+  als gewoehnlicher Index an: `information_schema.statistics` meldet ihn als
+  `index_type = FULLTEXT`, der Reader kannte nur `HASH` und `SPATIAL` und
+  fiel fuer alles andere auf `BTREE`. Folge auf dem Generate-Pfad: ein
+  Zielsystem ohne Volltext-Konzept bekam einen normalen `CREATE INDEX` — die
+  Volltextsuche war still weg, ohne Finding und ohne `SkippedObject`. Die vier
+  anderen Reader tragen die Art laengst; jetzt MySQL auch, und der
+  Generate-Pfad meldet den Verlust dort, wo er ihn nicht erzeugen kann
+  (`E070`/`E071`-Klasse).
+
+- **SQL Server zaehlt auch seine Index-Verluste.** Der Index-Helfer baute
+  fuenf Verluststellen (`E066` mehrfach geclustert, `E070` kein
+  Volltext-Schluesselindex, `E071` mehr als ein Volltext-Index, ein nicht
+  renderbarer raeumlicher Index und ein Ausdrucks-Index) ueber eine private
+  Funktion, die nur die Notiz erzeugte: die Objekte fielen aus der Ausgabe,
+  ohne in `skipped_objects` zu stehen. Dieselbe Klasse wie der
+  Oracle-Befund oben, eine Datei weiter — dieselbe Regel, derselbe Ausgang
+  (`Exit 8`).
+
 ### Changed
 
 - **Der Sicht-Vergleich wertet die abgeleiteten Spalten nicht mehr roh.**
@@ -56,15 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schon ein Semikolon getragen hatte — ein einzelnes `removeSuffix` liess
   einen Rest stehen und verschob den Fehlalarm nur. Es fallen alle
   **abschliessenden** weg; ein `;` zwischen zwei Anweisungen bleibt Text.
-
-- **SQL Server zaehlt auch seine Index-Verluste.** Der Index-Helfer baute
-  fuenf Verluststellen (`E066` mehrfach geclustert, `E070` kein
-  Volltext-Schluesselindex, `E071` mehr als ein Volltext-Index, ein nicht
-  renderbarer raeumlicher Index und ein Ausdrucks-Index) ueber eine private
-  Funktion, die nur die Notiz erzeugte: die Objekte fielen aus der Ausgabe,
-  ohne in `skipped_objects` zu stehen. Dieselbe Klasse wie der
-  Oracle-Befund oben, eine Datei weiter — dieselbe Regel, derselbe Ausgang
-  (`Exit 8`).
 
 - **Auch CHECK-Ausdruecke werden jetzt im Identifier-Quoting kanonisiert** —
   dieselbe Regel wie seit 1.7.0 fuer View-Bodies, und aus demselben Grund:

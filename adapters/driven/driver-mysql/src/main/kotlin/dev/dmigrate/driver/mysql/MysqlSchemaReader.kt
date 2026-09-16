@@ -223,6 +223,14 @@ class MysqlSchemaReader(
                         "HASH" -> IndexType.HASH
                         // VA3: MySQL meldet räumliche Indizes als index_type=SPATIAL.
                         "SPATIAL" -> IndexType.SPATIAL
+                        // `information_schema.statistics` meldet einen
+                        // `FULLTEXT KEY` als index_type=FULLTEXT. Ohne diesen
+                        // Zweig kam er als BTREE an, und der Generate-Pfad gab
+                        // ihn als gewoehnlichen Index aus — ein stiller
+                        // Semantikverlust (Volltextsuche), den weder ein
+                        // Finding noch ein Skip benannte. Die vier anderen
+                        // Reader tragen die Art laengst.
+                        "FULLTEXT" -> IndexType.FULLTEXT
                         else -> IndexType.BTREE
                     },
                     unique = idx.isUnique,

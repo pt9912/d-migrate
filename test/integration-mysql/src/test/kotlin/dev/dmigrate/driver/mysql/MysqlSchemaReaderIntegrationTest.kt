@@ -4,6 +4,7 @@ import dev.dmigrate.driver.connection.asJdbc
 
 import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SchemaReadOptions
@@ -81,6 +82,12 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
                         INDEX idx_docs_body (body(100))
                     ) ENGINE=InnoDB
                 """)
+
+                // Ein echter FULLTEXT KEY: der Reader muss ihn als
+                // IndexType.FULLTEXT zurueckgeben. Kam er als BTREE an, gab
+                // der Generate-Pfad ihn als gewoehnlichen Index aus — ein
+                // stiller Semantikverlust ohne Finding und ohne Skip.
+                stmt.execute("ALTER TABLE docs ADD FULLTEXT KEY ft_docs_body (body)")
 
                 stmt.execute("""
                     CREATE VIEW active_orders AS
@@ -279,6 +286,14 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             val result = reader.read(pool)
             val idx = result.schema.tables.getValue("docs").indices.single { it.name == "idx_docs_body" }
             idx.columns.single() shouldBe IndexColumn("body", prefixLength = 100)
+        }
+    }
+
+    test("ein FULLTEXT KEY kommt als IndexType.FULLTEXT zurueck") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            val idx = result.schema.tables.getValue("docs").indices.single { it.name == "ft_docs_body" }
+            idx.type shouldBe IndexType.FULLTEXT
         }
     }
 
