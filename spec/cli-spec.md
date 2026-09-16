@@ -673,14 +673,32 @@ gegen `email like '%@%'` —, und das ist keine Schema-Aenderung.
 Kanonisiert wird ausschliesslich die **Schreibweise**, nicht die Bedeutung:
 Zeilenenden, Whitespace, Klammern, die nur ein Literal oder einen Bezeichner
 umschliessen, Klammern um den ganzen Ausdruck, der PostgreSQL-Operator `~~`
-(der `LIKE` **ist**) und Casts auf den eigenen Typ. String-Literale sind dabei
-geschuetzt. Was einen Parser braeuchte — vertauschte Operanden, umgestellte
-Konjunktionen, andere Funktionen — bleibt ein Unterschied.
+(der `LIKE` **ist**), Casts auf den eigenen Typ und das **Identifier-Quoting**
+(ANSI `"x"`, MySQL `` `x` ``, T-SQL `[x]`). String-Literale sind dabei
+geschuetzt, und die Schreibweise bleibt: `"Quantity"` und `quantity` sind
+danach weiterhin verschieden — in PostgreSQL sind sie das auch. Was einen
+Parser braeuchte — vertauschte Operanden, umgestellte Konjunktionen, andere
+Funktionen — bleibt ein Unterschied.
+
+Das Identifier-Quoting gehoert dazu, weil der Generator die Differenz selbst
+erzeugt: `OracleIdentifierRequoter` quotet die Bezeichner eines
+CHECK-Ausdrucks auf dem Generate-Pfad bewusst, und der Reverse liest nur
+zurueck, was der Generator geschrieben hat.
 
 Dieselbe Regel gilt fuer den **Rumpf einer Sicht**: die Dialekte quoten
 Bezeichner verschieden und setzen unterschiedlich viel Whitespace.
 Vereinheitlicht werden auch dort nur Quoting und Whitespace — gewaehlte
 Spalten, `WHERE`-Klauseln und ihre Reihenfolge bleiben ein Unterschied.
+**Abschliessende Semikola** — eines oder mehrere — fallen mit weg: der Server
+haengt dem gespeicherten `VIEW_DEFINITION`-Text sein eigenes an, und hat die
+angewendete DDL schon eines getragen, stehen dort zwei. Nur abschliessende:
+ein `;` zwischen zwei Anweisungen bleibt Unterschied.
+
+Die **abgeleiteten Spalten** einer Sicht werden nicht roh verglichen: sie
+sind eine optionale Signatur, die die Reader unterschiedlich gut fuellen.
+Verglichen wird nur, was **beide** Seiten tragen, und nur der **Name** — der
+Typ ist Dialekt-Schreibweise (`text` gegen `nvarchar`). Traegt eine Seite
+keine Spalten, ist das eine Leseluecke und keine Schemaaenderung.
 
 **`schema migrate` kanonisiert bewusst nicht.** Dort kostet eine uebersehene
 Aenderung eine falsch stehende Datenbank, waehrend ein Fehlalarm bei

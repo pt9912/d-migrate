@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Oracle zaehlt seine Objektverluste.** Ein UNIQUE oder PRIMARY KEY auf
+  einer Spalte, die Oracle nicht als Schluessel zulaesst (`ORA-02329`), und
+  ein Index, den Oracle nicht bauen kann, fielen aus der Ausgabe, ohne in
+  `skippedObjects` zu stehen: `skippedCount` meldete 1 statt 3, waehrend
+  MSSQL und MySQL dieselbe Objektklasse zaehlten. Betroffen waren vier
+  Generate-Aufrufstellen (benanntes und ungenanntes UNIQUE, PRIMARY KEY,
+  Tabellen-Constraint) und drei Index-Stellen (mehrspaltiger Volltext-Index
+  `E057`, Index auf LOB-Spalte `W152`, mehrspaltiger Spatial-Index `E052`).
+
+  **Der Ausgang kippt damit mit.** Wo Oracle bisher `Exit 0` lieferte, obwohl
+  eine Constraint oder ein Index wegfiel, meldet `schema generate` jetzt
+  `Exit 8` — die Regel aus 1.5.0 ("der Ausgang haengt an `SkippedObject`"),
+  die fuer Oracle bisher ins Leere lief.
+
+- **`schemaRef` braucht kein `format` mehr.** Ein Verweis auf ein per
+  `schema_reverse` erzeugtes Artefakt ist YAML, der Verweis-Pfad nahm ohne
+  `format` aber JSON an: jeder Aufruf, der `schema_reverse_start` mit
+  `schema_generate` oder `schema_compare` verkettete, scheiterte mit
+  `Unrecognized token 'schema_format'`. Fehlt die Angabe, wird das Format
+  jetzt erkannt — dieselbe Heuristik, die `schema validate` auf `stdin`
+  schon benutzte. Ein angegebenes `format` gilt weiterhin und ein falsches
+  bleibt ein benannter Fehler.
+
+### Changed
+
+- **Der Sicht-Vergleich wertet die abgeleiteten Spalten nicht mehr roh.**
+  `ViewDefinition.columns` ist eine **optionale** Signatur, und die Reader
+  fuellen sie unterschiedlich gut: MySQL und Oracle liefern gar keine. Der
+  Vergleich zaehlte das als Aenderung und meldete `VIEW_CHANGED` — auch fuer
+  den Round-Trip **innerhalb** eines Dialekts. Jetzt wird nur verglichen, was
+  **beide** Seiten tragen, und nur der **Name**: der Typ ist
+  Dialekt-Schreibweise (`text` gegen `nvarchar`). Traegt eine Seite keine
+  Spalten, ist das eine Leseluecke und keine Schemaaenderung.
+
+  **Und der Fund nennt seinen Grund.** Bisher erschien ein solcher Fund als
+  blankes `VIEW_CHANGED` ohne Feldzeile — der Anwender sah, *dass* etwas
+  anders ist, aber nicht *was*. Die Spalten-Differenz steht jetzt in der CLI
+  und im MCP-`details` (`before`/`after`).
+
+- **Abschliessende Semikola eines zurueckgelesenen Sicht-Rumpfs sind keine
+  Aenderung mehr.** `pg_get_viewdef` und seine Gegenstuecke haengen dem
+  gespeicherten Definitionstext ihres an, der Autor nicht; im Round-Trip
+  Quelle gegen Reverse ergab das einen `VIEW_CHANGED`-Fund ohne Grund. Und
+  **mehrere**: SQL Server lieferte `…customer_id;;`, wenn die angewendete DDL
+  schon ein Semikolon getragen hatte — ein einzelnes `removeSuffix` liess
+  einen Rest stehen und verschob den Fehlalarm nur. Es fallen alle
+  **abschliessenden** weg; ein `;` zwischen zwei Anweisungen bleibt Text.
+
+- **SQL Server zaehlt auch seine Index-Verluste.** Der Index-Helfer baute
+  fuenf Verluststellen (`E066` mehrfach geclustert, `E070` kein
+  Volltext-Schluesselindex, `E071` mehr als ein Volltext-Index, ein nicht
+  renderbarer raeumlicher Index und ein Ausdrucks-Index) ueber eine private
+  Funktion, die nur die Notiz erzeugte: die Objekte fielen aus der Ausgabe,
+  ohne in `skipped_objects` zu stehen. Dieselbe Klasse wie der
+  Oracle-Befund oben, eine Datei weiter — dieselbe Regel, derselbe Ausgang
+  (`Exit 8`).
+
+- **Auch CHECK-Ausdruecke werden jetzt im Identifier-Quoting kanonisiert** —
+  dieselbe Regel wie seit 1.7.0 fuer View-Bodies, und aus demselben Grund:
+  d-migrate erzeugt die Differenz selbst. `OracleIdentifierRequoter` quotet
+  die Bezeichner eines CHECK-Ausdrucks auf dem Generate-Pfad bewusst, weil
+  Oracle unquotiert auf GROSSSCHREIBUNG faltet und d-migrate wortgetreu
+  quotet anlegt; der Reverse liest nur zurueck, was der Generator geschrieben
+  hat. `("quantity" > 0)` gegen `(quantity > 0)` galt damit als Aenderung.
+
+  Die **Schreibweise** bleibt: `"Quantity"` und `quantity` sind danach
+  weiterhin verschieden — in PostgreSQL sind sie das auch. Wie bei den
+  View-Bodies gilt das nur fuer `schema compare`, nicht fuer `schema migrate`.
+
 ## [1.7.0] - 2026-09-15
 
 ### Changed

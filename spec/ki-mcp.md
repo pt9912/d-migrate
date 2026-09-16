@@ -430,6 +430,13 @@ read-only und braucht keinen vorgelagerten Upload und keine
 Policy-Freigabe; zu grosse Inline-Schemas muessen `PAYLOAD_TOO_LARGE`
 liefern.
 
+Ein optionales `format` (`json`/`yaml`) benennt die Kodierung des
+**referenzierten Artefakts** — es ist ein Eingabefeld, kein Ausgabefeld:
+die Antwort ist immer JSON. Fehlt die Angabe, wird die Kodierung des
+Artefakts **erkannt**; ein angegebenes `format` gilt und ein falsches
+bleibt ein `VALIDATION_ERROR` auf dem Feld `format`. Der Inline-Pfad
+erkennt nicht — er traegt bereits ein JSON-Objekt.
+
 Beispiel `data_import_start` (CSV-Artefakt + tenant-scoped Ziel):
 
 ```json

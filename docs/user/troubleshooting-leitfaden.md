@@ -100,11 +100,16 @@ dialect", „Database does not exist") steht im
   Constraint oder ein COMPOSITE-Typ auf einem Dialekt, der sie nicht kennt
   (**E054**), ein Partial Index auf MySQL (**E057**) oder ein Fremdschlüssel
   auf einer partitionierten MySQL-Tabelle (**E065**) fehlen deshalb ganz in
-  der Ausgabe. Der Report weist sie unter `skipped_objects` aus (Typ, Name,
-  Grund, Code); der Lauf bricht bewusst **nicht** ab, sondern erzeugt, was
-  entstehen kann — der Ausgang meldet aber, dass etwas fehlt. Prüfen Sie den
-  Report und bilden Sie die Objekte zielseitig nach; `--allow-incomplete`
-  erzwingt Exit `0` trotzdem und vermerkt das im Report (`W160`).
+  der Ausgabe. Dasselbe gilt für einen Schlüssel auf einer Spalte, die das
+  Ziel nicht als Schlüsselspalte zulässt — **E057** auf MSSQL und Oracle
+  (CLOB/BLOB, `ORA-02329`) — und für einen Index, den das Ziel nicht bauen
+  kann: **W152** auf einer LOB-Spalte und **E052** auf einem mehrspaltigen
+  räumlichen Index, beide Oracle. Der Report weist sie unter
+  `skipped_objects` aus (Typ, Name, Grund, Code); der Lauf bricht bewusst
+  **nicht** ab, sondern erzeugt, was entstehen kann — der Ausgang meldet aber,
+  dass etwas fehlt. Prüfen Sie den Report und bilden Sie die Objekte
+  zielseitig nach; `--allow-incomplete` erzwingt Exit `0` trotzdem und
+  vermerkt das im Report (`W160`).
 - **Eine Struktur wird nur vereinfacht, nicht übersprungen (Exit bleibt
   `0`).** Eine für das Ziel nicht erzeugbare Partitionierung (z. B. leere
   oder vom Zieldialekt nicht unterstützte Partition **E055**) oder ein

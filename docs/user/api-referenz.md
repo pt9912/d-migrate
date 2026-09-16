@@ -288,6 +288,15 @@ Feldes, **kein** eigener Tool-Name.
 (nur CLI `data export`). **Nicht implementiert:** SSE-Push / `notifications/*`,
 OAuth-Authorization-Server/DCR (ADR 0008/0009).
 
+**Schema-Operanden.** `schema_validate`, `schema_generate` und `schema_compare`
+nehmen ein neutrales Schema entweder inline (`schema`, ein JSON-Objekt) oder als
+Verweis (`schemaRef` auf ein Artefakt, `dmigrate://tenants/<t>/schemas/<id>`).
+Das optionale `format` (`json`/`yaml`) benennt die Kodierung des **referenzierten
+Artefakts** — es ist ein **Eingabefeld**, kein Ausgabefeld: die Antwort ist
+immer JSON. Fehlt die Angabe, wird die Kodierung erkannt; ein angegebenes
+`format` gilt, und ein unbekanntes bleibt ein `VALIDATION_ERROR` auf dem Feld
+`format`. Der Inline-Pfad erkennt nicht — er trägt bereits ein JSON-Objekt.
+
 **Gelungen, aber unvollständig ist kein `isError`.** Wenn ein Tool sein
 Ergebnis liefert, dabei aber etwas ausweisen muss, steht das in einem Feld der
 Antwort — nicht im Transport-Signal. `schema_generate` setzt `status`

@@ -280,3 +280,24 @@ beiden Pfaden. Ohne Test, der die **Grenze** mitpinnt, faellt das nicht auf.
 4. **Spec-Update** in `spec/ddl-generation-rules.md` fuer den Migrate-Pfad.
 5. Der Kandidat-Test wandert in den Produktivpfad — oder entfaellt mit der
    Entscheidung.
+
+## Die View-Seite ist breiter als oben notiert
+
+Der Punkt „MSSQL-View ohne `columns`" steht oben als **Datenlücke** und damit
+ausserhalb dieses Slices. Die Datenlücke ist mit 1.7.0 geschlossen (Spalten
+aus `sys.columns`) — die **Vergleichsseite** aber blieb liegen, und damit die
+zweite Hälfte jener Aussage. Sie ist im MCP-E2E-Harness reproduzierbar, auch
+im Round-Trip **innerhalb** eines Dialekts, also ohne Dialektwechsel.
+
+Die nicht-strukturellen Ursachen — die rohe Spalten-Wertung und das
+abschliessende Semikolon eines zurückgelesenen Rumpfs — sind als
+[`../next/konsumentenbefunde-170-skipped-schemaref-views.md`](../next/konsumentenbefunde-170-skipped-schemaref-views.md)
+(P4) abgespalten und werden dort gebaut. **Hier bleibt der strukturelle Rest:**
+die gliedernden Klammern, die Kleinschreibung und die Schemaqualifikation aus
+MySQLs `VIEW_DEFINITION`. Sie sind dieselbe Eigner-Frage wie die rohen
+CHECK-Ausdruecke oben — eine Kanonisierung, die `(a join b)` und `a join b`
+gleichsetzt, ist keine Schreibweise mehr, sondern Struktur — und gehoeren
+damit in die Entscheidung, die dieser Plan ohnehin offen fuehrt. Die Messung
+und die Codestellen stehen im abgespaltenen Slice, nicht hier, damit beide
+nicht auseinanderlaufen.
+
