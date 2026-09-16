@@ -291,7 +291,7 @@ im Round-Trip **innerhalb** eines Dialekts, also ohne Dialektwechsel.
 
 Die nicht-strukturellen Ursachen — die rohe Spalten-Wertung und das
 abschliessende Semikolon eines zurückgelesenen Rumpfs — sind als
-[`konsumentenbefunde-170-skipped-schemaref-views.md`](konsumentenbefunde-170-skipped-schemaref-views.md)
+[`konsumentenbefunde-170-skipped-schemaref-views.md`](../done/konsumentenbefunde-170-skipped-schemaref-views.md)
 (P4) abgespalten und **dort gebaut** (die Wirkung ist in 1.7.1 ausgeliefert; die
 Abdeckung ist dort noch offen). **Hier bleibt der strukturelle Rest:**
 die gliedernden Klammern, die Kleinschreibung und die Schemaqualifikation aus

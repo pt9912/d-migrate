@@ -1,12 +1,10 @@
 # Konsumentenbefunde gegen 1.7.0: Oracle-SkippedObjects, schemaRef-Format, View-Vergleich
 
-> **Status:** **In Arbeit** (2026-09-16 nach `in-progress/` aktiviert; die
-> Status-Zeile lautete vorher „umgesetzt und verifiziert, noch nicht committet"
-> und war in **jeder** Teilaussage falsch — die Arbeit ist committet
-> (`ef78036e6`) und als **1.7.1** ausgeliefert (`4a701a8ff`).
-> **Vier DoD-Punkte sind offen**, und zwei Befundklassen sind unbemannt; beides
-> steht in „Offene Punkte" direkt unter „Umgesetzt" — dort steht auch, woran es
-> gemessen ist.
+> **Status:** **Done — graduiert 2026-09-16.** Ausgeliefert in **1.7.1**
+> (`4a701a8ff`); die vier Abdeckungslücken, die eine DoD-Prüfung gemessen hat,
+> sind in `9c063f19` geschlossen und je einzeln per Sabotage nachgewiesen. Die
+> Closure mit Paket→Commit steht am Ende, die verbleibenden Restflächen in
+> „Restflächen" darüber.
 > **Vorbedingung / Gate:** Keine. Punkt 4 fasst eine dokumentierte Linie an und
 > zieht **zwei** Spec-Stellen mit: `spec/cli-spec.md` (Umfang der
 > Kanonisierung) und `spec/ddl-generation-rules.md` (Quoting-Strategie je
@@ -43,58 +41,35 @@ Drei Dinge kamen beim Bauen hinzu, die der Entwurf nicht hatte:
 P2c ist für Oracle und den MSSQL-Index-Pfad mit Fixturen belegt; die übrigen
 Dialekte hatten ihre `*ActionRequiredSkippedObjectsTest`-Fälle bereits.
 
-## Offene Punkte (Verifier-Befund 2026-09-16)
+## Restflächen (2026-09-16)
 
-Die Wirkung des Slices ist ausgeliefert und unabhängig bestätigt. **Was fehlt,
-ist die Abdeckung** — und der Befund ist nicht gelesen, sondern **gemessen**:
-der Verifier hat die Zählung an fünf Stellen zurückgenommen
-(`OracleSpatialIndexDdl.kt` und vier MSSQL-Indexstellen auf
-`skipped?.takeIf { false }`) und der Build blieb **grün**. Diese fünf Stellen
-sind unbewacht.
+**Die vier Abdeckungslücken sind geschlossen** (`9c063f19`), jede einzeln per
+Sabotage nachgewiesen: Zählung an der Stelle zurücknehmen, Test fallen sehen,
+zurücknehmen. Der **Anlass** bleibt festgehalten, weil er die Klasse zeigt: die
+Wirkung des Slices war ausgeliefert, die **Abdeckung** nicht — die Zählung ließ
+sich an **fünf** Stellen zurücknehmen, ohne dass ein Test fiel.
 
-**Vier DoD-Punkte sind damit nicht erfüllt** (die DoD bleibt oben stehen — sie
-ist das Ziel, nicht der Ist-Zustand):
+| Lücke | Ort | Nachweis |
+| --- | --- | --- |
+| E052 ohne Test | `OracleActionRequiredSkippedObjectsTest` — mehrspaltiger Spatial-Index (ORA-29851) | Sabotage an `OracleSpatialIndexDdl.kt` ⇒ `BUILD FAILED` |
+| vier MSSQL-Indexstellen | `MssqlActionRequiredSkippedObjectsTest` — E066, E070, E071, E057 | Sabotage an `MssqlIndexDdlHelper.kt:88/94/105/185` ⇒ vier Tests fallen |
+| CLI-Renderer für `columns` | `CompareRendererDiffTest` — Plain, JSON, YAML | die Zeile aus allen drei Renderern entfernt ⇒ drei Tests fallen |
+| P3s Spec-Satz | `format`-Beschreibung am Tool-Schema + `spec/mcp-server.md` | Beschreibung entfernt ⇒ Golden-Drift + Schematest fallen |
 
-1. **E052 hat keinen Test.** Die DoD nennt ihn namentlich (P1/P1a), aber
-   `OracleActionRequiredSkippedObjectsTest` endet mit dem Volltext-Fall; E052
-   erscheint sonst nur als Kommentar bzw. auf dem PG-Profilpfad. Zu bauen: eine
-   Fixture „mehrspaltiger Spatial-Index" mit `skippedObjects`-Zusicherung.
-2. **Vier der fünf MSSQL-Indexstellen sind unbewacht** (E066, E070, E071,
-   nicht renderbarer räumlicher Index); gedeckt ist nur der Ausdrucks-Index.
-   Die bestehenden Prüfungen sehen den **Kommentartext**, der die Rücknahme
-   überlebt.
-3. **Der CLI-Renderer-Test fehlt:** die neue `columns`-Zeile der drei Renderer
-   wird von keinem Test gefahren — dem Fixture in `CompareRendererDiffTest`
-   fehlt das Feld. Damit ist Akzeptanzkriterium 7 für die CLI nicht prüfbar.
-4. **P3s Spec-Satz ist nicht eingelöst:** weder `spec/mcp-server.md` noch die
-   Tool-Schemata tragen die Aussage über `format` (der Text landete in
-   `spec/ki-mcp.md`, das sich selbst als Entwurfs-Zielbild ausweist, und in
-   `docs/user/api-referenz.md`).
+**Zwei Restflächen derselben Befundklasse bleiben offen** und liegen seit
+2026-09-16 in [`../open/action-required-notiz-allein.md`](../open/action-required-notiz-allein.md):
 
-**Zwei unbemannte Restflächen derselben Befundklasse** — sie gehören nicht in
-diesen Slice, brauchen aber einen Ort (Vorschlag: `open/`-Eintrag):
-
-- `RawSqlExpressionPortability.indexRefusal` wirft einen Index **notiz-allein**
-  weg, und zwar in **allen fünf** Dialekten — genau die Klasse, die P2 schliesst.
+- `RawSqlExpressionPortability.indexRefusal` verwirft einen Index **notiz-allein**
+  — in **allen fünf** Dialekten (Aufrufer u. a. `OracleIndexDdlBuilder.kt:51`,
+  `MysqlIndexPartitionDdlHelper.kt:378`, `MssqlIndexDdlHelper.kt:139`).
 - Der **Zusammengesetzte Typ (E054)** fällt in Oracle, MSSQL und MySQL
-  notiz-allein aus der Ausgabe, während SQLite dieselbe Klasse zählt. Die Lücke
-  ist also dialektungleich.
+  notiz-allein aus der Ausgabe, während SQLite dieselbe Klasse zählt — die
+  Lücke ist dialektungleich.
 
-**Und die Anker driften.** Der Abschnitt „Hinweis zu den Zeilennummern" am Ende
-ist ehrlich, löst das Problem aber nicht: für ein Artefakt, das als Beleg
-gelesen wird, müssen die Anker stimmen oder ausdrücklich als historisch
-gekennzeichnet sein. Bekannte Drift: `OracleColumnConstraintHelper.kt:345→379`,
-`:432→470`, `:333→357`, `:98→133`, `RawTextFolding.kt:153→164`,
-`SchemaContentLoader.kt:45→43`; `SchemaValidateWiring.kt:45` existiert nicht
-mehr.
-
-**Für die Graduation nach `done/`** (Reihenfolge, sobald die vier Punkte
-geschlossen sind): Closure-Abschnitt nach der Konvention in
-[`../done/README.md`](../done/README.md) (Form:
-[`../done/postcompare-type-canonicalization-slice.md`](../done/postcompare-type-canonicalization-slice.md)),
-Paket→Commit-Zuordnung, und der Inbound-Verweis aus
-[`compare-falsch-positive-cross-dialekt.md`](compare-falsch-positive-cross-dialekt.md)
-zeigt nach dem Move auf `../done/…`.
+**Und die `Datei:Zeile`-Anker sind Entwurfsstand** — der Hinweis am Ende nennt
+die bei der Graduation gemessene Drift. Wer einen Beleg nachfährt, sucht über
+den **Symbolnamen**, nicht über die Zahl; das war schon beim Schreiben die
+Empfehlung, und sie ist nach dem Umsetzen die einzige verlässliche.
 
 
 ## Befund (gemessen 2026-09-15 gegen `1.8.0-SNAPSHOT` aus `main`)
@@ -615,8 +590,48 @@ nennen Quoting im Kanonisierungsumfang.
 
 ## Hinweis zu den Zeilennummern
 
-Alle `Datei:Zeile`-Angaben sind Anker auf den Stand dieses Entwurfs.
-`docs-check` prüft, dass der **Pfad** existiert, nicht die Zeile — und P1
-verschiebt genau die Nummern, die P1 selbst zitiert
-(`OracleColumnConstraintHelper.kt`). Beim Umsetzen über den Symbolnamen
-suchen, nicht über die Zahl.
+Alle `Datei:Zeile`-Angaben sind Anker auf den Stand des **Entwurfs**
+(2026-09-15). `docs-check` prüft, dass der Pfad existiert, nicht die Zeile — und
+die Umsetzung hat Nummern verschoben, teils in genau den Dateien, die der Slice
+selbst zitiert.
+
+**Gemessen bei der Graduation (2026-09-16)** — nicht vollständig, sondern an den
+Stellen, die die DoD-Prüfung nachgefahren hat:
+
+| Anker im Dokument | heute | Symbol |
+| --- | --- | --- |
+| `OracleColumnConstraintHelper.kt:345` | `:379` | `unkeyableKeyAction` (vorher `…Note`) |
+| `OracleColumnConstraintHelper.kt:432` | `:470` | derselbe Aufruf |
+| `OracleColumnConstraintHelper.kt:333` | `:357` | inline-UNIQUE-Zählung |
+| `OracleColumnConstraintHelper.kt:98` | `:133` | `skipped` im `ColumnContext` |
+| `RawTextFolding.kt:153` | `:164` | `canonicalViewQuery` |
+| `SchemaContentLoader.kt:45` | `:43` | `load` |
+| `SchemaValidateWiring.kt:45` | — | die private Format-Erkennung ist entfallen (P3) |
+
+Die übrigen Anker sind **nicht** nachgefahren. Wer einen Beleg prüfen will, sucht
+über den **Symbolnamen** — das war schon beim Schreiben die Empfehlung, und sie
+ist nach dem Umsetzen die einzige verlässliche.
+
+## Closure
+
+**Graduiert 2026-09-16.** Ausgeliefert in **1.7.1** (`4a701a8ff`); alle vier
+DoD-Punkte sind geschlossen und einzeln per Sabotage nachgewiesen (`9c063f19`).
+Offen bleibt in diesem Slice nichts — die zwei Restflächen liegen in `../open/`.
+
+- **P1 + P2** (Oracle zählt Objektverluste; die Naht ersetzt die zwei Mapper) —
+  `ff3866e9f`; die Fixturen nachgezogen in `9c063f19`.
+- **P3** (`schemaRef` braucht kein `format`) — `7c30be90a`; die Spec-Aussage am
+  Tool-Schema und in `spec/mcp-server.md` in `9c063f19`.
+- **P4 + P5** (View-Spalten, abschliessende Semikola, CHECK-Quoting) —
+  `8a246e92b`.
+- **Slice, Spec, CHANGELOG und Handbücher** — `ef78036e6`.
+
+**Was beim Bauen über den Entwurf hinausging** (Abschnitt „Umgesetzt" oben): der
+MSSQL-Index-Pfad zählte gar nicht; der Berechnungsausdruck wurde auf Oracle nicht
+requotet (`ORA-00904: "UNIT_PRICE"`, die Tabelle fehlte danach ganz); und das
+Semikolon musste mehrfach fallen (`…customer_id;;`).
+
+**Und der Anlass bleibt lesenswert.** Die DoD-Prüfung hat gemessen, dass die
+*Wirkung* ausgeliefert war und die *Abdeckung* nicht — fünf Zähl-Stellen ließen
+sich zurücknehmen, ohne dass ein Test fiel. Wer einen solchen Slice schreibt: die
+DoD-Sätze, die einen Test behaupten, sind genau die, die man nachfahren muss.
