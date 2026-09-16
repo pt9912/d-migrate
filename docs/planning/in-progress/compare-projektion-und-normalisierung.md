@@ -663,6 +663,11 @@ Modifikator und ohne `[]`. Grund: auch ohne Modifikator ändern Casts den Wert
 Funde. Keine 1.7.1-Zusicherung pinnte einen Spalten- oder Modifikator-Cast als
 gleich — `ExpressionCanonicalisationTest` bleibt unverändert grün.
 
+**Überholt durch P9** (zweiter Bauabschnitt, Review H1): auch die
+kontextfreie Literal-Regel oben ist eine Falsch-Gleichsetzung — ein Cast kann
+die umgebende Operation umtypen. Seit P9 faellt ohne Spaltenkontext gar kein
+Cast mehr.
+
 **DoD:** Jedes der Paare oben ist ein Fund; je Paar steht eine **Gegenprobe**,
 die zeigt, dass die Faltung daneben weiter greift (`SpellingFoldBoundaryTest`).
 Die Grenzfall-Tests aus 1.7.1 bleiben unverändert grün. Sabotage je Teil
@@ -670,56 +675,152 @@ Die Grenzfall-Tests aus 1.7.1 bleiben unverändert grün. Sabotage je Teil
 offene Quotierung). P8 steht **vor** P5, weil P5 das Index-Prädikat an genau
 diese Kanonisierung hängt.
 
-### P9 — Der Cast an einer Spalte wird mit dem Spaltentyp entschieden
+### P9 — Ein Cast faellt nur am Vergleich, und nur mit dem Spaltentyp
 
-**Nachgetragen am 2026-09-16, nach P8.** Die enge Cast-Regel aus P8 holt
-Fehlalarme zurück, die 1.7.1 nicht hatte — und zwar in der häufigsten Form:
-PostgreSQL schreibt bei **jeder** `varchar`-Spalte in einem CHECK
-`(status)::text`, dazu `(0)::double precision`, `'…'::date` und
-`'…'::bpchar`. 1.7.1 strich jeden Cast (falsch, s. P8); P8 streicht fast
-keinen (zu eng für den Zweck des Slices).
+**Nachgetragen am 2026-09-16, nach P8; neu gefasst im zweiten Bauabschnitt
+(Review H1).** Die enge Cast-Regel aus P8 holt Fehlalarme zurueck, die 1.7.1
+nicht hatte — und zwar in der haeufigsten Form: PostgreSQL schreibt bei
+**jeder** `varchar`-Spalte in einem CHECK `(status)::text`, dazu
+`(0)::double precision`, `'…'::date` und `'…'::bpchar`. 1.7.1 strich jeden
+Cast (falsch, s. P8); P8 strich fast keinen (zu eng fuer den Zweck des
+Slices).
 
 **Eigner-Entscheidung (2026-09-16): den Spaltentyp heranziehen.** ADR 0056
 nennt als Schreibweise „einen Cast auf den Typ, den der Operand ohnehin hat";
-für einen Spaltenbezug ist dieser Typ bekannt — der Comparator hält an der
+fuer einen Spaltenbezug ist dieser Typ bekannt — der Comparator haelt an der
 Faltstelle beide Tabellen (`TableComparator`, Aufruf von `folding.constraint`;
-für den Index-Pfad `TableIndexComparator`). Ein Parser ist dafür nicht nötig:
-erkannt wird nur ein **bloßer** Spaltenbezug (einfach, quotiert oder in
-redundanten Klammern) direkt vor dem Cast.
+fuer den Index-Pfad `TableIndexComparator`).
 
-**Regel** (je Seite mit den Spalten **dieser** Seite; jeweils ohne
-Typmodifikator und ohne `[]`):
+**Die erste Fassung ist widerlegt — und mit ihr die kontextfreie Regel aus
+P8.** Sie sah eine Tabelle je Operand vor und fuer Literale zwei
+**kontextfreie** Zeilen (`date`, `time`, `timestamp`, `bpchar`, Gleitkomma),
+mit einem „bekannten Restrisiko", das der Eigner in Kauf nahm. Der Review hat
+gegen PostgreSQL gemessen, dass ein Cast den Wert eines Literals nicht
+aendert, aber die **umgebende Operation** umtypt (Ergebnis mit Cast / ohne):
 
-| Operand | gefaltet, wenn | bleibt ein Fund |
-| ------- | -------------- | --------------- |
-| Spalte mit Zeichenkettentyp variabler Länge | Cast auf `text`, `varchar`, `character varying` | Spalte mit fester Länge (`char(n)` → `text` streicht Leerzeichen am Ende) |
-| Spalte mit Ganzzahltyp | Cast auf denselben oder einen breiteren Ganzzahltyp, `numeric`, `decimal` | engerer Ganzzahltyp, Gleitkomma |
-| Spalte mit `numeric`/`decimal` | Cast auf `numeric`/`decimal` ohne Modifikator | jeder Ganzzahl- oder Gleitkomma-Cast |
-| Ganzzahl-Literal (auch `(0)`) | zusätzlich `real`, `double precision`, `float` | mehr Stellen, als ein `double` exakt trägt |
-| String-Literal | zusätzlich `date`, `time`, `timestamp`/`timestamptz` (auch ausgeschrieben) und `bpchar` | jeder andere Typ, jeder Modifikator |
-| Bezeichner, der **keine** Spalte der Tabelle ist, jeder Ausdruck | — | immer |
+| Paar | Kontext | PG |
+| ---- | ------- | -- |
+| `qty / 2::numeric > 1` gegen `qty / 2 > 1` | `qty integer = 3` | `t` / `f` |
+| `email = 'FOO'::text` gegen `email = 'FOO'` | `citext` | `f` / `t` |
+| `code = 'a  '::text` gegen `code = 'a  '` | `char(3)` | `f` / `t` |
+| `v = 'a  '::bpchar` gegen `v = 'a  '` | `varchar` | `t` / `f` |
 
-Die Tabelle ist der Vorschlag des Koordinators; wo der Bau eine Zeile nicht
-halten kann (Namensformen der Typen je Dialekt, Abbildung auf die neutralen
-Typen), wird das hier festgehalten, nicht still verschoben. **Bekanntes
-Restrisiko** der zwei Literal-Zeilen: der Cast macht einen Typ ausdrücklich,
-den der Server aus dem Kontext ohnehin ableitet — das gilt, solange der
-Kontext diesen Typ hat. Ein Autorentext, der einem Literal bewusst einen
-**anderen** Typ gibt als der Kontext, wird damit gleichgesetzt. Der Eigner hat
-das mit der Entscheidung in Kauf genommen.
+Damit war schon die kontextfreie Literal-Regel aus P8 (`TEXT_LITERAL_CAST`,
+`INTEGER_LITERAL_CAST`) eine Falsch-Gleichsetzung, und das „Restrisiko" der
+geplanten Zeilen keines, das ein Plan decken kann — ADR 0056 laesst nur
+Schreibweise zu. Nachgemessen (PostgreSQL 18.6) sind zusaetzlich: ein
+`ARRAY[…]` aus lauter unmarkierten String-Literalen ist `text[]`; PostgreSQL
+zeigt implizite Casts an Operator-Argumenten (`((v)::text ~~ 'a%'::text)`,
+`((nu)::double precision > …)` bei `numeric`,
+`(ttz > ('08:00:00'::time …)::time with time zone)` bei `timetz`); `real`
+gegen eine Zahl vergleicht als `double precision`; `1 < @ 2` ist gueltig,
+`1 <@ 2` nicht.
+
+**Regel (CHECK und Index-Praedikat, nie Sichten-Rumpf, nie Migrate oder
+Fingerabdruck).** Ein Cast faellt nur, wenn **beides** gilt:
+
+1. Der gecastete Operand ist **unmittelbarer Operand eines Vergleichs** (`=`,
+   `<>`, `!=`, `<`, `<=`, `>`, `>=`, `LIKE`/`~~`; links auch vor `= ANY (…)`)
+   — nie neben einem Rechenoperator, nie in einer Argumentliste, nie auf einer
+   Ebene mit `BETWEEN` (`SqlScopes`, `CastOperands`).
+2. Der Typ ist aus der Tabelle **dieser Seite** belegt (`CastRules`):
+   - **Spalten-Cast** `col::T`/`(col)::T` ohne Modifikator, der den Wert
+     haelt: Text variabler Laenge auf `text`/`varchar`/`character varying`;
+     Ganzzahl auf gleich breite oder breitere Ganzzahl, `numeric`/`decimal`;
+     `numeric` auf `numeric`/`decimal`. Nicht `char(n)` auf Text, nichts mit
+     Modifikator, nicht `citext` (im Modell `enum` mit `ref_type`, damit ohne
+     Familie).
+   - **Literal-Cast** `lit::T`/`(lit)::T` ohne Modifikator, dem eine Spalte
+     dieser Tabelle gegenuebersteht (bloss oder hinter einem Spalten-Cast, der
+     selbst faellt), mit **genau** deren Typfamilie: Text ↔ `text`/`varchar`/
+     `character varying`; `char(n)` ↔ `bpchar`; `date` ↔ `date`;
+     `datetime` ↔ `timestamp` bzw. `timestamptz` (auch ausgeschrieben);
+     `time` ↔ `time`; Ganzzahl ↔ Ganzzahltyp; `decimal` ↔ `numeric`;
+     Gleitkomma ↔ `double precision`/`float8`/`float`.
+   - Ohne Tabellenkontext, bei unbekannter Spalte oder unbekanntem Typ: nicht
+     falten.
+
+**Beim Bau enger gezogen** (je ein gemessener oder nachgelesener Grund, alles
+in `ColumnCastFoldTest` gepinnt):
+
+- Der **Partner eines Spalten-Casts** behaelt seinen Typ: bei Text ein
+  String-Literal, ein Text-Cast, eine Textspalte oder ein Text-Array; bei
+  Zahlen eine Zahl, ein Zahl-Cast oder eine Zahlspalte. Ein unmarkiertes
+  String-Literal nimmt den Typ seines Gegenuebers an —
+  `(qty)::bigint = '3000000000'` gelingt, `qty = '3000000000'` scheitert
+  (gemessen).
+- **Ganzzahl-Literale:** eine Zahl nur, wenn sie in den Zieltyp passt
+  (`70000::smallint` scheitert); ein String-Literal nur auf **genau** den Typ
+  der Spalte (`'70000'` scheitert an `smallint`, `'70000'::integer` nicht).
+  Ein `identifier` gilt als breiteste Ganzzahl (seine Breite ist je Dialekt
+  verschieden) — nur `bigint` faellt dort als Spalten-Cast.
+- **Gleitkomma:** eine Zahl nur auf `double precision` — so vergleicht
+  PostgreSQL `real` und `double precision` mit einer Zahl; `(0.1)::real`
+  rundet (`0.1::real > 0.1` ist wahr, `> (0.1)::real` nicht). Ein
+  String-Literal nimmt den Spaltentyp an, nur dieser ist Schreibweise.
+- **`char(n)`:** nur `bpchar`. `character` ohne Laenge ist `character(1)` und
+  kuerzt; der Plan nannte ihn mit.
+- **`LIKE`:** nur ein Text-Muster rechts an einer Textspalte. Ein
+  `bpchar`-Muster wird zu Text gekuerzt (`'a  '::char(3) LIKE 'a  '::bpchar`
+  ist falsch, `… LIKE 'a  '` wahr — gemessen).
+- **Typnamen nur kleingeschrieben:** das Geruest entpackt `"TEXT"` zu `TEXT`,
+  und quotiert waere es ein anderer Typ. Faellt damit weg: das 1.7.1-freie
+  P8-Gegenprobenpaar `'NEW'::VARCHAR` (kein 1.7.1-Bestand; PostgreSQL schreibt
+  Typnamen klein).
+- **Mehrdeutige Namen** loesen nicht auf: ein Schluesselwort (`user`) und ein
+  Name, den zwei Spalten ohne Ruecksicht auf die Schreibweise teilen.
+- **Ueber die Vorgabe hinaus gleichgesetzt:** in `spalte = ANY (ARRAY[…])` die
+  `::text` der Elemente, wenn die Spalte Text ist und das Array nur
+  String-Literale traegt — ein solches Array ist auch ohne sie `text[]`
+  (gemessen). Das haelt das gemessene Paar aus Abschnitt 5 (P5-Test) gleich;
+  `::bpchar`-Elemente bleiben Unterschied (dort vergleicht PostgreSQL
+  gepolstert).
+
+**Grenze, bewusst: ein verlustbehafteter Reader.** Der Vergleich nimmt den
+Spaltentyp aus dem Modell. Wo ein Reader zwei PostgreSQL-Typen auf einen
+neutralen faltet — `numeric` ohne Praezision auf `float`, `timetz` auf `time`
+—, ist schon der Spaltentyp-Vergleich blind. Eine Falsch-Gleichsetzung **durch
+den Cast** entsteht dort nicht: PostgreSQL schreibt in genau diesen Faellen
+einen Spalten-Cast (`(nu)::double precision`) oder einen doppelten Cast
+(`('…'::time)::time with time zone`), und beide Formen faltet die Regel nicht
+(gemessen, s. o.). `citext` liest der Reader als eigenen Typ; er faltet nicht.
+
+**Folge fuer den Altbestand — eine begruendete Abweichung von AK 6.** Das
+kontextfreie `canonicallyEqual` faltet keine Casts mehr. Das 1.7.1-Paar
+`(email ~~ '%@%'::text)` gegen `email like '%@%'`
+(`ExpressionCanonicalisationTest`) steht deshalb jetzt mit einer Textspalte
+`email` — und daneben ohne Tabelle als Fund. Der Sinn des Paares bleibt; der
+Aufbau aendert sich, weil derselbe Text bei `citext` etwas anderes bedeutet
+(Tabelle oben). Keine Zusicherung „bleibt verschieden" ist weggefallen: die
+kontextfreien Gegenproben aus P8 (`'abc'::varchar(2)`, `5::smallint`,
+`2.5::integer`, `f(0)::numeric`, `'{a}'::text[]`) stehen weiter, daneben mit
+Tabelle.
 
 **Nicht:** der Sichten-Rumpf (ADR 0056: dort keine Cast-Faltung), der
 Migrate-Pfad, der Fingerabdruck. Die Spalte wird nur nachgeschlagen, nie
-umgeschrieben; gemeldete Definitionen bleiben unverändert.
+umgeschrieben; gemeldete Definitionen bleiben unveraendert.
 
-**DoD:** `(status)::text` gegen `status` (varchar), `(qty)::bigint` gegen `qty`
-(integer), `(x > (0)::double precision)` gegen `x > 0`, `'…'::date` und
-`'…'::bpchar` gegen das unmarkierte Literal melden nichts mehr — in CHECK
-**und** Index-Prädikat. Je Zeile eine Gegenprobe, die ein Fund bleibt: `char(n)`
-→ `text`, `(price)::integer` bei `numeric`, `(qty)::smallint` bei `integer`,
-ein Cast an einem Namen, der keine Spalte ist, `'…'::varchar(2)`. Der
-Migrate-Pfad bleibt nachweislich unverändert. Spec (`spec/cli-spec.md`,
-Faltungsmenge) zieht nach. Sabotage je Zeile der Tabelle.
+**Gebaut** (`:hexagon:core`): `ColumnCasts` (Faltung), `CastOperands`
+(Operanden-Formen und -Grenzen), `SqlScopes` (Klammer-Ebenen), `SqlTokens`
+(Tokens des Geruests), `CastRules` (Typfamilien), `ColumnTypes`/`SideColumns`
+(Spaltentypen je Seite). `ConstraintDiffContract.canonicallyEqual`,
+`RawTextFolding.constraint`/`index` und `TableIndexComparator` nehmen die
+Spaltentypen beider Seiten; `TableComparator` reicht sie aus beiden Tabellen
+durch. Die Cast-Faltung laeuft **vor** allen anderen Regeln auf dem Geruest und
+streicht nur `::typ`.
+
+**DoD:** Die Pflicht-Gleichsetzungen melden nichts — in CHECK **und**
+Index-Praedikat: `(status)::text = 'x'::text` gegen `status = 'x'`
+(`varchar`), `(price > (0)::numeric)` gegen `price > 0`,
+`(x > (0)::double precision)` gegen `x > 0`, `d > '2024-01-01'::date` gegen
+`d > '2024-01-01'`, `code = 'A'::bpchar` gegen `code = 'A'`. Die
+Pflicht-Gegenproben bleiben Funde: die vier PG-Paare der Tabelle, eine
+`timestamp`-Spalte mit `'2024-01-01 12:00'::date`, `(qty)::numeric / 2` gegen
+`qty / 2`, ein Cast an einem Namen, der keine Spalte ist, `'abc'::varchar(2)`
+— dazu je Regel eine weitere (`ColumnCastFoldTest`). Der Migrate-Pfad bleibt
+nachweislich unveraendert. Spec (`spec/cli-spec.md`, Faltungsmenge) zieht
+nach. Sabotage je Teilregel — **erfuellt**, Protokoll unter
+„Zweiter Bauabschnitt".
 
 ### P7 — Der Vertrag zieht nach: Spec, ADR-Supersede, README
 
@@ -778,6 +879,102 @@ Faltungsmenge (nachgesehen).
    macht `doc-immutable` rot; ein bloss danebengestellter ADR lässt beide Gates
    grün und ist damit **nicht** die Erfüllung dieses DoD.
 
+### Zweiter Bauabschnitt — Review und Verifikation (2026-09-16)
+
+Nach P1–P8 lagen ein Review (nachgemessen per `jshell` gegen die gebauten
+Klassen und gegen PostgreSQL 16) und eine Verifikation (per Sabotage) vor.
+Umgesetzt ist, was unten steht; der Review-Befund H1 ist P9 (oben).
+
+**B — Rueckzug und Literalerkennung vervollstaendigt (Review M1, L2;
+Verifikation 3).** Die Faltung zieht sich zusaetzlich zurueck bei `#`
+ausserhalb eines Literals (MySQLs Zeilenkommentar; kostet PostgreSQLs
+`#`-XOR), bei Oracles `q'…'`/`Q'…'`/`nq'…'`/`Nq'…'`, bei Dollar-Tags mit
+Zeichen ausserhalb von ASCII (`$ä$…$ä$`; wie PostgreSQL zaehlt jedes solche
+Zeichen) und bei einem **zweideutigen `[`** nach Leerraum hinter einem Namen,
+`)`, `]` oder einem Literal (`tags [pos]` ist in PostgreSQL ein Index).
+**Abweichung vom Vorschlag:** ein reiner Rueckzug haette den 1.7.x-Test
+`FROM [orders] [o]` (T-SQL-Alias, `ViewQueryCanonicalisationTest`) gekippt.
+Das zweideutige `[` gilt deshalb als Quoting, wenn der Text an anderer Stelle
+**eindeutiges** Bracket-Quoting traegt — ein `[` am Anfang, hinter einem
+Operator, Komma, `(`, `.` oder Schluesselwort ist in PostgreSQL, MySQL und
+Oracle gar keine Syntax, der Text also T-SQL oder SQLite, wo `[` nie ein Index
+ist. Hinter einem Schluesselwort ist `[` Quoting, hinter `ARRAY` ein Array.
+`"…"` bleibt Bezeichner-Quoting; dass MySQL/SQLite es je nach Modus als
+String lesen, steht als **Grenze** in der Spec (und gepinnt).
+
+**C — Quotierte Schluesselwoerter werden nicht entpackt (Review M2).**
+`"user"`/`[user]` gegen `user`, `"null"` gegen `null`, `"current_date"`,
+`"true"` waren gleich — im Sichten-Rumpf ebenso. Jetzt bleibt ein quotiertes
+Schluesselwort ein Platzhalter in **einer** Quotierung (`"user"`), sodass
+`[user]`, `` `user` `` und `"user"` untereinander gleich bleiben. Die Liste
+(`SqlKeywords`) vereinigt die Woerter, die in PostgreSQL, MySQL, SQL Server,
+Oracle oder SQLite als Wert oder Funktion ohne Klammern gelesen werden, und
+die, die die Faltungsregeln als Syntax lesen (`and`/`or`/`not`, `in`, `like`,
+`between`, `case` …) — damit `OperandParens` `"and"` nicht als Junktor liest.
+Bewusst **nicht** darin: haeufige Spaltennamen, die unquotiert eine Spalte
+bleiben (`date`, `time`, `timestamp`, `name`, `type`, `value`, `position`).
+
+**D — kleinere Falsch-Gleichsetzungen (Review L1, L3; Verifikation 2).**
+Namen zaehlen wie in PostgreSQL mit jedem Zeichen ausserhalb von ASCII
+(`maß(x)` ≠ `maßx`, `señor(b = 2) OR c` ≠ `señorb = 2 OR c`; `SqlLexis`
+ersetzt das ASCII-`\b`). `f (x)` ist ein Aufruf — hinter einem Namen und
+Leerraum faellt die Klammer nur, wenn der Name ein Operanden-Wort ist (`AND`,
+`OR`, `NOT` …). `~~` wird zu ` like ` (mit Leerraum; `!~~` und `~~*` bleiben).
+Eine Klammer direkt vor `.` bleibt (`(addr).city`). Leerraum um `/` und `%`
+wird gefaltet — Code und Spec sagen jetzt dasselbe. **Beim Bau zusaetzlich
+gefunden:** die Leerraum-Regel zog zwei Operatorzeichen zusammen —
+`a < @ b` (`a < abs(b)`) galt als `a <@ b` (gemessen: das erste ist gueltig,
+das zweite nicht), `a @ > b` als `a @> b`, im Sichten-Rumpf `a = @ b` als
+`a =@ b`. Leerraum zwischen zwei Operatorzeichen faellt jetzt nur, wo
+PostgreSQL die zusammengezogene Folge wieder genauso zerlegt (hinten nur
+`+`/`-`, kein verlaengerndes Zeichen: `a < -1` gleich `a<-1`).
+
+**H — Aufraeumen (Review INFO 2, 4, 6).** `stripOuterParens` ist in
+`OperandParens.stripEnclosing` aufgegangen, das doppelte `WHITESPACE` in
+`SqlLexis`. **Nicht ganz ohne Verhaltensaenderung:** bei unbalancierten
+eckigen Klammern (`(a])`, kein gueltiges SQL) faellt die aeussere Klammer nicht
+mehr (gepinnt). `TableComparator.projectGeneration`: die KDoc sagte „kein
+`?:`-Fallback", der Code hatte einen — auf die **Funktion**, nicht auf ihr
+Ergebnis. Entschieden: verhaltensgleich als `when` ausgeschrieben (mit
+Zielprojektion gilt nur deren Erzeugungs-Projektion, sonst die des
+Vergleichs, sonst keine); die KDoc sagt das jetzt. `spec/cli-spec.md`
+„hinter … einer Klammer" heisst jetzt „hinter `)`, `]`".
+
+**Sabotage-Protokoll A–D, H** (`make docker-test MODULES=":hexagon:core"`,
+fuenf Laeufe mit disjunkten Erwartungen; nach jedem Lauf Ruecknahme per
+Archiv und `diff -r` bestaetigt; danach gruen, 1468 Tests):
+
+| Lauf | Sabotage | rot |
+| ---- | -------- | --- |
+| 1 | Operanden-Grenzen immer erfuellt | „a cast right at the comparison, but with arithmetic on its other side" |
+| 1 | Schluesselwoerter entpackt | drei Faelle „Quotierte Schluesselwoerter" |
+| 1 | `#` kein Rueckzug | „a hash comment whose extent changes" |
+| 1 | Namen nur ASCII | `maß(x)`, `señor(…)` |
+| 1 | `~~` ohne Leerraum | `x~~y`, „with or without whitespace" |
+| 2 | unbekannter Name gilt als Textspalte | „a cast on a name that is no column" |
+| 2 | kein `q'`-Rueckzug | „q'…' … are not folded" |
+| 2 | Dollar-Tag nur ASCII | `$ä$…$ä$` |
+| 2 | Leerraum vor `(` ignoriert | „whitespace before a call's parenthesis" |
+| 2 | Feldzugriff ignoriert | `(addr).city` |
+| 3 | `citext` (Enum) als Text | „on a citext column" |
+| 3 | `date` fuer `timestamp` | „a date literal against a timestamp column" |
+| 3 | zweideutiges `[` immer Quoting | „PostgreSQL reads `tags [pos]`" |
+| 3 | Operatorzeichen immer zusammengezogen | „not where joining two operator characters" |
+| 3 | kein Leerraum-Falten um `/`, `%` | „around division and modulo" |
+| 3 | alte `stripOuterParens` | „unbalanced brackets" |
+| 4 | `char(n)` als Text | „a text literal against char(n)", „a column cast that can change the value", LIKE-Fall |
+| 4 | `bpchar` als Texttyp | „a bpchar literal against varchar" |
+| 4 | unmarkiertes String-Literal als Zahl-Partner | „a widened column against an untyped string literal" |
+| 4 | Zahl passt immer | „a literal cast that rounds or fails", `70000::smallint` |
+| 5 | Gleitkomma-Familie offen | „a literal cast that rounds or fails" |
+| 5 | `LIKE` ohne Text-Vorbehalt | „LIKE folds only a text pattern" |
+| 5 | Typnamen ohne Schreibweise | „a type name in another spelling", „in capitals" |
+| 5 | Array-Elemente jeden Typs | „an ANY array of bpchar elements" |
+| 5 | Ganzzahl-Breite ignoriert | „a column cast that can change the value" |
+| 5 | Vergleich in Argumentliste/`BETWEEN` | „a comparison inside an argument list or on a BETWEEN level" |
+| 5 | T-SQL-Beleg ignoriert | „where the text shows T-SQL quoting elsewhere", `ViewQueryCanonicalisationTest` (MSSQL-Bein) |
+| 5 | Typmodifikator mitgestrichen | „a cast with a type modifier" (beide Specs) |
+
 ## Akzeptanzkriterien
 
 1. Im gemeldeten Repro: **6** meldet nichts mehr (PG↔MySQL), **3** in seinem
@@ -796,14 +993,21 @@ Faltungsmenge (nachgesehen).
    das Pfad-Schema (P7); die zwei Grenzfragen stehen dort als solche.
 6. Die Grenzfall-Tests aus 1.7.1 bleiben unverändert grün — insbesondere
    `("Quantity" > 0)` gegen `(quantity > 0)` und die Literal-Schutzfälle.
+   **Begründete Abweichung (P9):** das Cast-Paar
+   `(email ~~ '%@%'::text)` gegen `email like '%@%'` braucht jetzt eine
+   Textspalte `email` — bei `citext` bedeutet derselbe Text etwas anderes.
+   Keine Zusicherung „bleibt verschieden" fällt weg.
 7. Die vier Altbestands-Paare aus P8 sind Funde — Kommentar mit wandernder
    Reichweite (CHECK und Sicht), Dollar-Quoting, Cast an einer Spalte,
    Literal im Sichten-Rumpf —, je mit Gegenprobe.
-8. Ein Cast, den der Spaltentyp oder die Literal-Regel als wertgleich
-   ausweist, meldet nichts (P9) — insbesondere PostgreSQLs `(status)::text`
-   bei `varchar`; ein Cast, der den Wert ändern kann, bleibt ein Fund. Das
-   Paar aus AK 7 (`(price::integer > 5)` gegen `price > 5`) bleibt ein Fund,
-   solange `price` kein Ganzzahltyp ist.
+8. Ein Cast fällt nur als unmittelbarer Operand eines Vergleichs und nur,
+   wenn die Tabelle dieser Seite seinen Typ belegt (P9) — insbesondere
+   PostgreSQLs `(status)::text` bei `varchar`. Ein Cast, der den Wert ändern
+   oder die umgebende Operation umtypen kann, bleibt ein Fund — die vier
+   gegen PostgreSQL gemessenen Paare aus P9 eingeschlossen. Ohne
+   Tabellenkontext fällt kein Cast. Das Paar aus AK 7
+   (`(price::integer > 5)` gegen `price > 5`) bleibt ein Fund, solange
+   `price` kein Ganzzahltyp ist.
 
 ## Verifikation
 

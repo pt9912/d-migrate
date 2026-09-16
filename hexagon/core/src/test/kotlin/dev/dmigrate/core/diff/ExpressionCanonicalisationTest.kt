@@ -44,9 +44,17 @@ class ExpressionCanonicalisationTest : FunSpec({
         /**
          * `customers_email_check`. PostgreSQL gibt den internen Operator `~~`
          * samt Casts zurueck; die Gegenseite schreibt `like`.
+         *
+         * **Seit P9 mit Spaltenkontext:** ob `'%@%'::text` nur Schreibweise
+         * ist, entscheidet der Typ von `email`. Bei `citext` ist es das nicht
+         * — `email = 'FOO'::text` vergleicht dort mit Beachtung der
+         * Schreibweise, `email = 'FOO'` ohne (gegen PostgreSQL gemessen). Der
+         * Sinn des Paares bleibt; ohne Tabelle faellt der Cast nicht mehr.
          */
         test("email check: PG's ~~ and ::text are recognised as LIKE") {
-            ConstraintDiffContract.canonicallyEqual("(email ~~ '%@%'::text)", "email like '%@%'") shouldBe true
+            val email = ColumnTypes(mapOf("email" to NeutralType.Text(maxLength = 254)))
+            ConstraintDiffContract.canonicallyEqual("(email ~~ '%@%'::text)", "email like '%@%'", email, email) shouldBe true
+            ConstraintDiffContract.canonicallyEqual("(email ~~ '%@%'::text)", "email like '%@%'") shouldBe false
         }
     }
 

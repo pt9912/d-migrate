@@ -89,8 +89,12 @@ internal object OperandParens {
         }
     }
 
-    /** Die Klammern um den ganzen Text — so viele, wie ihn ganz umschliessen. */
-    private fun stripEnclosing(text: String): String {
+    /**
+     * Die Klammern um den ganzen Text — so viele, wie ihn ganz umschliessen.
+     * `(a > 0)` wird zu `a > 0`; `(a + b) * c` bleibt. Gehen die Klammern
+     * nicht auf, bleibt der Text, wie er ist.
+     */
+    fun stripEnclosing(text: String): String {
         var current = text.trim()
         while (current.startsWith("(") && topLevelGroups(current)?.singleOrNull() == current.indices) {
             current = current.substring(1, current.length - 1).trim()
@@ -113,11 +117,14 @@ internal object OperandParens {
             OPERATOR_RUN.findAll(top).any { it.value in COMPARISON_OPERATORS }
     }
 
-    private val BETWEEN = Regex("(?i)\\bBETWEEN\\b")
+    private const val START = SqlLexis.WORD_START
+    private const val END = SqlLexis.WORD_END
 
-    private val JUNCTION_BEFORE = Regex("(?i)(?:^|[^A-Za-z0-9_])(?:AND|OR)$")
+    private val BETWEEN = Regex("(?i)${START}BETWEEN$END")
 
-    private val JUNCTION_AFTER = Regex("(?i)^(?:AND|OR)(?:$|[^A-Za-z0-9_])")
+    private val JUNCTION_BEFORE = Regex("(?i)$START(?:AND|OR)$")
+
+    private val JUNCTION_AFTER = Regex("(?i)^(?:AND|OR)$END")
 
     /**
      * Was auf der obersten Ebene eines Operanden mehr als ein Vergleich waere:
@@ -126,11 +133,11 @@ internal object OperandParens {
      * `||`/`&&`, die dort `OR`/`AND` bedeuten.
      */
     private val NOT_A_SINGLE_PREDICATE =
-        Regex("(?i)\\b(?:AND|OR|NOT|XOR|BETWEEN|CASE|SELECT|WITH|VALUES)\\b|\\|\\||&&")
+        Regex("(?i)$START(?:AND|OR|NOT|XOR|BETWEEN|CASE|SELECT|WITH|VALUES)$END|\\|\\||&&")
 
-    private val IS_NOT = Regex("(?i)\\bIS\\s+NOT\\b")
+    private val IS_NOT = Regex("(?i)${START}IS\\s+NOT$END")
 
-    private val IS_NULL = Regex("(?i)\\bIS\\s+(?:NOT\\s+)?NULL\\b")
+    private val IS_NULL = Regex("(?i)${START}IS\\s+(?:NOT\\s+)?NULL$END")
 
     /** Eine zusammenhaengende Operatorfolge — `@>` ist kein `>`. */
     private val OPERATOR_RUN = Regex("[=<>!@#~&|^%]+")

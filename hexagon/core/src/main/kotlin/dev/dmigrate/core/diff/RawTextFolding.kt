@@ -36,18 +36,23 @@ internal class RawTextFolding(
     private val canonicalizeRawExpressions: Boolean = false,
 ) {
 
-    /** Der CHECK-Ausdruck eines benannten Constraints. */
+    /**
+     * Der CHECK-Ausdruck eines benannten Constraints. [columns] traegt die
+     * Spaltentypen beider Tabellen — nur mit ihnen faellt ein Cast.
+     */
     fun constraint(
         tableName: String,
-        constraintName: String,
         current: ConstraintDefinition,
         desired: ConstraintDefinition,
+        columns: SideColumns = SideColumns.NONE,
     ): ConstraintDefinition {
-        val path = listOf(tableName, constraintName)
+        val path = listOf(tableName, desired.name)
         // Nur wenn angefordert — und nur "unveraendert" kommt dabei heraus:
         // was sie nicht gleichsetzt, entscheiden die beiden anderen Quellen.
         if (canonicalizeRawExpressions &&
-            ConstraintDiffContract.canonicallyEqual(desired.expression, current.expression)
+            ConstraintDiffContract.canonicallyEqual(
+                desired.expression, current.expression, columns.desired, columns.current,
+            )
         ) {
             return desired.copy(expression = current.expression)
         }
@@ -68,8 +73,13 @@ internal class RawTextFolding(
      * Schreibweise nicht faltet (ADR 0056). Die Schluessel-Ausdruecke bleiben
      * auch in `schema compare` wortgleich.
      */
-    fun index(tableName: String, current: IndexDefinition, desired: IndexDefinition): IndexDefinition {
-        val spelled = whereSpelling(current, desired)
+    fun index(
+        tableName: String,
+        current: IndexDefinition,
+        desired: IndexDefinition,
+        columns: SideColumns = SideColumns.NONE,
+    ): IndexDefinition {
+        val spelled = whereSpelling(current, desired, columns)
         if (authorship == null && serverForm == null) return spelled
         val name = desired.name ?: current.name ?: return spelled
         val path = listOf(tableName, name)
@@ -101,9 +111,15 @@ internal class RawTextFolding(
      * Dialekt-Schreibweise unterscheiden — dieselbe Regel wie beim
      * CHECK-Ausdruck. Sonst unveraendert.
      */
-    private fun whereSpelling(current: IndexDefinition, desired: IndexDefinition): IndexDefinition {
+    private fun whereSpelling(
+        current: IndexDefinition,
+        desired: IndexDefinition,
+        columns: SideColumns,
+    ): IndexDefinition {
         if (!canonicalizeRawExpressions || desired.where == current.where) return desired
-        if (!ConstraintDiffContract.canonicallyEqual(desired.where, current.where)) return desired
+        if (!ConstraintDiffContract.canonicallyEqual(desired.where, current.where, columns.desired, columns.current)) {
+            return desired
+        }
         return desired.copy(where = current.where)
     }
 

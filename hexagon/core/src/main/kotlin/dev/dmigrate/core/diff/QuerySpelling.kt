@@ -27,17 +27,12 @@ internal object QuerySpelling {
     private fun canonical(sql: String): String? {
         val skeleton = RawSqlSkeleton.of(sql) ?: return null
         val folded = skeleton.text
-            .replace(WHITESPACE, " ")
-            .replace(PUNCTUATION_GAP, "$1")
+            .replace(SqlLexis.WHITESPACE, " ")
+            .let(OperatorGap.QUERY::fold)
             .replace(TRAILING_SEMICOLA, "")
             .trim()
         return skeleton.restore(folded)
     }
-
-    private val WHITESPACE = Regex("\\s+")
-
-    /** Leerraum um Komma, Gleichheitszeichen und Klammern. */
-    private val PUNCTUATION_GAP = Regex("\\s*([,=()])\\s*")
 
     /**
      * Ein **oder mehrere** abschliessende Semikola, mit etwaigem Leerraum

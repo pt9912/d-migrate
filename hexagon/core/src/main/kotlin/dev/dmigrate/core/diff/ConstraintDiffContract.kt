@@ -37,9 +37,16 @@ internal object ConstraintDiffContract {
      *
      * Was als Schreibweise gilt und wann die Faltung sich zurueckzieht, steht
      * bei [ExpressionSpelling]; das Index-Praedikat teilt dieselbe Regel.
+     * Ein Cast faellt nur mit den Spaltentypen der jeweiligen Seite
+     * ([leftColumns], [rightColumns]); ohne sie bleibt er ein Unterschied.
      */
-    fun canonicallyEqual(left: String?, right: String?): Boolean {
+    fun canonicallyEqual(
+        left: String?,
+        right: String?,
+        leftColumns: ColumnTypes = ColumnTypes.NONE,
+        rightColumns: ColumnTypes = ColumnTypes.NONE,
+    ): Boolean {
         if (left == null || right == null) return left == right
-        return ExpressionSpelling.equal(left, right)
+        return ExpressionSpelling.equal(left, right, leftColumns, rightColumns)
     }
 }

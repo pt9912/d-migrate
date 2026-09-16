@@ -48,14 +48,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Zeilenkommentar, dessen Reichweite das Zusammenziehen von Leerraum
   verschiebt, Dollar-Quoting, einen Cast an einer Spalte (`price::integer`),
   Leerraum in einem Literal eines Sichten-Rumpfs, Leerraum in einem
-  quotierten Bezeichner und einen Funktionsaufruf gegen einen gleichlautenden
-  Bezeichner (`f(x)` gegen `fx`). Jetzt zieht sich die Faltung bei
-  Kommentaren, Dollar-Quoting, Backslashes und offener Quotierung zurueck, und
-  ein Cast faellt nur noch, wo er den Wert nicht aendern kann (String-Literal
-  auf einen unbegrenzten Texttyp, Ganzzahl-Literal auf `numeric`). **Folge:**
-  einige Paare, die 1.7.1 gleichsetzte, sind wieder Funde — etwa ein Cast an
-  einer Spalte (`(status)::text`) oder auf `bpchar`, `date` oder
-  `double precision`.
+  quotierten Bezeichner, einen Funktionsaufruf gegen einen gleichlautenden
+  Bezeichner (`f(x)` gegen `fx`, auch `f (x)` und `maß(x)`), ein quotiertes
+  Schluesselwort gegen das unquotierte (`"user"` gegen `user`, `"null"` gegen
+  `null`) und zwei Operatorzeichen, die erst der gefaltete Leerraum
+  zusammenzog (`a < @ b` gegen `a <@ b`). Jetzt zieht sich die Faltung bei
+  Kommentaren (auch MySQLs `#`), Dollar-Quoting, Oracles `q'…'`,
+  Backslashes, offener Quotierung und einem zweideutigen `[` (`tags [pos]`)
+  zurueck, und quotierte Schluesselwoerter bleiben quotiert.
+
+- **Ein Cast faellt nur noch am Vergleich und mit dem Spaltentyp.** Ein Cast
+  aendert den Wert eines Literals nicht, kann aber die umgebende Operation
+  umtypen: `qty / 2::numeric > 1` und `qty / 2 > 1` sind verschieden, ebenso
+  `email = 'FOO'::text` und `email = 'FOO'` bei `citext`. `schema compare`
+  streicht einen Cast deshalb nur, wenn er unmittelbarer Operand eines
+  Vergleichs ist und die Tabelle dieser Seite seinen Typ belegt —
+  PostgreSQLs `(status)::text` bei `varchar`, `(0)::numeric`,
+  `(0)::double precision`, `'…'::date` und `'…'::bpchar` an einer Spalte
+  dieses Typs melden nichts mehr. Die Regel von 1.7.x, die Casts an einem
+  Literal ohne Blick auf den Kontext strich (`'%@%'::text`), gilt nicht mehr:
+  ohne Spalte faellt kein Cast. Leerraum um `/` und `%` wird jetzt ebenfalls
+  gefaltet.
 
 - **Der Sequenzname einer Identity-Spalte ist in `schema compare` kein Fund
   mehr**, sobald eine Seite aus PostgreSQL oder Oracle zurueckgelesen wurde —

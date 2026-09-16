@@ -26,7 +26,10 @@ class SpellingFoldBoundaryTest : FunSpec({
         name = "app", version = "1.0",
         tables = mapOf(
             "t" to TableDefinition(
-                columns = mapOf("id" to ColumnDefinition(NeutralType.Integer)),
+                columns = mapOf(
+                    "id" to ColumnDefinition(NeutralType.Integer),
+                    "price" to ColumnDefinition(NeutralType.Decimal(10, 2)),
+                ),
                 primaryKey = listOf("id"),
                 constraints = listOf(ConstraintDefinition(name = "ck", type = ConstraintType.CHECK, expression = expression)),
             ),
@@ -112,6 +115,76 @@ class SpellingFoldBoundaryTest : FunSpec({
         }
     }
 
+    context("Rueckzug: MySQLs Zeilenkommentar `#`") {
+
+        test("CHECK: a hash comment whose extent changes is not folded") {
+            equalAsCheck("a = 1 # x\nAND b = 2", "a = 1 # x AND b = 2") shouldBe false
+        }
+
+        test("PostgreSQL's XOR `#` costs the folding, nothing else") {
+            equalAsCheck("a # b = 1", "a#b=1") shouldBe false
+        }
+
+        test("counter-check: a hash inside a literal is text") {
+            equalAsCheck("note = '#'", "note='#'") shouldBe true
+        }
+    }
+
+    context("Rueckzug: Oracles alternative Quotierung") {
+
+        // Fuer Oracle ist `q'[a'  'b]'` **ein** Literal. Der Standard-Scanner
+        // liest zwei (`'[a'` und `'b]'`) und faltete den Leerraum dazwischen.
+        test("q'…', Q'…', nq'…' and Nq'…' are not folded") {
+            equalAsCheck("note = q'[a'  'b]'", "note = q'[a' 'b]'") shouldBe false
+            equalAsCheck("note = Q'[a'  'b]'", "note = Q'[a' 'b]'") shouldBe false
+            equalAsCheck("note = nq'[a'  'b]'", "note = nq'[a' 'b]'") shouldBe false
+            equalAsCheck("note = Nq'[a'  'b]'", "note = Nq'[a' 'b]'") shouldBe false
+        }
+
+        test("counter-check: a name ending in q before a literal with a gap still folds") {
+            equalAsCheck("q = 'x'", "q='x'") shouldBe true
+            equalAsCheck("freq = 'x'", "freq='x'") shouldBe true
+        }
+    }
+
+    context("Rueckzug: ein Dollar-Tag mit Buchstaben ausserhalb von ASCII") {
+
+        test("CHECK and view: whitespace inside \$ä\$…\$ä\$ is not folded") {
+            equalAsCheck("note = \$ä\$a  b\$ä\$", "note = \$ä\$a b\$ä\$") shouldBe false
+            viewChanged("SELECT \$ä\$a  b\$ä\$ FROM t", "SELECT \$ä\$a b\$ä\$ FROM t") shouldBe true
+        }
+    }
+
+    context("Rueckzug: `[` nach Leerraum hinter einem Namen") {
+
+        test("PostgreSQL reads `tags [pos]` as a subscript") {
+            equalAsCheck("tags [pos] = 1", "tags pos = 1") shouldBe false
+            viewChanged("SELECT (x) [i] FROM t", "SELECT (x) i FROM t") shouldBe true
+            viewChanged("SELECT \"my col\" [i] FROM t", "SELECT \"my col\" i FROM t") shouldBe true
+        }
+
+        test("counter-check: where the text shows T-SQL quoting elsewhere, it is an alias") {
+            viewChanged("SELECT [o].[id] FROM [orders] [o]", "SELECT o.id FROM orders o") shouldBe false
+            equalAsCheck("[a] = 1 AND tags [pos] = 1", "a = 1 AND tags pos = 1") shouldBe true
+        }
+
+        test("counter-check: after a keyword it is T-SQL quoting, after ARRAY an array") {
+            equalAsCheck("x = 1 AND [pos] = 2", "x = 1 AND pos = 2") shouldBe true
+            equalAsCheck("x IS NULL OR [pos] >= 2", "x IS NULL OR pos>=2") shouldBe true
+            equalAsCheck("a = ANY (ARRAY [b])", "a = ANY (ARRAY  [b])") shouldBe true
+            equalAsCheck("a = ANY (ARRAY [b])", "a = ANY (ARRAY b)") shouldBe false
+        }
+    }
+
+    context("Grenze: `\"…\"` ist immer ein Bezeichner") {
+
+        // MySQL ohne ANSI_QUOTES und SQLite als Rueckfall lesen `"abc"` als
+        // String. Die Faltung kennt das nicht; die Spec nennt es als Grenze.
+        test("a double-quoted simple name is unwrapped like any identifier") {
+            equalAsCheck("note = \"abc\"", "note = abc") shouldBe true
+        }
+    }
+
     context("Rueckzug: eine offene Quotierung") {
 
         test("an unterminated literal or identifier is not folded") {
@@ -160,36 +233,73 @@ class SpellingFoldBoundaryTest : FunSpec({
 
     context("Ein Cast faellt nur, wenn er den Wert nicht aendern kann") {
 
+        // Seit P9 entscheidet der Spaltentyp; die Faelle hier pruefen die
+        // Literal- und Modifikator-Grenze mit einer Tabelle, die die Spalten
+        // kennt. Die Regel selbst steht in `ColumnCastFoldTest`.
+        val typed = ColumnTypes(
+            mapOf(
+                "price" to NeutralType.Decimal(10, 2),
+                "amount" to NeutralType.Float(),
+                "x" to NeutralType.Integer,
+                "code" to NeutralType.Text(),
+                "tags" to NeutralType.Array("text"),
+                "email" to NeutralType.Text(),
+                "status" to NeutralType.Text(maxLength = 10),
+            ),
+        )
+
+        fun equalTyped(left: String, right: String) =
+            ConstraintDiffContract.canonicallyEqual(left, right, typed, typed)
+
         test("a cast on a column stays: only the column type knows whether it rounds") {
             equalAsCheck("(price::integer > 5)", "price > 5") shouldBe false
-            equalAsCheck("((amount)::numeric > 0)", "amount > 0") shouldBe false
+            equalTyped("(price::integer > 5)", "price > 5") shouldBe false
+            equalTyped("((amount)::numeric > 0)", "amount > 0") shouldBe false
             checkChanged("(price::integer > 5)", "price > 5") shouldBe true
         }
 
         test("a cast with a type modifier stays: it can truncate") {
             equalAsCheck("code = 'abc'::varchar(2)", "code = 'abc'") shouldBe false
             equalAsCheck("price > (0)::numeric(10,2)", "price > 0") shouldBe false
+            equalTyped("code = 'abc'::varchar(2)", "code = 'abc'") shouldBe false
+            equalTyped("price > (0)::numeric(10,2)", "price > 0") shouldBe false
         }
 
         test("an array cast stays: it is another value") {
             equalAsCheck("tags = '{a}'::text[]", "tags = '{a}'") shouldBe false
+            equalTyped("tags = '{a}'::text[]", "tags = '{a}'") shouldBe false
         }
 
         test("a narrowing or rounding cast on a literal stays") {
             equalAsCheck("x > 2.5::integer", "x > 2.5") shouldBe false
             equalAsCheck("x > 5::smallint", "x > 5") shouldBe false
             equalAsCheck("x > f(0)::numeric", "x > f(0)") shouldBe false
+            equalTyped("x > 2.5::integer", "x > 2.5") shouldBe false
+            equalTyped("x > f(0)::numeric", "x > f(0)") shouldBe false
+            // Mit Tabelle entscheidet der Wert: `5` passt in `smallint`,
+            // `70000` nicht — dort scheitert der Cast, das Literal nicht.
+            equalTyped("x > 70000::smallint", "x > 70000") shouldBe false
+            equalTyped("x > 5::smallint", "x > 5") shouldBe true
         }
 
-        test("counter-check: a string literal cast to an unbounded text type folds") {
-            equalAsCheck("email like '%@%'::text", "email like '%@%'") shouldBe true
-            equalAsCheck("status = 'NEW'::character varying", "status = 'NEW'") shouldBe true
-            equalAsCheck("status = 'NEW'::VARCHAR", "status = 'NEW'") shouldBe true
+        test("a type name in capitals is not folded: quoted, it would name another type") {
+            equalTyped("status = 'NEW'::VARCHAR", "status = 'NEW'") shouldBe false
         }
 
-        test("counter-check: an integer literal cast to numeric folds, with or without parentheses") {
-            equalAsCheck("price > (0)::numeric", "price > 0") shouldBe true
-            equalAsCheck("price > 0::numeric", "price>0") shouldBe true
+        test("without a table no cast falls, not even a harmless one") {
+            equalAsCheck("email like '%@%'::text", "email like '%@%'") shouldBe false
+            equalAsCheck("price > (0)::numeric", "price > 0") shouldBe false
+        }
+
+        test("counter-check: a string literal cast to the text type of its column folds") {
+            equalTyped("email like '%@%'::text", "email like '%@%'") shouldBe true
+            equalTyped("status = 'NEW'::character varying", "status = 'NEW'") shouldBe true
+            equalTyped("status = 'NEW'::varchar", "status = 'NEW'") shouldBe true
+        }
+
+        test("counter-check: an integer literal cast to numeric folds against a numeric column") {
+            equalTyped("price > (0)::numeric", "price > 0") shouldBe true
+            equalTyped("price > 0::numeric", "price>0") shouldBe true
             checkChanged("(price > (0)::numeric)", "price>(0)") shouldBe false
         }
     }
@@ -202,6 +312,120 @@ class SpellingFoldBoundaryTest : FunSpec({
 
         test("counter-check: the call itself still folds its whitespace and quoting") {
             equalAsCheck("(char_length(name) > 0)", "char_length(`name`)>(0)") shouldBe true
+        }
+    }
+
+    context("Quotierte Schluesselwoerter bleiben quotiert") {
+
+        test("a quoted keyword is a column, the bare one a value or a function") {
+            equalAsCheck("\"user\" = 'x'", "user = 'x'") shouldBe false
+            equalAsCheck("[user] = 'x'", "user = 'x'") shouldBe false
+            equalAsCheck("`user` = 'x'", "user = 'x'") shouldBe false
+            equalAsCheck("a = \"null\"", "a = null") shouldBe false
+            equalAsCheck("a = \"current_date\"", "a = current_date") shouldBe false
+            equalAsCheck("a = \"true\"", "a = true") shouldBe false
+            equalAsCheck("\"USER\" = 'x'", "USER = 'x'") shouldBe false
+        }
+
+        test("a quoted junction word is not read as AND/OR") {
+            equalAsCheck("(\"and\" = 1) OR b = 2", "(and = 1) OR b = 2") shouldBe false
+            // `"or"(…)` ruft eine Funktion dieses Namens; entpackt faelle die
+            // Klammer als Operanden-Klammer hinter `OR`.
+            equalAsCheck("x = 1 OR \"or\"(b = 2)", "x = 1 OR orb = 2") shouldBe false
+        }
+
+        test("view: the same") {
+            viewChanged("SELECT \"user\" FROM t", "SELECT user FROM t") shouldBe true
+            viewChanged("SELECT \"current_date\" FROM t", "SELECT current_date FROM t") shouldBe true
+        }
+
+        test("counter-check: the three quotings of a keyword are one spelling, a plain name is unwrapped") {
+            equalAsCheck("[user] = 'x'", "\"user\" = 'x'") shouldBe true
+            equalAsCheck("`user` = 'x'", "\"user\" = 'x'") shouldBe true
+            equalAsCheck("[status] = 'x'", "status = 'x'") shouldBe true
+            viewChanged("SELECT [user] FROM t", "SELECT \"user\" FROM t") shouldBe false
+        }
+
+        test("counter-check: a different case is a different quoted name") {
+            equalAsCheck("\"User\" = 'x'", "\"user\" = 'x'") shouldBe false
+        }
+    }
+
+    context("Namen ausserhalb von ASCII") {
+
+        test("a call is not a name of the same letters") {
+            equalAsCheck("maß(x) > 0", "maßx > 0") shouldBe false
+        }
+
+        test("a name ending in `or` is no junction") {
+            equalAsCheck("señor(b = 2) OR c", "señorb = 2 OR c") shouldBe false
+        }
+
+        test("counter-check: around such names the folding still works") {
+            equalAsCheck("(maß > (0))", "maß>0") shouldBe true
+            equalAsCheck("(größe = 1) OR (b = 2)", "größe = 1 OR b = 2") shouldBe true
+        }
+    }
+
+    context("Klammern, die zu einer Syntax gehoeren") {
+
+        test("whitespace before a call's parenthesis keeps it a call") {
+            equalAsCheck("f (x) > 0", "f x > 0") shouldBe false
+            val price = ColumnTypes(mapOf("price" to NeutralType.Decimal(10, 2)))
+            ConstraintDiffContract.canonicallyEqual("price > f (0)::numeric", "price > f (0)", price, price) shouldBe false
+        }
+
+        test("a parenthesis right before a dot is a field access") {
+            equalAsCheck("(addr).city = 'x'", "addr.city = 'x'") shouldBe false
+            equalAsCheck("(addr) .city = 'x'", "addr .city = 'x'") shouldBe false
+        }
+
+        test("counter-check: the call and the qualified name still fold their whitespace") {
+            equalAsCheck("f (x) > 0", "f (x)>0") shouldBe true
+            equalAsCheck("(addr.city) = 'x'", "addr.city='x'") shouldBe true
+            equalAsCheck("NOT (flag) OR b = 2", "NOT flag OR b = 2") shouldBe true
+        }
+
+        test("unbalanced brackets around the whole text stay") {
+            equalAsCheck("(a])", "a]") shouldBe false
+        }
+    }
+
+    context("`~~` ist `LIKE` — mit Leerraum") {
+
+        test("the operator does not glue its operands together") {
+            equalAsCheck("x~~y", "xlikey") shouldBe false
+        }
+
+        test("NOT LIKE and ILIKE stay what they are") {
+            equalAsCheck("x !~~ 'a'", "x !like 'a'") shouldBe false
+            equalAsCheck("x ~~* 'a'", "x like* 'a'") shouldBe false
+        }
+
+        test("counter-check: with or without whitespace it is `like`") {
+            equalAsCheck("x ~~ 'a'", "x like 'a'") shouldBe true
+            equalAsCheck("x~~'a'", "x like 'a'") shouldBe true
+        }
+    }
+
+    context("Leerraum um Operatoren") {
+
+        test("around division and modulo") {
+            equalAsCheck("a / b > 1", "a/b>1") shouldBe true
+            equalAsCheck("a % b = 0", "a%b=0") shouldBe true
+        }
+
+        test("not where joining two operator characters changes the operator") {
+            equalAsCheck("a < @ b", "a <@ b") shouldBe false
+            equalAsCheck("a @ > b", "a @> b") shouldBe false
+            equalAsCheck("a = ~ b", "a =~ b") shouldBe false
+            viewChanged("SELECT a = @ b FROM t", "SELECT a =@ b FROM t") shouldBe true
+        }
+
+        test("counter-check: a trailing sign joins as PostgreSQL splits it again") {
+            equalAsCheck("a < -1", "a<-1") shouldBe true
+            equalAsCheck("a = - 1", "a=-1") shouldBe true
+            equalAsCheck("a - -1 > 0", "a - - 1 > 0") shouldBe true
         }
     }
 

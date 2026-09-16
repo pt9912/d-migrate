@@ -24,6 +24,7 @@ internal class TableIndexComparator(
         tableName: String,
         left: List<IndexDefinition>,
         right: List<IndexDefinition>,
+        columns: SideColumns = SideColumns.NONE,
     ): IndexDiffResult {
         val leftByKey = byProjectedKey(left)
         val rightByKey = byProjectedKey(right)
@@ -33,7 +34,7 @@ internal class TableIndexComparator(
         val removed = (leftKeys - rightKeys).sorted().map { leftByKey.getValue(it) }
         val changed = (leftKeys intersect rightKeys).sorted().mapNotNull { key ->
             val l = leftByKey.getValue(key); val r = rightByKey.getValue(key)
-            val folded = folding.index(tableName, l, r)
+            val folded = folding.index(tableName, l, r, columns)
             if (projectIndex(l) == projectIndex(folded)) null else ValueChange(l, r)
         }
         return IndexDiffResult(added, removed, changed)

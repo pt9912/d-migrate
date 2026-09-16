@@ -679,14 +679,27 @@ Schema-Aenderung. Die kanonische Form entscheidet nur ueber „gleich" oder
 
 Kanonisiert wird ausschliesslich die **Schreibweise**, nicht die Bedeutung:
 
-- Zeilenenden und Leerraum, auch um Vergleichs- und Rechenoperatoren und um
-  **Kommas** — ausserhalb eines Literals trennt ein Komma immer eine Liste;
+- Zeilenenden und Leerraum (ASCII-Leerraum), auch um Vergleichs- und
+  Rechenoperatoren (`=`, `<>`, `!=`, `<`, `>`, `+`, `-`, `*`, `/`, `%`) und um
+  **Kommas** — ausserhalb eines Literals trennt ein Komma immer eine Liste.
+  Stehen links und rechts des Leerraums Operatorzeichen, faellt er nur, wo die
+  zusammengezogene Folge dieselben Operatoren bleibt (`a < -1` gleich
+  `a<-1`); `a < @ b` bleibt verschieden von `a <@ b`;
 - das **Identifier-Quoting** eines einfachen Bezeichners (ANSI `"x"`, MySQL
-  `` `x` ``, T-SQL `[x]`); ein `[` direkt hinter einem Namen, einer Klammer
-  oder einem Literal ist ein Index oder Array und kein Quoting;
-- Klammern, die nur ein Zahl-Literal oder einen Bezeichner umschliessen —
-  nicht die Klammern eines Funktionsaufrufs: `f(x)` bleibt verschieden von
-  `fx`;
+  `` `x` ``, T-SQL `[x]`). Ein `[` direkt hinter einem Namen, hinter `)`, `]`
+  oder einem Literal sowie hinter `ARRAY` ist ein Index oder Array und kein
+  Quoting. **Ausgenommen** sind Schluesselwoerter und reservierte Woerter, die
+  unquotiert etwas anderes lesen — als Wert oder Funktion ohne Klammern
+  (`user`, `current_user`, `current_date`, `null`, `true`, Oracles `sysdate`
+  und `level`) oder als Syntax (`and`, `or`, `not`, `in`, `like`, `between`,
+  `case` …): `"user"` bleibt verschieden von `user`; seine drei Quotierungen
+  gelten untereinander als gleich;
+- Klammern, die nur ein Zahl-Literal oder einen Namen umschliessen — nicht die
+  Klammern eines Funktionsaufrufs, auch mit Leerraum vor der Klammer (`f(x)`
+  und `f (x)` bleiben verschieden von `fx`; Namen duerfen Zeichen ausserhalb
+  von ASCII tragen, `maß(x)` ist ein Aufruf), nicht die direkt hinter `)`,
+  `]` oder einem Literal und nicht die vor einem `.` (`(addr).city` ist das
+  Feld eines zusammengesetzten Werts, `addr.city` die Spalte einer Tabelle);
 - Klammern um den ganzen Ausdruck;
 - die **redundanten Klammern um einen Operanden** einer `AND`-/`OR`-Komposition:
   eine Klammer faellt, wenn sie links und rechts nur an den Ausdrucksrand, an
@@ -696,10 +709,42 @@ Kanonisiert wird ausschliesslich die **Schreibweise**, nicht die Bedeutung:
   `NOT`, `XOR`, `BETWEEN`, `CASE`, eine Abfrage oder `||`/`&&` auf dessen
   oberster Ebene. Ein Vergleich bindet in allen Dialekten staerker als `AND`
   und `OR`; diese Klammern tragen keine Bedeutung;
-- der PostgreSQL-Operator `~~` (der `LIKE` **ist**);
-- ein Cast, der den Wert **nicht aendern kann**: ein String-Literal auf `text`,
-  `varchar` oder `character varying`, ein Ganzzahl-Literal (auch in Klammern)
-  auf `numeric` oder `decimal` — jeweils ohne Typmodifikator und ohne `[]`.
+- der PostgreSQL-Operator `~~` (der `LIKE` **ist**) — nicht `!~~` und `~~*`;
+- ein **Cast, der nur Schreibweise ist** — entschieden mit den Spaltentypen der
+  Tabelle **dieser** Seite. Ein Cast faellt nur, wenn der gecastete Operand
+  **unmittelbarer Operand eines Vergleichs** ist (`=`, `<>`, `!=`, `<`, `<=`,
+  `>`, `>=`, `LIKE`/`~~`; links auch vor `= ANY (…)`) — nicht neben einem
+  Rechenoperator, nicht in einer Argumentliste, nicht auf einer Ebene mit
+  `BETWEEN` —, keinen Typmodifikator und kein `[]` traegt und der Typ aus der
+  Tabelle belegt ist:
+  - ein **Spalten-Cast** (`spalte::typ`, `(spalte)::typ`), der den Wert der
+    Spalte haelt: eine Zeichenkette variabler Laenge auf `text`, `varchar`
+    oder `character varying`; eine Ganzzahl auf einen gleich breiten oder
+    breiteren Ganzzahltyp oder auf `numeric`/`decimal`; ein `numeric` auf
+    `numeric`/`decimal`. Die andere Seite des Vergleichs behaelt dabei ihren
+    Typ: bei Text ein String-Literal, ein Text-Cast, eine Textspalte oder ein
+    Text-Array; bei Zahlen eine Zahl, ein Zahl-Cast oder eine Zahlspalte —
+    kein unmarkiertes String-Literal, das den Typ seines Gegenuebers annaehme;
+  - ein **Literal-Cast** (`literal::typ`, `(literal)::typ`), dem eine Spalte
+    gegenuebersteht — bloss oder hinter einem Spalten-Cast, der selbst faellt
+    — und dessen Typ genau deren Familie ist: Textspalte — String-Literal auf
+    `text`, `varchar`, `character varying` (unter `LIKE` nur dies); `char(n)`
+    — String-Literal auf `bpchar`; Ganzzahlspalte — eine ganze Zahl auf einen
+    Ganzzahltyp, in den sie passt, oder ein String-Literal auf genau den Typ
+    der Spalte; `decimal` — Literal auf `numeric`/`decimal`; Gleitkomma — eine
+    Zahl auf `double precision`/`float8`/`float`, ein String-Literal auf genau
+    den Typ der Spalte; `date`, `datetime` (mit und ohne Zeitzone) und `time` —
+    ein String-Literal auf genau diesen Typ, auch ausgeschrieben
+    (`timestamp without time zone`);
+  - in `spalte = ANY (ARRAY[…])` die `::text` der Elemente, wenn die Spalte
+    Text ist und das Array nur String-Literale traegt — ein solches Array ist
+    auch ohne sie ein Text-Array.
+
+  Typnamen gelten nur kleingeschrieben (`"TEXT"` waere ein anderer Typ;
+  `character` ohne Laenge ist `character(1)`). Ohne Tabelle, an einem Namen,
+  der keine eindeutige Spalte ist, und bei einem Spaltentyp ohne diese Regeln —
+  etwa `citext` (ein benutzerdefinierter Typ), `boolean` oder JSON — faellt
+  kein Cast.
 
 **Was ein Unterschied bleibt:** vertauschte Operanden und umgestellte
 Konjunktionen; **gliedernde** Klammern — um eine ganze Komposition
@@ -708,28 +753,42 @@ einem Funktionsnamen, hinter `IN` oder `NOT` und auf jeder Ebene, die `BETWEEN`
 enthaelt (dessen `AND` ist keine Konjunktion); andere Literale, Operatoren und
 Funktionen; die Gross-/Kleinschreibung von **Bezeichnern** (`"Quantity"` und
 `quantity` sind in PostgreSQL verschiedene Spalten); jeder Cast, der den Wert
-aendern kann — an einem Bezeichner (`price::integer`), mit Typmodifikator
-(`'abc'::varchar(2)`), als Array oder auf einen anderen Typ; und **zwei Formen
-desselben Praedikats**, etwa `status = ANY (ARRAY['A','B'])` gegen
-`status IN ('A','B')`.
+aendern oder die umgebende Operation umtypen kann — neben einem Rechenoperator
+(`qty / 2::numeric > 1` gegen `qty / 2 > 1`), an einer Spalte, deren Wert er
+aendert (`(code)::text` bei `char(n)`, `price::integer`), mit Typmodifikator
+(`'abc'::varchar(2)`), als Array, auf eine andere Typfamilie (`'…'::date` gegen
+eine `datetime`-Spalte, `'…'::bpchar` gegen eine Textspalte, `'…'::text` gegen
+`char(n)`) und an einer Spalte, deren Vergleich vom Zieltyp abweicht (`citext`);
+und **zwei Formen desselben Praedikats**, etwa `status = ANY (ARRAY['A','B'])`
+gegen `status IN ('A','B')`.
 
 **Nicht festgelegt** ist die Gross-/Kleinschreibung von **Schluesselwoertern**
 (`sum` gegen `SUM`, `is null` gegen `IS NULL`) und ob eine ausgeschriebene
 Aktion `RESTRICT` einer fehlenden gleichsteht. Beides bleibt ein Unterschied,
 bis es festgelegt ist.
 
-**Geschuetzt** sind String-Literale und nicht-einfache quotierte Bezeichner
-(`"my col"`, `[Order Details]`): keine Regel veraendert ihren Inhalt — weder
-Leerraum noch Quoting noch Operator-Folgen.
+**Geschuetzt** sind String-Literale, nicht-einfache quotierte Bezeichner
+(`"my col"`, `[Order Details]`) und quotierte Schluesselwoerter: keine Regel
+veraendert ihren Inhalt — weder Leerraum noch Quoting noch Operator-Folgen.
 
 **Die Faltung zieht sich zurueck**, wo ein Text nicht sicher abzugrenzen ist:
 traegt einer der beiden Texte ausserhalb eines Literals ein Kommentarzeichen
-(`--`, Blockkommentar) oder Dollar-Quoting (`$$…$$`, `$tag$…$tag$`), an
-beliebiger Stelle einen Backslash (ob er ein Anfuehrungszeichen escapet, ist
-dialektabhaengig) oder eine nicht geschlossene Quotierung, wird dieses Feld
-**wortgleich** verglichen. Ein Kommentar, dessen
-Reichweite das Zusammenziehen von Leerraum verschoebe, bleibt so ein
+(`--`, Blockkommentar, MySQLs `#` — auch PostgreSQLs XOR-Operator `#`),
+Dollar-Quoting (`$$…$$`, `$tag$…$tag$`, auch mit Zeichen ausserhalb von ASCII
+im Tag) oder Oracles alternative Quotierung (`q'[…]'`, `nq'…'`), an beliebiger
+Stelle einen Backslash (ob er ein Anfuehrungszeichen escapet, ist
+dialektabhaengig), eine nicht geschlossene Quotierung oder ein **zweideutiges
+`[`** — nach Leerraum hinter einem Namen, `)`, `]` oder einem Literal, in
+PostgreSQL ein Index (`tags [pos]`), in T-SQL Quoting —, wird dieses Feld
+**wortgleich** verglichen. Ein zweideutiges `[` gilt als Quoting, wenn der Text
+an anderer Stelle eindeutiges Bracket-Quoting traegt (ein `[` am Anfang,
+hinter einem Operator, Komma, `(`, `.` oder Schluesselwort). Ein Kommentar,
+dessen Reichweite das Zusammenziehen von Leerraum verschoebe, bleibt so ein
 Unterschied.
+
+**Grenze:** `"…"` gilt immer als Bezeichner. MySQL (ohne `ANSI_QUOTES`) und
+SQLite (als Rueckfall) lesen es je nach Lage als Zeichenkette; ein solcher
+Text wird trotzdem wie ein Bezeichner gefaltet.
 
 Der **Ausdruck eines Index-Schluessels** (`columns[].expression`) wird nicht
 kanonisiert; er bleibt wortgleich.
@@ -741,13 +800,15 @@ zurueck, was der Generator geschrieben hat.
 
 Fuer den **Rumpf einer Sicht** gilt eine engere Regel: vereinheitlicht werden
 nur das Quoting einfacher Bezeichner und der Leerraum, auch um `,`, `=` und
-Klammern — gewaehlte Spalten, `WHERE`-Klauseln und ihre Reihenfolge bleiben
-ein Unterschied, ebenso Klammern und Casts, die in einem Abfragetext Joins und
-Unterabfragen gliedern. **Abschliessende Semikola** — eines oder mehrere —
+Klammern (mit derselben Ausnahme zwischen zwei Operatorzeichen) — gewaehlte
+Spalten, `WHERE`-Klauseln und ihre Reihenfolge bleiben ein Unterschied,
+ebenso Klammern und Casts, die in einem Abfragetext Joins und Unterabfragen
+gliedern. **Abschliessende Semikola** — eines oder mehrere —
 fallen mit weg: der Server haengt dem gespeicherten `VIEW_DEFINITION`-Text sein
 eigenes an, und hat die angewendete DDL schon eines getragen, stehen dort zwei.
 Nur abschliessende: ein `;` zwischen zwei Anweisungen bleibt Unterschied.
-Literalschutz und Rueckzug gelten wie beim Ausdruck.
+Literalschutz, die Ausnahme fuer Schluesselwoerter und Rueckzug gelten wie
+beim Ausdruck; Casts werden im Rumpf einer Sicht nicht gefaltet.
 
 Die **abgeleiteten Spalten** einer Sicht werden nicht roh verglichen: sie
 sind eine optionale Signatur, die die Reader unterschiedlich gut fuellen.

@@ -100,8 +100,11 @@ internal class TableComparator(
             else -> ValueChange(left.primaryKey, right.primaryKey)
         }
 
-        val indexDiffs = indexComparator.compareIndices(name, left.indices, right.indices)
-        val constraintDiffs = compareConstraints(name, leftNorm, rightNorm)
+        // Die Spaltentypen beider Seiten: nur mit ihnen entscheidet die
+        // Schreibweise-Faltung ueber einen Cast in einem rohen Ausdruck.
+        val columns = SideColumns.of(current = left, desired = right)
+        val indexDiffs = indexComparator.compareIndices(name, left.indices, right.indices, columns)
+        val constraintDiffs = compareConstraints(name, leftNorm, rightNorm, columns)
         val metadataDiff = metadataChangeOrNull(left.metadata, right.metadata)
         val partitioningDiff = comparePartitioning(left.partitioning, right.partitioning)
 
@@ -459,6 +462,7 @@ internal class TableComparator(
         tableName: String,
         left: NormalizedConstraints,
         right: NormalizedConstraints,
+        columns: SideColumns,
     ): ConstraintDiffResult {
         val added = mutableListOf<ConstraintDefinition>()
         val removed = mutableListOf<ConstraintDefinition>()
@@ -504,7 +508,7 @@ internal class TableComparator(
             val r = right.multiColumnConstraints.getValue(name)
             // Gemeldet wird das unveraenderte Paar; gefaltet wird nur, WORAN
             // verglichen wird.
-            if (l != folding.constraint(tableName, name, l, r)) changed.add(ValueChange(l, r))
+            if (l != folding.constraint(tableName, l, r, columns)) changed.add(ValueChange(l, r))
         }
 
         return ConstraintDiffResult(added, removed, changed)
@@ -601,12 +605,21 @@ internal class TableComparator(
      * Die Erzeugungsart durch die Ziel-Projektion — oder, ohne Zielseite,
      * durch die des symmetrischen Vergleichs ([comparisonGeneration]).
      *
-     * Bewusst kein `?:`-Fallback auf den Eingabewert: die Projektion **darf**
-     * `null` liefern (sie blendet etwa den system-vergebenen Sequenznamen
-     * aus), und ein Elvis machte daraus wieder den unprojizierten Wert.
+     * Mit gesetzter Zielprojektion gilt **nur** deren Erzeugungs-Projektion;
+     * [comparisonGeneration] greift dann nie, auch nicht ergaenzend (so steht
+     * es an [SchemaComparator]). Ohne beide bleibt der Wert, wie er ist.
+     *
+     * Bewusst kein Fallback auf den Eingabewert, **nachdem** projiziert wurde:
+     * die Projektion **darf** `null` liefern (sie blendet etwa den
+     * system-vergebenen Sequenznamen aus), und ein Elvis auf ihr Ergebnis
+     * machte daraus wieder den unprojizierten Wert.
      */
     private fun projectGeneration(generation: ColumnGeneration?): ColumnGeneration? {
-        val project = targetProjection?.generation ?: comparisonGeneration ?: return generation
+        val project = when {
+            targetProjection != null -> targetProjection.generation
+            comparisonGeneration != null -> comparisonGeneration
+            else -> return generation
+        }
         return project(generation)
     }
 
