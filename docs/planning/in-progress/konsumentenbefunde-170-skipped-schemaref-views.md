@@ -1,7 +1,12 @@
 # Konsumentenbefunde gegen 1.7.0: Oracle-SkippedObjects, schemaRef-Format, View-Vergleich
 
-> **Status:** Umgesetzt und verifiziert (2026-09-15), noch nicht committet. Der
-> Move nach `../in-progress/` gehört zum ersten Implementierungs-Commit.
+> **Status:** **In Arbeit** (2026-09-16 nach `in-progress/` aktiviert; die
+> Status-Zeile lautete vorher „umgesetzt und verifiziert, noch nicht committet"
+> und war in **jeder** Teilaussage falsch — die Arbeit ist committet
+> (`ef78036e6`) und als **1.7.1** ausgeliefert (`4a701a8ff`).
+> **Vier DoD-Punkte sind offen**, und zwei Befundklassen sind unbemannt; beides
+> steht in „Offene Punkte" direkt unter „Umgesetzt" — dort steht auch, woran es
+> gemessen ist.
 > **Vorbedingung / Gate:** Keine. Punkt 4 fasst eine dokumentierte Linie an und
 > zieht **zwei** Spec-Stellen mit: `spec/cli-spec.md` (Umfang der
 > Kanonisierung) und `spec/ddl-generation-rules.md` (Quoting-Strategie je
@@ -37,6 +42,59 @@ Drei Dinge kamen beim Bauen hinzu, die der Entwurf nicht hatte:
 
 P2c ist für Oracle und den MSSQL-Index-Pfad mit Fixturen belegt; die übrigen
 Dialekte hatten ihre `*ActionRequiredSkippedObjectsTest`-Fälle bereits.
+
+## Offene Punkte (Verifier-Befund 2026-09-16)
+
+Die Wirkung des Slices ist ausgeliefert und unabhängig bestätigt. **Was fehlt,
+ist die Abdeckung** — und der Befund ist nicht gelesen, sondern **gemessen**:
+der Verifier hat die Zählung an fünf Stellen zurückgenommen
+(`OracleSpatialIndexDdl.kt` und vier MSSQL-Indexstellen auf
+`skipped?.takeIf { false }`) und der Build blieb **grün**. Diese fünf Stellen
+sind unbewacht.
+
+**Vier DoD-Punkte sind damit nicht erfüllt** (die DoD bleibt oben stehen — sie
+ist das Ziel, nicht der Ist-Zustand):
+
+1. **E052 hat keinen Test.** Die DoD nennt ihn namentlich (P1/P1a), aber
+   `OracleActionRequiredSkippedObjectsTest` endet mit dem Volltext-Fall; E052
+   erscheint sonst nur als Kommentar bzw. auf dem PG-Profilpfad. Zu bauen: eine
+   Fixture „mehrspaltiger Spatial-Index" mit `skippedObjects`-Zusicherung.
+2. **Vier der fünf MSSQL-Indexstellen sind unbewacht** (E066, E070, E071,
+   nicht renderbarer räumlicher Index); gedeckt ist nur der Ausdrucks-Index.
+   Die bestehenden Prüfungen sehen den **Kommentartext**, der die Rücknahme
+   überlebt.
+3. **Der CLI-Renderer-Test fehlt:** die neue `columns`-Zeile der drei Renderer
+   wird von keinem Test gefahren — dem Fixture in `CompareRendererDiffTest`
+   fehlt das Feld. Damit ist Akzeptanzkriterium 7 für die CLI nicht prüfbar.
+4. **P3s Spec-Satz ist nicht eingelöst:** weder `spec/mcp-server.md` noch die
+   Tool-Schemata tragen die Aussage über `format` (der Text landete in
+   `spec/ki-mcp.md`, das sich selbst als Entwurfs-Zielbild ausweist, und in
+   `docs/user/api-referenz.md`).
+
+**Zwei unbemannte Restflächen derselben Befundklasse** — sie gehören nicht in
+diesen Slice, brauchen aber einen Ort (Vorschlag: `open/`-Eintrag):
+
+- `RawSqlExpressionPortability.indexRefusal` wirft einen Index **notiz-allein**
+  weg, und zwar in **allen fünf** Dialekten — genau die Klasse, die P2 schliesst.
+- Der **Zusammengesetzte Typ (E054)** fällt in Oracle, MSSQL und MySQL
+  notiz-allein aus der Ausgabe, während SQLite dieselbe Klasse zählt. Die Lücke
+  ist also dialektungleich.
+
+**Und die Anker driften.** Der Abschnitt „Hinweis zu den Zeilennummern" am Ende
+ist ehrlich, löst das Problem aber nicht: für ein Artefakt, das als Beleg
+gelesen wird, müssen die Anker stimmen oder ausdrücklich als historisch
+gekennzeichnet sein. Bekannte Drift: `OracleColumnConstraintHelper.kt:345→379`,
+`:432→470`, `:333→357`, `:98→133`, `RawTextFolding.kt:153→164`,
+`SchemaContentLoader.kt:45→43`; `SchemaValidateWiring.kt:45` existiert nicht
+mehr.
+
+**Für die Graduation nach `done/`** (Reihenfolge, sobald die vier Punkte
+geschlossen sind): Closure-Abschnitt nach der Konvention in
+[`../done/README.md`](../done/README.md) (Form:
+[`../done/postcompare-type-canonicalization-slice.md`](../done/postcompare-type-canonicalization-slice.md)),
+Paket→Commit-Zuordnung, und der Inbound-Verweis aus
+[`compare-falsch-positive-cross-dialekt.md`](compare-falsch-positive-cross-dialekt.md)
+zeigt nach dem Move auf `../done/…`.
 
 
 ## Befund (gemessen 2026-09-15 gegen `1.8.0-SNAPSHOT` aus `main`)
