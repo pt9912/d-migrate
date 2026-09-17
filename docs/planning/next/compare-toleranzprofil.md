@@ -216,6 +216,10 @@ Ergebnis also dasselbe wie heute. Die Schlüsselnamen sind Vorschläge (E7).
   `SchemaReaderUtils.toReferentialAction` sagt weiter, MySQL falte `RESTRICT` auf
   `null`. Seit `e397aa132` stimmt das nicht mehr. `spec/ddl-generation-rules.md`
   sagt, der MSSQL-Reverse lese `no_action` zurück; der Reader liefert `null`.
+  **Nachtrag 2026-09-17 (Graduation des Umbrella):** Dieselbe KDoc verweist für
+  die offene Frage auf den Umbrella-Slice, und zwar unter `docs/planning/next/`.
+  Dort lag er nie, er ist inzwischen graduiert, und die Frage steht jetzt hier.
+  T5 zieht den Verweis zusammen mit dem Inhalt nach.
 - **Gegenproben:** `cascade`, `set_null` und `set_default` gegen `null` bleiben
   Funde. Bei fähigkeitsgebundener Variante bleibt auch `restrict` gegen `null`
   PG↔PG ein Fund.
@@ -718,6 +722,12 @@ Semantik-Aussagen von K2 und K4 werden dabei gegen PostgreSQL nachgemessen:
 - **Die veraltete KDoc und Spec-Zeile zu `RESTRICT`/`no_action`** (K4,
   Nebenbefunde). Sie werden mit T5 bzw. dem Spec-Schritt korrigiert, nicht
   vorher.
+- **`sourceDialect` an Funktionen, Prozeduren und Triggern** wird weiter
+  verglichen. Die Zeile „Herkunftsfelder … werden **nie** als
+  Schemaeigenschaft verglichen" unter „Vier Mechanismen" gilt für
+  `sourceDialect` nur an Sichten (Nachtrag 2026-09-17). Das ist eine
+  Einordnungsfrage und keine Toleranz, deshalb hat sie einen eigenen Eintrag:
+  [`compare-source-dialect-routinen-trigger.md`](../open/compare-source-dialect-routinen-trigger.md).
 
 ## Herkunft
 
@@ -727,7 +737,7 @@ Semantik-Aussagen von K2 und K4 werden dabei gegen PostgreSQL nachgemessen:
   MySQL-Sichtformatierung) und „Offen" (Identity-Modus mit `W140`, zweite
   MCP-Oberfläche, unbenannte Indizes, `legacy_serial_syntax`).
 - Der Umbrella-Slice
-  [`compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md):
+  [`compare-falsch-positive-cross-dialekt.md`](../done/compare-falsch-positive-cross-dialekt.md):
   „`RESTRICT` gegen implizit" und „Der strikte Modus selbst" (eine
   Vertragsänderung von `schema compare`, die eine Eigner-Entscheidung braucht).
 - [ADR 0056](../../adr/0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md),

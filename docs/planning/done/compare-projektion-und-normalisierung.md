@@ -55,7 +55,7 @@
 > **Vorbedingung / Gate:** Die **zwei** verbliebenen Grenzfragen
 > (Schlüsselwort-Case, `RESTRICT` gegen implizit) gehören dem Eigner und werden
 > **hier nicht** entschieden; `RESTRICT` ist in
-> [`compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md)
+> [`compare-falsch-positive-cross-dialekt.md`](compare-falsch-positive-cross-dialekt.md)
 > verankert, der Schlüsselwort-Case hatte bei der Aktivierung keinen Ort; seit
 > 2026-09-17 stehen beide im
 > [Toleranzprofil](../next/compare-toleranzprofil.md) (K1, K4). Die dritte
@@ -100,7 +100,7 @@ der Graduation stehen.
 | Punkt | Ort |
 | --- | --- |
 | Schlüsselwort-Case (`sum` gegen `SUM`) | [Toleranzprofil](../next/compare-toleranzprofil.md), Kandidat K1 |
-| `RESTRICT` gegen implizit | Toleranzprofil K4; Umbrella [`compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md) |
+| `RESTRICT` gegen implizit | Toleranzprofil K4; Umbrella [`compare-falsch-positive-cross-dialekt.md`](compare-falsch-positive-cross-dialekt.md) |
 | Identity-Modus gegen MySQL und SQLite (Fähigkeitsunterschied, ADR 0057) | Toleranzprofil K2 |
 | `= ANY(ARRAY[…])` gegen `IN (…)` | keine offene Frage: [ADR 0055](../../adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md) entscheidet sie; als Toleranz Kandidat K3 (bräuchte eine Statusänderung an 0055 und 0056) |
 | F4 — die übrigen server-vergebenen Namen (Messauftrag, ADR 0057) | [`../open/compare-serververgebene-namen-messauftrag.md`](../open/compare-serververgebene-namen-messauftrag.md) |
@@ -1150,7 +1150,7 @@ eine erlaubte Kernänderung ist die Statuszeile: `0053` wechselt auf
 `status: superseded by ADR-00NN` (`.d-check.yml` lässt genau diese Form zu).
 
 Der Repo-eigene Fahrplan für diese Linie steht in
-[`compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md)
+[`compare-falsch-positive-cross-dialekt.md`](compare-falsch-positive-cross-dialekt.md)
 (Abschnitt „Was ein Schnitt braeuchte") und verlangt
 **Eigner-Entscheidung, ADR, Spec-Update, Testumzug** — in dieser Reihenfolge.
 Die Eigner-Entscheidung holt das Paket **vorher** ein; sie ist die Vorbedingung

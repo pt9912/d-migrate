@@ -3,7 +3,7 @@
 > **Status:** Befund / Vorabklärung (2026-09-17). Am Code gelesen,
 > **nicht** gegen einen Server gemessen.
 > **Trigger:** Die zweite Hälfte von Punkt 5 des Umbrella
-> [`compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md)
+> [`compare-falsch-positive-cross-dialekt.md`](../done/compare-falsch-positive-cross-dialekt.md)
 > („MSSQL-View ohne `columns`"). Er nannte beide Felder eine Datenlücke beim
 > Lesen und wollte sie mit einem eigenen Fix im MSSQL-Adapter schließen. Die
 > Spalten sind seit `1b7e5f517` (1.7.0) da, die `dependencies` nicht. Bei der

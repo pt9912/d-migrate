@@ -3,7 +3,7 @@
 > **Status:** Vorabklärung / Eigner-Frage (2026-09-17). Am Code gelesen,
 > nicht an einem Paar zweier Reverses gemessen.
 > **Trigger:** AP2 des Umbrella
-> [`compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md)
+> [`compare-falsch-positive-cross-dialekt.md`](../done/compare-falsch-positive-cross-dialekt.md)
 > hat `sourceDialect` als Herkunfts-Marker eingeordnet und aus dem Vergleich
 > genommen, aber nur an Sichten. Bei der Graduation des Umbrella fiel auf, dass
 > die übrigen Objekte das Feld weiter vergleichen und dass zwei Dokumente etwas

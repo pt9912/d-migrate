@@ -16,9 +16,9 @@ import io.kotest.matchers.shouldBe
  *
  * Sie greift nur, wenn der Aufrufer sie anfordert
  * (`SchemaComparator.canonicalizeRawExpressions`): `schema compare` setzt sie,
- * `schema migrate` **nicht**. Der Grund steht in
- * `docs/planning/in-progress/compare-falsch-positive-cross-dialekt.md` — bei
- * `compare` kostet ein Fehlalarm einen Fund, bei `migrate` kostet eine
+ * `schema migrate` **nicht**. Der Grund steht in ADR 0056
+ * (`docs/adr/0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md`) —
+ * bei `compare` kostet ein Fehlalarm einen Fund, bei `migrate` kostet eine
  * uebersehene Aenderung eine falsch stehende Datenbank.
  *
  * Die Paare unten sind **woertlich** aus einem echten Konsumenten-Vergleich

@@ -212,7 +212,7 @@ eine Absicherung, die nicht an einer einzelnen Aufrufstelle hängt.
   Bezeichner-Kleinschreibung zu falten wäre in PostgreSQL schlicht falsch
   (`"MyCol"` und `mycol` sind dort verschiedene Spalten). Dieselbe
   Eigner-Frage, die
-  [`../in-progress/compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md)
+  [`compare-falsch-positive-cross-dialekt.md`](compare-falsch-positive-cross-dialekt.md)
   offen führt.
 
   **Was das für die Abnahme heißt.** Von den **vier** gemeldeten Sichten
