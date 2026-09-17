@@ -22,5 +22,7 @@ object MysqlCheckPreflightProbe {
         probe(connection.asJdbc(), diff)
 
     fun probe(connection: Connection, diff: DiffResult): List<CheckPreflightDeclaration> =
-        JdbcCheckPreflightProbe.probe(DatabaseDialect.MYSQL, connection, diff)
+        // Die Sonde prueft den Ausdruck in derselben Schreibweise, in der der
+        // Generator den CHECK anlegt (MysqlRawExpressionText).
+        JdbcCheckPreflightProbe.probe(DatabaseDialect.MYSQL, connection, diff, MysqlRawExpressionText::toMysql)
 }

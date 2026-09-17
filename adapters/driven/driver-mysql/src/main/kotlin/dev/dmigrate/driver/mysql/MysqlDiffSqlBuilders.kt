@@ -14,7 +14,6 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
-import dev.dmigrate.driver.renderKey
 
 /**
  * Stateless SQL fragment builders for the MySQL diff renderer.
@@ -56,7 +55,10 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
             return listOfNotNull(
                 quote(name),
                 typeMapper.toSql(col.type),
-                ComputedColumnClause.clause(computed, if (computed.stored) "STORED" else "VIRTUAL"),
+                ComputedColumnClause.clause(
+                    computed.copy(expression = MysqlRawExpressionText.toMysql(computed.expression)),
+                    if (computed.stored) "STORED" else "VIRTUAL",
+                ),
                 "NOT NULL".takeIf { col.required },
             ).joinToString(" ")
         }
@@ -120,7 +122,7 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
         // decides whether to emit or block.
         ConstraintType.CHECK -> {
             val expression = c.expression?.takeIf { it.isNotBlank() } ?: return null
-            "CONSTRAINT ${quote(c.name)} CHECK ($expression)"
+            "CONSTRAINT ${quote(c.name)} CHECK (${MysqlRawExpressionText.toMysql(expression)})"
         }
         // EXCLUDE is a PostgreSQL-only contract; MySQL has no
         // syntactic equivalent. The renderer blocks unconditionally
@@ -171,7 +173,7 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
             ""
         }
         val cols = idx.columns.joinToString(", ") { col ->
-            col.renderKey(::quote) +
+            col.mysqlKey(::quote) +
                 (col.prefixLength?.let { "($it)" } ?: "") +
                 (col.direction?.let { " ${it.name}" } ?: "")
         }

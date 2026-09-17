@@ -61,7 +61,10 @@ internal class MysqlColumnConstraintHelper(
         return listOf(
             quoteIdentifier(colName),
             typeMapper.toSql(col.type),
-            ComputedColumnClause.clause(computed, if (computed.stored) "STORED" else "VIRTUAL"),
+            ComputedColumnClause.clause(
+                computed.copy(expression = MysqlRawExpressionText.toMysql(computed.expression)),
+                if (computed.stored) "STORED" else "VIRTUAL",
+            ),
         ).joinToString(" ")
     }
 
@@ -111,7 +114,7 @@ internal class MysqlColumnConstraintHelper(
         if (col.required) parts += "NOT NULL"
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
         if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
-        if (customType.check != null) parts += "CHECK (${customType.check})"
+        customType.check?.let { parts += "CHECK (${MysqlRawExpressionText.toMysql(it)})" }
         return parts.joinToString(" ")
     }
 
@@ -235,7 +238,8 @@ internal class MysqlColumnConstraintHelper(
             skipped?.add(SkippedObject("constraint", constraint.name, verdict.reason.orEmpty(), code = "E053"))
             return null
         }
-        return "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"
+        val expression = constraint.expression?.let(MysqlRawExpressionText::toMysql)
+        return "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK ($expression)"
     }
 
 }

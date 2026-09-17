@@ -1,7 +1,8 @@
 # Reader-Treue: stille Verluste und Fremdes im Reverse und am Generator (Umbrella)
 
-> **Status:** Entwurf mit Scope, **Umbrella über vier Pläne** (Schnitt
-> 2026-09-17, Eigner-Entscheidung „E-Schnitt"). Eingearbeitet sind die Befunde
+> **Status:** **In Arbeit seit 2026-09-17** (Plan 1 gebaut; die Pläne 2 bis 4
+> stehen weiter in [`../next/`](../next/)), **Umbrella über vier Pläne**
+> (Schnitt 2026-09-17, Eigner-Entscheidung „E-Schnitt"). Eingearbeitet sind die Befunde
 > aus Plan-Review und Architektur-Prüfung (gegen `da29034b1`); die Anker sind
 > gegen `90c6c234f` nachgemessen. Der Umbrella ersetzt den ungeschnittenen
 > Plan. Dieser liegt samt Vorgeschichte (Review-Runden 1 und 2,
@@ -12,9 +13,10 @@
 > „Lebenszyklus-Übergänge").
 > **Vorbedingung / Gate:** für den Umbrella keins. Jeder Plan nennt sein
 > eigenes; die offenen Eigner-Fragen stehen gesammelt unter „Offen".
-> **Aktivierung:** Der Umbrella wandert mit dem ersten Implementierungs-Commit
-> von Plan 1 nach `../in-progress/` und, mit einer `## Closure`-Sektion, nach
-> `../done/`, sobald Plan 4 geliefert ist. Jeder der vier Pläne wandert einzeln.
+> **Aktivierung:** Der Umbrella ist mit dem ersten Implementierungs-Commit von
+> Plan 1 nach `in-progress/` gewandert und geht, mit einer
+> `## Closure`-Sektion, nach `../done/`, sobald Plan 4 geliefert ist. Jeder der
+> vier Pläne wandert einzeln.
 > **Warum ein Umbrella und nicht der erste Plan:** Plan 1 ist als erster
 > fertig und wandert als erster nach `done/`. Stünden Nenner, Messmethodik und
 > Code-Tabelle dort, verwiesen die Pläne 2 bis 4 für ihre gemeinsamen Regeln auf
@@ -28,9 +30,9 @@ Die Reihenfolge ist Eigner-Entscheidung: 1 → 2 → 3 → 4.
 | Plan | Pakete | Abnahme | Hängt ab von |
 | --- | --- | --- | --- |
 | [1 — Matrix als Abnahme](reader-treue-1-matrix-abnahme.md) | P6 (MySQL-Server-Text), P0 (Seeds und Silent-Loss-Check), S4 (SQLite-Migrate verliert FK-Aktionen), P12 (T-SQL-Quoting im Berechnungsausdruck), P11 (SQLite-Constraint-Namen) | Compare-Matrix, `:test:integration-mysql`, `:test:integration-sqlite`, `:test:integration-mssql` | — |
-| [2 — Meldungen](reader-treue-2-meldungen.md) | P5 (Array-Verlust MySQL und SQLite), P10 (`ALWAYS` ohne Entsprechung), P8 (`json`), P9 (ungebundene Zahl, unbekanntes Array-Element), P1 (Oracle-SRID), P3 (`search_path`); dazu S1 bis S3 (erst messen) | Matrix, Integrationsmodule je Dialekt | Plan 1 |
-| [3 — Spatial-Treue](reader-treue-3-spatial.md) | P4 (PostgreSQL `geography`, nur Rückweg, samt Datenpfad), P7 (SpatiaLite `NOT NULL`), P2a/P2b (Oracle- und PostGIS-Systemobjekte) | `:test:integration-postgresql` mit PostGIS, `:test:integration-sqlite`, `:test:integration-oracle`, `:test:e2e-cli`, Matrix | Plan 1; P4 auf P3 aus Plan 2 |
-| [4 — Typ berechneter SQL-Server-Spalten](reader-treue-4-mssql-berechneter-typ.md) | P13 (erst messen, dann nach der entschiedenen Regel) | `:test:integration-mssql`, Roundtrip-Harness, Matrix | P12 aus Plan 1 |
+| [2 — Meldungen](../next/reader-treue-2-meldungen.md) | P5 (Array-Verlust MySQL und SQLite), P10 (`ALWAYS` ohne Entsprechung), P8 (`json`), P9 (ungebundene Zahl, unbekanntes Array-Element), P1 (Oracle-SRID), P3 (`search_path`); dazu S1 bis S3 (erst messen) | Matrix, Integrationsmodule je Dialekt | Plan 1 |
+| [3 — Spatial-Treue](../next/reader-treue-3-spatial.md) | P4 (PostgreSQL `geography`, nur Rückweg, samt Datenpfad), P7 (SpatiaLite `NOT NULL`), P2a/P2b (Oracle- und PostGIS-Systemobjekte) | `:test:integration-postgresql` mit PostGIS, `:test:integration-sqlite`, `:test:integration-oracle`, `:test:e2e-cli`, Matrix | Plan 1; P4 auf P3 aus Plan 2 |
+| [4 — Typ berechneter SQL-Server-Spalten](../next/reader-treue-4-mssql-berechneter-typ.md) | P13 (erst messen, dann nach der entschiedenen Regel) | `:test:integration-mssql`, Roundtrip-Harness, Matrix | P12 aus Plan 1 |
 
 ## Der gemeinsame Nenner
 
@@ -74,7 +76,7 @@ Befunde, die beim Schnitt dazukamen.
   PostgreSQL behandelt beide gleich, und `text` ohne `max_length` beschreibt im
   Modell genau das. Die Vergleichsfolge (`(spalte)::text` nur an einer
   `varchar`-Spalte) ist im Compare-Slice als Grenze festgehalten und ein
-  Kandidat des [Toleranzprofils](compare-toleranzprofil.md). `inet` und
+  Kandidat des [Toleranzprofils](../next/compare-toleranzprofil.md). `inet` und
   `interval` sind laut (`R301`); die Modellfrage liegt bei
   [`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md).
   **Folge für die Matrix:** der Silent-Loss-Check zählt `varchar` zur
@@ -170,8 +172,8 @@ nur dann etwas, wenn vorher feststand, dass das Modul läuft.
 | `:test:integration-oracle` | gemessen 2026-09-16: `executed`, 33/33, keine Selbstüberspringung | Plan 2 (P1, P9), Plan 3 (P2a) |
 | `:test:integration-postgresql` | gemessen 2026-09-16: `executed`, 43/43, keine Selbstüberspringung | Plan 2 (P3, P8, P9, S1, S3), Plan 3 (P2b, P4) |
 | `:test:integration-mysql` | gemessen 2026-09-16: `executed`, keine Selbstüberspringung | Plan 1 (P6), Plan 2 (P5, P10) |
-| `:test:integration-sqlite` | **nicht gemessen** | Plan 1 (S4, P11), Plan 2 (P5, P9, P10, S2), Plan 3 (P7) |
-| `:test:integration-mssql` | **nicht gemessen** | Plan 1 (P12), Plan 4 (P13) |
+| `:test:integration-sqlite` | gemessen 2026-09-17: `executed`, keine Selbstüberspringung | Plan 1 (S4, P11), Plan 2 (P5, P9, P10, S2), Plan 3 (P7) |
+| `:test:integration-mssql` | gemessen 2026-09-17: `executed`; **eine** Selbstüberspringung, s. unten | Plan 1 (P12), Plan 4 (P13) |
 | `:test:e2e-cli` | **nicht gemessen** | Plan 3 (P4, Datenpfad) |
 
 Ein Plan misst die Nulllinie seiner noch offenen Module **vor** seinem ersten
@@ -181,6 +183,13 @@ Modul trägt keine Selbstüberspringung (`assumeTrue`, `Assumptions`,
 `@Disabled`). Ein PostGIS-Container ist in `:test:integration-postgresql` neu
 (`TestImages.POSTGIS` benutzt bisher nur `:test:e2e-cli`); die gemessene
 Nulllinie deckt ihn nicht.
+
+**Eine Selbstüberspringung gibt es:** `MssqlFullTextEnvironmentIntegrationTest`
+in `:test:integration-mssql` überspringt sich (`xtest`), wenn das abgeleitete
+Volltext-Image fehlt (`MSSQL_FTS_IMAGE`, sonst `d-migrate-mssql-fts:local`;
+`make mssql-fts-image` baut es). Auf dem Messhost vom 2026-09-17 lag es, die
+Spec lief mit. Wer die Nulllinie anderswo misst, prüft das Image mit —
+sonst ist der Lauf grün und diese Spec stumm.
 
 ### Sabotage
 
@@ -286,7 +295,7 @@ Volltext-Verlust für mehrere Dialekte meldet. `W149` bleibt Oracles Code.
 - **Der Identity-Modus bleibt im Vergleich ein Fund**
   ([ADR 0057](../../adr/0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md),
   Abschnitt 2, Punkt 5); eine Toleranz dafür ist Kandidat K2 im
-  [Toleranzprofil](compare-toleranzprofil.md).
+  [Toleranzprofil](../next/compare-toleranzprofil.md).
 - **Keine lokale Normalisierung in `schema migrate` und im Fingerabdruck**
   ([ADR 0056](../../adr/0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md),
   neu gefasste Entscheidung 1). Eine Normalisierung **im Reader** ist davon

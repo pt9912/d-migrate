@@ -3,7 +3,7 @@
 > **Status:** Entwurf mit Scope (Schnitt 2026-09-17 aus dem ungeschnittenen
 > Reader-Slice; Befunde aus Plan-Review und Architektur-Prüfung eingearbeitet,
 > Anker gegen `90c6c234f` nachgemessen). Teil des Umbrellas
-> [`reader-treue.md`](reader-treue.md); dort stehen Nenner, Belegart, Regeln
+> [`reader-treue.md`](../in-progress/reader-treue.md); dort stehen Nenner, Belegart, Regeln
 > der Abnahme, Doku-Pflichten und die Code-Tabelle.
 > **Vorbedingung / Gate:** Plan 1 ist geliefert — die Matrix ist Abnahme, und
 > ihre Liste bekannter Befunde trägt die Einträge dieses Plans. F2 ist

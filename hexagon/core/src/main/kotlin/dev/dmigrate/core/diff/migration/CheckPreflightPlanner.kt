@@ -80,11 +80,19 @@ object CheckPreflightPlanner {
         val sqlHash: String,
     )
 
+    /**
+     * [expressionText] schreibt den neutralen Ausdruck in die Form, die der
+     * Dialekt liest — dieselbe, mit der sein Generator den CHECK rendert
+     * (MySQL: `"…"` als Backtick-Bezeichner). Die Sonde muss dieselbe
+     * Bedingung pruefen, die danach angelegt wird. [PlannedCheckPreflight.expression]
+     * bleibt der neutrale Text.
+     */
     fun plan(
         diff: DiffResult,
         dialect: String,
         initialStatus: InitialStatus,
         identifierQuoter: (String) -> String,
+        expressionText: (String) -> String = { it },
     ): List<PlannedCheckPreflight> {
         val out = mutableListOf<PlannedCheckPreflight>()
         for (op in diff.operations) {
@@ -92,7 +100,7 @@ object CheckPreflightPlanner {
             if (op.constraint.type != ConstraintType.CHECK) continue
             val expression = op.constraint.expression?.takeIf { it.isNotBlank() } ?: continue
             val table = op.objectRef.path.firstOrNull() ?: continue
-            val sql = "SELECT count(*) FROM ${identifierQuoter(table)} WHERE NOT (${expression})"
+            val sql = "SELECT count(*) FROM ${identifierQuoter(table)} WHERE NOT (${expressionText(expression)})"
             out += PlannedCheckPreflight(
                 operationId = op.id,
                 dialect = dialect,

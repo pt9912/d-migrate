@@ -1,8 +1,9 @@
 # Reader-Treue 1: die Compare-Matrix wird Abnahme (P6, P0, S4, P12, P11)
 
-> **Status:** Entwurf mit Scope, aktivierungsbereit (Schnitt 2026-09-17 aus dem
+> **Status:** **In Arbeit seit 2026-09-17** (Schnitt 2026-09-17 aus dem
 > ungeschnittenen Reader-Slice; Befunde aus Plan-Review und
 > Architektur-Prüfung eingearbeitet, Anker gegen `90c6c234f` nachgemessen).
+> Der Bauabschnitt unten hält Commits, Messungen, Sabotagen und Neu-Pins fest.
 > Teil des Umbrellas [`reader-treue.md`](reader-treue.md). Dort stehen der
 > gemeinsame Nenner, die Belegart, die Regeln der Abnahme (Neu-Pins,
 > betroffene Zellen, Nulllinie, Sabotage), die Doku-Pflichten und die Codes.
@@ -12,8 +13,8 @@
 > berechnete Spalte, Index-Prädikat) in Backticks um, wie es 8.3 für
 > Sichten-Rümpfe schon vorsieht. Das ist ein eigener Bauteil vor den Neu-Pins
 > von P6 und P12 (Spec 8.3 zieht mit); die Neu-Pins sind damit frei.
-> **Aktivierung:** Move nach `../in-progress/` beim ersten
-> Implementierungs-Commit, zusammen mit dem Umbrella.
+> **Aktivierung:** mit dem ersten Implementierungs-Commit nach `in-progress/`
+> gewandert, zusammen mit dem Umbrella.
 > **Abhängigkeit:** kein Vorgänger. Plan 2 und Plan 3 setzen die Matrix aus P0
 > voraus, Plan 4 die Normalisierung aus P12.
 
@@ -563,7 +564,7 @@ Fremdschlüssel-Klauseln nach dem Muster von `SqliteUniqueConstraintScanner`,
    SQLite → SQL Server verlässt `APPLY-FAIL`/`Msg 2714`, SQLite → PostgreSQL
    verlässt das `APPLY-FAIL` aus dem Seed (L5); SQLite → MySQL bleibt
    `ERROR 1170` (andere Ursache:
-   [`pk-constraint-prefix-length.md`](pk-constraint-prefix-length.md)).
+   [`pk-constraint-prefix-length.md`](../next/pk-constraint-prefix-length.md)).
    PostgreSQL → SQLite, MySQL → SQLite und SQL Server → SQLite werden
    geprüft, weil der Ziel-Reverse andere Namen liefert.
 6. **Doku:** `spec/type-mapping.md`, Abschnitt 5 (SQLite): woher der Name
@@ -581,6 +582,74 @@ Signatur in `:hexagon:ports-common` (einmal ohne `MODULES` bauen).
 
 **Abnahme:** `:test:integration-sqlite` (Nulllinie vorher messen), Matrix,
 `make sample-db-types-smoke`.
+
+## Bau
+
+### Nulllinie der Integrationsmodule (2026-09-17, vor dem ersten Paket)
+
+`make integration INTEGRATION_TASKS=":test:integration-mysql:test
+:test:integration-sqlite:test :test:integration-mssql:test --continue"`:
+`BUILD SUCCESSFUL`, **55 Tasks, alle `executed`** — die drei `:test`-Tasks
+stehen ohne `SKIPPED` und ohne `UP-TO-DATE` im Lauf. Damit sind die beiden im
+Umbrella offenen Zeilen gemessen: `:test:integration-sqlite` und
+`:test:integration-mssql` laufen.
+
+**Eine Selbstüberspringung gibt es doch**, und sie gehört in die Tabelle des
+Umbrellas: `MssqlFullTextEnvironmentIntegrationTest` überspringt sich mit
+`xtest`, wenn das abgeleitete Volltext-Image fehlt (`MSSQL_FTS_IMAGE`, sonst
+`d-migrate-mssql-fts:local`; gebaut von `make mssql-fts-image`). Auf dem
+Messhost liegt das Image, die Spec lief also mit. Kein Paket dieses Plans
+hängt an ihr; wer die Nulllinie auf einem anderen Host misst, prüft das Image
+mit. In `:test:integration-mysql` und `:test:integration-sqlite` gibt es keine
+Selbstüberspringung (weder `assumeTrue`/`Assumptions`, `@Disabled` noch
+`xtest`).
+
+Die Testzahl je Modul steht **nicht** im Lauf: das Integrations-Image trägt
+das Repo als Kopie, die Reports bleiben im Container, und Gradle zählt in der
+Konsolenausgabe nichts. Gemessen ist deshalb der ausgeführte Task, nicht die
+Zahl.
+
+
+### E1-Bauteil — der MySQL-Generator schreibt `"…"` in Backticks um (2026-09-17)
+
+**Gebaut** (`:adapters:driven:driver-mysql`, `MysqlRawExpressionText`): an jeder
+Stelle, an der der MySQL-Generator rohen Ausdruckstext schreibt — CHECK
+(Generate und Migrate), Berechnungsausdruck (Generate und Migrate),
+Ausdrucks-Schlüssel eines Index (beide Renderer über `IndexColumn.mysqlKey`)
+und der CHECK eines Domain-Typs. Umgeschrieben wird `"Name"` → `` `Name` ``
+(`""` als Escape) und der Backslash in einem String-Literal verdoppelt; alles
+andere bleibt wortgleich, und ein Text, den der Scanner nicht sicher abgrenzen
+kann (offene Quotierung, offener Blockkommentar), bleibt unverändert.
+
+**Zwei Punkte über den Wortlaut von E1 hinaus**, beide gemeldet:
+1. **Der Backslash.** Ohne ihn mitzunehmen wäre P6 an dieser Stelle still
+   falsch: der Reader packt `'a\\b'` (MySQL-Schreibweise, Wert `a\b`) zu
+   `'a\b'` aus, und MySQL läse daraus beim Rendern `a<BS>`. Die Verdopplung
+   ist dieselbe Regel, nach der `SqlIdentifiers.quoteStringLiteral` jeden
+   anderen MySQL-Literalwert schreibt (Default-`sql_mode` ohne
+   `NO_BACKSLASH_ESCAPES`); der Präzedenzfall steht in
+   [`../done/mysql-string-literal-backslash-escaping.md`](../done/mysql-string-literal-backslash-escaping.md).
+2. **Die CHECK-Preflight-Sonde** prüft jetzt dieselbe Schreibweise, die der
+   Generator anlegt (`CheckPreflightPlanner.plan(expressionText = …)`,
+   Voreinstellung unverändert). Ohne das zählte `SELECT count(*) … WHERE NOT
+   ('Qty' > 0)` gegen MySQL jede Zeile als Verstoß und blockte die Migration —
+   laut, aber falsch. Die gemeldete `expression` bleibt der neutrale Text.
+
+**Spec:** [`spec/ddl-generation-rules.md`](../../../spec/ddl-generation-rules.md),
+8.3 („Roher Ausdruckstext"): der Berechnungsausdruck steht jetzt in der
+Überschrift und in der Feldliste (das erledigt zugleich die Spec-Hälfte von
+P12s DoD 4), und die Umschreibe-Regel steht dort; Abschnitt 2.3 bekommt den
+Absatz „String-Literale" (die Backslash-Verdopplung war nirgends in der Spec).
+CHANGELOG „Changed".
+
+**Sabotage S-E1** (`make docker-test MODULES=":adapters:driven:driver-mysql"`,
+beide Eingriffe zugleich): `"…"` unverändert durchgereicht **und** die
+Backslash-Verdopplung entfernt → **20 von 877 Tests rot**, in
+`MysqlRawExpressionTextTest` (Umschreibung, Generate, Migrate, Preflight).
+Integrationsfall mit derselben Sabotage
+(`:test:integration-mysql --tests '*NeutralExpressionSpelling*'`): rot, mit dem
+DDL im Klartext (`GENERATED ALWAYS AS ("Qty" * "UnitPrice")`). Rücknahme per
+Prüfsumme belegt (`md5sum` gleich), danach grün.
 
 ## Akzeptanzkriterien
 

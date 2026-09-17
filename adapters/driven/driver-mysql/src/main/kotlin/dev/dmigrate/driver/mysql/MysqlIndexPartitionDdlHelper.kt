@@ -15,7 +15,6 @@ import dev.dmigrate.driver.BitmapIndexFallbackNote
 import dev.dmigrate.driver.CoveringIndexDropNote
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.ManualActionRequired
-import dev.dmigrate.driver.renderKey
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.PartitionLiteralGuard
 import dev.dmigrate.driver.TransformationNote
@@ -529,7 +528,7 @@ internal class MysqlIndexPartitionDdlHelper(
 
     private fun renderIndexColumn(column: IndexColumn): String =
         buildString {
-            append(column.renderKey(quoteIdentifier))
+            append(column.mysqlKey(quoteIdentifier))
             if (column.expression == null) {
                 val prefixLength = column.prefixLength
                 if (prefixLength != null) append("($prefixLength)")

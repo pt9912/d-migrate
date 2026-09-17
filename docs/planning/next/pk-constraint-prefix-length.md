@@ -106,7 +106,7 @@ die bei der Aktivierung mitzuwiegen sind:
 - **SQLite behält die Länge:** der Generator schreibt `VARCHAR(n)` (in SQLite
   gültig, Typaffinität `TEXT`), der Reverse liest sie zurück. Das ist eine
   Fidelity-Frage wie im Reader-Slice
-  ([`reader-treue.md`](reader-treue.md),
+  ([`reader-treue.md`](../in-progress/reader-treue.md),
   Posten D3 — dort für PostgreSQL).
 
 Hinter `ERROR 1170` wartet in derselben Zelle vermutlich ein zweiter Fehler:

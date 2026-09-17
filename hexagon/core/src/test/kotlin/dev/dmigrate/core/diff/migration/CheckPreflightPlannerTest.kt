@@ -53,6 +53,17 @@ class CheckPreflightPlannerTest : FunSpec({
         d.sqlHash.isNotBlank() shouldBe true
     }
 
+    test("the probe carries the dialect spelling, the declaration the neutral text") {
+        val d = CheckPreflightPlanner.plan(
+            result(listOf(addCheck(expression = "\"Age\" >= 0"))), dialect = "mysql",
+            initialStatus = CheckPreflightPlanner.InitialStatus.NOT_RUN_POLICY,
+            identifierQuoter = { "`$it`" },
+            expressionText = { it.replace("\"Age\"", "`Age`") },
+        ).single()
+        d.probeSql shouldBe "SELECT count(*) FROM `users` WHERE NOT (`Age` >= 0)"
+        d.expression shouldBe "\"Age\" >= 0"
+    }
+
     test("skips DropConstraint(CHECK) — dropping never violates data") {
         val drop = DiffOperation.DropConstraint(
             id = "drop-chk",

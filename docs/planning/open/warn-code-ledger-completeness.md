@@ -84,7 +84,7 @@ in den bestehenden aufgeht, ist Teil dieses Tickets.
 ## Nachtrag 2026-09-17: Fragen aus dem Reader-Schnitt (F4)
 
 Der Reader-Slice vergibt neue Kennungen
-([`../next/reader-treue.md`](../next/reader-treue.md), Abschnitt „Codes":
+([`../in-progress/reader-treue.md`](../in-progress/reader-treue.md), Abschnitt „Codes":
 `R370`, `R371`, `R402`–`R405`, `R221`, `W162`–`W164`). Beim Schnitt in vier
 Pläne sind dabei Fragen aufgefallen, die nicht in einen der Pläne gehören,
 sondern hierher. Der Eintrag wächst damit über „Backfill der W-Codes" hinaus.

@@ -36,6 +36,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Der MySQL-Generator schreibt `"…"`-Bezeichner in rohen Ausdruecken in
+  Backticks um.** Im neutralen Modell ist `"Name"` ein Bezeichner; MySQL liest
+  es ohne `ANSI_QUOTES` als Zeichenkette. Ein CHECK, ein Berechnungsausdruck
+  oder ein Index-Ausdruck mit einer nicht kleingeschriebenen Spalte (aus einem
+  SQL-Server-Reverse etwa `"Qty" * "UnitPrice"`) rechnete auf MySQL deshalb
+  still mit Zeichenketten. `schema generate --target mysql` und
+  `schema migrate` gegen MySQL setzen `"Name"` jetzt in `` `Name` `` um und
+  verdoppeln den Backslash in einem String-Literal (MySQL escapet ihn ohne
+  `NO_BACKSLASH_ESCAPES`); die CHECK-Preflight-Sonde prueft dieselbe Form, die
+  danach angelegt wird. Einen Text, den ein lexikalischer Scanner nicht sicher
+  abgrenzen kann (nicht geschlossene Quotierung), laesst der Generator
+  unveraendert. Uebersetzt wird weiterhin nichts.
+
 - **Die MCP-Lese-Jobs nennen mehr als ein Artefakt.** `job_status_get`
   meldet fuer `schema_reverse_start` jetzt **zwei** Eintraege in `artifacts`
   (das Schema, dann den Reverse-Report) und fuer `schema_compare_start` mit

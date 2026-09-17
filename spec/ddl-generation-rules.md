@@ -159,6 +159,16 @@ Beispiel:
 [user's name]
 ```
 
+**String-Literale.** Ein `'` im Wert wird in jedem Dialekt verdoppelt (`''`).
+**MySQL verdoppelt zusätzlich den Backslash** (`\\`): dort escapet er ohne
+`NO_BACKSLASH_ESCAPES` das Folgezeichen, und ein Wert, der auf `\` endet,
+entwertete sonst das schließende Anführungszeichen — das Literal liefe weiter
+und verschluckte den nachfolgenden DDL-Text. PostgreSQL, SQLite, SQL Server
+und Oracle behandeln den Backslash als gewöhnliches Zeichen. Die Regel gilt für
+jeden Literalwert, den der Generator schreibt: `DEFAULT`-Klauseln, Werte eines
+inline gerenderten `ENUM`, Partitionsgrenzen — und die Literale in rohem
+Ausdruckstext (Abschnitt 8.3).
+
 ### 2.4 PostgreSQL: Schema-Qualifizierung (`ddl.postgresql.default_schema`)
 
 Ohne `ddl.postgresql.default_schema` rendert `schema generate --target
@@ -1457,14 +1467,16 @@ Funktionen, die T-SQL nicht kennt (`NOW()`, `DATE_TRUNC`, `EXTRACT`,
 Umgekehrt ist ein `mssql`-stämmiger Body mit Klammer-Quoting
 (`[dbo].[users]`) für PostgreSQL/MySQL/SQLite nicht portabel (E053).
 
-#### Roher Ausdruckstext: CHECK, Index-Prädikat, Index-Ausdruck
+#### Roher Ausdruckstext: CHECK, berechnete Spalte, Index-Prädikat, Index-Ausdruck
 
-Drei weitere Felder tragen rohen SQL-Text, der kein `SELECT` ist, sondern ein
-**skalarer Ausdruck**: `ConstraintDefinition.expression` (CHECK/EXCLUDE),
+Vier weitere Felder tragen rohen SQL-Text, der kein `SELECT` ist, sondern ein
+**skalarer Ausdruck**: `ConstraintDefinition.expression` (CHECK/EXCLUDE), der
+Berechnungsausdruck einer Spalte (`generation.expression`),
 `IndexDefinition.where` und `IndexColumn.expression`. Sie werden nach
 denselben Regeln beurteilt wie ein View-Body und bei fehlender Portabilität
 mit `action_required` E053 **nicht gerendert** — statt ungültige DDL zu
-erzeugen, die erst der Zielserver ablehnt. Ein CHECK fällt dabei weg, ein
+erzeugen, die erst der Zielserver ablehnt. Ein CHECK fällt dabei weg, die
+Berechnung einer Spalte ebenso (die Spalte bleibt als gewöhnliche stehen), ein
 Index als Ganzes (Prädikat und Ausdrucks-Schlüssel gehören zu derselben
 `CREATE INDEX`-Anweisung).
 
@@ -1486,8 +1498,27 @@ und `||` gegen MySQL (dort gültig — als logisches ODER; ob der Autor nicht
 genau das meinte, sagt nur die Herkunft). Ein Marker **innerhalb eines
 Zeichenketten-Literals** ist Text, kein Syntaxelement.
 
-Umgeschrieben wird nichts: `~~` → `LIKE` wäre eine Regel, keine Übersetzung,
-aber sie flösse bis in die erzeugte DDL. Das bleibt eine eigene Entscheidung.
+**Umgeschrieben wird nur die Schreibweise, die ein Ziel anders liest als das
+neutrale Modell.** Im neutralen Modell gelten die lexikalischen Regeln des
+SQL-Standards: `"…"` ist ein Bezeichner, ein Backslash in `'…'` ein
+gewöhnliches Zeichen. MySQL liest ohne `ANSI_QUOTES` ein `"…"` als
+Zeichenkette und ohne `NO_BACKSLASH_ESCAPES` den Backslash als Escape; beides
+veränderte die Bedingung still, statt sie abzulehnen — `CHECK ("Qty" > 0)`
+verglichen dort eine Zeichenkette mit einer Zahl. Der MySQL-Generator schreibt
+deshalb in diesen vier Feldern `"Name"` als `` `Name` `` und verdoppelt den
+Backslash in einem String-Literal. Das ist dieselbe Umsetzung, die Identifier
+in View-Queries erfahren, und dieselbe Literal-Regel, nach der jeder andere
+MySQL-Literalwert geschrieben wird (Abschnitt 2.3, „String-Literale"). Umgeschrieben wird erst, nachdem die
+Portabilität beurteilt ist: ein Ausdruck, der ohnehin nicht gerendert wird,
+wird auch nicht umgeschrieben. Kann ein lexikalischer Scanner den Text nicht
+sicher abgrenzen — eine nicht geschlossene Quotierung, ein nicht geschlossener
+Blockkommentar —, bleibt er wortgleich; ein falsch gesetztes
+Anführungszeichen wäre schlimmer als ein fehlendes. Der Inhalt eines
+String-Literals, ein Backtick-Bezeichner und ein Kommentar bleiben unberührt.
+
+Weiter gilt: **übersetzt wird nicht.** `~~` → `LIKE` wäre eine Regel, keine
+Übersetzung roher Ausdrücke, und sie flösse bis in die erzeugte DDL. Kein
+anderer Dialekt schreibt um.
 
 #### Identifier-Quoting in View-Queries
 

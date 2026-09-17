@@ -26,16 +26,19 @@ import java.sql.SQLException
  */
 object JdbcCheckPreflightProbe {
 
+    /** [expressionText]: wie [CheckPreflightPlanner.plan] — die Schreibweise des Dialekt-Generators. */
     fun probe(
         dialect: DatabaseDialect,
         connection: Connection,
         diff: DiffResult,
+        expressionText: (String) -> String = { it },
     ): List<CheckPreflightDeclaration> {
         val plan = CheckPreflightPlanner.plan(
             diff = diff,
             dialect = dialect.name.lowercase(),
             initialStatus = CheckPreflightPlanner.InitialStatus.NOT_RUN_POLICY,
             identifierQuoter = { SqlIdentifiers.quoteIdentifier(it, dialect) },
+            expressionText = expressionText,
         )
         return plan.map { planned ->
             try {

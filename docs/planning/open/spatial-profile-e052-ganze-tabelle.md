@@ -89,7 +89,7 @@ ist — Tabellenblockade als Antwort auf eine Spalteneinschraenkung.
 
 - Befund, Belege und Paket (Posten A6, Paket P7):
   [`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md);
-  Umbrella [`../next/reader-treue.md`](../next/reader-treue.md).
+  Umbrella [`../in-progress/reader-treue.md`](../in-progress/reader-treue.md).
 - [`ADR 0016`](../../adr/0016-spatialite-metadata-bootstrap.md) — SpatiaLite-Metadaten-Bootstrap
   im Migrate-Diff-Pfad; im Generate-Pfad ist dort nur der Bootstrap
   aufgeschoben.
