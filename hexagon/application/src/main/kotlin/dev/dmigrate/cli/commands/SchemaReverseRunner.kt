@@ -27,15 +27,12 @@ data class SchemaReverseRequest(
     val verbose: Boolean = false,
     val schemaName: String? = null,
     val schemaVersion: String? = null,
-    // reverse-preferences slice: resolved SQLite AUTOINCREMENT-width preference
-    // (CLI flag > config > default). Only the SQLite reader honours it.
-    val sqliteAutoincrement: SqliteAutoincrementReverse = SqliteAutoincrementReverse.IDENTIFIER,
     /**
-     * Die aufgeloeste Praeferenz `serial`/`identity` je Dialekt (Flag >
-     * Konfiguration > Default); gelesen wird der Wert des Dialekts der
-     * Quelle. Ohne Eintrag bleibt der Reverse unveraendert.
+     * Die aufgeloesten Reverse-Praeferenzen des Laufs (Flag > Konfiguration >
+     * Default) samt ihrer Herkunft; gelesen werden die Werte des Dialekts der
+     * Quelle. Ohne Deklaration bleibt der Reverse unveraendert.
      */
-    val autoIncrementSyntax: Map<DatabaseDialect, AutoIncrementSyntaxReverse> = emptyMap(),
+    val reversePreferences: ReversePreferences = ReversePreferences(),
     /**
      * `partition-mapping`-Overlays, die Kindnamen beisteuern, die der Server
      * nicht fuehrt. Darstellungs-gebunden (ADR 0050): sie beschreiben das
@@ -177,14 +174,14 @@ class SchemaReverseRunner(
         return try {
             val pool = poolFactory(ctx.config)
             pool.use { p ->
-                val options = SchemaReadOptions(
-                    includeViews = request.includeAll || request.includeViews,
-                    includeProcedures = request.includeAll || request.includeProcedures,
-                    includeFunctions = request.includeAll || request.includeFunctions,
-                    includeTriggers = request.includeAll || request.includeTriggers,
-                    sqliteAutoincrement = request.sqliteAutoincrement,
-                    autoIncrementSyntax = ReversePreferences(autoIncrementSyntax = request.autoIncrementSyntax)
-                        .autoIncrementSyntaxFor(ctx.config.dialect),
+                val options = request.reversePreferences.applyTo(
+                    SchemaReadOptions(
+                        includeViews = request.includeAll || request.includeViews,
+                        includeProcedures = request.includeAll || request.includeProcedures,
+                        includeFunctions = request.includeAll || request.includeFunctions,
+                        includeTriggers = request.includeAll || request.includeTriggers,
+                    ),
+                    ctx.config.dialect,
                 )
                 val reader = driverLookup(ctx.config.dialect).schemaReader()
                 val result = reader.read(p, options)

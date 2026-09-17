@@ -2,11 +2,14 @@ package dev.dmigrate.cli.config
 
 import dev.dmigrate.driver.AutoIncrementSyntaxReverse
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.PreferenceSource
 import dev.dmigrate.driver.ReversePreferences
 import dev.dmigrate.driver.SqliteAutoincrementReverse
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.maps.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -74,11 +77,29 @@ class ReverseAutoIncrementSyntaxResolverTest : FunSpec({
         resolver(cfg).resolve(mapOf(DatabaseDialect.MSSQL to "identity")).shouldBeEmpty()
     }
 
-    test("lenient like the width key: an unknown value, a missing block or a broken file declare nothing") {
-        resolver(tempConfig("reverse:\n  mysql:\n    autoincrement_syntax: identiy\n")).resolve().shouldBeEmpty()
+    test("lenient where nothing is declared: a missing block, a broken or a missing file") {
         resolver(tempConfig("database:\n  default: pg\n")).resolve().shouldBeEmpty()
         resolver(tempConfig("reverse: [unclosed\n")).resolve().shouldBeEmpty()
+        resolver(tempConfig("reverse:\n  mysql:\n    autoincrement_syntax:\n")).resolve().shouldBeEmpty()
         resolver(Path.of("/tmp/dmigrate-missing-${System.nanoTime()}.yaml")).resolve().shouldBeEmpty()
+    }
+
+    test("an unrecognised value is a configuration error, not a silent serial") {
+        val typo = shouldThrow<InvalidReversePreference> {
+            resolver(tempConfig("reverse:\n  sqlite:\n    autoincrement_syntax: identiy\n")).resolve()
+        }
+        typo.message shouldContain "'identiy'"
+        typo.message shouldContain "reverse.sqlite.autoincrement_syntax"
+        typo.message shouldContain "`serial` or `identity`"
+        shouldThrow<InvalidReversePreference> {
+            resolver(tempConfig("reverse:\n  mysql:\n    autoincrement_syntax: true\n")).resolve()
+        }.message shouldContain "reverse.mysql.autoincrement_syntax"
+    }
+
+    test("a flag of the same dialect is not a reason to read the broken key") {
+        val cfg = tempConfig("reverse:\n  mysql:\n    autoincrement_syntax: identiy\n")
+        resolver(cfg).resolve(mapOf(DatabaseDialect.MYSQL to "identity")) shouldBe
+            mapOf(DatabaseDialect.MYSQL to AutoIncrementSyntaxReverse.IDENTITY)
     }
 
     test("values are read case-insensitively and trimmed") {
@@ -111,11 +132,20 @@ class ReverseAutoIncrementSyntaxResolverTest : FunSpec({
         test("flags reach both parts") {
             ReversePreferencesResolver(null, { null }, noConfig).resolve(
                 sqliteWidthFlag = 64,
-                syntaxFlags = mapOf(DatabaseDialect.SQLITE to "identity"),
+                syntaxFlags = mapOf(DatabaseDialect.SQLITE to "identity", DatabaseDialect.MYSQL to null),
             ) shouldBe ReversePreferences(
                 sqliteAutoincrement = SqliteAutoincrementReverse.BIGINTEGER_IDENTITY,
                 autoIncrementSyntax = mapOf(DatabaseDialect.SQLITE to AutoIncrementSyntaxReverse.IDENTITY),
+                sqliteAutoincrementSource = PreferenceSource.FLAG,
+                autoIncrementSyntaxSources = mapOf(DatabaseDialect.SQLITE to PreferenceSource.FLAG),
             )
+        }
+
+        test("an unrecognised width fails the whole resolution") {
+            shouldThrow<InvalidReversePreference> {
+                ReversePreferencesResolver(tempConfig("reverse:\n  sqlite:\n    autoincrement_width: 16\n"), { null }, noConfig)
+                    .resolve()
+            }.message shouldContain "reverse.sqlite.autoincrement_width"
         }
     }
 })

@@ -196,6 +196,7 @@ class SqliteSchemaReader : SchemaReader {
             val mapping = SqliteTypeMapping.mapColumn(
                 col.dataType, isAutoInc, tableName, col.name,
                 options.sqliteAutoincrement, options.autoIncrementSyntax,
+                SqliteTypeMapping.Sources(options.sqliteAutoincrementSource, options.autoIncrementSyntaxSource),
             )
             if (mapping.note != null) notes += mapping.note
             if (mapping.preferenceNote != null) notes += mapping.preferenceNote

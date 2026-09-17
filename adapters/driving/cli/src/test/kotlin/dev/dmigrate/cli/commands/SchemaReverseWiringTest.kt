@@ -4,6 +4,7 @@ import dev.dmigrate.cli.CliContext
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.AutoIncrementSyntaxReverse
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.PreferenceSource
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.ReverseSourceKind
 import dev.dmigrate.driver.ReverseSourceRef
@@ -158,6 +159,35 @@ class SchemaReverseWiringTest : FunSpec({
             }
             readWith(configPath = file, flags = mapOf(DatabaseDialect.SQLITE to "serial")).autoIncrementSyntax shouldBe
                 AutoIncrementSyntaxReverse.SERIAL
+        }
+
+        test("the reader learns where each preference was declared — the note names that place") {
+            val file = config("reverse:\n  sqlite:\n    autoincrement_width: 64\n    autoincrement_syntax: identity\n")
+            readWith(configPath = file).run {
+                sqliteAutoincrementSource shouldBe PreferenceSource.CONFIG
+                autoIncrementSyntaxSource shouldBe PreferenceSource.CONFIG
+            }
+            readWith(configPath = file, width = 64, flags = mapOf(DatabaseDialect.SQLITE to "identity")).run {
+                sqliteAutoincrementSource shouldBe PreferenceSource.FLAG
+                autoIncrementSyntaxSource shouldBe PreferenceSource.FLAG
+            }
+            // Das Flag eines anderen Dialekts macht die gelesene Praeferenz nicht zum Flag.
+            readWith(configPath = file, flags = mapOf(DatabaseDialect.MYSQL to "identity"))
+                .autoIncrementSyntaxSource shouldBe PreferenceSource.CONFIG
+        }
+
+        test("an unrecognised value in the file is a configuration error: exit 7, nothing is read") {
+            for (content in listOf(
+                "reverse:\n  sqlite:\n    autoincrement_syntax: identiy\n",
+                "reverse:\n  mysql:\n    autoincrement_syntax: 1\n",
+                "reverse:\n  sqlite:\n    autoincrement_width: 16\n",
+            )) {
+                val factory = RecordingSchemaReverseFactory()
+                SchemaReverseWiring.execute(options(configPath = config(content)), factory) shouldBe 7
+                factory.sourceResolutions shouldBe emptyList()
+                factory.readOptions shouldBe emptyList()
+                factory.printedErrors.single().first shouldContain "Unrecognised value"
+            }
         }
     }
 

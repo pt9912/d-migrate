@@ -2,9 +2,11 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.AutoIncrementSyntaxReverse
+import dev.dmigrate.driver.PreferenceSource
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.metadata.AutoIncrementSyntaxNote
+import dev.dmigrate.driver.metadata.DeclaredPreference
 
 /**
  * Pure functions for mapping MySQL metadata to neutral types.
@@ -38,10 +40,13 @@ internal object MysqlTypeMapping {
      *   meint (`spec/dialect-preference-mechanism.md`). Der Default haelt den
      *   Fingerabdruck-Kanonisierer ([MysqlNeutralTypeCanonicalizer], der ohne
      *   Praeferenz aufruft) und den Reverse ohne Deklaration unveraendert.
+     * @param syntaxSource wo die Praeferenz erklaert wurde — `R205` nennt diese
+     *   Stelle
      */
     fun mapColumn(
         input: ColumnInput,
         autoIncrementSyntax: AutoIncrementSyntaxReverse = AutoIncrementSyntaxReverse.SERIAL,
+        syntaxSource: PreferenceSource = PreferenceSource.CONFIG,
     ): MappingResult {
         val dt = input.dataType.lowercase()
         val ct = input.columnType.lowercase()
@@ -49,7 +54,7 @@ internal object MysqlTypeMapping {
         if (input.isAutoIncrement) {
             return when (dt) {
                 "int" -> MappingResult(NeutralType.Identifier(autoIncrement = true))
-                "bigint" -> bigintAutoIncrement(input, autoIncrementSyntax)
+                "bigint" -> bigintAutoIncrement(input, autoIncrementSyntax, syntaxSource)
                 else -> MappingResult(NeutralType.Identifier(autoIncrement = true))
             }
         }
@@ -76,7 +81,11 @@ internal object MysqlTypeMapping {
      * PostgreSQL erzeugt `BIGSERIAL`); mit `identity` ohne das Flag, und
      * `R205` haelt die Abweichung fest.
      */
-    private fun bigintAutoIncrement(input: ColumnInput, syntax: AutoIncrementSyntaxReverse): MappingResult =
+    private fun bigintAutoIncrement(
+        input: ColumnInput,
+        syntax: AutoIncrementSyntaxReverse,
+        source: PreferenceSource,
+    ): MappingResult =
         when (syntax) {
             AutoIncrementSyntaxReverse.SERIAL -> MappingResult(
                 NeutralType.BigInteger,
@@ -88,7 +97,7 @@ internal object MysqlTypeMapping {
                 note = AutoIncrementSyntaxNote.identity(
                     "${input.tableName}.${input.colName}",
                     "MySQL AUTO_INCREMENT",
-                    "reverse.mysql.autoincrement_syntax",
+                    DeclaredPreference("--mysql-autoincrement-syntax", "reverse.mysql.autoincrement_syntax", source),
                 ),
             )
         }

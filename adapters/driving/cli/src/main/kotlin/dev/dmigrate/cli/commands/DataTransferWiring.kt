@@ -8,10 +8,12 @@ import dev.dmigrate.cli.config.OracleEmptyStringResolver
 import dev.dmigrate.cli.config.ReverseAutoincrementResolver
 import dev.dmigrate.cli.output.MessageResolver
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.SqliteAutoincrementReverse
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.LogScrubber
 import dev.dmigrate.driver.connection.PoolSettings
+import dev.dmigrate.driver.data.OracleEmptyString
 import dev.dmigrate.format.verify.CanonicalValueCodec
 import java.nio.file.Path
 
@@ -73,6 +75,20 @@ internal object DataTransferWiring {
             System.err.println("Error: Invalid --filter expression${posHint}: ${err.message}")
             return 2
         }
+        // Die Praeferenzen sind optional, ein vorhandener, aber nicht erkannter
+        // Wert ist dagegen ein Konfigurationsfehler (Exit 7) — fuer die Lese-
+        // wie fuer die Schreib-Praeferenz (spec/dialect-preference-mechanism.md).
+        val preferences = try {
+            TransferPreferences(
+                sqliteAutoincrement = ReverseAutoincrementResolver(configPathFromCli = options.configPath)
+                    .resolve(options.sqliteAutoincrementWidth),
+                oracleEmptyString = OracleEmptyStringResolver(configPathFromCli = options.configPath)
+                    .resolve(options.oracleEmptyString),
+            )
+        } catch (e: IllegalArgumentException) {
+            System.err.println("Error: ${e.message}")
+            return 7
+        }
         val request = DataTransferRequest(
             source = options.source,
             target = options.target,
@@ -94,10 +110,8 @@ internal object DataTransferWiring {
             cliConfigPath = options.configPath,
             quiet = options.cliContext.quiet,
             noProgress = options.cliContext.noProgress,
-            sqliteAutoincrement = ReverseAutoincrementResolver(configPathFromCli = options.configPath)
-                .resolve(options.sqliteAutoincrementWidth),
-            oracleEmptyString = OracleEmptyStringResolver(configPathFromCli = options.configPath)
-                .resolve(options.oracleEmptyString),
+            sqliteAutoincrement = preferences.sqliteAutoincrement,
+            oracleEmptyString = preferences.oracleEmptyString,
         )
         val runner = DataTransferRunner(
             sourceResolver = { src, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(src) },
@@ -122,3 +136,8 @@ internal object DataTransferWiring {
         return runner.execute(request)
     }
 }
+
+private class TransferPreferences(
+    val sqliteAutoincrement: SqliteAutoincrementReverse,
+    val oracleEmptyString: OracleEmptyString,
+)

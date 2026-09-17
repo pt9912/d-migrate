@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.AutoIncrementSyntaxReverse
+import dev.dmigrate.driver.PreferenceSource
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
@@ -366,6 +367,14 @@ class MysqlSchemaReaderTest : FunSpec({
         declaredId.type shouldBe NeutralType.BigInteger
         declaredId.generation shouldBe ColumnGeneration.Identity()
         declared.notes.single { it.code == "R205" }.objectName shouldBe "big_table.id"
+        // Die Herkunft der Praeferenz erreicht die Note.
+        reader.read(
+            pool,
+            opts.copy(
+                autoIncrementSyntax = AutoIncrementSyntaxReverse.IDENTITY,
+                autoIncrementSyntaxSource = PreferenceSource.FLAG,
+            ),
+        ).notes.single { it.code == "R205" }.message shouldContain "--mysql-autoincrement-syntax identity"
     }
 
     test("read table with required column and unique index") {

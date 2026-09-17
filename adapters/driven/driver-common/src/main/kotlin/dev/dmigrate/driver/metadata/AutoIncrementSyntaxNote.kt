@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.metadata
 
+import dev.dmigrate.driver.PreferenceSource
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
 
@@ -23,13 +24,33 @@ object AutoIncrementSyntaxNote {
     /**
      * @param objectName `tabelle.spalte`
      * @param construct der gelesene Ausdruck, etwa `MySQL AUTO_INCREMENT`
-     * @param configKey der Konfigurationsschluessel, der die Praeferenz traegt
+     * @param declaration wo die Praeferenz steht — Flag und Konfigurationsschluessel
      */
-    fun identity(objectName: String, construct: String, configKey: String): SchemaReadNote = SchemaReadNote(
-        severity = SchemaReadSeverity.INFO,
-        code = IDENTITY_DECLARED,
-        objectName = objectName,
-        message = "$construct column read as SQL-standard identity (no legacy_serial_syntax) " +
-            "per declared preference ($configKey: identity)",
-    )
+    fun identity(objectName: String, construct: String, declaration: DeclaredPreference): SchemaReadNote =
+        SchemaReadNote(
+            severity = SchemaReadSeverity.INFO,
+            code = IDENTITY_DECLARED,
+            objectName = objectName,
+            message = "$construct column read as SQL-standard identity (no legacy_serial_syntax) " +
+                "per declared preference (${declaration.render("identity")})",
+        )
+}
+
+/**
+ * Die Oberflaeche einer Lese-Praeferenz, wie der Anwender sie schreibt: ein
+ * Flag und ein Konfigurationsschluessel. Eine bestaetigende Note nennt die
+ * Stelle, an der die Praeferenz **tatsaechlich** erklaert wurde
+ * ([PreferenceSource]) — wer das Flag gesetzt hat, sucht den Wert nicht in
+ * seiner Konfigurationsdatei.
+ */
+class DeclaredPreference(
+    private val flag: String,
+    private val configKey: String,
+    private val source: PreferenceSource,
+) {
+    /** `--flag wert` bzw. `schluessel: wert`. */
+    fun render(value: String): String = when (source) {
+        PreferenceSource.FLAG -> "$flag $value"
+        PreferenceSource.CONFIG -> "$configKey: $value"
+    }
 }

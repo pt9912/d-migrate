@@ -6,6 +6,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.AutoIncrementSyntaxReverse
+import dev.dmigrate.driver.PreferenceSource
 import dev.dmigrate.driver.SqliteAutoincrementReverse
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.asJdbc
@@ -15,6 +16,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldContainKey
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.shouldNotBe
 import java.sql.Connection
 import java.sql.DriverManager
@@ -99,6 +101,26 @@ class SqliteSchemaReaderTest : FunSpec({
             col.type shouldBe NeutralType.BigInteger
             col.generation shouldBe ColumnGeneration.Identity()
             result.notes.map { it.code }.filter { it.startsWith("R20") } shouldBe listOf("R204", "R205")
+            result.notes.single { it.code == "R204" }.message shouldContain "(reverse.sqlite.autoincrement_width: 64)"
+            result.notes.single { it.code == "R205" }.message shouldContain
+                "(reverse.sqlite.autoincrement_syntax: identity)"
+        }
+    }
+
+    test("reverse-preferences: declared by flag, R204 and R205 name the flags") {
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)") { pool ->
+            val notes = reader.read(
+                pool,
+                SchemaReadOptions(
+                    sqliteAutoincrement = SqliteAutoincrementReverse.BIGINTEGER_IDENTITY,
+                    autoIncrementSyntax = AutoIncrementSyntaxReverse.IDENTITY,
+                    sqliteAutoincrementSource = PreferenceSource.FLAG,
+                    autoIncrementSyntaxSource = PreferenceSource.FLAG,
+                ),
+            ).notes
+            notes.single { it.code == "R204" }.message shouldContain "(--sqlite-autoincrement-width 64)"
+            notes.single { it.code == "R205" }.message shouldContain "(--sqlite-autoincrement-syntax identity)"
+            notes.none { it.message.contains("reverse.sqlite") } shouldBe true
         }
     }
 

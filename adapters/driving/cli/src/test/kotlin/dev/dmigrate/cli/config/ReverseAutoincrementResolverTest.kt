@@ -1,8 +1,10 @@
 package dev.dmigrate.cli.config
 
 import dev.dmigrate.driver.SqliteAutoincrementReverse
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -53,9 +55,22 @@ class ReverseAutoincrementResolverTest : FunSpec({
         resolver(configPathFromCli = cfg).resolve(null) shouldBe SqliteAutoincrementReverse.IDENTIFIER
     }
 
-    test("unrecognised width in config → conservative default") {
+    test("unrecognised width in config → configuration error, not a silent default") {
+        for (width in listOf("16", "sixty-four", "true", "64.5")) {
+            val cfg = tempConfig("reverse:\n  sqlite:\n    autoincrement_width: $width\n")
+            shouldThrow<InvalidReversePreference> { resolver(configPathFromCli = cfg).resolve(null) }
+                .message shouldContain "'$width' for reverse.sqlite.autoincrement_width"
+        }
+    }
+
+    test("a quoted width is still a width") {
+        val cfg = tempConfig("reverse:\n  sqlite:\n    autoincrement_width: '64'\n")
+        resolver(configPathFromCli = cfg).resolve(null) shouldBe SqliteAutoincrementReverse.BIGINTEGER_IDENTITY
+    }
+
+    test("the flag short-circuits a broken width in the config") {
         val cfg = tempConfig("reverse:\n  sqlite:\n    autoincrement_width: 16\n")
-        resolver(configPathFromCli = cfg).resolve(null) shouldBe SqliteAutoincrementReverse.IDENTIFIER
+        resolver(configPathFromCli = cfg).resolve(32) shouldBe SqliteAutoincrementReverse.IDENTIFIER
     }
 
     // Review-Härtung (F1): die Präferenz ist optional — ein explizit angegebener,

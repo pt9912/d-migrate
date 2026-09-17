@@ -302,6 +302,22 @@ class DataTransferRunnerTest : FunSpec({
         errors.joined() shouldContain "not found"
     }
 
+    test("both SQLite reads carry the width preference") {
+        val seen = mutableListOf<SchemaReadOptions>()
+        val recordingReader = object : SchemaReader {
+            override fun read(pool: ConnectionPool, options: SchemaReadOptions): SchemaReadResult {
+                seen += options
+                return SchemaReadResult(schema = fakeSchema)
+            }
+        }
+        val drv = object : DatabaseDriver by fakeDriver {
+            override fun schemaReader() = recordingReader
+        }
+        val (runner, _, _) = buildRunner(driverLookup = { drv })
+        runner.execute(request().copy(sqliteAutoincrement = SqliteAutoincrementReverse.BIGINTEGER_IDENTITY)) shouldBe 0
+        seen.map { it.sqliteAutoincrement } shouldBe List(2) { SqliteAutoincrementReverse.BIGINTEGER_IDENTITY }
+    }
+
     test("update without PK → exit 3") {
         val noPkSchema = SchemaDefinition(name = "t", version = "1.0",
             tables = mapOf("t" to TableDefinition(

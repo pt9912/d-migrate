@@ -40,7 +40,29 @@ data class SchemaReadOptions(
      * ([ReversePreferences]). See `spec/dialect-preference-mechanism.md`.
      */
     val autoIncrementSyntax: AutoIncrementSyntaxReverse = AutoIncrementSyntaxReverse.SERIAL,
+    /**
+     * Where [sqliteAutoincrement] was declared. The note that confirms a
+     * non-default value names the declaration the user actually wrote — the
+     * flag or the config key (`spec/dialect-preference-mechanism.md`, "Nicht
+     * stumm").
+     */
+    val sqliteAutoincrementSource: PreferenceSource = PreferenceSource.CONFIG,
+    /** Where [autoIncrementSyntax] was declared; see [sqliteAutoincrementSource]. */
+    val autoIncrementSyntaxSource: PreferenceSource = PreferenceSource.CONFIG,
 )
+
+/**
+ * The surface a declared read preference came from. A reader only needs it for
+ * the wording of the note that confirms the preference; the value itself is the
+ * same either way.
+ */
+enum class PreferenceSource {
+    /** A CLI flag of the running command. */
+    FLAG,
+
+    /** The `reverse:` block of the effective configuration (also the default when nothing was declared). */
+    CONFIG,
+}
 
 /**
  * How the SQLite reverse renders an AUTOINCREMENT primary key into the neutral
@@ -81,6 +103,10 @@ data class ReversePreferences(
     val sqliteAutoincrement: SqliteAutoincrementReverse = SqliteAutoincrementReverse.IDENTIFIER,
     /** Per dialect; a dialect without an entry reads [AutoIncrementSyntaxReverse.SERIAL]. */
     val autoIncrementSyntax: Map<DatabaseDialect, AutoIncrementSyntaxReverse> = emptyMap(),
+    /** Where [sqliteAutoincrement] was declared. */
+    val sqliteAutoincrementSource: PreferenceSource = PreferenceSource.CONFIG,
+    /** Per dialect, where its [autoIncrementSyntax] entry was declared; without an entry [PreferenceSource.CONFIG]. */
+    val autoIncrementSyntaxSources: Map<DatabaseDialect, PreferenceSource> = emptyMap(),
 ) {
 
     /** The syntax preference for a read of [dialect]. */
@@ -92,5 +118,7 @@ data class ReversePreferences(
         options.copy(
             sqliteAutoincrement = sqliteAutoincrement,
             autoIncrementSyntax = autoIncrementSyntaxFor(dialect),
+            sqliteAutoincrementSource = sqliteAutoincrementSource,
+            autoIncrementSyntaxSource = autoIncrementSyntaxSources[dialect] ?: PreferenceSource.CONFIG,
         )
 }

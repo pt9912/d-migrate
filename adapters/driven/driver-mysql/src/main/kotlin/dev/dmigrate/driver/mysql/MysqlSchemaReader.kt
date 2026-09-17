@@ -31,7 +31,7 @@ class MysqlSchemaReader(
             val metaDb = normalizeMysqlMetadataIdentifier(database, lctn)
             val scope = ReverseScope(catalogName = metaDb, schemaName = metaDb)
 
-            val tables = readTables(session, metaDb, lctn, notes, options.autoIncrementSyntax)
+            val tables = readTables(session, metaDb, lctn, notes, options)
             val visibleFunctionNames = if (options.includeViews) {
                 routineReader.readFunctionNames(session, metaDb)
             } else {
@@ -110,13 +110,13 @@ class MysqlSchemaReader(
         database: String,
         lctn: Int,
         notes: MutableList<SchemaReadNote>,
-        autoIncrementSyntax: AutoIncrementSyntaxReverse,
+        options: SchemaReadOptions,
     ): Map<String, TableDefinition> {
         val tableRefs = MysqlMetadataQueries.listTableRefs(session, database)
         val result = LinkedHashMap<String, TableDefinition>()
         for (ref in tableRefs) {
             val metaTable = normalizeMysqlMetadataIdentifier(ref.name, lctn)
-            result[ref.name] = readTable(session, database, metaTable, ref.name, notes, autoIncrementSyntax)
+            result[ref.name] = readTable(session, database, metaTable, ref.name, notes, options)
         }
         return result
     }
@@ -127,7 +127,7 @@ class MysqlSchemaReader(
         metaTable: String,
         displayName: String,
         notes: MutableList<SchemaReadNote>,
-        autoIncrementSyntax: AutoIncrementSyntaxReverse,
+        options: SchemaReadOptions,
     ): TableDefinition {
         val colRows = MysqlMetadataQueries.listColumns(session, database, metaTable)
         val pkColumns = MysqlMetadataQueries.listPrimaryKeyColumns(session, database, metaTable)
@@ -184,7 +184,7 @@ class MysqlSchemaReader(
                 tableName = displayName,
                 colName = colName,
                 srsId = (row["srs_id"] as? Number)?.toInt()?.takeIf { it != 0 },
-            ), autoIncrementSyntax)
+            ), options.autoIncrementSyntax, options.autoIncrementSyntaxSource)
             if (mapping.note != null) notes += mapping.note
             val neutralType = mapping.type
 

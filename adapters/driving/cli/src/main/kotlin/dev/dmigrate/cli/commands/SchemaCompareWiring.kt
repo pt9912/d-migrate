@@ -83,22 +83,24 @@ internal object DefaultSchemaCompareWiringFactory : SchemaCompareWiringFactory {
         validator: SchemaValidator,
     ): ResolvedSchemaOperand {
         // Phase 1: Config/URL resolution (exit 7 on failure)
+        // Die Reverse-Praeferenzen der Konfiguration gelten auch hier: ein
+        // `db:`-Operand ist ein Reverse, und ohne sie verglich er anders als die
+        // mit `schema reverse` geschriebene Datei. Ein nicht erkannter Wert ist
+        // ein Konfigurationsfehler wie eine unaufloesbare Verbindung.
         val url: String
         val config: dev.dmigrate.driver.connection.ConnectionConfig
+        val readOptions: SchemaReadOptions
         try {
             url = NamedConnectionResolver(configPathFromCli = cfgPath).resolve(op.source)
             config = CredentialFilling(op.source).fill(url)
+            readOptions = ReversePreferencesResolver(configPathFromCli = cfgPath).resolve()
+                .applyTo(SchemaReadOptions(), config.dialect)
         } catch (e: Exception) {
             throw CompareConfigException(e.message ?: "Config resolution failed", e)
         }
         val userRef = if (op.source.contains("://")) LogScrubber.maskUrl(url) else op.source
 
-        // Phase 2: Connection/read (exit 4 on failure). Die Reverse-Praeferenzen
-        // der Konfiguration gelten auch hier: ein `db:`-Operand ist ein Reverse,
-        // und ohne sie verglich er anders als die mit `schema reverse`
-        // geschriebene Datei.
-        val readOptions = ReversePreferencesResolver(configPathFromCli = cfgPath).resolve()
-            .applyTo(SchemaReadOptions(), config.dialect)
+        // Phase 2: Connection/read (exit 4 on failure).
         val pool = HikariConnectionPoolFactory.create(config)
         pool.use { p ->
             val result = DatabaseDriverRegistry.get(config.dialect).schemaReader()

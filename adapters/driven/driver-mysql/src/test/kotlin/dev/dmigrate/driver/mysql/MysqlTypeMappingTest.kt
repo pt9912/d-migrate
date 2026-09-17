@@ -2,12 +2,14 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.AutoIncrementSyntaxReverse
+import dev.dmigrate.driver.PreferenceSource
 import dev.dmigrate.driver.SchemaReadSeverity
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 
 class MysqlTypeMappingTest : FunSpec({
 
@@ -111,6 +113,17 @@ class MysqlTypeMappingTest : FunSpec({
         note.severity shouldBe SchemaReadSeverity.INFO
         note.objectName shouldBe "orders.id"
         note.message shouldContain "reverse.mysql.autoincrement_syntax: identity"
+    }
+
+    test("R205 names the flag when the preference came from the flag") {
+        val result = MysqlTypeMapping.mapColumn(
+            MysqlTypeMapping.ColumnInput("bigint", "bigint", true, null, 19, 0, "orders", "id"),
+            AutoIncrementSyntaxReverse.IDENTITY,
+            PreferenceSource.FLAG,
+        )
+        val message = result.note.shouldNotBeNull().message
+        message shouldContain "(--mysql-autoincrement-syntax identity)"
+        message shouldNotContain "reverse.mysql"
     }
 
     test("the identity preference leaves an int AUTO_INCREMENT alone: it carries no flag") {

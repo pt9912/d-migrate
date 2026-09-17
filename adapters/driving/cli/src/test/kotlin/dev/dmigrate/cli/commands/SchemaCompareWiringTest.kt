@@ -244,6 +244,11 @@ class SchemaCompareWiringTest : FunSpec({
             ColumnGeneration.Identity(legacySerialSyntax = true)
         idColumn("reverse:\n  sqlite:\n    autoincrement_width: 64\n    autoincrement_syntax: identity\n")
             .generation shouldBe ColumnGeneration.Identity()
+        // Ein nicht erkannter Wert ist ein Konfigurationsfehler (Exit 7 im
+        // Runner), kein stiller Rueckfall — und er faellt vor der Verbindung.
+        shouldThrow<CompareConfigException> {
+            idColumn("reverse:\n  sqlite:\n    autoincrement_syntax: identiy\n")
+        }.message shouldContain "'identiy' for reverse.sqlite.autoincrement_syntax"
     }
 
     test("the default comparator folds the identity sequence name only where a reverse reads it as bookkeeping") {

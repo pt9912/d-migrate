@@ -13,9 +13,10 @@ import java.nio.file.Paths
  * The surface vocabulary is dialect-neutral *width* (`32` | `64`) — it decouples
  * the stable config/CLI contract from internal neutral-type names; this resolver
  * maps it onto the internal [SqliteAutoincrementReverse]. The config is read
- * through [ReverseConfigBlock] — **deliberately lenient**: any absent,
- * unparseable, `reverse:`-less, or unrecognised-width config means "no
- * preference declared" and returns the conservative default.
+ * through [ReverseConfigBlock]: an absent, unparseable or `reverse:`-less
+ * config means "no preference declared" and returns the conservative default;
+ * a width that is present but neither `32` nor `64` is a configuration error
+ * ([InvalidReversePreference]), not a silent fallback.
  */
 class ReverseAutoincrementResolver(
     private val configPathFromCli: Path? = null,
@@ -27,13 +28,21 @@ class ReverseAutoincrementResolver(
     fun resolve(flagWidth: Int?): SqliteAutoincrementReverse =
         widthToPreference(flagWidth ?: configWidth())
 
-    private fun configWidth(): Int? =
-        (ReverseConfigBlock(configPathFromCli, envLookup, defaultConfigPath).dialect("sqlite")
-            ?.get("autoincrement_width") as? Number)?.toInt()
+    private fun configWidth(): Int? {
+        val raw = ReverseConfigBlock(configPathFromCli, envLookup, defaultConfigPath).dialect("sqlite")
+            ?.get(CONFIG_KEY) ?: return null
+        return raw.toString().trim().toIntOrNull()?.takeIf { it in WIDTHS }
+            ?: throw InvalidReversePreference("reverse.sqlite.$CONFIG_KEY", raw, WIDTHS.map(Int::toString))
+    }
 
     private fun widthToPreference(width: Int?): SqliteAutoincrementReverse = when (width) {
         64 -> SqliteAutoincrementReverse.BIGINTEGER_IDENTITY
-        // 32, null, or any unrecognised width → conservative 32-bit contract.
+        // 32 or nothing declared → conservative 32-bit contract.
         else -> SqliteAutoincrementReverse.IDENTIFIER
+    }
+
+    private companion object {
+        const val CONFIG_KEY = "autoincrement_width"
+        val WIDTHS = listOf(32, 64)
     }
 }

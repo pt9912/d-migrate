@@ -1,9 +1,14 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationTokenSource
+import dev.dmigrate.driver.AutoIncrementSyntaxReverse
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.ReversePreferences
+import dev.dmigrate.driver.SqliteAutoincrementReverse
 import dev.dmigrate.driver.sqlite.SqliteDriver
 import dev.dmigrate.mcp.registry.FileBackedApprovalGrantStore
+import dev.dmigrate.mcp.registry.McpCoreJobWorkerFactory
 import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.mcp.server.McpServerConfig
@@ -183,7 +188,8 @@ class McpServeWiringTest : FunSpec({
                     refs = emptyList(), now = Instant.now(), principalContext = Fixtures.principalContext(),
                     jobBuilder = { _, _ -> record },
                 )
-                val worker = newWiring(connectionConfigPath = cfg).mcpCoreJobWorkerFactory(phaseC, resolver)
+                val wiring = newWiring(connectionConfigPath = cfg)
+                val worker = wiring.mcpCoreJobWorkerFactory(phaseC, resolver, wiring.resolveReversePreferencesOrExit())
                     .create(record, request)!!
                 val outcome = worker.execute(record, CancellationTokenSource.create().token)
                 val artifactId = (outcome as JobWorkerOutcome.Succeeded).artifactRefs.single().substringAfterLast('/')
@@ -197,6 +203,80 @@ class McpServeWiringTest : FunSpec({
             )
             declared shouldContain "type: identity"
             declared shouldNotContain "legacy_serial_syntax"
+        }
+    }
+
+    context("Reverse-Praeferenzen: einmal beim Start, in beiden Zweigen") {
+        val reverseBlock = "reverse:\n  sqlite:\n    autoincrement_width: 64\n  mysql:\n    autoincrement_syntax: identity\n"
+        val declared = ReversePreferences(
+            sqliteAutoincrement = SqliteAutoincrementReverse.BIGINTEGER_IDENTITY,
+            autoIncrementSyntax = mapOf(DatabaseDialect.MYSQL to AutoIncrementSyntaxReverse.IDENTITY),
+        )
+
+        fun jobFactoryPreferences(wiring: McpCliServerWiring): ReversePreferences =
+            (wiring.aiWiring.operationalWiring.fallbackJobWorkerFactory as McpCoreJobWorkerFactory).reversePreferences
+
+        test("the in-memory branch hands the declared preferences to the job factory") {
+            val stateDir = Files.createTempDirectory("dmigrate-build-prefs-im-")
+            val configFile = Files.createTempFile("dmigrate-build-prefs-im-", ".yaml")
+            Files.writeString(configFile, reverseBlock)
+            val owner = StateDirOwner.of(StateDirResolver.resolve(cliOption = stateDir))
+            try {
+                newWiring(connectionConfigPath = configFile).build(McpServerConfig(), owner, cursorKeyring = null)
+                    .use { jobFactoryPreferences(it) shouldBe declared }
+                newWiring().build(McpServerConfig(), owner, cursorKeyring = null)
+                    .use { jobFactoryPreferences(it) shouldBe ReversePreferences() }
+            } finally {
+                owner.cleanupIfOwned()
+                Files.deleteIfExists(configFile)
+                runCatching {
+                    Files.walk(stateDir).sorted(Comparator.reverseOrder()).forEach { runCatching { Files.deleteIfExists(it) } }
+                }
+            }
+        }
+
+        test("the --server-state branch hands the same preferences to the job factory") {
+            val stateDir = Files.createTempDirectory("dmigrate-build-prefs-jdbc-")
+            val configFile = Files.createTempFile("dmigrate-build-prefs-jdbc-", ".yaml")
+            Files.writeString(
+                configFile,
+                "server:\n  state:\n    jdbcUrl: jdbc:postgresql://localhost/dmigrate-test\n$reverseBlock",
+            )
+            val owner = StateDirOwner.of(StateDirResolver.resolve(cliOption = stateDir))
+            try {
+                newWiring(connectionConfigPath = configFile, serverStateFactory = inMemoryServerState())
+                    .build(McpServerConfig(), owner, cursorKeyring = null)
+                    .use { jobFactoryPreferences(it) shouldBe declared }
+            } finally {
+                owner.cleanupIfOwned()
+                Files.deleteIfExists(configFile)
+                runCatching {
+                    Files.walk(stateDir).sorted(Comparator.reverseOrder()).forEach { runCatching { Files.deleteIfExists(it) } }
+                }
+            }
+        }
+
+        test("an unrecognised value stops the start with exit 2, before either branch is built") {
+            val stateDir = Files.createTempDirectory("dmigrate-build-prefs-bad-")
+            val configFile = Files.createTempFile("dmigrate-build-prefs-bad-", ".yaml")
+            Files.writeString(configFile, "reverse:\n  sqlite:\n    autoincrement_syntax: identiy\n")
+            val owner = StateDirOwner.of(StateDirResolver.resolve(cliOption = stateDir))
+            val (lines, sink) = stderrCapture()
+            try {
+                val ex = shouldThrow<McpServeExit> {
+                    newWiring(connectionConfigPath = configFile, stderr = sink)
+                        .build(McpServerConfig(), owner, cursorKeyring = null)
+                }
+                ex.code shouldBe 2
+                lines.joinToString("\n") shouldContain "MCP server configuration is invalid"
+                lines.joinToString("\n") shouldContain "'identiy' for reverse.sqlite.autoincrement_syntax"
+            } finally {
+                owner.cleanupIfOwned()
+                Files.deleteIfExists(configFile)
+                runCatching {
+                    Files.walk(stateDir).sorted(Comparator.reverseOrder()).forEach { runCatching { Files.deleteIfExists(it) } }
+                }
+            }
         }
     }
 
@@ -534,4 +614,21 @@ class McpServeWiringTest : FunSpec({
 private fun stderrCapture(): Pair<MutableList<String>, (String) -> Unit> {
     val lines = mutableListOf<String>()
     return lines to { msg -> lines += msg }
+}
+
+/** Ein `--server-state`-Zweig ohne Datenbank: die Stores der Phase C. */
+private fun inMemoryServerState() = ServerStateFactory { _, phaseC ->
+    val idempotency = dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore()
+    val owners = dev.dmigrate.server.application.quota.InMemoryQuotaReservationOwnerStore()
+    ServerStateBundle(
+        phaseCWithPersistence = phaseC,
+        idempotencyStore = idempotency,
+        jobStartTransaction = dev.dmigrate.server.ports.memory.InMemoryJobStartTransaction(phaseC.jobStore, idempotency),
+        quotaReservationOwnerStore = owners,
+        ownerAwareQuotaService = dev.dmigrate.server.application.quota.OwnerAwareQuotaService(
+            delegate = phaseC.quotaService,
+            ownerStore = owners,
+        ),
+        cleanup = AutoCloseable { },
+    )
 }

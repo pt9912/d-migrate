@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.audit.CliAuditRecorder
 import dev.dmigrate.cli.audit.cliAuditRecorder
+import dev.dmigrate.cli.config.InvalidReversePreference
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.config.ReversePreferencesResolver
 import dev.dmigrate.cli.output.OutputFormatter
@@ -94,8 +95,15 @@ internal object SchemaReverseWiring {
         factory: SchemaReverseWiringFactory,
     ): Int {
         val bundle = factory.build(options.cliContext)
-        val preferences = ReversePreferencesResolver(configPathFromCli = options.configPath)
-            .resolve(options.sqliteAutoincrementWidth, options.autoIncrementSyntax)
+        val preferences = try {
+            ReversePreferencesResolver(configPathFromCli = options.configPath)
+                .resolve(options.sqliteAutoincrementWidth, options.autoIncrementSyntax)
+        } catch (e: InvalidReversePreference) {
+            // Ein nicht erkannter Wert ist ein Konfigurationsfehler, kein
+            // stiller Rueckfall auf den Default.
+            bundle.printError("Config error: ${e.message}", options.source)
+            return 7
+        }
         val request = SchemaReverseRequest(
             source = options.source,
             output = options.output,
@@ -112,8 +120,7 @@ internal object SchemaReverseWiring {
             verbose = options.cliContext.verbose,
             schemaName = options.schemaName,
             schemaVersion = options.schemaVersion,
-            sqliteAutoincrement = preferences.sqliteAutoincrement,
-            autoIncrementSyntax = preferences.autoIncrementSyntax,
+            reversePreferences = preferences,
             migrationOverlays = MigrationOverlayFileLoader.load(options.migrationOverlays),
         )
         val runner = SchemaReverseRunner(

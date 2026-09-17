@@ -4,8 +4,10 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.AutoIncrementSyntaxReverse
+import dev.dmigrate.driver.PreferenceSource
 import dev.dmigrate.driver.SqliteAutoincrementReverse
 import dev.dmigrate.driver.metadata.AutoIncrementSyntaxNote
+import dev.dmigrate.driver.metadata.DeclaredPreference
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 
 /**
@@ -41,56 +43,22 @@ internal object SqliteTypeMapping {
         // IDENTITY gemeint war — wirkt nur unter BIGINTEGER_IDENTITY, denn nur
         // dort entsteht `generation: identity`.
         autoIncrementSyntax: AutoIncrementSyntaxReverse = AutoIncrementSyntaxReverse.SERIAL,
+        // Wo die beiden Praeferenzen erklaert wurden: R204 und R205 nennen
+        // die Stelle, die der Anwender geschrieben hat (Flag oder Schluessel).
+        sources: Sources = Sources(),
     ): MappingResult {
         // SQLite's AUTOINCREMENT rowid is 64-bit and maps equally to the neutral
         // 32-bit `identifier` contract (PG SERIAL, MySQL INT AUTO_INCREMENT) and
         // to 64-bit `biginteger` + Identity — an inherent ambiguity only SQLite
         // has. The user declares the intent; IDENTIFIER (default) keeps the
         // narrowing loud via R202, BIGINTEGER_IDENTITY reconstructs 64-bit.
-        if (isAutoIncrement) return when (autoincrementReverse) {
-            // R204 (INFO): interim inline home pending the R-code ledger
-            // (warn-code-ledger-completeness.md); confirms the opt-in 64-bit
-            // reconstruction so the decision stays in the audit trail.
-            SqliteAutoincrementReverse.BIGINTEGER_IDENTITY -> MappingResult(
-                type = NeutralType.BigInteger,
-                note = SchemaReadNote(
-                    severity = SchemaReadSeverity.INFO, code = "R204",
-                    objectName = "$tableName.$colName",
-                    message = "SQLite AUTOINCREMENT primary key reconstructed as 64-bit " +
-                        "'biginteger' + generation: identity per declared preference " +
-                        "(reverse.sqlite.autoincrement_width: 64)",
-                ),
-                // legacySerialSyntax = true mirrors the MySQL reverse of the same
-                // legacy auto-increment construct (MysqlTypeMapping bigint path) →
-                // PG target BIGSERIAL; SQLite AUTOINCREMENT is legacy, not
-                // SQL-standard IDENTITY — unless the user declared identity
-                // (reverse.sqlite.autoincrement_syntax), confirmed by R205.
-                generation = ColumnGeneration.Identity(
-                    legacySerialSyntax = autoIncrementSyntax == AutoIncrementSyntaxReverse.SERIAL,
-                ),
-                preferenceNote = if (autoIncrementSyntax == AutoIncrementSyntaxReverse.IDENTITY) {
-                    AutoIncrementSyntaxNote.identity(
-                        "$tableName.$colName",
-                        "SQLite AUTOINCREMENT",
-                        "reverse.sqlite.autoincrement_syntax",
-                    )
-                } else {
-                    null
-                },
-            )
-            SqliteAutoincrementReverse.IDENTIFIER -> MappingResult(
-                type = NeutralType.Identifier(autoIncrement = true),
-                note = SchemaReadNote(
-                    severity = SchemaReadSeverity.INFO, code = "R202",
-                    objectName = "$tableName.$colName",
-                    message = "SQLite AUTOINCREMENT primary key is 64-bit; neutral 'identifier' is the " +
-                        "32-bit auto-increment contract (PostgreSQL SERIAL, MySQL INT AUTO_INCREMENT) — " +
-                        "a cross-dialect transfer narrows the value range",
-                    hint = "Model the column as biginteger plus generation: identity when the 64-bit " +
-                        "range is required — pass --sqlite-autoincrement-width 64 (or config " +
-                        "reverse.sqlite.autoincrement_width: 64) so the reverse reconstructs it",
-                ),
-            )
+        if (isAutoIncrement) {
+            val objectName = "$tableName.$colName"
+            return when (autoincrementReverse) {
+                SqliteAutoincrementReverse.BIGINTEGER_IDENTITY ->
+                    bigintegerIdentity(objectName, autoIncrementSyntax, sources)
+                SqliteAutoincrementReverse.IDENTIFIER -> identifier(objectName)
+            }
         }
 
         val raw = rawType.uppercase().trim()
@@ -104,6 +72,68 @@ internal object SqliteTypeMapping {
             ?: mapGeometryType(raw, tableName, colName)
             ?: mapFallback(raw, rawType, tableName, colName)
     }
+
+    /** Wo die beiden Auto-Increment-Praeferenzen eines Reverse erklaert wurden. */
+    data class Sources(
+        val width: PreferenceSource = PreferenceSource.CONFIG,
+        val syntax: PreferenceSource = PreferenceSource.CONFIG,
+    )
+
+    // R204 (INFO): interim inline home pending the R-code ledger
+    // (warn-code-ledger-completeness.md); confirms the opt-in 64-bit
+    // reconstruction so the decision stays in the audit trail.
+    private fun bigintegerIdentity(
+        objectName: String,
+        syntax: AutoIncrementSyntaxReverse,
+        sources: Sources,
+    ): MappingResult {
+        val width = DeclaredPreference("--sqlite-autoincrement-width", "reverse.sqlite.autoincrement_width", sources.width)
+        return MappingResult(
+            type = NeutralType.BigInteger,
+            note = SchemaReadNote(
+                severity = SchemaReadSeverity.INFO, code = "R204",
+                objectName = objectName,
+                message = "SQLite AUTOINCREMENT primary key reconstructed as 64-bit " +
+                    "'biginteger' + generation: identity per declared preference " +
+                    "(${width.render("64")})",
+            ),
+            // legacySerialSyntax = true mirrors the MySQL reverse of the same
+            // legacy auto-increment construct (MysqlTypeMapping bigint path) →
+            // PG target BIGSERIAL; SQLite AUTOINCREMENT is legacy, not
+            // SQL-standard IDENTITY — unless the user declared identity
+            // (reverse.sqlite.autoincrement_syntax), confirmed by R205.
+            generation = ColumnGeneration.Identity(
+                legacySerialSyntax = syntax == AutoIncrementSyntaxReverse.SERIAL,
+            ),
+            preferenceNote = if (syntax == AutoIncrementSyntaxReverse.IDENTITY) {
+                AutoIncrementSyntaxNote.identity(
+                    objectName,
+                    "SQLite AUTOINCREMENT",
+                    DeclaredPreference(
+                        "--sqlite-autoincrement-syntax",
+                        "reverse.sqlite.autoincrement_syntax",
+                        sources.syntax,
+                    ),
+                )
+            } else {
+                null
+            },
+        )
+    }
+
+    private fun identifier(objectName: String) = MappingResult(
+        type = NeutralType.Identifier(autoIncrement = true),
+        note = SchemaReadNote(
+            severity = SchemaReadSeverity.INFO, code = "R202",
+            objectName = objectName,
+            message = "SQLite AUTOINCREMENT primary key is 64-bit; neutral 'identifier' is the " +
+                "32-bit auto-increment contract (PostgreSQL SERIAL, MySQL INT AUTO_INCREMENT) — " +
+                "a cross-dialect transfer narrows the value range",
+            hint = "Model the column as biginteger plus generation: identity when the 64-bit " +
+                "range is required — pass --sqlite-autoincrement-width 64 (or config " +
+                "reverse.sqlite.autoincrement_width: 64) so the reverse reconstructs it",
+        ),
+    )
 
     private fun mapIntegerType(raw: String): MappingResult? = when (raw) {
         "INTEGER", "INT" -> MappingResult(NeutralType.Integer)

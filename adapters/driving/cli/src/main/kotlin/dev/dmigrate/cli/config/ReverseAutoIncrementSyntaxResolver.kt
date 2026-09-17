@@ -12,9 +12,10 @@ import java.nio.file.Paths
  *
  * Nur MySQL (`AUTO_INCREMENT` auf `bigint`) und SQLite (`AUTOINCREMENT` unter
  * der 64-Bit-Breite) schreiben eine solche Spalte als `generation: identity`;
- * nur fuer sie gibt es den Schluessel. Ein nicht erkannter Wert in der
- * Konfiguration gilt wie beim Breiten-Schluessel als „nicht erklaert"
- * ([ReverseConfigBlock]); das Flag prueft Clikt selbst (Exit 2).
+ * nur fuer sie gibt es den Schluessel. Ein vorhandener, aber nicht erkannter
+ * Wert in der Konfiguration ist wie beim Breiten-Schluessel ein
+ * Konfigurationsfehler ([InvalidReversePreference]); das Flag prueft Clikt
+ * selbst (Exit 2).
  */
 class ReverseAutoIncrementSyntaxResolver(
     private val configPathFromCli: Path? = null,
@@ -31,9 +32,16 @@ class ReverseAutoIncrementSyntaxResolver(
     fun resolve(flags: Map<DatabaseDialect, String?> = emptyMap()): Map<DatabaseDialect, AutoIncrementSyntaxReverse> {
         val block = ReverseConfigBlock(configPathFromCli, envLookup, defaultConfigPath)
         return DIALECTS.mapNotNull { dialect ->
-            val declared = flags[dialect]
-                ?: block.dialect(dialect.name.lowercase())?.get(CONFIG_KEY) as? String
-            parse(declared)?.let { dialect to it }
+            val flag = flags[dialect]
+            val declared = if (flag != null) {
+                parse(flag)
+            } else {
+                val section = dialect.name.lowercase()
+                block.dialect(section)?.get(CONFIG_KEY)?.let { raw ->
+                    parse(raw as? String) ?: throw InvalidReversePreference("reverse.$section.$CONFIG_KEY", raw, VALUES)
+                }
+            }
+            declared?.let { dialect to it }
         }.toMap()
     }
 

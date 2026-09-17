@@ -36,4 +36,23 @@ class ReversePreferencesTest : FunSpec({
         applied.includeFunctions shouldBe true
         applied.sqliteAutoincrement shouldBe SqliteAutoincrementReverse.BIGINTEGER_IDENTITY
     }
+
+    test("where a preference was declared travels with it, per dialect") {
+        val preferences = ReversePreferences(
+            sqliteAutoincrement = SqliteAutoincrementReverse.BIGINTEGER_IDENTITY,
+            autoIncrementSyntax = mapOf(
+                DatabaseDialect.MYSQL to AutoIncrementSyntaxReverse.IDENTITY,
+                DatabaseDialect.SQLITE to AutoIncrementSyntaxReverse.IDENTITY,
+            ),
+            sqliteAutoincrementSource = PreferenceSource.FLAG,
+            autoIncrementSyntaxSources = mapOf(DatabaseDialect.MYSQL to PreferenceSource.FLAG),
+        )
+        val mysql = preferences.applyTo(SchemaReadOptions(), DatabaseDialect.MYSQL)
+        mysql.autoIncrementSyntaxSource shouldBe PreferenceSource.FLAG
+        mysql.sqliteAutoincrementSource shouldBe PreferenceSource.FLAG
+        preferences.applyTo(SchemaReadOptions(), DatabaseDialect.SQLITE).autoIncrementSyntaxSource shouldBe
+            PreferenceSource.CONFIG
+        ReversePreferences().applyTo(SchemaReadOptions(), DatabaseDialect.MYSQL).autoIncrementSyntaxSource shouldBe
+            PreferenceSource.CONFIG
+    }
 })

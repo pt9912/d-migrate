@@ -59,4 +59,24 @@ class DataTransferWiringTest : FunSpec({
         exit shouldBe 2
         err shouldContain "Invalid --filter expression"
     }
+
+    test("an unrecognised preference in the config exits 7 before any connection — read and write alike") {
+        for ((content, key) in listOf(
+            "reverse:\n  sqlite:\n    autoincrement_width: 16\n" to "reverse.sqlite.autoincrement_width",
+            "write:\n  oracle:\n    empty_string: eror\n" to "write.oracle.empty_string",
+        )) {
+            val cfg = java.nio.file.Files.createTempFile("dmigrate-transfer-prefs-", ".yaml")
+            java.nio.file.Files.writeString(cfg, content)
+            try {
+                val (exit, err) = captureStderr {
+                    DataTransferWiring.execute(baseOptions(filter = null).copy(configPath = cfg))
+                }
+                exit shouldBe 7
+                err shouldContain "Unrecognised value"
+                err shouldContain key
+            } finally {
+                java.nio.file.Files.deleteIfExists(cfg)
+            }
+        }
+    }
 })

@@ -2,7 +2,9 @@ package dev.dmigrate.cli.commands
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import dev.dmigrate.cli.config.InvalidReversePreference
 import dev.dmigrate.cli.config.ReversePreferencesResolver
+import dev.dmigrate.driver.ReversePreferences
 import dev.dmigrate.mcp.cursor.CursorKeyring
 import dev.dmigrate.mcp.registry.AiMcpRegistries
 import dev.dmigrate.mcp.registry.AiMcpWiring
@@ -186,6 +188,9 @@ internal class McpServeWiring(
         artifacts: ArtifactStorageConfig = ArtifactStorageConfig.File,
     ): McpCliServerWiring {
         val policyRules = loadPolicyRulesOrExit()
+        // Einmal beim Start, fuer beide Zweige: ein Tippfehler im `reverse:`-Block
+        // verhindert den Start, statt jeden Lese-Job still mit dem Default zu fahren.
+        val reversePreferences = resolveReversePreferencesOrExit()
         val phaseC = McpCliRuntimeWiring.runtimeWiring(
             stateDir = owner.resolved.path,
             connectionConfigPath = effectiveConnectionConfigPath,
@@ -193,7 +198,8 @@ internal class McpServeWiring(
             operationTimeout = config.operationTimeout,
             artifacts = artifacts,
         )
-        val state = resolveServerStateConfigOrExit() ?: return buildInMemory(config, owner, phaseC, policyRules)
+        val state = resolveServerStateConfigOrExit()
+            ?: return buildInMemory(config, owner, phaseC, StartupSettings(policyRules, reversePreferences))
 
         val bundle = serverStateFactory.build(state, phaseC)
         var artifactRetention: AutoCloseable? = null
@@ -217,7 +223,11 @@ internal class McpServeWiring(
                 quotaReservationOwnerStore = bundle.quotaReservationOwnerStore,
                 ownerAwareQuotaService = bundle.ownerAwareQuotaService,
                 executorBundle = executorBundle,
-                fallbackJobWorkerFactory = mcpCoreJobWorkerFactory(phaseCWithJdbc, connectionSecretResolver),
+                fallbackJobWorkerFactory = mcpCoreJobWorkerFactory(
+                    phaseCWithJdbc,
+                    connectionSecretResolver,
+                    reversePreferences,
+                ),
                 connectionSecretResolver = connectionSecretResolver,
                 dataRunnerTempDirectory = owner.resolved.path,
             )
@@ -266,7 +276,7 @@ internal class McpServeWiring(
         config: McpServerConfig,
         owner: StateDirOwner,
         phaseC: McpRuntimeWiring,
-        policyRules: List<PolicyRule>,
+        settings: StartupSettings,
     ): McpCliServerWiring {
         warnIfApprovalGrantsDurableButChallengesEphemeral()
         val artifactRetention = startArtifactRetentionLoop(phaseC)
@@ -281,8 +291,12 @@ internal class McpServeWiring(
             jobStartTransaction = InMemoryJobStartTransaction(phaseC.jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
             approvalGrantStore = approvalGrantStore(),
-            policyService = ConfiguredPolicyService(rules = policyRules),
-            fallbackJobWorkerFactory = mcpCoreJobWorkerFactory(phaseC, connectionSecretResolver),
+            policyService = ConfiguredPolicyService(rules = settings.policyRules),
+            fallbackJobWorkerFactory = mcpCoreJobWorkerFactory(
+                phaseC,
+                connectionSecretResolver,
+                settings.reversePreferences,
+            ),
             connectionSecretResolver = connectionSecretResolver,
             dataRunnerTempDirectory = owner.resolved.path,
         )
@@ -340,10 +354,24 @@ internal class McpServeWiring(
         }
     }
 
+    /**
+     * Der `reverse:`-Block der Server-Konfiguration, einmal beim Start gelesen.
+     * Ein nicht erkannter Wert ist ein Konfigurationsfehler (Exit 2), wie ein
+     * kaputtes `--policy-file`.
+     */
+    internal fun resolveReversePreferencesOrExit(): ReversePreferences = try {
+        ReversePreferencesResolver(configPathFromCli = effectiveConnectionConfigPath).resolve()
+    } catch (failure: InvalidReversePreference) {
+        stderr("MCP server configuration is invalid:")
+        stderr("  - ${failure.message}")
+        throw McpServeExit(2)
+    }
+
     /** Die Job-Fabrik der Lese-Jobs; `internal` fuer den Test der Praeferenz-Verdrahtung. */
     internal fun mcpCoreJobWorkerFactory(
         phaseC: McpRuntimeWiring,
         connectionSecretResolver: dev.dmigrate.server.ports.ConnectionSecretResolver,
+        reversePreferences: ReversePreferences,
     ) = McpCoreJobWorkerFactory(
         connectionStore = phaseC.connectionStore,
         connectionSecretResolver = connectionSecretResolver,
@@ -357,7 +385,7 @@ internal class McpServeWiring(
         // Die Reverse-Praeferenzen aus dem `reverse:`-Block derselben
         // Konfiguration, die die Verbindungen traegt; ein Pendant zum Flag
         // pro Lauf gibt es ueber MCP nicht.
-        reversePreferences = ReversePreferencesResolver(configPathFromCli = effectiveConnectionConfigPath).resolve(),
+        reversePreferences = reversePreferences,
     )
 
     fun startArtifactRetentionLoop(phaseC: McpRuntimeWiring): AutoCloseable {
@@ -441,4 +469,10 @@ internal class McpServeWiring(
     private companion object {
         private const val ARTIFACT_RETENTION_SWEEP_SECONDS: Long = 300
     }
+
+    /** Was `build()` vor der Zweigwahl einmal aus der Konfiguration liest. */
+    private class StartupSettings(
+        val policyRules: List<PolicyRule>,
+        val reversePreferences: ReversePreferences,
+    )
 }

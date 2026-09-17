@@ -64,9 +64,11 @@ class McpCoreJobWorkerFactory(
      * Konfiguration, `spec/dialect-preference-mechanism.md`) — fuer jeden
      * Lesezugriff auf eine Verbindung: `schema_reverse_start` und
      * `schema_compare_start` mit einem Verbindungs-Verweis. Ohne Deklaration
-     * bleibt jeder Reverse unveraendert.
+     * bleibt jeder Reverse unveraendert. `mcp serve` loest sie einmal beim
+     * Start auf; lesbar, damit die Verdrahtung beider Serve-Zweige pruefbar
+     * bleibt.
      */
-    private val reversePreferences: ReversePreferences = ReversePreferences(),
+    val reversePreferences: ReversePreferences = ReversePreferences(),
 ) : JobWorkerFactory {
 
     /** Der Vergleich von `schema_compare_start` — derselbe wie in CLI und `schema_compare`. */
