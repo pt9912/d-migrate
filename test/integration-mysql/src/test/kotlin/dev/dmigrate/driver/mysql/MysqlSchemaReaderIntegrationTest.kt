@@ -270,28 +270,34 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
-    test("schema compare: a PostgreSQL IDENTITY against this reverse, with and without the preference") {
+    test("schema compare: an IDENTITY column against this reverse, with and without the preference") {
+        // Die Gegenseite ist ein handgeschriebenes Schema mit einer
+        // IDENTITY-Spalte ohne `legacy_serial_syntax` — so, wie PostgreSQL sie
+        // liest, nur ohne den Sequenznamen des Servers (dessen Projektion haengt
+        // an den PostgreSQL-Faehigkeiten, und dieser Klassenpfad fuehrt nur den
+        // MySQL-Treiber; die Namens-Projektion pinnen die Unit-Tests).
         pool().use { pool ->
-            fun withPostgresIdentity(schema: SchemaDefinition) = schema.copy(
-                name = ReverseScopeCodec.postgresName("dmigrate_test", "public"),
+            fun withIdentity(schema: SchemaDefinition) = schema.copy(
+                name = "dmigrate_test",
+                version = "1",
                 tables = schema.tables + (
                     "orders" to schema.tables["orders"]!!.let { orders ->
                         orders.copy(
                             columns = orders.columns + (
-                                "id" to orders.columns["id"]!!.copy(
-                                    generation = ColumnGeneration.Identity(sequenceName = "public.orders_id_seq"),
-                                )
+                                "id" to orders.columns["id"]!!.copy(generation = ColumnGeneration.Identity())
                                 ),
                         )
                     }
                     ),
             )
             fun compare(mysql: SchemaDefinition) = SchemaCompareSemantics.compare(
-                SchemaCompareSemantics.side(withPostgresIdentity(mysql)),
+                SchemaCompareSemantics.side(withIdentity(mysql)),
                 SchemaCompareSemantics.side(mysql),
             )
 
             val serial = compare(reader.read(pool).schema)
+            // Die Markierung der MySQL-Seite ist kein Fund (Name und Version).
+            serial.schemaMetadata shouldBe null
             serial.tablesChanged.single().name shouldBe "orders"
             serial.tablesChanged.single().columnsChanged.single().generation.shouldNotBeNull()
 
