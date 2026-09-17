@@ -86,6 +86,27 @@ Dass der Ausreißer die übrigen Integrationsmodule verdeckte (kein
 `--continue`), steht in
 [`ci-verdeckte-fehlschlaege.md`](ci-verdeckte-fehlschlaege.md).
 
+## Nachtrag 2026-09-18 — fehlt das Image, überspringt sich die Spec lautlos
+
+Aus Plan 1 des Reader-Umbrellas
+([`../done/reader-treue-1-matrix-abnahme.md`](../done/reader-treue-1-matrix-abnahme.md),
+Nulllinie der Integrationsmodule): `MssqlFullTextEnvironmentIntegrationTest`
+in `:test:integration-mssql` überspringt sich mit `xtest`, wenn das
+abgeleitete Volltext-Image fehlt (`MSSQL_FTS_IMAGE`, sonst
+`d-migrate-mssql-fts:local`; `make mssql-fts-image` baut es). Es ist die
+**einzige** Selbstüberspringung in den Integrationsmodulen `-mysql`, `-sqlite`
+und `-mssql` (gemessen 2026-09-17: weder `assumeTrue`/`Assumptions`,
+`@Disabled` noch `xtest` sonst).
+
+**Die Folge ist dieselbe Klasse wie oben, nur andersherum:** startet das Image
+nicht, ist der Lauf rot; **existiert es gar nicht, ist er grün** — und die
+Volltext-Abdeckung von SQL Server ist an diesem Punkt still weg. Auf dem
+Messhost vom 2026-09-17 lag das Image, die Spec lief mit; wer eine Nulllinie
+auf einem anderen Host oder in einem frischen Klon misst, prüft das Image
+mit. Zu klären ist mit den Punkten oben zusammen, ob die Spec stattdessen
+**fehlschlagen** soll, wenn das Image fehlt — dann wäre der Bau des Images
+eine Voraussetzung des Moduls statt einer stillen Option.
+
 ## Einschätzung
 
 Kein Produktdefekt — die ausgelieferten Artefakte sind nicht betroffen, und

@@ -69,3 +69,16 @@ Zellen misst (vor allem die SQLite-Zeile, deren Client dort ein anderer sein
 kann) und ob ein roter Lauf ein Befund oder eine Umgebungsfrage ist. Ein
 Umgebungsunterschied gehört in die Erwartungsdatei oder den Workflow, nicht in
 ein stilles Neu-Pinnen.
+
+**Nachtrag 2026-09-18 — die Pfade fingen den gemessenen Code nicht.** Aus der
+Review von Plan 1 des Reader-Umbrellas
+([`../done/reader-treue-1-matrix-abnahme.md`](../done/reader-treue-1-matrix-abnahme.md),
+Korrekturrunde F5): der Workflow löste bei Push nur für `examples/mcp-e2e/**`,
+`Makefile`, `make/**` und `Dockerfile` aus — **nicht** für die Reader und
+Generatoren, deren Wirkung er pinnt. Ein Push, der nur einen Treiber ändert,
+verschiebt Zellen, ohne einen Pfad unter `examples/` zu berühren; genau das
+tun die Reader-Pakete. Die Pfade schließen jetzt `adapters/**` und
+`hexagon/**` ein. **Die Grenze bleibt und gehört zu diesem Eintrag:** kein
+PR-Gate, kein Pflicht-Check — Push auf `main`, `workflow_dispatch` und ein
+Wochen-Cron. Wer seine Zellen nicht selbst gemessen hat, hat sie nicht
+gemessen; der Workflow ist Nachlauf, nicht Absicherung.
