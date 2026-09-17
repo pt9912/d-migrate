@@ -13,6 +13,15 @@
 > partielle DDL" bleibt; die Spec-Stellen unten nennen `NOT NULL` nicht mehr als
 > Auslöser. Einen ADR braucht es dafür nicht: ADR 0016 hat den Generate-Pfad
 > aufgeschoben, nicht festgelegt.
+> **Umsetzung (2026-09-17):** wird in **P7** des Reader-Slices gebaut
+> ([`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md),
+> Aktivierungsschnitt); dieser Eintrag schliesst mit dessen Graduation, nicht
+> vorher. Beim Schneiden nachgemessen und dort festgehalten: die drei
+> Spec-Stellen unten haben `NOT NULL` **nie** als Auslöser genannt — die
+> Auslöser stehen nirgends in `spec/`, P7 trägt sie erstmals in den
+> Profilabschnitt 16.5 ein; dieselbe Regel steht ein zweites Mal im
+> Migrate-Pfad (`SqliteSpatialDiffOps`); und der SQLite-Reverse liest
+> SpatiaLites `DEFAULT ''` sonst als Anwender-Default zurück.
 > **Trigger:** Konsumentenmessung gegen 1.7.1, festgehalten in
 > [`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md)
 > (Posten A6): `schema generate --target sqlite --spatial-profile spatialite` auf
