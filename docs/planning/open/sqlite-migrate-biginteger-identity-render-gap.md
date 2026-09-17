@@ -34,6 +34,20 @@ Beide müssen behoben werden — der Render-Fix allein lässt die Drift bestehen
    Präferenz muss bis in den Post-Compare-Re-Read (`SchemaMigrateExecutionStage`)
    gefädelt werden — oder der `migrate`-Kontext leitet sie deterministisch ab.
 
+## Nachtrag 2026-09-17 — derselbe Re-Read-Befund für MySQL
+
+Seit dem vierten Bauabschnitt des Compare-Slices
+([`../in-progress/compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md))
+gibt es die Reverse-Präferenz `serial`/`identity` für MySQLs
+`BIGINT AUTO_INCREMENT` (und SQLite unter der 64-Bit-Breite). `schema migrate`
+liest den Ist-Stand weiterhin **ohne** Präferenz. Gemessen gegen MySQL 9.7.2:
+ein mit `--mysql-autoincrement-syntax identity` zurückgelesenes Schema als Soll
+gegen dieselbe Datenbank plant fünf `AlterColumnGeneration`
+(`ALTER TABLE … MODIFY COLUMN … BIGINT NOT NULL AUTO_INCREMENT`, wirkungslos),
+ohne Präferenz keine Operation. Ursache 2 oben gilt damit für beide Dialekte;
+für MySQL fehlt nur das Threading, einen Render-Befund gibt es dort nicht.
+Das Handbuch rät bis dahin, für diesen Weg ohne `identity` zu lesen.
+
 ## Nicht-Scope
 
 - Der SQLite→PG/MySQL-**Transfer** (kein SQLite-Generate involviert) — der ist im

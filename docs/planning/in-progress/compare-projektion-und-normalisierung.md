@@ -19,11 +19,22 @@
 > INFO 3, INFO 4 (`ff4d56082`), Handbuch L3 (`f8c819f6c`), PostGIS-Mount der
 > Sample-DB (`47f8a8641`); der Repro mit dem Schema des Konsumenten über MCP
 > und CLI, `make sample-db-smoke` und `make sample-db-spatial-smoke`.
+> **Geliefert — vierter Bauabschnitt** (Eigner-Entscheidungen F1–F4, Review
+> und Verifikation Runde 3, s. dort): P10 zurückgenommen und als
+> Reverse-Präferenz `serial`/`identity` gebaut (F3, `5a9eaf0a2`), Name und
+> Version kein Fund, sobald eine Seite ein Reverse ist (M1, `0e0e1cb24`),
+> eigene Artefakt-Art `COMPARE` in einer Form samt typisiertem Publisher
+> (F1, L1, I1, I5, Verifier M1; `694b88776`), Doku-Befunde (L2, L3, I2, I3,
+> I4; `e3116c34c`), Handbuch-Hinweis zu `schema migrate` (`fe6b3d270`),
+> MySQL-Integrationsfall (`542008cbd`); der Repro mit dem Schema des
+> Konsumenten ohne und mit Präferenz und `make sample-db-smoke`.
 > **Offen in diesem Slice:** nichts mehr zu bauen. Offen bleiben die zwei
 > Eigner-Fragen (Schlüsselwort-Case, `RESTRICT`) und die Punkte unter „Offen"
-> (u. a. ADR-Frage zu `schema_compare_start`, Validierung über MCP, Modus
-> gegen MySQL, zwei Reader-Verluste). Posten 4 (MySQL-Introducer) liegt im
-> Reader-Slice; das Schema des Konsumenten löst ihn nicht mehr aus.
+> (u. a. der F4-Messauftrag, die Präferenz pro MCP-Aufruf, `schema migrate`
+> ohne Präferenz, Validierung über MCP, Modus gegen MySQL, zwei
+> Reader-Verluste). Den ADR zu P11 und zur Herkunftsregel (Entwurf 0057)
+> führt der Architekt. Posten 4 (MySQL-Introducer) liegt im Reader-Slice;
+> das Schema des Konsumenten löst ihn nicht mehr aus.
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
 > Meldung nahelegte (Reader statt Kanonisierung), nicht eine andere Tatsache.
@@ -619,7 +630,8 @@ keinen. Dafür reicht der Runner jetzt je Seite ein `CompareSide(schema,
 sourceDialect)` an den Comparator (geteilte Signatur; drei Aufrufstellen in
 `test/integration-mysql` per `make ast-grep` nachgezogen). Beide Baustellen
 (`SchemaCompareWiring`, `McpRuntimeRegistries`) bauen den Comparator je Aufruf.
-Der asynchrone Pfad (`schema_compare_start`) bleibt unberührt (s. „Offen").
+Der asynchrone Pfad (`schema_compare_start`) blieb in diesem Schritt
+unberührt; seit P11 vergleicht er über dieselbe Stelle.
 
 **Das DoD trägt in einer Lesart nicht.** „PG↔Oracle bleibt nachweislich
 unverändert" ist mit der Fähigkeits-Naht nur in der Lesart „meldet keine
@@ -640,13 +652,15 @@ schließt das Paket aus; übergeben wird der Dialekt der ersten Seite, deren
 Reverse den Namen als Buchhaltung liest. Der Migrate-Pfad und der
 Fingerabdruck ändern sich **nicht** — gepinnt, seit G auch am verdrahteten
 Comparator.
-**Grenze aus dem Repro — seit P10 geschlossen:** P6 blendet nur den **Namen**
-aus. Ein PG-`IDENTITY` trägt `legacy_serial_syntax: false`, MySQLs
-`AUTO_INCREMENT` liest der Reader immer als `legacy_serial_syntax: true` —
+**Grenze aus dem Repro — seit dem vierten Bauabschnitt über eine
+Reverse-Präferenz lösbar:** P6 blendet nur den **Namen** aus. Ein
+PG-`IDENTITY` trägt `legacy_serial_syntax: false`, MySQLs `BIGINT
+AUTO_INCREMENT` las der Reader immer als `legacy_serial_syntax: true` —
 PG↔MySQL meldete solche Spalten deshalb nach P6 weiter; geschlossen war der
-Posten nur für PG-`serial`-Spalten. Der Eigner hat die Frage am 2026-09-16
-entschieden; gebaut ist sie als P10, und Posten 6 schließt damit auch für
-`IDENTITY`.
+Posten nur für PG-`serial`-Spalten. Die erste Antwort (P10, Faltung im
+Vergleich) ist zurückgenommen; jetzt entscheidet der Anwender am Reverse
+(`--mysql-autoincrement-syntax identity`, s. P10), und mit dieser Deklaration
+schließt Posten 6 auch für `IDENTITY`.
 
 ### P8 — Die Faltung hält ihre Grenze (Altbestand 1.7.0/1.7.1)
 
@@ -870,46 +884,75 @@ nachweislich unveraendert. Spec (`spec/cli-spec.md`, Faltungsmenge) zieht
 nach. Sabotage je Teilregel — **erfuellt**, Protokoll unter
 „Zweiter Bauabschnitt".
 
-### P10 — `legacy_serial_syntax` zählt nur, wo beide Seiten es unterscheiden
+### P10 — `legacy_serial_syntax`: zurückgenommen, eine Reverse-Präferenz löst es (F3)
 
-**Nachgetragen im dritten Bauabschnitt (Eigner-Entscheidung 2026-09-16).** Der
-MySQL-Reader setzt `legacy_serial_syntax` für jedes `AUTO_INCREMENT` auf
-`bigint` (`MysqlTypeMapping.kt:42`), ein PostgreSQL-`IDENTITY` trägt es nicht;
-PG↔MySQL meldete solche Spalten deshalb trotz P6 (s. P6, „Grenze aus dem
-Repro"). **Entschieden:** in `schema compare` zählt das Flag nicht, sobald eine
-Seite aus einem Dialekt stammt, der `SERIAL` und `IDENTITY` nicht
-unterscheidet — über dieselbe Fähigkeits-Naht wie P6, ohne
-`when (dialect)`-Zweig im Hexagon.
+**Erste Fassung (dritter Bauabschnitt, `b3e583522`) — zurückgenommen.** Sie
+wertete das Flag in `schema compare` nicht, sobald eine Seite aus einem
+Dialekt stammte, der `SERIAL` und `IDENTITY` nicht unterscheidet
+(`DialectCapabilities.distinguishesSerialFromIdentity`,
+`capabilitySerialSyntaxCanonicalizer`, `compareSerialDialect`). Der Architekt
+fragte im ADR-Entwurf 0057 (F3), ob das zu
+[`spec/dialect-preference-mechanism.md`](../../../spec/dialect-preference-mechanism.md)
+passt: inhärente Reverse-Mehrdeutigkeiten löst eine deklarierte Präferenz am
+Reverse, „nie im nachgelagerten Vergleich".
 
-**Gebaut.** Eine benannte Fähigkeit,
-`DialectCapabilities.distinguishesSerialFromIdentity`: Default `true` (die
-strenge Antwort), `false` in den Treibermodulen von MySQL, SQLite, SQL Server
-und Oracle; PostgreSQL setzt `true` ausdrücklich. Die KDoc vergleicht alle
-fünf Reader (MySQL/SQLite setzen das Flag pauschal, SQL Server/Oracle nie).
-Daneben die Naht `capabilitySerialSyntaxCanonicalizer(dialect)`
-(`:hexagon:application`), und `compareSerialDialect` wählt den Dialekt der
-**ersten** Seite, die nicht unterscheidet; `compareGenerationCanonicalizer`
-setzt Namens- und Serial-Teil zusammen. **Warum nicht
-`rendersAutoIncrementAsIdentity`:** dieselben Antworten, aber eine andere
-Frage (dort: rendert der Generator `identifier`+`auto_increment` und
-`identity` zur selben Spalte; hier: sagt das Flag des Reverses etwas über die
-Spalte). Der Eigner verlangte eine benannte Fähigkeit; die KDoc verweist auf
-die Nachbarin.
+**Eigner-Entscheidung (2026-09-17): unverträglich.** Ob MySQLs
+`BIGINT AUTO_INCREMENT` (und SQLites `AUTOINCREMENT` unter der 64-Bit-Breite)
+eine `SERIAL`- oder eine IDENTITY-Spalte meint, ist genau so eine
+Mehrdeutigkeit. Die Faltung entfällt vollständig, die Fähigkeit mit ihr — sie
+trägt danach nichts mehr (kein zweiter Nutzer; der Generator fragt
+`rendersAutoIncrementAsIdentity`).
 
-**Nicht:** `schema migrate`, der Fingerabdruck und `CanonicalPayload` führen
-das Flag weiter — auf PostgreSQL rendert es eine andere Spalte (gepinnt am
-Migrate-Seam, am strikten Comparator, am Fingerabdruck und an
-`SchemaMigrateComparators`).
+**Gebaut (vierter Bauabschnitt).**
+- **Port:** `SchemaReadOptions.autoIncrementSyntax` (`SERIAL` als Default,
+  byte-identischer Reverse) und `ReversePreferences`, das die Werte je
+  gelesenem Dialekt auswählt (`:hexagon:ports-read`). Das Feld ist
+  dialekt-neutral; der Aufrufer wählt den Wert des Dialekts, den er liest.
+- **Reader:** MySQL (`MysqlTypeMapping`, `bigint`-Zweig) und SQLite
+  (`SqliteTypeMapping`, nur unter `BIGINTEGER_IDENTITY`) lassen das Flag unter
+  `IDENTITY` weg und bestätigen das mit `R205` (`AutoIncrementSyntaxNote`,
+  `:adapters:driven:driver-common`). `INT AUTO_INCREMENT` und SQLite unter der
+  32-Bit-Breite tragen kein Flag; die Präferenz wirkt dort nicht. Die
+  Fingerabdruck-Kanonisierer rufen ohne Präferenz auf und bleiben unverändert.
+- **Oberfläche:** `schema reverse --mysql-autoincrement-syntax` und
+  `--sqlite-autoincrement-syntax` (`serial`|`identity`), Konfiguration
+  `reverse.mysql.autoincrement_syntax` und `reverse.sqlite.autoincrement_syntax`;
+  Flag > Datei > Default (`ReverseAutoIncrementSyntaxResolver`). Das
+  nachsichtige Lesen des `reverse:`-Blocks teilen sich beide Präferenzen
+  (`ReverseConfigBlock`); `ReversePreferencesResolver` bündelt sie.
+- **Reichweite der Konfiguration:** auch die `db:`-Operanden von
+  `schema compare` (`SchemaCompareWiring`) und `mcp serve`
+  (`McpServeWiring` → `McpCoreJobWorkerFactory`: `schema_reverse_start` und
+  `schema_compare_start` mit Verbindungen) lesen den `reverse:`-Block — sonst
+  verglichen sich die mit Präferenz geschriebene Datei und die Datenbank
+  verschieden. Das gilt seitdem auch für `reverse.sqlite.autoincrement_width`,
+  die beide vorher nicht sahen.
+- **MCP — geprüft und entschieden:** der MCP-Reverse muss die Präferenz sehen,
+  sonst kann ein MCP-Abnehmer sie nicht deklarieren und PG↔MySQL meldet über
+  MCP immer die IDENTITY-Spalten. Getragen wird sie von der
+  Konfigurationsdatei des Servers (`--connection-config` bzw. `--config`);
+  ein Tool-Argument als Pendant zum Flag pro Aufruf ist **nicht** gebaut
+  (s. „Offen").
+- **Nicht:** `data transfer` bekommt kein Flag — der Transfer wertet
+  `legacy_serial_syntax` nicht aus (die Breite behält ihr Flag dort).
+  `schema migrate` und `schema rollback` lesen den Ist-Stand weiter ohne
+  Präferenz (s. „Offen").
 
-**DoD — erfüllt:** Eine PostgreSQL-IDENTITY-Spalte gegen MySQLs
-`AUTO_INCREMENT` meldet nichts (Name über P6, Flag über P10); gegen SQL Server
-und SQLite ebenso; zwei PostgreSQL-Reverses mit `SERIAL` gegen `IDENTITY`
-bleiben ein Fund, zwei handgeschriebene Schemata auch; ein PostgreSQL-Reverse
-gegen ein handgeschriebenes Schema bleibt streng; der Modus bleibt ein Fund,
-auch gegen SQL Server (`W140`, s. „Offen", entschieden). Gepinnt in
-`CompareGenerationProjectionTest`, durch den Befehl in
-`SchemaCompareCommandSemanticsTest` und durch beide MCP-Oberflächen in
-`SchemaCompareRuntimeSemanticsTest`; Sabotage P10a–c im Protokoll des dritten
+**Wirkung.** Ohne Deklaration meldet PG↔MySQL eine IDENTITY-Spalte wieder als
+Unterschied in `legacy_serial_syntax`; mit `identity` entfällt er, weil der
+Reverse ihn nicht mehr erzeugt. Der Modus bleibt ein Fund (K2 im
+Toleranzprofil).
+
+**DoD — erfüllt:** Default unverändert (Mapping, Reader, Wiring-Optionen,
+`make sample-db-smoke`), `identity` setzt das Flag nicht und meldet `R205`
+(MySQL/SQLite, Mapping und Reader, `integration-mysql`), Präzedenz
+Flag > Datei > Default (`ReverseAutoIncrementSyntaxResolverTest`,
+`SchemaReverseWiringTest`), die Konfiguration erreicht `db:`-Operanden
+(`SchemaCompareWiringTest`) und `mcp serve` (`McpServeWiringTest`,
+`McpCoreJobWorkerFactoryTest`), und PG-IDENTITY gegen MySQL ist ohne
+Präferenz ein Fund, mit ihr keiner (`CompareGenerationProjectionTest`,
+`SchemaCompareCommandSemanticsTest`, `SchemaCompareRuntimeSemanticsTest`,
+`MysqlSchemaReaderIntegrationTest`). Sabotage F3a–h im Protokoll des vierten
 Bauabschnitts.
 
 ### P11 — Eine Semantik für `schema compare` in allen drei Oberflächen
@@ -938,13 +981,16 @@ bis dahin ergab jedes Paar zweier Reverses aus verschiedenen Dialekten über MCP
 - **Was der Job veröffentlichte — und die Entscheidung dazu.** Der Job schrieb
   `gson.toJson(SchemaDiff)`: den internen Vergleichsbaum mit Kotlin-Feldnamen
   (`tablesAdded` …) und Typwerten ohne Diskriminator; in `spec/` stand dazu
-  nichts. Entschieden im Bau: P1 und P2b gelten dort. Das Artefakt (Art
-  `diff`) ist jetzt ein Objekt `{status, summary, findings}` mit denselben
-  Einträgen wie die Antwort von `schema_compare`, ungekürzt — „eine Semantik"
-  heißt auch, dass ein Abnehmer beider Wege dieselben Funde liest, und der rohe
-  Baum war genau die interne Darstellung, die Paket E aus den `details`
-  entfernt hat. Dafür ist `SchemaCompareJobWorker` im Ergebnistyp generisch
-  (`<R : Any>`) — eine geteilte Signatur, gebaut einmal ohne `MODULES`.
+  nichts. Entschieden im Bau: P1 und P2b gelten dort. Das Artefakt ist jetzt
+  ein Objekt `{status, summary, findings}` mit denselben Einträgen wie die
+  Antwort von `schema_compare`, ungekürzt — „eine Semantik" heißt auch, dass
+  ein Abnehmer beider Wege dieselben Funde liest, und der rohe Baum war genau
+  die interne Darstellung, die Paket E aus den `details` entfernt hat. Dafür
+  ist `SchemaCompareJobWorker` im Ergebnistyp generisch (`<R : Any>`) — eine
+  geteilte Signatur, gebaut einmal ohne `MODULES`. **Seit dem vierten
+  Bauabschnitt (F1)** unter der eigenen Art `COMPARE` statt `diff`, in
+  derselben Form wie das Überlauf-Artefakt von `schema_compare`, und der
+  Publisher ist über `R` typisiert (I1).
 - **Vertrag:** `spec/mcp-server.md` (beide Wege, Markierung,
   `VALIDATION_ERROR`, Form des Artefakts), CHANGELOG (Vertragswechsel für
   Abnehmer des Artefakts).
@@ -961,7 +1007,8 @@ eigenen ADR braucht, ist eine Architektur-Frage (s. „Offen").
 **DoD — erfüllt:** In allen drei Oberflächen ist ein Paar mit reiner
 Schreibweise-Differenz (Cast, Quoting, Klammern) identisch, eine echte
 Änderung ein Fund; zwei Reverses aus verschiedenen Dialekten ergeben weder
-einen Namens- noch (P6, P10) einen Identity-Fund; zwei handgeschriebene
+einen Namens- noch (P6, P10) einen Identity-Fund (der P10-Teil gilt seit dem
+vierten Bauabschnitt nur mit der Präferenz `identity`); zwei handgeschriebene
 Schemata bleiben streng; der Job trägt `W137` wie das Werkzeug. Gepinnt an den
 echten Verdrahtungen (`SchemaCompareCommandSemanticsTest`: der Befehl;
 `SchemaCompareRuntimeSemanticsTest`: die Registry und die Job-Fabrik);
@@ -1354,7 +1401,7 @@ Aufloesen von `\'` zoege sich die Faltung für jeden solchen CHECK zurück.
 | PG↔MSSQL | `W137` an `line_total` | Diagnose, Pfad `order_item.line_total` | Diagnose, Pfad im Pfad-Schema | P2a |
 | PG↔MySQL | alle | Exit 3 (`E012`) | Exit 3 (`E012`) | Posten 4, Reader-Slice C1/P6 |
 | PG↔MySQL* | `customer.id` (PG `serial`), Sequenzname | Fund | — | **behoben** (P6) |
-| PG↔MySQL* | `order.id`, `order_item.id` (PG `IDENTITY`) | Fund | Fund | **nicht neu** (Korrektur, Verifier M1): 1.7.1 meldete Name **und** Flag im selben Fund; P6 blendet nur den Namen aus, `legacy_serial_syntax` `false` gegen `true` blieb — seit P10 geschlossen |
+| PG↔MySQL* | `order.id`, `order_item.id` (PG `IDENTITY`) | Fund | Fund | **nicht neu** (Korrektur, Verifier M1): 1.7.1 meldete Name **und** Flag im selben Fund; P6 blendet nur den Namen aus, `legacy_serial_syntax` `false` gegen `true` blieb — seit dem vierten Bauabschnitt mit der Präferenz `identity` geschlossen (P10) |
 | PG↔MySQL* | `ck_customer_email_shape` | — | — | gleich (P9 + simulierter Reader-Fix) |
 | PG↔MySQL* | `ck_order_ship_after_place` | Fund ohne Werte | Fund mit Werten | **bewusst**: Schlüsselwort-Case (`is null`/`or`), die Klammern faltet P3 |
 | PG↔MySQL* | `ck_order_status` `= ANY` gegen `IN` | Fund | Fund | **bewusst** (ADR 0055) |
@@ -1372,7 +1419,7 @@ Aufloesen von `\'` zoege sich die Faltung für jeden solchen CHECK zurück.
 
 `*` = mit simuliertem Reader-Fix. **AK 1 im echten Repro (Stand zweiter
 Bauabschnitt):** Posten 6 schloss für `serial`-Spalten, nicht für `IDENTITY`
-(seit P10 auch dort); Posten 3 schließt
+(seit dem vierten Bauabschnitt mit der Präferenz `identity` auch dort); Posten 3 schließt
 sein PG↔MSSQL-Bein (und das PG↔SQLite-Bein); Posten 5 zeigt keine reine
 Schreibweise-Differenz mehr — was bleibt, ist die Umschreibung (ADR 0055) bzw.
 das fehlende Prädikat auf MySQL; Posten 1 nennt Vorher und Nachher, Posten 2
@@ -1516,7 +1563,8 @@ Fehler); `make integration INTEGRATION_TASKS=":test:e2e-cli:test"` (mit
 `-PintegrationTests`, gelaufen, grün — deckt den Job-Pfad
 `schema_compare_start` durch den MCP-Client); `make docs-check` (330 Dateien,
 0 Befunde); `make solid-suppression-gate` vor jedem Commit;
-`make doc-immutable RANGE=origin/main..HEAD` (s. Rückgabe).
+`make doc-immutable RANGE=origin/main..HEAD` (vor der Übergabe gelaufen,
+0 Befunde).
 
 #### Konsumenten-Repro mit dem Schema des Konsumenten (Verifier M2)
 
@@ -1558,7 +1606,7 @@ in `schemaMetadata` und allen Sequenznamen als Erzeugungs-Änderung); jetzt
 
 | Paar | Fund | Zuordnung |
 | ---- | ---- | ---- |
-| PG↔MySQL, MSSQL↔MySQL | fünf Identity-Spalten, `mode=always` gegen `by_default` | **Modus-Unterschied, bewusst:** der Konsument schreibt `GENERATED ALWAYS`; MySQL kennt nur `AUTO_INCREMENT`, der Generator rendert `ALWAYS` dorthin (ohne Warnung), der Reverse liest `by_default`. Sequenzname und `legacy_serial_syntax` zählen nicht mehr (P6, P10, in `details` weiter sichtbar). Dieselbe Klasse wie `W140` (s. „Offen") |
+| PG↔MySQL, MSSQL↔MySQL | fünf Identity-Spalten, `mode=always` gegen `by_default` | **Modus-Unterschied, bewusst:** der Konsument schreibt `GENERATED ALWAYS`; MySQL kennt nur `AUTO_INCREMENT`, der Generator rendert `ALWAYS` dorthin (ohne Warnung), der Reverse liest `by_default`. Sequenzname und `legacy_serial_syntax` zählen nicht mehr (P6, P10, in `details` weiter sichtbar; Stand dritter Lauf — seit dem vierten zählt das Flag wieder, bis der MySQL-Reverse `identity` liest). Dieselbe Klasse wie `W140` (s. „Offen") |
 | PG↔MSSQL | keine Identity-Funde mehr | beide `always`; der Name zählt nicht (P6) |
 | PG↔MSSQL, PG↔MySQL, PG↔SQLite | `orders_total_check` entfernt | der Generator rendert `(total >= (0)::numeric)` nicht (`E053`), nicht dieser Slice |
 | PG↔MSSQL, MSSQL↔MySQL | `orders_customer_id_fkey` `on_delete=restrict` gegen keine Angabe | Eigner-Frage `RESTRICT` (Abgrenzung) |
@@ -1574,7 +1622,10 @@ String-Literal und damit keinen Introducer (`CHECK_CLAUSE` gemessen). Der
 simulierte Reader-Fix ändert das MySQL-Reverse deshalb nicht (nur die
 YAML-Schreibweise); die MySQL-Beine sind auch ohne ihn vergleichbar.
 
-**P10 an echten Reverses — das Schema des zweiten Bauabschnitts** (Identity
+**P10 an echten Reverses — das Schema des zweiten Bauabschnitts** (Stand
+dritter Bauabschnitt; seit der Rücknahme der Faltung gilt das Ergebnis für
+`order.id`/`order_item.id` nur noch mit der Präferenz `identity`, s. vierter
+Lauf) (Identity
 mit `BY DEFAULT`, Reverse-Dateien von damals, neues Image): PG↔MySQL* meldet
 statt drei Identity-Spalten (1.7.1) **keine** mehr (`customer.id` über P6,
 `order.id`/`order_item.id` über P10); PG↔MSSQL behält sie — dort ist es der
@@ -1593,19 +1644,202 @@ zusätzlich trug das vorhandene Volume `sample-db-postgis-data` noch einen
 PostgreSQL-16-Cluster an seiner Wurzel, den das 18er-Image verweigert — es ist
 neu angelegt.
 
+### Vierter Bauabschnitt — Eigner-Entscheidungen F1–F4, Review und Verifikation, Runde 3 (2026-09-17)
+
+Grundlage: die Antworten des Eigners auf die Fragen F1–F4 des ADR-Entwurfs 0057
+(den Entwurf pflegt der Architekt), ein drittes Review und eine dritte
+Verifikation (Sabotage und Repro über MCP). Commits `5a9eaf0a2` (F3),
+`0e0e1cb24` (M1), `694b88776` (F1, L1, I1, I5, Verifier M1), `e3116c34c`
+(L2, L3, I2, I3, I4), `fe6b3d270` (Handbuch: `schema migrate` mit
+`identity`), `542008cbd` (MySQL-Integrationsfall ohne
+PostgreSQL-Fähigkeiten).
+
+**Eigner-Entscheidungen.**
+- **F3 — P10 zurück, stattdessen eine Präferenz.** Gebaut, s. P10.
+- **F1 — eigene Artefakt-Art.** `ArtifactKind.COMPARE` (Name nach den
+  vorhandenen Arten: ein Substantiv für das Ergebnis). `DIFF` bleibt als
+  Filterwert und für gespeicherte oder hochgeladene Artefakte; der Server
+  erzeugt es nicht mehr. `artifact_list` kennt `COMPARE` (Tool-Schema,
+  Golden per `make golden-update`); `artifact_upload_init` nimmt `COMPARE`
+  nicht an. Die Arten stehen in keinem Resource-Schema; die Discovery-Tabelle
+  in `spec/mcp-server.md` zählt sie jetzt auf.
+- **F2/F4** betreffen den ADR. Aus F4 folgt hier nur der Messauftrag unter
+  „Offen".
+
+**Review-Befunde (Runde 3).**
+- **M1 — Platzhalter bei „Reverse gegen handgeschriebenes Schema":** behoben.
+  `CompareSide.reverseGenerated`; `SchemaCompareSemantics.compare` lässt die
+  Metadaten weg, sobald eine Seite die Markierung trägt — für alle drei
+  Oberflächen an einer Stelle; der CLI-Runner baut seine Seiten jetzt über
+  `SchemaCompareSemantics.side` wie beide MCP-Oberflächen. Die Tests prüfen
+  die Werte (`SchemaCompareSemanticsTest` neu; Befehl: kein Platzhalter,
+  `name: shop -> shop2`; beide MCP-Oberflächen: kein Fund, kein Platzhalter in
+  der Antwort, bei zwei handgeschriebenen Schemata `before`/`after`).
+  **Wohin der Platzhalter sonst dringt:** nirgends nach außen —
+  `schema migrate` führt ihn nur intern (`DiffEndpoint.schemaName`, nicht
+  gerendert), Planer und Fingerabdruck werten `name`/`version` nicht. Die
+  alten Ausgaben des MCP-E2E-Harness (`examples/mcp-e2e/out/`, nicht
+  versioniert) zeigen ihn noch; sie stammen von 1.7.x.
+- **L1 — Überlauf-Artefakt:** eine Form (`{status, summary, findings}`) und
+  die Art `COMPARE` für beide Compare-Artefakte. `executionMeta` gehört
+  **nicht** hinein: es beschreibt einen Aufruf, der Job hat keinen, und
+  dasselbe Ergebnis soll auf beiden Wegen dieselben Bytes ergeben.
+  **Beim Bau gefunden:** das Überlauf-Artefakt entstand nur über die
+  Byte-Grenze — bei mehr Funden als `maxInlineFindings` und kleiner Antwort
+  stand `truncated: true` ohne `diffArtifactRef`, entgegen dem Ausgabeschema,
+  und die Funde jenseits der Grenze waren nirgends abrufbar. Jetzt entsteht
+  es auch über die Anzahl (`SchemaCompareOverflowArtifactTest`).
+- **L2, L3, I3, I4:** Spec, Handbuch und CHANGELOG präzisiert.
+- **I1 — `SchemaCompareJobWorker<R>` ohne Typsicherheit:** der Port ist
+  generisch (`JobArtifactPublisher<in P>`), der Compare-Worker nimmt einen
+  `JobArtifactPublisher<R>`, und die MCP-Seite hat je Job einen typisierten
+  Publisher (`McpJobArtifacts`) statt einer Laufzeit-Verzweigung. Die alte
+  Probe „Publisher lehnt einen `String` ab" ist damit ein Kompilierfehler
+  und als Test entfallen.
+- **I2:** in der KDoc von `SqlLexis.isPostgresReserved` festgehalten
+  (Liste = PostgreSQL 16/18; `system_user` ist in 14 und 15 ein Name).
+- **I5:** `McpOperationalScenarioTest` liest das Job-Artefakt über
+  `resources/read` (Art `COMPARE`) und `artifact_chunk_get` (genau die
+  Schlüssel `status`, `summary`, `findings`).
+- **I6:** P6-Text und der Verweis „(s. Rückgabe)" sind nachgezogen.
+
+**Verifier-Befunde (Runde 3).**
+- **M1 — „dieselben Funde, ungekürzt" war nicht gepinnt:**
+  `SchemaCompareRuntimeSemanticsTest` vergleicht an einem Paar mit vier
+  Funden (jeder mit `details`) die vollen Listen zwischen Werkzeug und Job,
+  und das Überlauf-Artefakt des Werkzeugs mit dem Job-Artefakt.
+  `findings.take(1)` in `SchemaCompareOutcome.artifact()` ist jetzt rot
+  (V1 unten).
+- **L1, L2:** mit F3 neu formuliert (AK 1, P10, Spec, Handbuch).
+- **Info (CHANGELOG „halbe Markierung"):** nach Werkzeug
+  (`VALIDATION_ERROR`) und Job (`FAILED`, `RUNNER_ERROR`) getrennt, ebenso in
+  `spec/mcp-server.md`.
+
+**Sabotage-Protokoll vierter Bauabschnitt.** Jeder Lauf mit `--continue`
+direkt über `docker build --target build`, Rücknahme per Archiv und
+Prüfsumme (alle „restore OK"). Lauf F3-A war nur teilweise aussagekräftig:
+zwei Sabotagen ließen einen Parameter ungenutzt, Detekt hielt `driver-mysql`
+und `mcp` vor den Tests an; F3a/F3e sind in A2 detektneutral wiederholt.
+
+| Lauf | Sabotage | rot |
+| ---- | -------- | --- |
+| F3-A (app 2, cli 5; mysql/mcp: Detekt) | F3c: Datei schlägt Flag | `ReverseAutoIncrementSyntaxResolverTest` „a flag beats the config", `SchemaReverseWiringTest` „the flag beats the file" |
+| F3-A | F3f: Vergleich faltet das Flag wieder | `CompareGenerationProjectionTest` (2), `SchemaCompareCommandSemanticsTest` „read as serial" |
+| F3-A | F3g: `db:`-Operand ohne Präferenz | `SchemaCompareWiringTest` „a db: operand is read with the reverse preferences" |
+| F3-A | F3e: Job-Fabrik ohne Präferenz (cli) | `McpServeWiringTest` |
+| F3-A2 (mysql 2, mcp 2) | F3a2: MySQL-Mapping behält das Flag unter `identity` | `MysqlTypeMappingTest` „drops the serial flag", `MysqlSchemaReaderTest` (bigint) |
+| F3-A2 | F3e2: Job-Fabrik ohne Präferenz | `McpCoreJobWorkerFactoryTest` „reads with the server's declared reverse preferences" |
+| F3-A2 | F3f (mcp) | `SchemaCompareRuntimeSemanticsTest` „the serial flag of MySQL's reverse is one" |
+| F3-B (sqlite 2, mcp 1, cli 4) | F3b: SQLite setzt das Flag immer | `SqliteTypeMappingTest`, `SqliteSchemaReaderTest`, `McpCoreJobWorkerFactoryTest`, `McpServeWiringTest`, `SchemaCompareWiringTest` |
+| F3-B | F3d: Runner liest den Wert des falschen Dialekts | `SchemaReverseWiringTest` (2) |
+| F3-C (cli 1) | F3h2: `mcp serve` ohne seine Konfigurationsdatei | `McpServeWiringTest` |
+| M1-A (app 3, mcp 1, cli 1) | M1a: Metadaten nicht weggelassen | `SchemaCompareSemanticsTest` (2), beide Oberflächen „no placeholder leaks" |
+| M1-A | M1b: Markierung nur mit bekanntem Dialekt | `SchemaCompareSemanticsTest` „a marker with a dialect this version does not know" |
+| M1-B (cli 1) | M1c: CLI-Seite ohne Markierung | `SchemaCompareCommandSemanticsTest` „no placeholder leaks" |
+| F1-A (mcp 13) | F1a: Job-Artefakt unter `DIFF` | `McpCoreJobWorkerFactoryTest` (2), jeder Job-Fall in `SchemaCompareRuntimeSemanticsTest` |
+| F1-A | F1e: Upload nimmt `COMPARE` an | `ArtifactUploadInitHandlerPolicyPathTest` „COMPARE erzeugt nur der Server" |
+| F1-B (mcp 5) | F1b: Überlauf-Artefakt unter `DIFF` | `SchemaCompareOverflowArtifactTest` (2, „expected COMPARE but was DIFF"), Laufzeit „overflow artefact is the job's artefact" |
+| F1-B | V1: `findings.take(1)` im Artefakt | Laufzeit „the job publishes the tool's findings in full", „name and version carry the values" |
+| F1-C (mcp 3) | F1c: Überlauf als nacktes Array | `SchemaCompareOverflowArtifactTest` (2), Laufzeit „overflow artefact" |
+| F1-D (mcp 2) | F1d: Überlauf nur über die Bytes | `SchemaCompareOverflowArtifactTest` „more findings than maxInlineFindings", Laufzeit „overflow artefact" |
+| F1-I1 (Kompilat) | I1: Compare-Worker mit Schema-Publisher | `compileKotlin`: „Return type mismatch: expected 'SchemaDefinition', actual 'SchemaCompareOutcome'" |
+| INT (`make integration`, e2e-cli und integration-mysql) | F1a durch den MCP-Client | `McpOperationalScenarioTest` „expected:<COMPARE> but was:<DIFF>" (140 Tests, 1 rot); `integration-mysql` im selben Lauf grün |
+
+**Gates vierter Bauabschnitt:** `make docker-check` je Thema mit
+`--continue` (F3: ports-common, ports-read, driver-common, die fünf Treiber,
+application, cli, mcp; M1: application, cli, mcp; F1: core, application, cli,
+mcp), `make golden-update` (zwei Zeilen: `COMPARE` in beiden
+`artifact_list`-Aufzählungen), einmal **ohne** `MODULES` (alle
+Integrationsmodule kompiliert, 12 188 Tests, 0 Fehler),
+`make integration` für `:test:e2e-cli`, `:test:integration-mysql` und
+`:test:integration-sqlite` (mit `-PintegrationTests`; alle drei ausgeführt,
+grün; Kontroll-Lauf in der Sabotage-Tabelle), `make docs-check` (331 Dateien, 0 Befunde), `make solid-suppression-gate`
+vor jedem Commit, `make sample-db-smoke` (Pagila PG→PG, 22 Tabellen,
+Zeilenzahlen gleich, `schema compare` gleich der Baseline; der Reverse ist ohne
+Präferenz unverändert), `make doc-immutable RANGE=origin/main..HEAD` vor der
+Übergabe. **Beim ersten Integrationslauf gefunden:** der neue
+MySQL-Vergleichsfall nahm eine PostgreSQL-Markierung, und dieser Klassenpfad
+führt nur den MySQL-Treiber (`No DialectCapabilityProvider for POSTGRESQL`);
+der Fall vergleicht jetzt gegen ein handgeschriebenes IDENTITY-Soll, die
+Namens-Projektion bleibt bei den Unit-Tests.
+Detekt zählte `SchemaCompareHandlerTest` über die Grenze (`LargeClass`); die
+Überlauf-Fälle stehen jetzt in `SchemaCompareOverflowArtifactTest`, ohne
+`@Suppress`.
+
+#### Konsumenten-Repro, vierter Lauf — ohne und mit Präferenz `identity`
+
+**Weg wie im dritten Lauf** (Schema des Konsumenten, PostgreSQL 18.6 mit
+PostGIS 3.6, MySQL 9.7.2, SQL Server 2025, SQLite mit SpatiaLite; Oracle nicht),
+Image `make docker-build IMAGE_TAG=dev` auf `e3116c34c`, Skripte
+`scratchpad/repro3/*4*` der Sitzung, Ausgabe `out4/`. Die Präferenz steht
+**für die CLI** am MySQL-Reverse (`--mysql-autoincrement-syntax identity`) und
+**für MCP** in der Konfigurationsdatei des Servers
+(`--connection-config` mit `reverse.mysql.autoincrement_syntax: identity`).
+Danach `make mcp-e2e-down` (der fremde `mcp-e2e-oracle-1` blieb unberührt).
+
+**Reverse.** Ohne Präferenz sind alle vier CLI-Reverses **byte-identisch** zum
+dritten Lauf (altes Image). Mit `identity` fehlt im MySQL-Reverse genau fünfmal
+`legacy_serial_syntax: true`, der Report trägt fünfmal `R205`; der MCP-Reverse
+mit der Server-Konfiguration unterscheidet sich vom Lauf ohne in denselben fünf
+Zeilen.
+
+**MCP — Anzahl der `findings`** (Status jeweils `different`):
+
+| Paar | 1.7.1 | dritter Lauf | jetzt, ohne | jetzt, mit `identity` | `schema_compare_start` | Art des Job-Artefakts |
+| ---- | ---: | ---: | ---: | ---: | ---- | ---- |
+| PG↔MSSQL | 23 | 17 | 17 | 17 | dieselben Einträge samt `details` (beide Läufe) | `COMPARE` |
+| PG↔MySQL | 20 | 19 | 19 | 19 | dieselben Einträge samt `details` | `COMPARE` |
+| PG↔SQLite | 36 | 35 | 35 | 35 | dieselben Einträge samt `details` | `COMPARE` |
+| MSSQL↔MySQL | 19 | 18 | 18 | 18 | dieselben Einträge samt `details` | `COMPARE` |
+
+Das Job-Artefakt trägt genau `status`, `summary` und `findings`; kein Fund ist
+`SCHEMA_NAME_CHANGED`/`SCHEMA_VERSION_CHANGED`, und keine Antwort und kein
+Artefakt enthält den Platzhalter der Markierung.
+
+**Was die Präferenz ändert — die Identity-Funde je Oberfläche:**
+
+| Paar | Oberfläche | ohne Präferenz | mit `identity` |
+| ---- | ---- | ---- | ---- |
+| PG↔MySQL | CLI, `schema_compare`, `schema_compare_start` | 5 × `identity(mode=always,sequence=…) -> identity(mode=by_default,legacy_serial_syntax=true)` | 5 × `identity(mode=always,sequence=…) -> identity(mode=by_default)` — der **Modus** bleibt (K2), das Flag ist weg |
+| MSSQL↔MySQL | alle drei | 5 × `identity(mode=always) -> identity(mode=by_default,legacy_serial_syntax=true)` | 5 × `identity(mode=always) -> identity(mode=by_default)` |
+| PG↔SQLite | alle drei | 5 × Identity gegen keine Erzeugung | unverändert — SQLite liest unter der Breite `32` `identifier(auto)`, die Präferenz wirkt dort nicht |
+| PG↔MSSQL | alle drei | keine Identity-Funde | keine |
+
+Die Anzahl ändert sich mit dem Schema des Konsumenten nicht: dessen Spalten
+sind `GENERATED ALWAYS`, und der Modus bleibt ein Unterschied.
+
+**Sonde `BY DEFAULT`** (der PostgreSQL-Reverse mit `mode: by_default`, per
+Skript gesetzt; so liest der Reverse eine `BY DEFAULT`-Spalte), CLI gegen den
+MySQL-Reverse: ohne Präferenz fünf Erzeugungs-Funde, die sich nur im Flag
+unterscheiden; mit `identity` **keiner** (es bleibt der berechnete
+`line_total`).
+
+**`schema migrate` gegen dieselbe MySQL-Datenbank** (`--plan-only`, Soll = der
+MySQL-Reverse): ohne Präferenz keine Operation; mit `identity` fünf
+`AlterColumnGeneration`, gerendert als wirkungsloses
+``ALTER TABLE … MODIFY COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT`` — der
+Ist-Stand wird ohne Präferenz gelesen (s. „Offen"; Handbuch-Hinweis und
+Nachtrag im offenen Ticket).
+
+**CLI** (Exit 1 in allen Paaren, jetzt und 1.7.1): dieselben Identity-Zeilen wie
+oben; kein Bericht enthält den Platzhalter.
+
 ## Akzeptanzkriterien
 
-1. Im gemeldeten Repro: **6** — der Sequenzname (P6) und
-   `legacy_serial_syntax` (P10) zählen nicht mehr, in CLI und beiden
-   MCP-Oberflächen. **Ehrlich eingeschränkt:** mit dem Schema des Konsumenten
-   (`GENERATED ALWAYS`) meldet PG↔MySQL die Identity-Spalten weiter, und zwar
-   wegen des **Modus** — MySQL kennt nur `AUTO_INCREMENT` und liest es als
-   `by_default`; ein Fähigkeitsunterschied wie `W140`, kein Fehlalarm dieses
-   Slices. Mit `BY DEFAULT` (Schema des zweiten Bauabschnitts) schließt 6 auch
-   PG↔MySQL, PG↔MSSQL bleibt dort beim Modus. **3** in seinem PG↔MSSQL-Bein,
-   **5** seine Schreibweise-Differenzen (Index-Prädikat **und** Listen-Komma) —
-   beides am nachgebauten Schema gemessen, das Schema des Konsumenten trägt
-   diese Konstrukte nicht mehr; 1 nennt Vorher und Nachher; 2 folgt dem
+1. Im gemeldeten Repro: **6** — der Sequenzname (P6) zählt nicht mehr, in CLI
+   und beiden MCP-Oberflächen; `legacy_serial_syntax` entfällt, sobald der
+   MySQL-Reverse mit `identity` liest (P10, Eigner-Entscheidung F3) — ohne
+   Deklaration bleibt es ein Unterschied. **Ehrlich eingeschränkt:** mit dem
+   Schema des Konsumenten (`GENERATED ALWAYS`) meldet PG↔MySQL die
+   Identity-Spalten mit und ohne Präferenz weiter, wegen des **Modus** — MySQL
+   kennt nur `AUTO_INCREMENT` und liest es als `by_default`; ein
+   Fähigkeitsunterschied wie `W140`, kein Fehlalarm dieses Slices. Mit
+   `BY DEFAULT` (Sonde des vierten Laufs, ohne Reader-Fix, Exit 1) meldet
+   PG↔MySQL mit `identity` keine Identity-Spalte mehr, ohne fünf; PG↔MSSQL
+   hat keine Identity-Funde. **3** in seinem PG↔MSSQL-Bein, **5** seine
+   Schreibweise-Differenzen (Index-Prädikat **und** Listen-Komma) — beides am
+   nachgebauten Schema gemessen, das Schema des Konsumenten trägt diese
+   Konstrukte nicht mehr; 1 nennt Vorher und Nachher; 2 folgt dem
    Pfad-Schema der übrigen Funde; die Reverse-Markierung ist in keiner
    Oberfläche ein Fund. Was bleibt, bleibt **bewusst** — die zwei
    Grenzfragen, die ADR-entschiedene Umschreibung und die Modus-Grenze; ein
@@ -1638,15 +1872,21 @@ neu angelegt.
    einen faltet, fällt kein Cast, der sie unterschiede:
    `(0.5)::double precision` und `(spalte)::text` an einer Textspalte ohne
    Länge bleiben Funde (Review Runde 2, H1/M1).
-9. `legacy_serial_syntax` ist in `schema compare` kein Fund, sobald eine Seite
-   aus einem Dialekt stammt, der `SERIAL` und `IDENTITY` nicht unterscheidet
-   (P10) — über eine benannte Fähigkeit, ohne Dialekt-Zweig im Hexagon;
-   Migrate und Fingerabdruck werten es weiter.
+9. `legacy_serial_syntax` bleibt in `schema compare` ein Unterschied (P10,
+   vierter Bauabschnitt). Ob ein MySQL-Reverse (`BIGINT AUTO_INCREMENT`) oder
+   ein SQLite-Reverse unter der 64-Bit-Breite das Flag setzt, entscheidet eine
+   deklarierte Reverse-Präferenz: `serial` als Default (byte-identischer
+   Reverse), `identity` ohne das Flag und mit `R205`; Flag > Datei > Default;
+   die Konfiguration sehen auch `db:`-Operanden von `schema compare` und
+   `mcp serve`. Migrate und Fingerabdruck werten das Flag weiter.
 10. `schema compare` hat **eine** Semantik in CLI, `schema_compare` und
     `schema_compare_start` (P11): dieselbe Faltung, dieselbe
-    Erzeugungs-Projektion, keine Reverse-Markierung als Fund, und der Job
-    veröffentlicht dieselben Funde wie das Werkzeug — gepinnt an den echten
-    Verdrahtungen.
+    Erzeugungs-Projektion, und trägt eine Seite die Reverse-Markierung, sind
+    Name und Version kein Fund — ohne dass ein Platzhalter nach außen dringt
+    (M1, Review Runde 3). Der Job veröffentlicht dieselben Funde wie das
+    Werkzeug, **ungekürzt** (volle Listen samt `details` verglichen), unter
+    der eigenen Art `COMPARE` und in derselben Form wie das Überlauf-Artefakt
+    von `schema_compare` (F1, L1) — gepinnt an den echten Verdrahtungen.
 
 ## Verifikation
 
@@ -1662,15 +1902,17 @@ neu angelegt.
    | P6 | `:hexagon:application` (Helfer) **und** die zwei Comparator-Baustellen `:adapters:driving:cli` + `:adapters:driving:mcp` | `make docker-check` |
    | P8 | `:hexagon:core` | `make docker-check` |
    | P7 | `docs/adr/` + `spec/` | `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD` |
-   | P10 | `:hexagon:ports-common` (Fähigkeit), die fünf Treibermodule (Werte), `:hexagon:application` (Naht) | `make docker-check` |
+   | P10 (dritter Bauabschnitt, zurückgenommen) | `:hexagon:ports-common` (Fähigkeit), die fünf Treibermodule (Werte), `:hexagon:application` (Naht) | `make docker-check` |
    | P11 | `:hexagon:application` (Semantik, Job-Worker), `:adapters:driving:cli`, `:adapters:driving:mcp`; geteilte Signatur → einmal ohne `MODULES`; Job-Pfad durch den MCP-Client in `:test:e2e-cli` | `make docker-check`, `make integration` |
+   | P10 (F3) | `:hexagon:ports-read` (Präferenz), `:adapters:driven:driver-common` (`R205`), MySQL- und SQLite-Treiber, `:hexagon:application`, `:adapters:driving:cli`, `:adapters:driving:mcp`; Rücknahme der Fähigkeit in `:hexagon:ports-common` und allen fünf Treibern; der echte MySQL-Reverse in `:test:integration-mysql` | `make docker-check`, `make integration` |
+   | F1, L1, I1 | `:hexagon:core` (Art), `:hexagon:application` (Publisher-Port), `:adapters:driving:mcp` (Artefakte, Golden); Job-Artefakt durch den MCP-Client in `:test:e2e-cli` | `make docker-check`, `make golden-update`, `make integration` |
 
-   **Kein Integrationsmodul prüft eine Regel dieses Slices:** der einzige
-   Posten, der eines brauchte (4, MySQL-Reader), ist in den Reader-Slice
-   gewandert — dort läuft er als
-   `make integration INTEGRATION_TASKS=":test:integration-mysql:test"`. Seit
-   P11 läuft `:test:e2e-cli` mit (der Job `schema_compare_start` durch den
-   MCP-Client).
+   **Integrationsmodule:** Posten 4 (MySQL-Reader) ist in den Reader-Slice
+   gewandert. Seit P11 läuft `:test:e2e-cli` mit (der Job
+   `schema_compare_start` durch den MCP-Client, seit F1 samt Art und Form des
+   Artefakts), seit dem vierten Bauabschnitt `:test:integration-mysql` (die
+   Präferenz am echten MySQL-Reverse) und `:test:integration-sqlite` (der
+   Reverse ist dort unverändert).
    Zur Erinnerung für alles Künftige: ohne `-PintegrationTests` überspringen
    sich die Integrations-Tasks **lautlos** und Gradle meldet trotzdem
    `BUILD SUCCESSFUL`.
@@ -1698,14 +1940,22 @@ neu angelegt.
 
 ## Offen (nicht Teil dieses Slices)
 
-**Seit dem dritten Bauabschnitt erledigt oder entschieden** (bleiben hier,
-damit die Querverweise stimmen):
+**Seit dem dritten und vierten Bauabschnitt erledigt oder entschieden**
+(bleiben hier, damit die Querverweise stimmen):
 - **Die zweite MCP-Oberfläche** (`schema_compare_start` verglich wortgleich
-  und veröffentlichte den rohen `SchemaDiff`) — entschieden und gebaut als P11.
+  und veröffentlichte den rohen `SchemaDiff`) — entschieden und gebaut als P11;
+  das Artefakt hat seit dem vierten Bauabschnitt die eigene Art `COMPARE`
+  (F1), in derselben Form wie das Überlauf-Artefakt von `schema_compare` (L1).
 - **`schema_compare` (MCP) bereinigte keine Reverse-Markierung** — gebaut
-  (P11b), für beide MCP-Wege, gepinnt.
-- **`legacy_serial_syntax` zwischen PostgreSQL und MySQL** — entschieden und
-  gebaut als P10.
+  (P11b), für beide MCP-Wege, gepinnt; seit M1 (Review Runde 3) ist Name und
+  Version kein Fund, sobald **eine** Seite die Markierung trägt, in allen drei
+  Oberflächen.
+- **`legacy_serial_syntax` zwischen PostgreSQL und MySQL** — zuerst als
+  Vergleichs-Faltung gebaut (P10, dritter Bauabschnitt), auf Eigner-Entscheidung
+  (F3) zurückgenommen und als Reverse-Präferenz `serial`/`identity` gebaut.
+- **`schema_compare_start` im ADR** — der Architekt hält P11, die Herkunftsregel
+  und F1–F4 in einem eigenen ADR fest (Entwurf 0057, im Anschluss an diesen
+  Bauabschnitt).
 - **Der Identity-Modus zwischen SQL Server und den anderen** — entschieden
   (Eigner, 2026-09-16): bleibt ein Fund, ein Fähigkeitsunterschied
   (`W140`); als Grenze in `spec/cli-spec.md`.
@@ -1725,10 +1975,39 @@ damit die Querverweise stimmen):
   setzt sie für den zielbewussten Vergleich gleich und lässt `schema compare`
   streng. Sie zu verschieben wäre eine Statusänderung an 0055 — dieselbe Linie
   wie P7, aber eine **andere** Entscheidung.
-- **`schema_compare_start` im ADR.** ADR 0056 sagt unter „Konsequenzen", ob der
-  Job zum Geltungsbereich gehört, entscheide er nicht. Der Eigner hat es
-  entschieden, die Spec trägt es, der ADR ist eingefroren. Ob die Erweiterung
-  einen eigenen ADR braucht, ist eine Architektur-Frage.
+- **F4 — Messauftrag: die übrigen server-vergebenen Namen.** Nach der
+  Eigner-Entscheidung vom 2026-09-17 nimmt `schema compare` nur den
+  Identity-Sequenznamen aus (P6). `DialectCapabilities.namesFullTextIndexes`,
+  `namesPartitions` und `namesSingleColumnConstraints` wertet weiterhin nur
+  der zielbewusste Vergleich aus. **Nicht gebaut.** Zu messen ist zuerst, ob
+  zwei Reverses verschiedener Dialekte dort Fehlalarme melden (Namen, die ein
+  Server vergibt oder ein Reader erfindet — etwa SQL Servers `p1`, `p2` …
+  oder ein synthetischer Name einer einspaltigen Einschränkung); erst mit
+  einem gemessenen Paar ist zu entscheiden, ob die Kategorie aus P6 dort gilt.
+- **Die Präferenz `serial`/`identity` pro MCP-Aufruf.** Über MCP trägt sie nur
+  die Konfigurationsdatei des Servers; ein Tool-Argument an
+  `schema_reverse_start` (und `schema_compare_start` mit Verbindungen) als
+  Pendant zum CLI-Flag ist nicht gebaut. Ein Abnehmer mit verschiedenen
+  Wünschen je Aufruf braucht dafür einen eigenen Schnitt (Tool-Schema,
+  Idempotenz-Fingerabdruck).
+- **`schema migrate` liest den Ist-Stand ohne Präferenz.** Wer ein
+  MySQL-Schema mit `identity` zurückliest und die Datei gegen dieselbe
+  Datenbank migriert, vergleicht ein Soll ohne gegen ein Ist mit
+  `legacy_serial_syntax` (Messung im Repro des vierten Bauabschnitts). Das ist
+  dieselbe Lücke wie das Präferenz-Threading im Post-Compare-Re-Read für
+  SQLite, das
+  [`../open/sqlite-migrate-biginteger-identity-render-gap.md`](../open/sqlite-migrate-biginteger-identity-render-gap.md)
+  führt; dort ist der MySQL-Fall nachgetragen.
+- **`artifact_upload_init` nimmt mehr Arten an, als die Spec nennt.** Die
+  Spec zählt `schema`, `ddl`, `transform-script`, `seed-data`, `rules` und
+  `generic` auf; der Handler nimmt zusätzlich jeden Namen aus `ArtifactKind`
+  (etwa `diff`, `profile`). Seit F1 ist `COMPARE` davon ausgenommen (nur der
+  Server erzeugt es); die übrige Nachsicht ist älter und nicht Teil dieses
+  Slices.
+- **`schema compare` meldet `DIFFERENT` mit „0 change(s)", wenn sich nur Name
+  oder Version unterscheiden** (zwei handgeschriebene Schemata): die
+  Zusammenfassung zählt die Metadaten nicht mit. Beim Bau von M1 gesehen, nicht
+  geändert.
 - **MCP `schema_compare` validiert nicht.** Die CLI endet bei einem ungültigen
   Schema (`E012`) mit Exit 3, das MCP-Werkzeug und der Job vergleichen
   trotzdem. Bewusst nicht Teil von P11 (Eigner); eine eigene Frage.
@@ -1736,8 +2015,9 @@ damit die Querverweise stimmen):
   in der anderen Richtung: der MySQL-Generator rendert `GENERATED ALWAYS` als
   `AUTO_INCREMENT` **ohne** Warnung, der Reverse liest `by_default`. Im Repro
   mit dem Schema des Konsumenten die übrigen Identity-Funde PG↔MySQL und
-  MSSQL↔MySQL. Die Spec deckt es über „der Modus bleibt ein Unterschied";
-  als Toleranz steht der Modus im Plan
+  MSSQL↔MySQL — auch mit der Präferenz `identity`. Spec und Handbuch nennen es
+  seit dem vierten Bauabschnitt ausdrücklich (Review L3); als Toleranz steht
+  der Modus im Plan
   [`../next/compare-toleranzprofil.md`](../next/compare-toleranzprofil.md)
   (K2). Ob der MySQL-Generator bei `ALWAYS` warnen soll (wie `W140`), ist
   eine eigene Frage ohne Ort.
@@ -1784,10 +2064,11 @@ Er entscheidet **keine** Grenzfrage: die zwei verbliebenen gehören dem Eigner,
 die dritte ist ADR-entschieden. Er behebt, was unstrittig falsch ist — und trägt
 die Begründung mit: ein fehlendes Vorher/Nachher (P1), zwei Pfad-Schemata
 (P2a/P2b), **redundante** Klammern um einen Operanden (P3, samt der Begründung,
-warum sie redundant sind), zwei fehlende Faltungszweige (P5), zwei Felder,
-die Server- bzw. Reader-Buchhaltung sind und als Schema-Eigenschaft gewertet
-wurden (P6, P10), und drei Oberflächen mit verschiedener Semantik (P11). Und
-er bewegt dabei eine ADR-Linie — das ist kein Nebeneffekt, sondern P7.
+warum sie redundant sind), zwei fehlende Faltungszweige (P5), einen
+Servernamen, der als Schema-Eigenschaft gewertet wurde (P6), ein Flag, das der
+Reverse ohne Aussage setzte und das jetzt der Anwender am Reverse erklärt
+(P10), und drei Oberflächen mit verschiedener Semantik (P11). Und er bewegt
+dabei eine ADR-Linie — das ist kein Nebeneffekt, sondern P7.
 
 **Nicht mehr hier:** Posten 4 (MySQL-Reader) ist am 2026-09-16 in den
 [Reader-Slice](../next/reader-treue-spatial-array-json.md) gewandert, als Posten C1 mit
