@@ -9,14 +9,21 @@
 > **Geliefert — zweiter Bauabschnitt** (Review und Verifikation, s. dort):
 > P9 in neuer Fassung samt Rückzug, Schlüsselwörtern und Lexik (A–D, H;
 > `13e397475`), MCP-Werte und Index-Pfad (E, F; `58510584d`), Absicherung (G;
-> `522722ad3`), Doku und Plan (I) und die Abnahme am Konsumenten-Repro (J,
-> Verifikation 3) samt `make sample-db-smoke` (Verifikation 4) — Ergebnis
-> unter „Konsumenten-Repro".
+> `522722ad3`), Doku und Plan (I) und die Abnahme am nachgebauten
+> Konsumenten-Repro (J, Verifikation 3; beide `2913ab7fd`) samt
+> `make sample-db-smoke` (Verifikation 4; Harness-Fix `0f39332d9`), Gates
+> `d14f7021b`.
+> **Geliefert — dritter Bauabschnitt** (Eigner-Entscheidungen, Review und
+> Verifikation Runde 2, s. dort): Faltungsgrenzen H1, M1, L1, INFO 5, INFO 6
+> (`175800393`), P10 (`b3e583522`), P11 samt M3 (`2601d1631`), MCP-Funde L2,
+> INFO 3, INFO 4 (`ff4d56082`), Handbuch L3 (`f8c819f6c`), PostGIS-Mount der
+> Sample-DB (`47f8a8641`); der Repro mit dem Schema des Konsumenten über MCP
+> und CLI, `make sample-db-smoke` und `make sample-db-spatial-smoke`.
 > **Offen in diesem Slice:** nichts mehr zu bauen. Offen bleiben die zwei
-> Eigner-Fragen (Schlüsselwort-Case, `RESTRICT`) und die Befunde, die der
-> Repro neu gezeigt hat (s. „Offen"); Posten 4 (MySQL-Introducer) liegt im
-> Reader-Slice und ist Vorbedingung dafür, dass die MySQL-Beine überhaupt
-> vergleichbar sind.
+> Eigner-Fragen (Schlüsselwort-Case, `RESTRICT`) und die Punkte unter „Offen"
+> (u. a. ADR-Frage zu `schema_compare_start`, Validierung über MCP, Modus
+> gegen MySQL, zwei Reader-Verluste). Posten 4 (MySQL-Introducer) liegt im
+> Reader-Slice; das Schema des Konsumenten löst ihn nicht mehr aus.
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
 > Meldung nahelegte (Reader statt Kanonisierung), nicht eine andere Tatsache.
@@ -43,12 +50,13 @@
 > (Server-Form gegen Server-Form, Herkunft, `CanonicalPayload`) und fasst nur
 > Entscheidung 1 und 4 neu. Die Vorbedingung ist damit erfüllt; die zwei
 > Grenzfragen oben bleiben offen.
-> **Der Widerspruch steht schon heute im Repo:** 1.7.1 faltet in `schema compare`
-> bereits CHECK- und Sichten-Text (`canonicalizeRawExpressions = true`,
-> `SchemaCompareWiring.kt:55`, `McpRuntimeRegistries.kt:125`), und
-> `spec/cli-spec.md` beschreibt das — während `ADR 0053` weiter „`schema compare`
-> bleibt streng" sagt. P7 schliesst also nicht nur die Erweiterung ab, sondern
-> auch diesen Altbestand.
+> **Der Widerspruch stand bei der Aktivierung im Repo — mit P7 erledigt:** 1.7.1
+> faltete in `schema compare` bereits CHECK- und Sichten-Text
+> (`canonicalizeRawExpressions = true`, damals je ein Aufruf in
+> `SchemaCompareWiring` und `McpRuntimeRegistries`; seit P11 über
+> `SchemaCompareSemantics`), und `spec/cli-spec.md` beschrieb das — während
+> `ADR 0053` weiter „`schema compare` bleibt streng" sagte. P7 hat nicht nur
+> die Erweiterung abgeschlossen, sondern auch diesen Altbestand (ADR 0056).
 > **Aktiviert** am 2026-09-16 (Move aus `../next/`).
 
 ## Befund (gemeldet gegen 1.7.1, im Code nachgemessen)
@@ -585,8 +593,9 @@ ausdruecklich **strikter** Vergleich.
 in `:hexagon:application` und ist heute **nur** auf dem Migrate-Pfad verdrahtet
 (`SchemaMigrateRunner.kt:601-611`). Übergeben muss ihn eine der beiden
 Comparator-Baustellen:
-[`SchemaCompareWiring.kt:55`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareWiring.kt)
-(CLI) und `McpRuntimeRegistries.kt:125` (MCP). Das Paket nennt **beide** und
+[`SchemaCompareWiring.kt`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareWiring.kt)
+(CLI) und `McpRuntimeRegistries.kt` (MCP), damals je ein eigener
+Comparator-Aufruf (seit P11 beide über `SchemaCompareSemantics`). Das Paket nennt **beide** und
 sagt, **welcher Dialekt** übergeben wird — bei zwei Reverses gibt es keine
 Zielseite, und Oracle setzt den Namen wie PostgreSQL
 (`OracleTypeMapping.kt:83`, `OracleCapabilities.kt:63` = `false`).
@@ -631,11 +640,13 @@ schließt das Paket aus; übergeben wird der Dialekt der ersten Seite, deren
 Reverse den Namen als Buchhaltung liest. Der Migrate-Pfad und der
 Fingerabdruck ändern sich **nicht** — gepinnt, seit G auch am verdrahteten
 Comparator.
-**Grenze aus dem Repro:** P6 blendet nur den **Namen** aus. Ein PG-`IDENTITY`
-trägt `legacy_serial_syntax: false`, MySQLs `AUTO_INCREMENT` liest der Reader
-immer als `legacy_serial_syntax: true` — PG↔MySQL meldet solche Spalten
-deshalb weiter; geschlossen ist der Posten nur für PG-`serial`-Spalten (so
-auch im Repro gemessen). Das ist eine eigene Frage (s. „Offen").
+**Grenze aus dem Repro — seit P10 geschlossen:** P6 blendet nur den **Namen**
+aus. Ein PG-`IDENTITY` trägt `legacy_serial_syntax: false`, MySQLs
+`AUTO_INCREMENT` liest der Reader immer als `legacy_serial_syntax: true` —
+PG↔MySQL meldete solche Spalten deshalb nach P6 weiter; geschlossen war der
+Posten nur für PG-`serial`-Spalten. Der Eigner hat die Frage am 2026-09-16
+entschieden; gebaut ist sie als P10, und Posten 6 schließt damit auch für
+`IDENTITY`.
 
 ### P8 — Die Faltung hält ihre Grenze (Altbestand 1.7.0/1.7.1)
 
@@ -740,7 +751,9 @@ Fingerabdruck).** Ein Cast faellt nur, wenn **beides** gilt:
    Ebene mit `BETWEEN` (`SqlScopes`, `CastOperands`).
 2. Der Typ ist aus der Tabelle **dieser Seite** belegt (`CastRules`):
    - **Spalten-Cast** `col::T`/`(col)::T` ohne Modifikator, der den Wert
-     haelt: Text variabler Laenge auf `text`/`varchar`/`character varying`;
+     haelt: Text variabler Laenge auf `text`/`varchar`/`character varying`
+     (seit dem dritten Bauabschnitt nur **mit Laengenangabe**, Review-Befund
+     M1);
      Ganzzahl auf gleich breite oder breitere Ganzzahl, `numeric`/`decimal`;
      `numeric` auf `numeric`/`decimal`. Nicht `char(n)` auf Text, nichts mit
      Modifikator, nicht `citext` (im Modell `enum` mit `ref_type`, damit ohne
@@ -751,7 +764,8 @@ Fingerabdruck).** Ein Cast faellt nur, wenn **beides** gilt:
      `character varying`; `char(n)` ↔ `bpchar`; `date` ↔ `date`;
      `datetime` ↔ `timestamp` bzw. `timestamptz` (auch ausgeschrieben);
      `time` ↔ `time`; Ganzzahl ↔ Ganzzahltyp; `decimal` ↔ `numeric`;
-     Gleitkomma ↔ `double precision`/`float8`/`float`.
+     Gleitkomma ↔ `double precision`/`float8`/`float` (seit dem dritten
+     Bauabschnitt nur für eine **ganze** Zahl, Review-Befund H1).
    - Ohne Tabellenkontext, bei unbekannter Spalte oder unbekanntem Typ: nicht
      falten.
 
@@ -760,7 +774,8 @@ in `ColumnCastFoldTest` gepinnt):
 
 - Der **Partner eines Spalten-Casts** behaelt seinen Typ: bei Text ein
   String-Literal, ein Text-Cast, eine Textspalte oder ein Text-Array; bei
-  Zahlen eine Zahl, ein Zahl-Cast oder eine Zahlspalte. Ein unmarkiertes
+  Zahlen ein Zahl-Literal, ein Cast auf einen **exakten** Zahltyp (Ganzzahl,
+  `numeric`/`decimal`) oder eine Spalte eines exakten Zahltyps. Ein unmarkiertes
   String-Literal nimmt den Typ seines Gegenuebers an —
   `(qty)::bigint = '3000000000'` gelingt, `qty = '3000000000'` scheitert
   (gemessen).
@@ -769,7 +784,8 @@ in `ColumnCastFoldTest` gepinnt):
   der Spalte (`'70000'` scheitert an `smallint`, `'70000'::integer` nicht).
   Ein `identifier` gilt als breiteste Ganzzahl (seine Breite ist je Dialekt
   verschieden) — nur `bigint` faellt dort als Spalten-Cast.
-- **Gleitkomma:** eine Zahl nur auf `double precision` — so vergleicht
+- **Gleitkomma:** eine Zahl nur auf `double precision` (seit dem dritten
+  Bauabschnitt nur eine ganze Zahl, s. unten) — so vergleicht
   PostgreSQL `real` und `double precision` mit einer Zahl; `(0.1)::real`
   rundet (`0.1::real > 0.1` ist wahr, `> (0.1)::real` nicht). Ein
   String-Literal nimmt den Spaltentyp an, nur dieser ist Schreibweise.
@@ -791,14 +807,31 @@ in `ColumnCastFoldTest` gepinnt):
   `::bpchar`-Elemente bleiben Unterschied (dort vergleicht PostgreSQL
   gepolstert).
 
-**Grenze, bewusst: ein verlustbehafteter Reader.** Der Vergleich nimmt den
-Spaltentyp aus dem Modell. Wo ein Reader zwei PostgreSQL-Typen auf einen
-neutralen faltet — `numeric` ohne Praezision auf `float`, `timetz` auf `time`
-—, ist schon der Spaltentyp-Vergleich blind. Eine Falsch-Gleichsetzung **durch
-den Cast** entsteht dort nicht: PostgreSQL schreibt in genau diesen Faellen
-einen Spalten-Cast (`(nu)::double precision`) oder einen doppelten Cast
-(`('…'::time)::time with time zone`), und beide Formen faltet die Regel nicht
-(gemessen, s. o.). `citext` liest der Reader als eigenen Typ; er faltet nicht.
+**Grenze: ein verlustbehafteter Reader — die erste Fassung dieses Absatzes ist
+widerlegt (Review Runde 2, H1 und M1).** Der Vergleich nimmt den Spaltentyp aus
+dem Modell. Wo ein Reader zwei PostgreSQL-Typen auf einen neutralen faltet, ist
+schon der Spaltentyp-Vergleich blind. Die erste Fassung behauptete, **durch den
+Cast** entstehe dort keine Falsch-Gleichsetzung, weil PostgreSQL in genau
+diesen Faellen einen Spalten- oder Doppel-Cast schreibe. Das stimmt nicht:
+- `numeric` ohne Praezision liest der Reverse als `float`. PostgreSQL schreibt
+  dort `(nu > 0.5)` ohne Cast, bei `double precision` aber
+  `(x > (0.5)::double precision)`; die Literal-Regel strich den Cast, und zwei
+  Datenbanken mit verschiedenem Verhalten waren `IDENTICAL` (1.7.1:
+  `DIFFERENT`; Ende-zu-Ende nachgestellt, s. dritter Bauabschnitt).
+  **Korrigiert:** an Gleitkomma faellt nur der Cast einer ganzen Zahl — die
+  bekommt auch an `numeric` einen Cast (`(0)::numeric`), der nicht faellt.
+- Einen Typ, den er nicht kennt (`inet`, `interval`), liest der Reverse als
+  `text` ohne Laenge (`R301`). `(ip)::text` aendert dort den Wert
+  (`10.0.0.1/32`), die Spalten-Cast-Regel strich ihn. **Korrigiert:** der
+  Spalten-Cast auf Text faellt nur an einer Textspalte mit Laengenangabe
+  (PostgreSQL schreibt `(spalte)::text` bei `varchar(n)`, nie bei `text`).
+  Preis: ein `varchar` ohne Laenge — im Modell nicht von `text` zu
+  unterscheiden — bleibt ein Fund, wo PostgreSQL `(spalte)::text` schreibt.
+
+`timetz` auf `time` bleibt, wie beschrieben, beim doppelten Cast
+(`('…'::time)::time with time zone`), den die Regel nicht faltet. `citext`
+liest der Reader als eigenen Typ; er faltet nicht. Dass der Reader `numeric`
+ohne Praezision als `float` liest, ist selbst ein Reader-Verlust (s. „Offen").
 
 **Folge fuer den Altbestand — eine begruendete Abweichung von AK 6.** Das
 kontextfreie `canonicallyEqual` faltet keine Casts mehr. Das 1.7.1-Paar
@@ -836,6 +869,103 @@ Pflicht-Gegenproben bleiben Funde: die vier PG-Paare der Tabelle, eine
 nachweislich unveraendert. Spec (`spec/cli-spec.md`, Faltungsmenge) zieht
 nach. Sabotage je Teilregel — **erfuellt**, Protokoll unter
 „Zweiter Bauabschnitt".
+
+### P10 — `legacy_serial_syntax` zählt nur, wo beide Seiten es unterscheiden
+
+**Nachgetragen im dritten Bauabschnitt (Eigner-Entscheidung 2026-09-16).** Der
+MySQL-Reader setzt `legacy_serial_syntax` für jedes `AUTO_INCREMENT` auf
+`bigint` (`MysqlTypeMapping.kt:42`), ein PostgreSQL-`IDENTITY` trägt es nicht;
+PG↔MySQL meldete solche Spalten deshalb trotz P6 (s. P6, „Grenze aus dem
+Repro"). **Entschieden:** in `schema compare` zählt das Flag nicht, sobald eine
+Seite aus einem Dialekt stammt, der `SERIAL` und `IDENTITY` nicht
+unterscheidet — über dieselbe Fähigkeits-Naht wie P6, ohne
+`when (dialect)`-Zweig im Hexagon.
+
+**Gebaut.** Eine benannte Fähigkeit,
+`DialectCapabilities.distinguishesSerialFromIdentity`: Default `true` (die
+strenge Antwort), `false` in den Treibermodulen von MySQL, SQLite, SQL Server
+und Oracle; PostgreSQL setzt `true` ausdrücklich. Die KDoc vergleicht alle
+fünf Reader (MySQL/SQLite setzen das Flag pauschal, SQL Server/Oracle nie).
+Daneben die Naht `capabilitySerialSyntaxCanonicalizer(dialect)`
+(`:hexagon:application`), und `compareSerialDialect` wählt den Dialekt der
+**ersten** Seite, die nicht unterscheidet; `compareGenerationCanonicalizer`
+setzt Namens- und Serial-Teil zusammen. **Warum nicht
+`rendersAutoIncrementAsIdentity`:** dieselben Antworten, aber eine andere
+Frage (dort: rendert der Generator `identifier`+`auto_increment` und
+`identity` zur selben Spalte; hier: sagt das Flag des Reverses etwas über die
+Spalte). Der Eigner verlangte eine benannte Fähigkeit; die KDoc verweist auf
+die Nachbarin.
+
+**Nicht:** `schema migrate`, der Fingerabdruck und `CanonicalPayload` führen
+das Flag weiter — auf PostgreSQL rendert es eine andere Spalte (gepinnt am
+Migrate-Seam, am strikten Comparator, am Fingerabdruck und an
+`SchemaMigrateComparators`).
+
+**DoD — erfüllt:** Eine PostgreSQL-IDENTITY-Spalte gegen MySQLs
+`AUTO_INCREMENT` meldet nichts (Name über P6, Flag über P10); gegen SQL Server
+und SQLite ebenso; zwei PostgreSQL-Reverses mit `SERIAL` gegen `IDENTITY`
+bleiben ein Fund, zwei handgeschriebene Schemata auch; ein PostgreSQL-Reverse
+gegen ein handgeschriebenes Schema bleibt streng; der Modus bleibt ein Fund,
+auch gegen SQL Server (`W140`, s. „Offen", entschieden). Gepinnt in
+`CompareGenerationProjectionTest`, durch den Befehl in
+`SchemaCompareCommandSemanticsTest` und durch beide MCP-Oberflächen in
+`SchemaCompareRuntimeSemanticsTest`; Sabotage P10a–c im Protokoll des dritten
+Bauabschnitts.
+
+### P11 — Eine Semantik für `schema compare` in allen drei Oberflächen
+
+**Nachgetragen im dritten Bauabschnitt (Eigner-Entscheidung 2026-09-16).**
+(a) `schema_compare_start` bekommt dieselbe Faltung und dieselbe
+Generations-Projektion wie `schema_compare`; was der Job veröffentlicht, ist zu
+prüfen. (b) **Beide** MCP-Wege entfernen die Reverse-Markierung wie die CLI —
+bis dahin ergab jedes Paar zweier Reverses aus verschiedenen Dialekten über MCP
+`SCHEMA_NAME_CHANGED` (vom Verifier gemessen).
+
+**Gebaut.**
+- **Eine Stelle:** `SchemaCompareSemantics` (`:hexagon:application`) —
+  `side(schema)` entfernt die Markierung und liest den Dialekt daraus,
+  `compare(source, target)` baut den Comparator (Faltung,
+  Generations-Projektion), `undecided` liefert `W137`. Die CLI-Verdrahtung,
+  `McpRuntimeRegistries` und `McpCoreJobWorkerFactory` verweisen alle auf
+  `SchemaCompareSemantics::compare`; vorher standen dort drei eigene
+  Comparator-Aufrufe, von denen einer (der Job) wortgleich verglich. Der
+  CLI-Runner behält seinen Operand-Normalizer (Exit 7 mit der Referenz des
+  Operanden) und nimmt `W137` aus derselben Quelle.
+- **MCP:** `SchemaCompareOutcome` (Status und ungekürzte Funde samt `W137`)
+  trägt Werkzeug und Job. `schema_compare` entfernt die Markierung; eine
+  unvollständige Markierung wird ein `VALIDATION_ERROR` an
+  `left.schemaRef`/`right.schemaRef` (CLI: Exit 7).
+- **Was der Job veröffentlichte — und die Entscheidung dazu.** Der Job schrieb
+  `gson.toJson(SchemaDiff)`: den internen Vergleichsbaum mit Kotlin-Feldnamen
+  (`tablesAdded` …) und Typwerten ohne Diskriminator; in `spec/` stand dazu
+  nichts. Entschieden im Bau: P1 und P2b gelten dort. Das Artefakt (Art
+  `diff`) ist jetzt ein Objekt `{status, summary, findings}` mit denselben
+  Einträgen wie die Antwort von `schema_compare`, ungekürzt — „eine Semantik"
+  heißt auch, dass ein Abnehmer beider Wege dieselben Funde liest, und der rohe
+  Baum war genau die interne Darstellung, die Paket E aus den `details`
+  entfernt hat. Dafür ist `SchemaCompareJobWorker` im Ergebnistyp generisch
+  (`<R : Any>`) — eine geteilte Signatur, gebaut einmal ohne `MODULES`.
+- **Vertrag:** `spec/mcp-server.md` (beide Wege, Markierung,
+  `VALIDATION_ERROR`, Form des Artefakts), CHANGELOG (Vertragswechsel für
+  Abnehmer des Artefakts).
+
+**Nicht Teil von P11:** MCP `schema_compare` validiert die Schemata nicht, die
+CLI endet bei `E012` mit Exit 3 — offene Frage (s. „Offen").
+
+**Der ADR sagt dazu noch „nicht entschieden".** ADR 0056 hält unter
+„Konsequenzen" fest, ob `schema_compare_start` zum Geltungsbereich gehört,
+entscheide er nicht. Das hat jetzt der Eigner entschieden, und die Spec trägt
+es; der ADR ist eingefroren und bleibt unverändert. Ob die Erweiterung einen
+eigenen ADR braucht, ist eine Architektur-Frage (s. „Offen").
+
+**DoD — erfüllt:** In allen drei Oberflächen ist ein Paar mit reiner
+Schreibweise-Differenz (Cast, Quoting, Klammern) identisch, eine echte
+Änderung ein Fund; zwei Reverses aus verschiedenen Dialekten ergeben weder
+einen Namens- noch (P6, P10) einen Identity-Fund; zwei handgeschriebene
+Schemata bleiben streng; der Job trägt `W137` wie das Werkzeug. Gepinnt an den
+echten Verdrahtungen (`SchemaCompareCommandSemanticsTest`: der Befehl;
+`SchemaCompareRuntimeSemanticsTest`: die Registry und die Job-Fabrik);
+Sabotage W1–W3, CENTRAL und P11b rot.
 
 ### P7 — Der Vertrag zieht nach: Spec, ADR-Supersede, README
 
@@ -919,6 +1049,13 @@ Das zweideutige `[` gilt deshalb als Quoting, wenn der Text an anderer Stelle
 Operator, Komma, `(`, `.` oder Schluesselwort ist in PostgreSQL, MySQL und
 Oracle gar keine Syntax, der Text also T-SQL oder SQLite, wo `[` nie ein Index
 ist. Hinter einem Schluesselwort ist `[` Quoting, hinter `ARRAY` ein Array.
+**Korrektur (dritter Bauabschnitt, Review L1):** „hinter Komma oder
+Schluesselwort" war zu weit. `level` und `zone` sind in PostgreSQL nicht
+reserviert (`level [1]` ist ein Index), und hinter `[` oder `,` oeffnet `[`
+in PostgreSQL ein geschachteltes Array (`ARRAY[[1,2],[3,4]]`) — beides galt
+als Beleg fuer T-SQL. Jetzt belegt nur ein `[` hinter einem in PostgreSQL
+**reservierten** Wort (Kategorien R und T von `pg_get_keywords()`), hinter
+einem Operator, `(` oder `.` Quoting; hinter `[` und `,` ist es zweideutig.
 `"…"` bleibt Bezeichner-Quoting; dass MySQL/SQLite es je nach Modus als
 String lesen, steht als **Grenze** in der Spec (und gepinnt).
 
@@ -1078,6 +1215,12 @@ Archiv und `diff -r` bestaetigt; danach gruen, 1468 Tests):
 
 ### Konsumenten-Repro (Verifikation 3) und Pagila-Baseline (Verifikation 4)
 
+> **Stand zweiter Bauabschnitt, mit nachgebautem Schema und nur über die CLI.**
+> Der Konsument misst über MCP und mit seinem eigenen Schema (Verifier-Befund
+> M2); die Wiederholung damit steht im dritten Bauabschnitt unter
+> „Konsumenten-Repro mit dem Schema des Konsumenten". Die Tabelle hier bleibt
+> als Messung des zweiten Stands stehen.
+
 Das Schema des Konsumenten liegt nicht im Repo. Nachgebaut ist eines mit genau
 den gemeldeten Konstrukten: `ck_order_ship_after_place` (`OR`/`IS NULL`),
 `ck_customer_email_shape` (`LIKE`), ein CHECK mit Werteliste auf einer
@@ -1211,7 +1354,7 @@ Aufloesen von `\'` zoege sich die Faltung für jeden solchen CHECK zurück.
 | PG↔MSSQL | `W137` an `line_total` | Diagnose, Pfad `order_item.line_total` | Diagnose, Pfad im Pfad-Schema | P2a |
 | PG↔MySQL | alle | Exit 3 (`E012`) | Exit 3 (`E012`) | Posten 4, Reader-Slice C1/P6 |
 | PG↔MySQL* | `customer.id` (PG `serial`), Sequenzname | Fund | — | **behoben** (P6) |
-| PG↔MySQL* | `order.id`, `order_item.id` (PG `IDENTITY`) | Fund | Fund | **neu**: `legacy_serial_syntax` `false` gegen `true` — P6 blendet nur den Namen aus, s. „Offen" |
+| PG↔MySQL* | `order.id`, `order_item.id` (PG `IDENTITY`) | Fund | Fund | **nicht neu** (Korrektur, Verifier M1): 1.7.1 meldete Name **und** Flag im selben Fund; P6 blendet nur den Namen aus, `legacy_serial_syntax` `false` gegen `true` blieb — seit P10 geschlossen |
 | PG↔MySQL* | `ck_customer_email_shape` | — | — | gleich (P9 + simulierter Reader-Fix) |
 | PG↔MySQL* | `ck_order_ship_after_place` | Fund ohne Werte | Fund mit Werten | **bewusst**: Schlüsselwort-Case (`is null`/`or`), die Klammern faltet P3 |
 | PG↔MySQL* | `ck_order_status` `= ANY` gegen `IN` | Fund | Fund | **bewusst** (ADR 0055) |
@@ -1227,8 +1370,9 @@ Aufloesen von `\'` zoege sich die Faltung für jeden solchen CHECK zurück.
 | PG↔SQLite | `ix_order_open`, `ck_order_status` | Fund | Fund | **bewusst** (ADR 0055) |
 | PG↔SQLite | Spaltentypen, Identity als `identifier(auto)` | Fund | Fund | Nullfall: SQLites Typaffinität, nicht dieser Slice |
 
-`*` = mit simuliertem Reader-Fix. **AK 1 im echten Repro:** Posten 6 schließt
-für `serial`-Spalten, nicht für `IDENTITY` (neu, s. oben); Posten 3 schließt
+`*` = mit simuliertem Reader-Fix. **AK 1 im echten Repro (Stand zweiter
+Bauabschnitt):** Posten 6 schloss für `serial`-Spalten, nicht für `IDENTITY`
+(seit P10 auch dort); Posten 3 schließt
 sein PG↔MSSQL-Bein (und das PG↔SQLite-Bein); Posten 5 zeigt keine reine
 Schreibweise-Differenz mehr — was bleibt, ist die Umschreibung (ADR 0055) bzw.
 das fehlende Prädikat auf MySQL; Posten 1 nennt Vorher und Nachher, Posten 2
@@ -1246,14 +1390,226 @@ denselben Fix schon. Korrigiert ist nur der `postgres`-Dienst (gemessen);
 `postgis` (`postgis/postgis:18-3.6`) mountet genauso und trifft vermutlich
 dasselbe, ist aber nicht gefahren worden (s. „Offen").
 
+### Dritter Bauabschnitt — Eigner-Entscheidungen, Review und Verifikation, Runde 2 (2026-09-17)
+
+Grundlage: vier Eigner-Entscheidungen vom 2026-09-16, ein zweites Review
+(gemessen gegen PostgreSQL 16.15/18.6 und die gebauten Klassen) und eine zweite
+Verifikation (Sabotage R1–R7, Repro über MCP). Gebaut sind P10 und P11 (oben)
+und die Befunde unten; Commits `175800393` (Faltung), `b3e583522` (P10),
+`2601d1631` (P11), `ff4d56082` (MCP-Funde), `f8c819f6c` (Handbuch),
+`47f8a8641` (Sample-DB).
+
+**Eigner-Entscheidungen.** P10 und P11 sind gebaut (s. dort). **Der
+Identity-Modus gegen SQL Server bleibt ein Fund** — ein
+Fähigkeitsunterschied (SQL Server kennt kein `BY DEFAULT`, `W140`); die Grenze
+steht in `spec/cli-spec.md`. **Der Typ einer berechneten Spalte in SQL Server**
+wandert in den Reader-Slice (s. „Offen"); hier nicht gebaut.
+
+**Review-Befunde (Runde 2).**
+- **H1 — Gleitkomma-Literal-Cast:** korrigiert, nachgemessen und Ende-zu-Ende
+  nachgestellt (die Sonde des Reviews, `numeric` gegen `double precision`:
+  vorher `IDENTICAL`, jetzt `DIFFERENT` wie 1.7.1). Die Passage „Grenze bei
+  verlustbehafteten Readern" in P9 ist korrigiert.
+- **M1 — R301-Rückfall:** korrigiert. Das Modell unterscheidet `varchar` ohne
+  Länge nicht von `text` (beide `text` ohne `max_length`); die engste Regel,
+  die `(status)::text` bei `varchar(n)` weiter schließt, ist „nur mit
+  Längenangabe" (`text(n)`, `email`). Sonde `inet` gegen `text`: jetzt
+  `DIFFERENT` — **auch 1.7.1 setzte das Paar gleich** (es strich jeden Cast).
+- **L1 — `[`-Heuristik:** korrigiert (s. B, Korrektur). Die Wortliste
+  „kein Index möglich" ist die der in PostgreSQL reservierten Wörter, für
+  jedes Wort gegen PostgreSQL 18.6 gemessen (`select <wort> [1]`); `[` hinter
+  `[`/`,` ist zweideutig. `FROM [orders] [o]` bleibt gleich (gepinnt).
+- **L2 — MCP-Listen:** Sichten-Spalten als `[a, b]`, eine leere Seite als
+  `[]` (der Sonderzweig mit „ohne Werte" ist weg).
+- **L3 — Handbuch:** 3.4 beschreibt jetzt aufgabenorientiert, was bei zwei
+  Reverses nicht gemeldet wird (Schreibweise, Sequenzname, serial-Flag,
+  Markierung) und was bleibt; im Migrate-Abschnitt stehen die Semikola.
+- **INFO 1 / Verifier S6:** gepinnt — verschiedene Spaltenmengen und -typen
+  links/rechts am Comparator (`ColumnCastFoldTest`, „Die Spaltentypen dieser
+  Seite").
+- **INFO 3:** der Vollständigkeitstest prüft `ColumnDiff` und `TableDiff` je
+  Feld mit Pfad, samt den listen- und map-wertigen Feldern.
+- **INFO 4:** der CHANGELOG-Satz zu `on_delete=` am Spalten-Fremdschlüssel
+  ist gestrichen (unsichtbar: einspaltige FKs laufen als Constraint);
+  `CompareValueText` — KDoc ehrlich gemacht (Maps und andere Objekte bleiben
+  `toString()`, die Felder gehen ohne `details` raus). Keine neue Form für
+  Maps: deren Werte wären wieder Kotlin-Objekte.
+- **INFO 5 (umgesetzt, ohne Verhaltensänderung):** Vergleichsart als Enum;
+  Vergleichsoperatoren (`SqlLexis`) und Junktoren (`SqlKeywords`) aus einer
+  Quelle für `ColumnCasts`, `CastOperands`, `SqlScopes`, `OperandParens`.
+  `SqlKeywords.precedesOperand` bleibt eigene Liste (andere Frage).
+- **INFO 6:** `' '::"char"` und `trim("both" from x)` sind Funde. Über den
+  Befund hinaus: jede Quotierung hinter `::` bleibt stehen, `"char"`/`"bit"`
+  bleiben überall quotiert (auch in `CAST(… AS "char")`; gemessen:
+  `'101'::bit` ist `1`, `'101'::"bit"` bleibt `101`), `for`/`placing` sind
+  Schlüsselwörter.
+- **INFO 9:** `spec/cli-spec.md` beschreibt jetzt jeden Vergleich mit
+  `ANY`/`SOME`/`ALL` wie der Code (gegen PG 18.6 gemessen: `<> ALL` und
+  `~~ ANY` tragen dieselben `::text`-Elemente).
+- **`postgis`-Mount:** korrigiert (`47f8a8641`), `make sample-db-spatial-smoke`
+  grün (s. unten).
+
+**Verifier-Befunde (Runde 2).**
+- **M1:** mit P10 erledigt; AK 1 ist ehrlich formuliert, das Etikett „neu" in
+  der Tabelle des zweiten Bauabschnitts korrigiert.
+- **M2:** Repro wiederholt — mit dem Schema des Konsumenten, über MCP (beide
+  Werkzeuge) und die CLI (unten).
+- **M3:** gepinnt an den echten Verdrahtungen (`SchemaCompareCommandSemanticsTest`,
+  `SchemaCompareRuntimeSemanticsTest`, auch für den Job); W1/W2 wiederholt,
+  dazu W3 und die zentrale Stelle — rot.
+- **L1:** Identifier-Ausnahme, `::character` gegen `char(n)` und
+  links/rechts verschiedene Spaltentypen gepinnt; S6, S12, S13, S14
+  wiederholt — rot.
+- **L2:** Status-Kopf, P6 und „Offen" sind nachgezogen (Zeilenverweise durch
+  Namen ersetzt, Hashes ergänzt).
+- **L4:** `spec/cli-spec.md` nennt „exakte Zahltypen" und die
+  Identifier-Sonderregel.
+- **S18:** `kind:` klein jetzt auch durch den CLI-Befehl gepinnt.
+
+**Sabotage-Protokoll dritter Bauabschnitt.** Die Verifier-Läufe S6/S12/S13/S14
+sind hier nach dem Befund definiert (die Logs der Verifikation nennen die
+Eingriffe nicht): S6 vertauscht die Seiten der Spaltentypen, S14 nimmt für
+beide Seiten das Ist, S12 macht `identifier` zur `integer`-Breite (a) bzw.
+lässt das String-Literal an ihm zu (b), S13 nimmt `character`/`char` unter die
+`bpchar`-Typen. W1/W2 („`canonicalizeRawExpressions = false` an der
+Verdrahtung") gibt es seit P11 an der Verdrahtung nicht mehr; wiederholt ist
+der gleichwertige Eingriff — ein strikter Comparator an der Verdrahtung —,
+dazu dieselbe Abschaltung an der einen Stelle (CENTRAL). Jeder Lauf mit
+Rücknahme per Archiv und Prüfsumme; die Mehrmodul-Läufe mit `--continue`
+direkt über `docker build --target build` (das Make-Target kennt die Option
+nicht).
+
+| Lauf | Sabotage | rot (Auswahl, alle erwartet) |
+| ---- | -------- | ---- |
+| C1 (`:hexagon:core`, 7 von 1483) | H1 zurück | „a decimal literal cast to double precision" |
+| C1 | L1a: Schlüsselwort statt reserviert | „a word PostgreSQL does not reserve can be a column" |
+| C1 | I6a: `::`-Regel aus | „a quoted type name after `::`" |
+| C1 | S12a: `identifier` als `integer` | „an identifier is not narrower than bigint" |
+| C1 | S13: `character`/`char` als `bpchar` | „character without a length is character(1)" |
+| C1 | S6: Seiten vertauscht | „the cast is decided with the column set/type of its own side" (2) |
+| C2 (`:hexagon:core`, 7 von 1483) | M1 zurück | „a column cast to text on a text column without a length" |
+| C2 | L1b: `[`/`,` als Beleg | „a bracket after `[` or `,` is a nested array" |
+| C2 | I6b: `char`/`bit` entpackt | „`char` and `bit` stay quoted everywhere" |
+| C2 | I6c: trim-Wörter entfernt | „the argument words of trim and overlay" |
+| C2 | S12b: String-Literal am `identifier` | „an identifier is not narrower than bigint" |
+| C2 | S14: beide Seiten Ist | „… of its own side" (2) |
+| X1 (cli, 4 von 1050) | W1: strikter Comparator in `SchemaCompareWiring` | Befehl: Schreibweise, P6/P10; `SchemaCompareWiringTest` |
+| X1 | S18: `kind:` über `toString()` | „the kind of a changed custom type stands lowercase" |
+| X1b (mcp, 6 von 1242) | W3: strikter Comparator in der Job-Fabrik | Laufzeit: Schreibweise, zwei Reverses (Oberfläche Job) |
+| X1b | L2: alter Sonderzweig | zwei Sichten-Fälle in `SchemaCompareHandlerTest` |
+| X1b | I3: Index-Pfad falsch | Vollständigkeit je Feld; ein Pfad-Fall |
+| X2 (app 5, mcp 3, cli 1) | W2: strikter Comparator in `McpRuntimeRegistries` | `SchemaCompareRuntimeIdentityTest`; Laufzeit: Schreibweise (Werkzeug) |
+| X2 | P10a: Serial-Dialekt nie | vier P10-Fälle; CLI P6/P10 |
+| X2 | P10c: Serial-Teil im Migrate-Seam | „migrate's seam … keep the flag" |
+| X3 (app 4, mcp 3, cli 2) | CENTRAL: Faltung in `SchemaCompareSemantics` aus | Schreibweise in CLI und beiden MCP-Oberflächen |
+| X3 | P11b: Markierung nicht entfernt | „a half marker is rejected"; zwei Reverses |
+| X3 | P10b: MySQL-Fähigkeit `true` | „only PostgreSQL's reverse tells the two apart"; Paarungsfälle |
+
+Der erste X1-Lauf erreichte die MCP-Tests nicht (eine Sabotage-Zeile war
+länger als Detekt erlaubt); X1b wiederholt sie. Nach allen Läufen gilt die
+Prüfsumme des Arbeitsstands; der volle Bau danach ist grün.
+
+**Gates dritter Bauabschnitt:** `make docker-check` für `:hexagon:core` (1483
+Tests) und für ports-common, application, cli, mcp und die fünf Treiber; einmal
+**ohne** `MODULES` (alle Integrationsmodule kompiliert, 12 149 Tests, 0
+Fehler); `make integration INTEGRATION_TASKS=":test:e2e-cli:test"` (mit
+`-PintegrationTests`, gelaufen, grün — deckt den Job-Pfad
+`schema_compare_start` durch den MCP-Client); `make docs-check` (330 Dateien,
+0 Befunde); `make solid-suppression-gate` vor jedem Commit;
+`make doc-immutable RANGE=origin/main..HEAD` (s. Rückgabe).
+
+#### Konsumenten-Repro mit dem Schema des Konsumenten (Verifier M2)
+
+**Schema:** `roundtrip-repro-postgres.sql` aus dem Verzeichnis `scripts` des
+Konsumenten-Repos (nur gelesen; Obermenge von dessen `repro_schema.sql` um die
+Typ-Tabelle `type_probe` mit zwei Geometriespalten). **Weg wie beim
+Konsumenten:** PostgreSQL 18.6 mit PostGIS 3.6 im eigenen Schema `postgis`
+(wie dessen `postgres-init/01-postgis.sh`; in `public` läse der MCP-Reverse
+~1000 PostGIS-Funktionen mit) seeden → zurücklesen → für MySQL 9.7.2, SQL
+Server 2025 und SQLite (SpatiaLite) erzeugen → nativ anwenden (SQLite im
+Werkzeug-Image des Konsumenten) → zurücklesen → paarweise vergleichen. Stack:
+`make mcp-e2e-up`, der `postgres`-Dienst per Override auf das PostGIS-Image
+mit eigenem Volume (danach entfernt), `make mcp-e2e-down`. **Oracle fährt
+nicht mit** — der Oracle-Dienst des Harness ist ein fremder Container.
+**MCP** über `mcp serve --transport stdio` im gebauten Image
+(`schema_reverse_start` → `schema_compare` und `schema_compare_start`),
+Vergleich mit 1.7.1 auf denselben Datenbanken; **CLI** über die eigenen
+Reverses (`schema reverse` ohne `--include-*` liest keine Sichten und
+Routinen — deshalb fehlt dort `VIEW_REMOVED`). Skripte:
+`scratchpad/repro3/` der Sitzung.
+
+**MCP — Anzahl der `findings` (Status jeweils `different`):**
+
+| Paar | `schema_compare` 1.7.1 | `schema_compare` jetzt | `schema_compare_start` jetzt | weggefallen |
+| ---- | ---: | ---: | ---: | ---- |
+| PG↔MSSQL | 23 | 17 | 17, dieselben Einträge | `SCHEMA_NAME_CHANGED` (P11b); fünf Identity-Sequenznamen (P6) |
+| PG↔MySQL | 20 | 19 | 19, dieselben Einträge | `SCHEMA_NAME_CHANGED` |
+| PG↔SQLite | 36 | 35 | 35, dieselben Einträge | `SCHEMA_NAME_CHANGED` |
+| MSSQL↔MySQL | 19 | 18 | 18, dieselben Einträge | `SCHEMA_NAME_CHANGED` |
+
+Der Konsument pinnt für 1.7.1 in seinem Stack 22/20/36 (MSSQL/MySQL/SQLite);
+die Abweichung von eins bei MSSQL ist nicht untersucht. `schema_compare_start`
+lieferte in 1.7.1 den rohen `SchemaDiff` (je Paar mit dem Namens-Unterschied
+in `schemaMetadata` und allen Sequenznamen als Erzeugungs-Änderung); jetzt
+`{status, summary, findings}` mit genau den Einträgen von `schema_compare`
+(P11a).
+
+**Was bleibt, und warum:**
+
+| Paar | Fund | Zuordnung |
+| ---- | ---- | ---- |
+| PG↔MySQL, MSSQL↔MySQL | fünf Identity-Spalten, `mode=always` gegen `by_default` | **Modus-Unterschied, bewusst:** der Konsument schreibt `GENERATED ALWAYS`; MySQL kennt nur `AUTO_INCREMENT`, der Generator rendert `ALWAYS` dorthin (ohne Warnung), der Reverse liest `by_default`. Sequenzname und `legacy_serial_syntax` zählen nicht mehr (P6, P10, in `details` weiter sichtbar). Dieselbe Klasse wie `W140` (s. „Offen") |
+| PG↔MSSQL | keine Identity-Funde mehr | beide `always`; der Name zählt nicht (P6) |
+| PG↔MSSQL, PG↔MySQL, PG↔SQLite | `orders_total_check` entfernt | der Generator rendert `(total >= (0)::numeric)` nicht (`E053`), nicht dieser Slice |
+| PG↔MSSQL, MSSQL↔MySQL | `orders_customer_id_fkey` `on_delete=restrict` gegen keine Angabe | Eigner-Frage `RESTRICT` (Abgrenzung) |
+| PG↔MSSQL, MSSQL↔MySQL | `ck_orders_status` (Enum als CHECK) | ADR 0055 |
+| alle | Typen (`enum`, Arrays, JSON, XML, Zeitzone, Geometrie-Subtyp), `line_total`, `order_summary`, `uq_*` | Fähigkeits- und Generator-Unterschiede, nicht dieser Slice; SQLite: Nullfall |
+
+**CLI (Exit 1 in allen Paaren, jetzt und 1.7.1):** gegenüber 1.7.1 fallen in
+PG↔MSSQL die fünf Identity-Zeilen weg (P6); PG↔MySQL und MSSQL↔MySQL behalten
+sie wegen des Modus. Sonst ändert sich nur die Kurzform der Constraints (P1).
+**Exit 3 (`E012`) tritt mit diesem Schema nicht auf:** der MySQL-Generator
+rendert den einzigen CHECK mit Cast nicht (`E053`), die übrigen tragen kein
+String-Literal und damit keinen Introducer (`CHECK_CLAUSE` gemessen). Der
+simulierte Reader-Fix ändert das MySQL-Reverse deshalb nicht (nur die
+YAML-Schreibweise); die MySQL-Beine sind auch ohne ihn vergleichbar.
+
+**P10 an echten Reverses — das Schema des zweiten Bauabschnitts** (Identity
+mit `BY DEFAULT`, Reverse-Dateien von damals, neues Image): PG↔MySQL* meldet
+statt drei Identity-Spalten (1.7.1) **keine** mehr (`customer.id` über P6,
+`order.id`/`order_item.id` über P10); PG↔MSSQL behält sie — dort ist es der
+Modus (`W140`).
+
+**Sonden des Reviews (Ende-zu-Ende, CLI):** `numeric` gegen
+`double precision` mit `> 0.5` — 1.7.1 `DIFFERENT`, jetzt `DIFFERENT`
+(vorher `IDENTICAL`); `inet`/`interval` gegen `text` — 1.7.1 `IDENTICAL`, jetzt
+`DIFFERENT`.
+
+**`make sample-db-smoke`** (Image dieses Stands): Pagila PG→PG, 22 Tabellen,
+Zeilenzahlen gleich, `schema compare` gleich der Baseline.
+**`make sample-db-spatial-smoke`**: grün (VA1–VA4, 5d). Erst nach dem
+Mount-Fix: der alte Pfad bricht auch mit frischem Volume ab (gemessen);
+zusätzlich trug das vorhandene Volume `sample-db-postgis-data` noch einen
+PostgreSQL-16-Cluster an seiner Wurzel, den das 18er-Image verweigert — es ist
+neu angelegt.
+
 ## Akzeptanzkriterien
 
-1. Im gemeldeten Repro: **6** meldet nichts mehr (PG↔MySQL), **3** in seinem
-   PG↔MSSQL-Bein, **5** seine Schreibweise-Differenzen (Index-Prädikat **und**
-   Listen-Komma); 1 nennt Vorher und Nachher; 2 folgt dem Pfad-Schema der
-   übrigen Funde. Was bleibt, bleibt **bewusst** — die zwei Grenzfragen und die
-   ADR-entschiedene Umschreibung; ein Abnehmer, der die ganze Dreier-Matrix
-   erwartet, erwartet zu viel.
+1. Im gemeldeten Repro: **6** — der Sequenzname (P6) und
+   `legacy_serial_syntax` (P10) zählen nicht mehr, in CLI und beiden
+   MCP-Oberflächen. **Ehrlich eingeschränkt:** mit dem Schema des Konsumenten
+   (`GENERATED ALWAYS`) meldet PG↔MySQL die Identity-Spalten weiter, und zwar
+   wegen des **Modus** — MySQL kennt nur `AUTO_INCREMENT` und liest es als
+   `by_default`; ein Fähigkeitsunterschied wie `W140`, kein Fehlalarm dieses
+   Slices. Mit `BY DEFAULT` (Schema des zweiten Bauabschnitts) schließt 6 auch
+   PG↔MySQL, PG↔MSSQL bleibt dort beim Modus. **3** in seinem PG↔MSSQL-Bein,
+   **5** seine Schreibweise-Differenzen (Index-Prädikat **und** Listen-Komma) —
+   beides am nachgebauten Schema gemessen, das Schema des Konsumenten trägt
+   diese Konstrukte nicht mehr; 1 nennt Vorher und Nachher; 2 folgt dem
+   Pfad-Schema der übrigen Funde; die Reverse-Markierung ist in keiner
+   Oberfläche ein Fund. Was bleibt, bleibt **bewusst** — die zwei
+   Grenzfragen, die ADR-entschiedene Umschreibung und die Modus-Grenze; ein
+   Abnehmer, der die ganze Dreier-Matrix erwartet, erwartet zu viel.
 2. Jeder Test fällt nachweislich, wenn man seinen Fix zurücknimmt — je Paket,
    und bei P2 je Teilpaket.
 3. Die Pfad-Präfixe aller Fund-Arten folgen **einem** Schema (P2b), und der
@@ -1278,7 +1634,19 @@ dasselbe, ist aber nicht gefahren worden (s. „Offen").
    gegen PostgreSQL gemessenen Paare aus P9 eingeschlossen. Ohne
    Tabellenkontext fällt kein Cast. Das Paar aus AK 7
    (`(price::integer > 5)` gegen `price > 5`) bleibt ein Fund, solange
-   `price` kein Ganzzahltyp ist.
+   `price` kein Ganzzahltyp ist. Wo der PostgreSQL-Reverse zwei Typen auf
+   einen faltet, fällt kein Cast, der sie unterschiede:
+   `(0.5)::double precision` und `(spalte)::text` an einer Textspalte ohne
+   Länge bleiben Funde (Review Runde 2, H1/M1).
+9. `legacy_serial_syntax` ist in `schema compare` kein Fund, sobald eine Seite
+   aus einem Dialekt stammt, der `SERIAL` und `IDENTITY` nicht unterscheidet
+   (P10) — über eine benannte Fähigkeit, ohne Dialekt-Zweig im Hexagon;
+   Migrate und Fingerabdruck werten es weiter.
+10. `schema compare` hat **eine** Semantik in CLI, `schema_compare` und
+    `schema_compare_start` (P11): dieselbe Faltung, dieselbe
+    Erzeugungs-Projektion, keine Reverse-Markierung als Fund, und der Job
+    veröffentlicht dieselben Funde wie das Werkzeug — gepinnt an den echten
+    Verdrahtungen.
 
 ## Verifikation
 
@@ -1294,10 +1662,15 @@ dasselbe, ist aber nicht gefahren worden (s. „Offen").
    | P6 | `:hexagon:application` (Helfer) **und** die zwei Comparator-Baustellen `:adapters:driving:cli` + `:adapters:driving:mcp` | `make docker-check` |
    | P8 | `:hexagon:core` | `make docker-check` |
    | P7 | `docs/adr/` + `spec/` | `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD` |
+   | P10 | `:hexagon:ports-common` (Fähigkeit), die fünf Treibermodule (Werte), `:hexagon:application` (Naht) | `make docker-check` |
+   | P11 | `:hexagon:application` (Semantik, Job-Worker), `:adapters:driving:cli`, `:adapters:driving:mcp`; geteilte Signatur → einmal ohne `MODULES`; Job-Pfad durch den MCP-Client in `:test:e2e-cli` | `make docker-check`, `make integration` |
 
-   **Diesen Slice fährt kein Integrationsmodul:** der einzige Posten, der eines
-   brauchte (4, MySQL-Reader), ist in den Reader-Slice gewandert — dort läuft er
-   als `make integration INTEGRATION_TASKS=":test:integration-mysql:test"`.
+   **Kein Integrationsmodul prüft eine Regel dieses Slices:** der einzige
+   Posten, der eines brauchte (4, MySQL-Reader), ist in den Reader-Slice
+   gewandert — dort läuft er als
+   `make integration INTEGRATION_TASKS=":test:integration-mysql:test"`. Seit
+   P11 läuft `:test:e2e-cli` mit (der Job `schema_compare_start` durch den
+   MCP-Client).
    Zur Erinnerung für alles Künftige: ohne `-PintegrationTests` überspringen
    sich die Integrations-Tasks **lautlos** und Gradle meldet trotzdem
    `BUILD SUCCESSFUL`.
@@ -1325,71 +1698,85 @@ dasselbe, ist aber nicht gefahren worden (s. „Offen").
 
 ## Offen (nicht Teil dieses Slices)
 
-- **Der Schlüsselwort-Case** (`sum` gegen `SUM`) — Eigner-Frage **ohne Ort**. Der
-  Plan hat für die beiden anderen Fragen einen Anker; für diese nicht. Sie
-  braucht einen eigenen `open/`-Eintrag (Muster:
-  [`../open/spatial-profile-e052-ganze-tabelle.md`](../open/spatial-profile-e052-ganze-tabelle.md)
-  und [`../open/json-jsonb-zweite-json-art.md`](../open/json-jsonb-zweite-json-art.md)
-  — beide am 2026-09-16 aus derselben Messreihe entstanden) **oder** einen
-  Abschnitt im in-progress-Slice, der die Linie laut eigenem Text besitzt. Ohne
-  das ist die Frage nach der Graduation weg.
+**Seit dem dritten Bauabschnitt erledigt oder entschieden** (bleiben hier,
+damit die Querverweise stimmen):
+- **Die zweite MCP-Oberfläche** (`schema_compare_start` verglich wortgleich
+  und veröffentlichte den rohen `SchemaDiff`) — entschieden und gebaut als P11.
+- **`schema_compare` (MCP) bereinigte keine Reverse-Markierung** — gebaut
+  (P11b), für beide MCP-Wege, gepinnt.
+- **`legacy_serial_syntax` zwischen PostgreSQL und MySQL** — entschieden und
+  gebaut als P10.
+- **Der Identity-Modus zwischen SQL Server und den anderen** — entschieden
+  (Eigner, 2026-09-16): bleibt ein Fund, ein Fähigkeitsunterschied
+  (`W140`); als Grenze in `spec/cli-spec.md`.
+- **Der `postgis`-Dienst der Sample-DB** — korrigiert (`47f8a8641`),
+  `make sample-db-spatial-smoke` grün.
+- **Die Grenze bei verlustbehafteten Readern** (P9, erste Fassung) —
+  widerlegt und korrigiert (H1, M1).
+
+**Offen — braucht nach der Graduation einen Ort:**
+- **Der Schlüsselwort-Case** (`sum` gegen `SUM`) — Eigner-Frage. Seit dem
+  2026-09-17 hat sie einen Ort: der Plan
+  [`../next/compare-toleranzprofil.md`](../next/compare-toleranzprofil.md)
+  führt sie als Kandidat K1 (Toleranz statt einer Entscheidung für alle),
+  ebenso `RESTRICT` gegen implizit (K4) und den Identity-Modus (K2, s. unten).
 - **`= ANY(ARRAY[…])` gegen `IN (…)`** — keine offene Frage, sondern eine
   **ADR-entschiedene**: [`ADR 0055`](../../adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md)
   setzt sie für den zielbewussten Vergleich gleich und lässt `schema compare`
   streng. Sie zu verschieben wäre eine Statusänderung an 0055 — dieselbe Linie
   wie P7, aber eine **andere** Entscheidung.
-- **Die zweite MCP-Oberfläche fehlt im Plan.** `schema_compare_start` baut den
-  Comparator **ohne** `canonicalizeRawExpressions`
-  (`McpCoreJobWorkerFactory.kt:142`) und publiziert den rohen `SchemaDiff` als
-  JSON (`:318-323`). P1 und P5 sprechen von „MCP" und meinen den synchronen
-  Handler — der asynchrone Pfad ist von beiden Änderungen nicht erreichbar. Ob
-  er sie erben soll, ist eine eigene Entscheidung; heute ist es ein Unterschied,
-  den niemand dokumentiert.
+- **`schema_compare_start` im ADR.** ADR 0056 sagt unter „Konsequenzen", ob der
+  Job zum Geltungsbereich gehört, entscheide er nicht. Der Eigner hat es
+  entschieden, die Spec trägt es, der ADR ist eingefroren. Ob die Erweiterung
+  einen eigenen ADR braucht, ist eine Architektur-Frage.
+- **MCP `schema_compare` validiert nicht.** Die CLI endet bei einem ungültigen
+  Schema (`E012`) mit Exit 3, das MCP-Werkzeug und der Job vergleichen
+  trotzdem. Bewusst nicht Teil von P11 (Eigner); eine eigene Frage.
+- **Der Identity-Modus gegen MySQL und SQLite.** Dieselbe Klasse wie `W140`,
+  in der anderen Richtung: der MySQL-Generator rendert `GENERATED ALWAYS` als
+  `AUTO_INCREMENT` **ohne** Warnung, der Reverse liest `by_default`. Im Repro
+  mit dem Schema des Konsumenten die übrigen Identity-Funde PG↔MySQL und
+  MSSQL↔MySQL. Die Spec deckt es über „der Modus bleibt ein Unterschied";
+  als Toleranz steht der Modus im Plan
+  [`../next/compare-toleranzprofil.md`](../next/compare-toleranzprofil.md)
+  (K2). Ob der MySQL-Generator bei `ALWAYS` warnen soll (wie `W140`), ist
+  eine eigene Frage ohne Ort.
+- **Der Typ einer berechneten Spalte in SQL Server** — wandert laut
+  Eigner-Entscheidung (2026-09-16) in den
+  [Reader-Slice](../next/reader-treue-spatial-array-json.md); SQL Server führt
+  keinen deklarierten Typ, der Reverse liest den abgeleiteten
+  (`decimal(23,2)` statt `decimal(14,2)`). Den Reader-Slice zieht der
+  Koordinator bei dessen Aktivierung nach; hier nicht gebaut.
+- **`numeric` ohne Präzision liest der PostgreSQL-Reverse als `float`** — ein
+  Reader-Verlust (s. P9, Grenze): zwei verschiedene Spaltentypen sehen im
+  Modell gleich aus, der Spaltentyp-Vergleich ist dort blind. Gehört zum
+  [Reader-Slice](../next/reader-treue-spatial-array-json.md) (Notiz für dessen
+  Aktivierung).
+- **`varchar` ohne Länge ist im Modell `text`.** Seit M1 bleibt PostgreSQLs
+  `(spalte)::text` an einer solchen Spalte ein Fund; ebenso liest der Reverse
+  `inet`/`interval` als `text` (`R301`). Dieselbe Reader-/Modell-Frage wie
+  der vorige Punkt.
 - **Unbenannte Indizes und die Schreibweise.** Der Zuordnungsschlüssel eines
   unbenannten Index trägt das rohe Prädikat (P5, „Grenze"); ob `schema compare`
   ihn über die kanonische Form bilden soll, ist nicht entschieden. Heute ist
   das Ergebnis konservativ: entfernt + hinzugefügt statt „unverändert".
-- **`schema_compare` (MCP) bereinigt keine Reverse-Markierung.** Anders als
-  der CLI-Runner (`CompareOperandNormalizer`) vergleicht der synchrone
-  MCP-Handler die Schemanamen roh; zwei Reverse-Artefakte aus verschiedenen
-  Dialekten tragen verschiedene Markierungen
-  (`__dmigrate_reverse__:postgresql:…` gegen `…:mysql:…`) und ergeben damit
-  einen `SCHEMA_NAME_CHANGED`-Fund. Aus dem Code gelesen, nicht durch einen
-  Test gepinnt; nicht Teil dieses Slices.
 - **Eine Partitionierungs-Änderung hat keinen MCP-Fund.** `TableDiff` trägt
   `partitioning`, die Projektion von `schema_compare` kennt dafür keinen Code:
   eine Tabelle, die sich nur darin unterscheidet, ergibt `status: different`
   ohne Eintrag in `findings`. Beim Bau von P2b gefunden, nicht Teil dieses
-  Slices. Seit G als bekannte Lücke gepinnt
-  (`ObjectDiffFieldsCompletenessTest`): kommt ein Fund dazu, fällt der Test
-  auf und die Ausnahme dort weg.
-- **Der Identity-Modus zwischen SQL Server und den anderen.** Der Generator
-  rendert `GENERATED BY DEFAULT` für SQL Server als `IDENTITY(1,1)` (mit
-  `W140`), der Reverse liest das als `mode: always`. PG↔MSSQL und MSSQL↔MySQL
-  melden deshalb jede Identity-Spalte. Der Modus bleibt nach P6 bewusst ein
-  Unterschied; ob `always` die richtige Lesung ist oder der Vergleich die
-  Fähigkeit berücksichtigen soll, ist eine eigene Frage (Eigner). Im Repro
-  gemessen, nicht Teil dieses Slices.
-- **`legacy_serial_syntax` zwischen PostgreSQL und MySQL.** Der MySQL-Reader
-  setzt es für jedes `AUTO_INCREMENT`, ein PG-`IDENTITY` trägt es nicht —
-  PG↔MySQL meldet solche Spalten trotz P6 (s. P6, „Grenze aus dem Repro").
-  Ob das Feld in `schema compare` eine Schema-Eigenschaft ist, entscheidet
-  dieser Slice nicht.
-- **Der Typ einer berechneten Spalte in SQL Server.** SQL Server führt keinen
-  deklarierten Typ; der Reverse liest den aus dem Ausdruck abgeleiteten
-  (`decimal(23,2)` für `quantity * unit_price` bei `decimal(12,2)`), das Soll
-  sagt `decimal(14,2)`. Ein Fund in PG↔MSSQL und MSSQL↔MySQL, schon in 1.7.1;
-  Reader/Generator, nicht dieser Slice.
-- **Der `postgis`-Dienst der Sample-DB** mountet sein Volume wie der
-  `postgres`-Dienst vor der Korrektur auf `/var/lib/postgresql/data`; mit dem
-  18er-Image bricht er vermutlich ebenso ab (`make sample-db-spatial-smoke`,
-  nicht gefahren). Nicht Teil dieses Slices.
-- **Die Anwendersicht.** Der Slice hat `docs/user/` an einer Stelle angefasst
-  (s. P7, Korrektur); Fund-Pfade, `details` und die Faltungsmenge stehen in
-  `spec/`, nicht im Handbuch. **Eine Ausnahme wandert mit:** der Posten C1/P6
-  im Reader-Slice verschiebt die Grenze von `E012`, und die steht im
-  Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2125`) — dort zieht der
-  Reader-Slice mit.
+  Slices. Als bekannte Lücke gepinnt (`ObjectDiffFieldsCompletenessTest`):
+  kommt ein Fund dazu, fällt der Test auf und die Ausnahme dort weg.
+- **Reverse-Umfang CLI gegen MCP.** `schema reverse` liest Sichten und
+  Routinen nur mit `--include-*`, `schema_reverse_start` immer; mit PostGIS in
+  `public` trägt der MCP-Reverse ~1000 Funktionen (im Repro gemessen, beim
+  Konsumenten bekannt und umgangen). Kein Compare-Thema.
+- **Die Anwendersicht.** Der Slice hat `docs/user/` angefasst (s. P7,
+  Korrektur; dritter Bauabschnitt, L3); Fund-Pfade, `details` und die
+  Faltungsmenge stehen in `spec/`, nicht im Handbuch. **Eine Ausnahme wandert
+  mit:** der Posten C1/P6 im Reader-Slice verschiebt die Grenze von `E012`, und
+  die steht im Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2148`) — dort
+  zieht der Reader-Slice mit.
+- **Oracle im Konsumenten-Repro** — nicht gefahren (fremder Container).
 
 ## Was der Slice bewusst nicht tut
 
@@ -1397,9 +1784,10 @@ Er entscheidet **keine** Grenzfrage: die zwei verbliebenen gehören dem Eigner,
 die dritte ist ADR-entschieden. Er behebt, was unstrittig falsch ist — und trägt
 die Begründung mit: ein fehlendes Vorher/Nachher (P1), zwei Pfad-Schemata
 (P2a/P2b), **redundante** Klammern um einen Operanden (P3, samt der Begründung,
-warum sie redundant sind), zwei fehlende Faltungszweige (P5) und ein
-Herkunfts-Feld, das als Schema-Eigenschaft gewertet wird (P6). Und er bewegt
-dabei eine ADR-Linie — das ist kein Nebeneffekt, sondern P7.
+warum sie redundant sind), zwei fehlende Faltungszweige (P5), zwei Felder,
+die Server- bzw. Reader-Buchhaltung sind und als Schema-Eigenschaft gewertet
+wurden (P6, P10), und drei Oberflächen mit verschiedener Semantik (P11). Und
+er bewegt dabei eine ADR-Linie — das ist kein Nebeneffekt, sondern P7.
 
 **Nicht mehr hier:** Posten 4 (MySQL-Reader) ist am 2026-09-16 in den
 [Reader-Slice](../next/reader-treue-spatial-array-json.md) gewandert, als Posten C1 mit
