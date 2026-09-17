@@ -191,7 +191,7 @@ Zum Nachtrag, mit dem neuen Target, alte gegen neue Konfigurationszeile:
 | Punkt | Ort |
 | --- | --- |
 | `vcs` ohne `vcs:`-Block endet mit Exit 0, ohne die Range aufzulösen; Objekte aus `loose-*`-Packs lesen (oder die Ursache in der Meldung nennen) | Issue an `pt9912/d-check` ([#4](https://github.com/pt9912/d-check/issues/4)) (Weg 2) |
-| Pin auf d-check `v0.76.1` heben, damit nicht lesbare Objekte auch außerhalb dieses Targets laut abbrechen | [`../open/dcheck-pin-v0761-fail-closed.md`](../open/dcheck-pin-v0761-fail-closed.md) |
+| Pin auf d-check `v0.76.1` heben, damit nicht lesbare Objekte auch außerhalb dieses Targets laut abbrechen | [`dcheck-pin-v0761-fail-closed.md`](../done/dcheck-pin-v0761-fail-closed.md) (erledigt 2026-09-17) |
 
 **Bewusst ohne eigenen Ort:**
 
