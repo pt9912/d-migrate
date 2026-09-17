@@ -46,7 +46,9 @@ Sitzung, die den CHECK anlegte. Der Server-Text geht aus
 
 **Der Präzedenzfall steht im Repo.** Der SQL-Server-Reader normalisiert
 denselben Fall im Reader: `MssqlTypeMapping.normalizeCheckExpression`
-(`MssqlTypeMapping.kt:326`) streicht `N'…'` und macht aus `[col]` den nackten
+(so hiess sie beim Schnitt; P12 hat sie zu `normalizeExpression` umbenannt,
+weil sie seither auch den Berechnungsausdruck und das Index-Praedikat
+normalisiert) streicht `N'…'` und macht aus `[col]` den nackten
 Namen bzw. `"Col"`; aufgerufen in `MssqlMetadataQueries.kt:344`, gepinnt in
 `MssqlTypeMappingTest`. `spec/type-mapping.md` beschreibt das in 6.2
 („CHECK-Ausdrücke kommen in neutraler Syntax"). Die Alternative „die Analyse
@@ -773,7 +775,8 @@ trägt `R205` (Präferenz) und `R330`.
 
 **Der Seed** (`fixtures/seeds/mysql.sql`, DoD 6) trägt den Fall M10 — eine
 berechnete Spalte, deren Ausdruck eine Zeichenkette enthält — und eine nicht
-kleingeschriebene Spalte (`Menge`) in zwei CHECKs. Der Ausdruck ist bewusst ein
+kleingeschriebene Spalte (`Menge`) in **einem** CHECK und im
+Berechnungsausdruck. Der Ausdruck ist bewusst ein
 `CASE`: ein `CONCAT` wäre auf PostgreSQL nicht immutabel und machte die Zelle
 `APPLY-FAIL`. Das Anmerkungsformat, das P0 auswertet, steht im Kopf der Datei.
 
@@ -849,7 +852,7 @@ niemand angemerkt hat, im Check unsichtbar.
 
 **Die Liste bekannter Befunde** steht in
 [`examples/mcp-e2e/scripts/lib/silent-loss.sh`](../../../examples/mcp-e2e/scripts/lib/silent-loss.sh), nicht in
-der Erwartungsdatei: 24 Einträge, jeder wortgleich der Verstoß und dahinter das
+der Erwartungsdatei: 25 Einträge, jeder wortgleich der Verstoß und dahinter das
 Paket. Sie sind das Arbeitsvorrat-Bild der Pläne 2 und 4:
 
 | Befund | Anzahl | Paket |
@@ -861,6 +864,7 @@ Paket. Sie sind das Arbeitsvorrat-Bild der Pläne 2 und 4:
 | SQL Server: `integer`+`ALWAYS` → `identifier(auto)` ohne Code | 1 | S1, Zielseite (Plan 2) |
 | SQLite verschweigt Typmarke und Länge (`json` → `text`, `text(40)` → `text`) | 4 | neuer Befund, [`../open/sqlite-generate-verschweigt-typmarke-und-laenge.md`](../open/sqlite-generate-verschweigt-typmarke-und-laenge.md) |
 | SQL Server leitet Typ **und** Nullbarkeit einer berechneten Spalte ab (`text(10)` → `text(5)`) | 1 | D1 (Plan 4) |
+| `W200` trifft die berechnete Spalte nicht (SQL Server → SQLite, `sl_ms_calc.Summe`) | 1 | neuer Befund, [`../open/sqlite-generate-verschweigt-typmarke-und-laenge.md`](../open/sqlite-generate-verschweigt-typmarke-und-laenge.md) |
 
 **Zwei neue Befunde**, die der Check gefunden hat und die kein Paket trägt:
 
@@ -1130,6 +1134,167 @@ Befund selbst steht in
 [`../open/generate-fk-ohne-uebersprungenen-schluessel.md`](../open/generate-fk-ohne-uebersprungenen-schluessel.md).
 
 
+### Korrekturrunde nach der Review (2026-09-18)
+
+Die Review fand zwei Befunde auf der Bedeutungsebene, vier am Vertrag und acht
+kleinere. Was davon gebaut wurde und was gemessen:
+
+**M1 — ein nacktes reserviertes Wort verliert sein Quoting.** Der Reverse
+schreibt einen rein kleingeschriebenen Bezeichner unquotiert, aus `` `key` ``
+wird also `key`; der Generator schrieb bisher nur `"…"` um. Gemessen an MySQL
+9.7.2: `CREATE TABLE … (\`key\` INT NOT NULL, CHECK (key > 0))` endet mit
+`ERROR 1064`. **Vor P6 lief dieser Weg**, weil die Backticks den Ausdruck
+unportabel machten und das Objekt mit `E053` uebersprungen wurde — aus einem
+benannten Verlust war ein Abbruch geworden. Der MySQL-Generator quotiert solche
+Woerter jetzt zurueck (`MysqlReservedWords`); die Wortliste ist gemessen
+(`information_schema.KEYWORDS`, `RESERVED = 1`, auf 9.7.2 und 8.0.46, als
+Vereinigung), ausgenommen sind die Woerter, die in einem skalaren Ausdruck
+Syntax sind, sowie die Stellungen vor `(` und hinter `AS`.
+
+**Dieselbe Klasse trifft andere Ziele** — gemessen, nicht vermutet:
+PostgreSQL 18 lehnt `CHECK (order > 0)` ab (`syntax error at or near "order"`)
+und nimmt `CHECK (key > 0)` an (`key` ist dort nicht reserviert); SQL Server
+2025 lehnt `CHECK (key > 0)` ab (`Msg 156`). Dort gibt es keine
+Rueckquotierung und auch keine gemeinsame Stelle dafuer — der rohe Text geht an
+jeder Rendering-Stelle einzeln durch. Der Posten steht als
+[`../open/nackte-reservierte-woerter-im-rohen-ausdruck.md`](../open/nackte-reservierte-woerter-im-rohen-ausdruck.md)
+und in der Abgrenzung von Plan 2. Die Matrix zeigt ihn nicht: keine
+Seed-Spalte heisst wie ein reserviertes Wort.
+
+**M2 — der Reader las `"` bedingungslos als Zeichenkette.** Die Annahme der
+Review (`information_schema` drucke unter `ANSI_QUOTES` Bezeichner mit `"`) ist
+**gemessen widerlegt**. Auf MySQL 9.7.2 **und** 8.0.46 fuehren
+`CHECK_CONSTRAINTS.CHECK_CLAUSE`, `COLUMNS.GENERATION_EXPRESSION` und
+`STATISTICS.EXPRESSION` Bezeichner immer in Backticks und Zeichenketten immer
+in `'…'` — mit `ANSI_QUOTES` in der lesenden Sitzung, mit `ANSI_QUOTES` in der
+anlegenden Sitzung, und auch dann, wenn `SHOW CREATE TABLE` daneben Tabellen-
+und Spaltennamen mit `"` schreibt und nur die Ausdruecke darin in Backticks
+laesst. Ein als `"abc"` geschriebenes Literal kommt als `_latin1\'abc\'`
+zurueck. Ein `"` in diesen Feldern ist also nie eine Zeichenkette; der Leser
+uebernimmt den Lauf jetzt wortgleich als neutralen Bezeichner. `sql_mode` zu
+lesen waere Maschinerie fuer einen Fall, den es nicht gibt.
+
+**M3/F2 — das Index-Praedikat in Spec und CHANGELOG.** `type-mapping.md` 6.2
+nennt jetzt `sys.indexes.filter_definition` neben CHECK und
+Berechnungsausdruck, `ddl-generation-rules.md` sagt es in der Index-Tabelle,
+und der CHANGELOG nennt die Umstiegsfolge — **gemessen** statt behauptet:
+`schema compare` meldet den Wechsel der Schreibweise **nicht** (alte gegen neue
+Form: `IDENTICAL`, Exit 0 — die Faltung aus ADR 0056 traegt ihn),
+`schema migrate` faltet nicht und plant je gefiltertem Index `DropIndex` +
+`AddIndex` (`--plan-only` gegen eine PostgreSQL-Datenbank: zwei Operationen;
+mit einem frischen Reverse als Soll `no_op`, 0 Operationen).
+
+**M4/F1 — die zwei fehlenden Seed-Faelle (P11, DoD 4).** `sqlite.sql` traegt
+jetzt `sl_sq_ref` (Fremdschluessel **ohne** Spaltenliste, `REFERENCES
+sl_sq_parent`) und `sl_sq_comment` (Kommentar im `CREATE TABLE`-Text, mit
+Apostroph und dem Wort `AUTOINCREMENT` in einem Kommentar an einer Spalte, die
+keines traegt). Beide Tabellen haben bewusst **kein** `AUTOINCREMENT`: `R202`
+zaehlt nur echte, und so bleibt `REPORT_CODES_SQLITE` unberuehrt — waehrend die
+Anmerkung `quelle: integer` zugleich die Probe auf den Kommentar ist.
+
+**Ein Neu-Pin war nicht noetig, und das ist gemessen.** Der Matrix-Lauf mit den
+beiden neuen Tabellen ist gruen durchgelaufen, und
+`expected/compare-matrix.env` ist **byte-gleich** geblieben (Pruefsumme vorher
+und nachher `39e064bc…`): keine Zelle, kein `REPORT_CODES_*`, kein
+`GEN_CODES_*` hat sich bewegt. Die beiden Tabellen sind reine
+`integer`-Tabellen und reisen ohne Fund; ihr Fremdschluessel kommt als
+`fk_sl_sq_ref_parent_id` auf `sl_sq_parent(id)` zurueck.
+
+**Dass sie wirklich gemessen werden, ist eine eigene Sabotage** — ein gruener
+Lauf allein belegt es nicht. Die Anmerkung `sl_sq_comment.id` auf
+`identifier(auto)` gestellt (also auf das, was ein Scanner lieferte, der das
+Wort `AUTOINCREMENT` im Kommentar mitliest): **drei nicht pinnbare
+Abweichungen**, Exit 2 —
+
+    FAIL: quelle sqlite: sl_sq_comment.id: Form erwartet 'identifier(auto)', gemessen 'integer'
+    FAIL: ziel sqlite->postgresql: sl_sq_comment.id: Degradierung … ohne Code
+    FAIL: ziel sqlite->mssql:      sl_sq_comment.id: Degradierung … ohne Code
+
+Die Erwartungsdatei blieb dabei unveraendert. Ruecknahme per Pruefsumme belegt,
+danach wieder gruen.
+
+**F3, F4, F6, F7.** Die Liste bekannter Befunde hat **25** Eintraege, nicht 24
+(der 25. ist `sl_ms_calc.Summe` — `W200` trifft die berechnete Spalte nicht,
+aus dem P12-Lauf); die drei Stellen im Plan und die Tabelle ziehen nach. Die
+README nennt `mssql.sql` jetzt mit und sagt im Benutzungsteil, dass `.env` aus
+`.env.example` zu kopieren ist (`make mcp-e2e-up` startet sonst nicht — nur
+`mcp-e2e-smoke` legt die Datei selbst an). Der Anker
+`MssqlTypeMapping.normalizeCheckExpression` im Befund-Teil traegt jetzt den
+Hinweis auf die Umbenennung.
+
+**F5 — die Reichweite des Matrix-Gates.** Der Workflow loeste bei Push nur fuer
+`examples/mcp-e2e/**`, `Makefile`, `make/**` und `Dockerfile` aus — nicht fuer
+den Code, dessen Wirkung er pinnt. Genau den aendern die Pakete dieses
+Umbrellas. Die Pfade schliessen jetzt `adapters/**` und `hexagon/**` ein; die
+Best-Effort-Semantik (kein PR-Gate, aber sichtbar rot) bleibt.
+
+**L1, L7 — der SQLite-Scanner.** `FOREIGN␣␣KEY` (mehr als ein Leerzeichen, ein
+Zeilenumbruch) verlor seinen Namen **still**: der Scanner duldet beliebigen
+Leerraum, sprang fuer die Spaltenliste aber um die feste Laenge
+`FOREIGN_KEY.length` und landete neben der Klammer; die Klausel fiel weg, der
+Fremdschluessel kam ohne Namen aus der PRAGMA. Dass der Defekt in **einer**
+Kopie sass, ist L7: `tableBody`, der Klammer-Lauf und `topLevelItems` standen
+in zwei Scannern und bereits verschieden, obwohl die KDoc von
+`SqliteDdlScanning` „they live once here" verlangt. Beides ist zusammengefuehrt.
+
+**L2, L3 — der Report-Leser des Silent-Loss-Checks**, beide vorher und nachher
+direkt geprueft:
+
+| Fall | alter Stand | neuer Stand |
+| --- | --- | --- |
+| Report **ohne** `summary`, leere Listen | `{"notes":[],"skipped":[]}`, Exit 0 | „ohne summary", Exit 3 |
+| Note mit `code:` im Meldungs- bzw. Hinweistext | `code` = `See code: W998.` — pinnbar falsch | `code` = `W200` |
+
+`seen_summary_missing` wurde nie gesetzt (toter Zweig); die Feldmuster hatten
+keinen Zeilenanker und nahmen den Text ab dem **ersten** Doppelpunkt.
+
+**L4 — `referentialActionSql` lag viermal.** In `AbstractDdlGenerator` und in
+den Diff-Buildern von PostgreSQL, MySQL und SQLite, woertlich gleich —
+waehrend ein Kommentar in `SqliteDiffSqlBuilders` „dieselbe Quelle wie im
+Generate-Pfad" behauptete. Jetzt `ReferentialActions.sql` in `driver-common`;
+SQL Server weicht bewusst ab (kein `RESTRICT`) und setzt weiterhin nur diesen
+einen Wert um. Der Drift-Test prueft fuer **jede** `ReferentialAction`, dass
+Generate- und Migrate-Pfad dieselbe Zeichenkette schreiben.
+
+**L5 — der stille Rueckfall des MySQL-Generators, gemessen und eingeordnet.**
+Ein Text, den die Standardregeln nicht abgrenzen koennen, bleibt wortgleich.
+Das ist **nicht** „aus laut wird still": vor der Umschreibe-Regel (E1) galt
+dieselbe Lesart fuer **jeden** Text, die Regel erreicht diesen einen Fall nur
+nicht. Ziel 6 ist damit gehalten. Der Fall ist eng — ein Reverse erzeugt ihn
+nie, nur eine von Hand geschriebene Datei in MySQLs eigener Schreibweise
+(`'it\'s'`) — und steht jetzt als ausdrueckliche Grenze in
+`ddl-generation-rules.md` 8.3 und in der KDoc. **Offen bleibt die lautere
+Antwort** (`E053` statt Rueckfall): sie braucht den Lexer an einer Stelle, die
+`RawSqlExpressionPortability` erreicht, und sie verwirft dann auch Texte, die
+MySQL heute annimmt.
+
+**Gates der Korrekturrunde.** `make docker-check MODULES=":adapters:driven:driver-mysql
+:adapters:driven:driver-common :adapters:driven:formats"` und
+`MODULES=":adapters:driven:driver-sqlite :adapters:driven:driver-common
+:adapters:driven:driver-postgresql :adapters:driven:driver-mysql
+:adapters:driven:driver-mssql"` gruen; `make integration
+INTEGRATION_TASKS=":test:integration-mysql:test :test:integration-sqlite:test
+--continue"`; `make docs-check` (357 Dateien, 0 Befunde);
+`make solid-suppression-gate` vor jedem Commit; `bash -n` und shellcheck
+(Container) fuer `silent-loss.sh`. `ReferentialActions` liegt in
+`driver-common` und wird von vier Modulen benutzt — der Lauf ohne `MODULES`
+gehoert dazu.
+
+**L6, L8, I1, I4, I5, I6 — Wortlaut.** Der CHANGELOG nennt die Umstiegsfolge
+der Backslash-Verdopplung (ein schon fuer MySQL verdoppelter Backslash aus
+einer alten Reverse-Datei wird ein zweites Mal verdoppelt) und die Grenze des
+Fremdschluessels ohne Spaltenliste (ohne Primaerschluessel in der Zieltabelle
+bricht der Lauf weiter ab, jetzt mit einer Meldung, die beide Tabellen nennt).
+Das Anwenderhandbuch und `type-mapping.md` 5.2a sagen jetzt, dass **zwei echte
+gleichnamige** Constraints zwei bleiben (SQLite erlaubt das, d-migrate benennt
+nicht um) und dass die Stabilitaet gebildeter Namen **je Schema** gilt.
+`ddl-generation-rules.md` 8.3 nennt die Umschreibung nicht mehr „dieselbe
+Umsetzung, die Identifier in View-Queries erfahren" (`ViewQueryTransformer`
+schreibt keine Bezeichner um) und unterscheidet Generate- und Migrate-Pfad: nur
+der Generate-Pfad schreibt erst nach der Portabilitaetspruefung um. Die
+Plan-Prosa zum MySQL-Seed sagt „ein CHECK und der Berechnungsausdruck" statt
+„zwei CHECKs".
+
 ## Akzeptanzkriterien
 
 1. Ein MySQL-Reverse mit Introducer, Backslash-Escape und Backtick-Quoting
@@ -1154,19 +1319,19 @@ Befund selbst steht in
 
 | # | Kriterium | Stand |
 | --- | --- | --- |
-| 1 | MySQL-Reverse gültig und portabel, PostgreSQL ↔ MySQL meldet den CHECK nicht mehr, die MySQL-Zeile misst (P6) | erfüllt: `4`/`8`/`11` statt `INVALID`; Unit- und Integrationsfälle, Portabilität je Ziel geprüft |
-| 2 | Matrix fährt native Seeds und den Silent-Loss-Check mit vier Klassen; jeder stille Verlust ist benannt oder gelistet, `--update-expectations` pinnt keinen (P0) | erfüllt: vier Seeds, vier Klassen plus eine fünfte Selbstprüfung, 24 bekannte Befunde mit Paket, Sabotage (d) belegt den Pin-Schutz |
+| 1 | MySQL-Reverse gültig und portabel, PostgreSQL ↔ MySQL meldet den CHECK nicht mehr, die MySQL-Zeile misst (P6) | erfüllt: `4`/`8`/`11` statt `INVALID`; Unit- und Integrationsfälle, Portabilität je Ziel geprüft. **Nachtrag aus der Review:** P6 nahm die Backticks, ließ aber ein kleingeschriebenes **reserviertes** Wort nackt — MySQL → MySQL endete damit am Server (`ERROR 1064`), und gegen PostgreSQL wurde aus einem übersprungenen Constraint ein DDL-Abbruch (M1). Behoben im Generator, mit Integrationsfall am Server |
+| 2 | Matrix fährt native Seeds und den Silent-Loss-Check mit vier Klassen; jeder stille Verlust ist benannt oder gelistet, `--update-expectations` pinnt keinen (P0) | erfüllt: vier Seeds, vier Klassen plus eine fünfte Selbstprüfung, 25 bekannte Befunde mit Paket, Sabotage (d) belegt den Pin-Schutz. **Zwei Nachträge aus der Review:** der Report-Leser nahm einen Report ohne `summary` an und las `code:` aus einem Meldungstext (L2, L3) — beides behoben und vorher/nachher direkt geprüft |
 | 3 | `schema migrate` gegen SQLite behält die FK-Aktionen, auch über einen Rebuild (S4) | erfüllt: gemessen vorher (`NO ACTION`, Exit 5) und nachher (`RESTRICT`/`CASCADE`, Exit 0) |
 | 4 | SQL-Server-Reverse ohne T-SQL-Quoting; SQL Server → PostgreSQL und → MySQL messen; keine Zelle rechnet still falsch (P12, E1) | erfüllt: `2` und `6` statt `APPLY-FAIL`; die PascalCase-Berechnung erreicht MySQL als `` `Menge`*`Preis` `` |
-| 5 | SQLite-Reverse liefert Namen aus der Quelle, gebildete sind eindeutig und stabil, ein FK ohne Spaltenliste ist lesbar; SQLite → SQL Server misst (P11) | erfüllt: `6` statt `Msg 2714`, `3` statt `uq_0`-Kollision |
-| 6 | Jeder Fix fällt nachweislich mit zurückgenommenem Fix | erfüllt: sechs Sabotage-Läufe (E1, P6, P0 mit sieben Eingriffen, S4, P12, P11), je mit Rücknahme-Beleg |
-| 7 | Spec, Anwenderhandbuch und CHANGELOG je Paket nachgezogen; kein neuer Code | erfüllt: `ddl-generation-rules.md` 2.3 und 8.3, `type-mapping.md` 4.5, 5.2a, 6.2, 6.3, `cli-spec.md` (Herkunfts-Felder), Handbuch 3.3, 3.19, 3.23, CHANGELOG; kein neuer W-/R-Code, also kein Ledger-Eintrag |
+| 5 | SQLite-Reverse liefert Namen aus der Quelle, gebildete sind eindeutig und stabil, ein FK ohne Spaltenliste ist lesbar; SQLite → SQL Server misst (P11) | erfüllt: `6` statt `Msg 2714`, `3` statt `uq_0`-Kollision. **Zwei Nachträge aus der Review:** P11s DoD 4 (die zwei Seed-Fälle) war offen und ist mit der Korrekturrunde erfüllt; `FOREIGN␣␣KEY` verlor seinen Namen still (L1) und tut es nicht mehr |
+| 6 | Jeder Fix fällt nachweislich mit zurückgenommenem Fix | erfüllt: sechs Sabotage-Läufe im Bau (E1, P6, P0 mit sieben Eingriffen, S4, P12, P11) und drei in der Korrekturrunde (M1+M2 zusammen: 6 Tests rot; L1: der neue Fall rot; L4 einseitig: der Drift-Fall rot), je mit Rücknahme-Beleg per Prüfsumme |
+| 7 | Spec, Anwenderhandbuch und CHANGELOG je Paket nachgezogen; kein neuer Code | erfüllt: `ddl-generation-rules.md` 2.3 und 8.3, `type-mapping.md` 4.5, 5.2a, 6.2, 6.3, `cli-spec.md` (Herkunfts-Felder), Handbuch 3.3, 3.19, 3.23, CHANGELOG; kein neuer W-/R-Code, also kein Ledger-Eintrag. Die Korrekturrunde hat 8.3, 4.5, 5.2a, 6.2, Handbuch 3.3 und den CHANGELOG nachgezogen — weiterhin ohne neuen Code (M1 nutzt die vorhandene Backtick-Umschreibung, L5 bleibt bei `E053` bzw. bei der geschriebenen Grenze) |
 
 **Offen geblieben und gemeldet:** die drei `open/`-Einträge
 ([Herkunfts-Overlay](../open/provenance-overlay-nicht-rueckfuehrbar.md),
 [SQLite verschweigt Typmarke und Länge](../open/sqlite-generate-verschweigt-typmarke-und-laenge.md),
 [Fremdschlüssel ohne übersprungenen Schlüssel](../open/generate-fk-ohne-uebersprungenen-schluessel.md))
-und die 24 bekannten Befunde des Silent-Loss-Checks, die Plan 2 und Plan 4
+und die 25 bekannten Befunde des Silent-Loss-Checks, die Plan 2 und Plan 4
 auflösen.
 
 
@@ -1202,8 +1367,28 @@ auflösen.
 
 ## Offen
 
-- **E1** (Umbrella): sperrt die Neu-Pins von P6 und P12.
-- **P12, Messung 3:** plant sie eine `AlterColumnGeneration`, wird der Ausweg
-  eine Eigner-Frage.
-- **P11, Stopp-Regel:** eine `names*`-Fähigkeit oder ein Generator, der
-  Namen schreibt, wird eine Eigner-Frage.
+Die drei Punkte, die hier beim Schnitt standen, sind **geschlossen**:
+
+- **E1** ist entschieden **und gebaut** (Option (b), eigener Bauteil vor den
+  Neu-Pins); die Neu-Pins von P6 und P12 sind durch.
+- **P12, Messung 3** hat **keine** `AlterColumnGeneration` geplant (`no_op`,
+  0 Operationen, je Spalte `W137`) — die Stopp-Regel hat nicht gegriffen, es
+  wurde keine Eigner-Frage daraus.
+- **P11, Stopp-Regel** hat ebenfalls nicht gegriffen: keine `names*`-Fähigkeit
+  wurde geändert oder angelegt, und der Generator schreibt weiterhin keinen
+  Namen für einen Spalten-Fremdschlüssel. Die Änderung liegt vollständig im
+  Reader.
+
+Offen bleibt, was der Bau und die Review **gefunden** haben und was nicht in
+diesen Slice gehört:
+
+- **Nackte reservierte Wörter gegen PostgreSQL, SQL Server und Oracle** (M1,
+  zweite Hälfte): gemessen, ohne Scope —
+  [`../open/nackte-reservierte-woerter-im-rohen-ausdruck.md`](../open/nackte-reservierte-woerter-im-rohen-ausdruck.md),
+  benannt in der Abgrenzung von Plan 2.
+- **Die lautere Antwort auf den nicht abgrenzbaren Ausdruckstext** (L5):
+  `E053` statt wortgleichem Rückfall. Sie braucht den Lexer an einer Stelle,
+  die `RawSqlExpressionPortability` erreicht, und verwirft dann auch Texte, die
+  MySQL heute annimmt — eine Entscheidung, keine Nacharbeit.
+- Die drei `open/`-Einträge aus dem Bau und die 25 bekannten Befunde des
+  Silent-Loss-Checks (s. Stand der Akzeptanzkriterien).
