@@ -1601,11 +1601,8 @@ hier): die Vertragsfrage aus A6 (**P7**, Eigner: „`NOT NULL` nativ") und die
 zweite JSON-Art aus B3 (**P8**, Eigner: „gleichsetzen, aber laut"). Ihre Orte
 [`../open/spatial-profile-e052-ganze-tabelle.md`](../open/spatial-profile-e052-ganze-tabelle.md)
 und [`../open/json-jsonb-zweite-json-art.md`](../open/json-jsonb-zweite-json-art.md)
-verweisen auf die Pakete und schliessen mit der Graduation dieses Slices. Ihre
-Zeilen in [`../open/README.md`](../open/README.md) sagen noch „Entscheidung
-offen"; sie waren beim Aktivierungsschnitt nicht anzufassen (die Datei war
-parallel in Arbeit) und ziehen spätestens mit dem ersten Implementierungs-Commit
-dieses Slices nach.
+verweisen auf die Pakete und schliessen mit der Graduation dieses Slices; ihre
+Zeilen in [`../open/README.md`](../open/README.md) sind nachgezogen.
 
 **Eigner-Fragen aus dem Schnitt** (je mit Empfehlung; die erste sperrt P13,
 die zweite nichts):
