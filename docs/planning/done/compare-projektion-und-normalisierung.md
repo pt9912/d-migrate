@@ -9,7 +9,7 @@
 > (`3b30d9f8a`), P3 (`ba263c737`), P6 (`10eb5a1df`), P2a (`a723584ff`), P2b
 > (`b1de205f9`), P1 (`e08e217fb`), Spec-Teil von P7 (`26ff678ed`); der
 > ADR-Teil von P7 mit ADR 0056 (`c9737f909`; `make doc-immutable` im frischen
-> `--no-local`-Klon geprüft, s. `../open/doc-immutable-lokal-still-gruen.md`).
+> `--no-local`-Klon geprüft, s. `../done/doc-immutable-lokal-still-gruen.md`).
 > **Geliefert — zweiter Bauabschnitt** (Review und Verifikation, s. dort):
 > P9 in neuer Fassung samt Rückzug, Schlüsselwörtern und Lexik (A–D, H;
 > `13e397475`), MCP-Werte und Index-Pfad (E, F; `58510584d`), Absicherung (G;
@@ -151,7 +151,7 @@ der Graduation stehen.
 | `integration.yml` ohne `--continue` | ebenda, Teil 2 |
 | Der Workflow der Compare-Matrix ist bei der Graduation noch nie in CI gelaufen | ebenda, Teil 3 (Beobachtungspunkt) |
 | Das FTS-Testimage pinnt das Paket `mssql-server` nicht | [`../open/mssql-testimage-2025-cu1-startet-nicht.md`](../open/mssql-testimage-2025-cu1-startet-nicht.md), Nachtrag |
-| `make doc-immutable` friert `superseded`-ADRs nicht ein (P7-DoD 3 eingeschränkt) | [`../open/doc-immutable-lokal-still-gruen.md`](../open/doc-immutable-lokal-still-gruen.md), Nachtrag |
+| `make doc-immutable` friert `superseded`-ADRs nicht ein (P7-DoD 3 eingeschränkt) | [`../done/doc-immutable-lokal-still-gruen.md`](doc-immutable-lokal-still-gruen.md), Nachtrag — geschlossen 2026-09-17 |
 | Oracle in Repro und Harnesses nicht gefahren | [`../open/mcp-e2e-oracle-nicht-gefahren.md`](../open/mcp-e2e-oracle-nicht-gefahren.md) |
 | Usage-Fehler enden mit Exit 1 statt 2 (Review Runde 5, M-3) | [`../open/cli-usage-fehler-exit-1-statt-2.md`](../open/cli-usage-fehler-exit-1-statt-2.md) |
 | Kein statisches Gate für Shell, Kotlin und YAML; zwei vorbestehende shellcheck-Befunde in `examples/mcp-e2e/scripts/smoke-scope-matrix.sh` | [`semgrep-scoped-packs.md`](../next/semgrep-scoped-packs.md), Nachtrag |
@@ -1871,7 +1871,7 @@ Präferenz unverändert), `make doc-immutable RANGE=origin/main..HEAD` vor der
 Übergabe. **Präzisiert (Verifikation Runde 4):** die 331 Dateien zählte der
 Lauf im Arbeits-Repo samt dem damals ungetrackten ADR-Entwurf 0057; ein
 frischer Klon desselben Stands prüft 330. `make doc-immutable` im Arbeits-Repo
-ist kein Beleg (s. `../open/doc-immutable-lokal-still-gruen.md`); belastbar
+ist kein Beleg (s. `../done/doc-immutable-lokal-still-gruen.md`); belastbar
 ist der Lauf im frischen `--no-local`-Klon des Reviews Runde 4 (Stand
 `d3ef2d77d`, Ranges `e3116c34c..HEAD` und `076d6c955..HEAD`, je 328 Dateien,
 0 Befunde). **CI an `e3116c34c`:** `Build & Test` grün, `Integration Tests`

@@ -421,10 +421,11 @@ verweist dabei **nicht** auf den ADR; Verweise von `spec` auf `adr` sind laut
 
 **Gate-Hinweise:**
 
-- `make doc-immutable RANGE=origin/main..HEAD` ist im Arbeits-Repo still grün
-  ([`../open/doc-immutable-lokal-still-gruen.md`](../open/doc-immutable-lokal-still-gruen.md)).
-  Bis das behoben ist, muss der Lauf in einem frischen
-  `git clone --no-local` stattfinden. CI prüft ohnehin einen frischen Checkout.
+- `make doc-immutable RANGE=origin/main..HEAD` prüft selbst gegen einen frischen
+  Klon; der Lauf im Arbeits-Repo ist damit belastbar
+  ([`../done/doc-immutable-lokal-still-gruen.md`](../done/doc-immutable-lokal-still-gruen.md)).
+  Ein übersteuerter ADR ist im Kern genauso eingefroren wie ein akzeptierter:
+  nach K3 gilt das auch für ADR 0055 und ADR 0056.
 - `consulted:` im neuen ADR ist historisch gemeint. Zieht dieser Plan nach
   `../in-progress/` um, bleibt der Pfad stehen (`CLAUDE.md`).
 
@@ -631,8 +632,8 @@ dieses Plans (s. „Entscheidungsbedarf und Gate").
    `VALIDATION_ERROR`. Die Server-Konfiguration wirkt nach E4.
 7. **Der ADR ist `accepted`**; mit K3 tragen ADR 0055 und ADR 0056
    `superseded by`. Die Spec nennt Profil, Kandidaten, Defaults und
-   Kennzeichnung. `make docs-check` ist grün, `make doc-immutable` im frischen
-   Klon ebenfalls.
+   Kennzeichnung. `make docs-check` ist grün, `make doc-immutable`
+   ebenfalls.
 8. **Das Handbuch beschreibt das Profil aufgabenorientiert**, und zwar erst,
    wenn es wirkt.
 
@@ -647,7 +648,7 @@ dieses Plans (s. „Entscheidungsbedarf und Gate").
 | T7 | `:adapters:driving:mcp` | `make docker-check`, `make golden-update` |
 | T8 | `test/e2e-cli` | `make integration INTEGRATION_TASKS=":test:e2e-cli:test"` (setzt `-PintegrationTests`; ohne die Property überspringt Gradle die Tests und meldet trotzdem Erfolg) |
 | geteilte Signatur | alle, auch `test/integration-*` | einmal `make docker-check` **ohne** `MODULES` |
-| T0, T9 | `docs/adr/`, `spec/`, `docs/user/` | `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD` im frischen Klon |
+| T0, T9 | `docs/adr/`, `spec/`, `docs/user/` | `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD` |
 
 Vor jedem Commit läuft `make solid-suppression-gate`. Die Ausgabe langer Läufe
 geht in eine Datei und wird gegrept.
@@ -703,7 +704,7 @@ Semantik-Aussagen von K2 und K4 werden dabei gegen PostgreSQL nachgemessen:
 
 ### 5. Vertrags-Gates
 
-`make docs-check`, `make doc-immutable` (frischer Klon) und
+`make docs-check`, `make doc-immutable` und
 `make solid-suppression-gate`.
 
 ## Offen (nicht Teil dieses Plans)
