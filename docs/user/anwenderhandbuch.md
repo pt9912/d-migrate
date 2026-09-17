@@ -518,11 +518,23 @@ triggers:
   nur zusammen mit `--sqlite-autoincrement-width 64`. Damit auch `schema compare`
   mit `db:`-Operanden und der MCP-Server so lesen, tragen Sie es in die
   Konfiguration ein (`reverse.mysql.autoincrement_syntax: identity` bzw.
-  `reverse.sqlite.autoincrement_syntax: identity`). **Wollen Sie die Datei als
-  Soll für `schema migrate` gegen dieselbe MySQL-Datenbank verwenden, lesen Sie
-  ohne `identity`:** `schema migrate` liest die Datenbank ohne die Präferenz
-  und plant sonst für jede solche Spalte ein wirkungsloses
-  `ALTER TABLE … MODIFY COLUMN … AUTO_INCREMENT`.
+  `reverse.sqlite.autoincrement_syntax: identity`). Der MCP-Server bestätigt
+  sie im Reverse-Report, den seine Lese-Jobs neben dem Ergebnis ablegen. Ein
+  Tippfehler im Wert (`identiy`) bricht den Lauf mit Exit 7 ab, `mcp serve`
+  startet dann nicht.
+- **`schema migrate` gegen MySQL und `generation: identity` ohne
+  `legacy_serial_syntax`:** Für eine `BIGINT AUTO_INCREMENT`-Spalte plant
+  `schema migrate` dann ein `ALTER TABLE … MODIFY COLUMN … AUTO_INCREMENT`,
+  das die Spalte nicht ändert. Das hat zwei Gründe. `schema migrate` liest die
+  Datenbank ohne die Präferenz, also mit dem Flag. Und es wertet das Flag auch
+  gegen MySQL, obwohl MySQL aus beiden Formen dieselbe Spalte erzeugt.
+  - **Soll ist eine mit `identity` zurückgelesene Datei:** Lesen Sie die Datei
+    für diesen Weg ohne `identity` zurück; der Plan ist dann leer.
+  - **Soll ist handgeschrieben:** Die Präferenz ändert daran nichts, der Plan
+    enthält die Operation mit und ohne Deklaration. Setzen Sie das Soll nur
+    gegen MySQL ein, tragen Sie `legacy_serial_syntax: true` an der Spalte
+    ein; der Plan ist dann leer. MySQL erzeugt aus beiden Formen dieselbe
+    Spalte — PostgreSQL erzeugt aus dem Flag allerdings `BIGSERIAL`.
 
 #### Ihre Partitionsnamen gehen beim Auslesen verloren
 
@@ -645,8 +657,9 @@ nützlich in Skripten.
   Dezimalzahl an einer Gleitkommaspalte (`x > (0.5)::double precision`, auch
   bei `real`). Der Identity-Modus bleibt ein Unterschied, wo ein System nur
   eine Form kennt: SQL Server kennt kein `BY DEFAULT` und liest solche
-  Spalten als `always`; MySQL und SQLite lesen ihre Autowert-Spalten als
-  `by_default`, auch wenn das Gegenstück `always` sagt. Enthält ein Ausdruck
+  Spalten als `always`; MySQL (`BIGINT AUTO_INCREMENT`) und SQLite (nur mit
+  der Breite `64`, sonst entsteht `identifier`) lesen ihre Autowert-Spalten
+  als `by_default`, auch wenn das Gegenstück `always` sagt. Enthält ein Ausdruck
   einen Kommentar, Dollar-Quoting oder einen Backslash, vergleicht d-migrate
   ihn wortgleich.
 - **Über MCP gilt dasselbe:** `schema_compare` und der Job
@@ -654,7 +667,9 @@ nützlich in Skripten.
   als Artefakt der Art `COMPARE` ab (`status`, `summary`, alle `findings`);
   dasselbe Artefakt nennt `schema_compare` in `diffArtifactRef`, wenn die
   Antwort nicht alle Funde trägt. Die Präferenz `serial`/`identity` liest der
-  MCP-Server aus seiner Konfigurationsdatei.
+  MCP-Server einmal beim Start aus seiner Konfigurationsdatei; vergleicht der
+  Job eine Verbindung, legt er zusätzlich deren Reverse-Report ab. Bei einem
+  hochgeladenen Schema zählt, womit die Datei erzeugt wurde.
 - **Eine Änderung am Berechnungsausdruck einer `computed`-Spalte kann der
   Vergleich nicht immer sehen.** Ohne Herkunfts-Overlay oder Server-Sandkasten
   ist die Frage unentscheidbar — der Vergleich meldet dann bewusst **keinen**
@@ -1735,13 +1750,16 @@ Tool-Aufrufe, in dieser Reihenfolge:
    Liefert `jobId` + `resourceUri`.
 
 2. **Job pollen** (`job_status_get`) mit derselben `jobId`, bis `status`
-   `SUCCEEDED` ist. Die Antwort trägt `artifacts[]` mit der Artefakt-Referenz
-   des reverse-engineerten Schemas.
+   `SUCCEEDED` ist. Die Antwort trägt `artifacts[]`: an erster Stelle das
+   reverse-engineerte Schema, an zweiter den Reverse-Report mit den Hinweisen
+   des Readers (etwa `R202`, `R205`).
 
-3. **Katalogisiertes Schema finden** (`schema_list`) mit `jobId` aus Schritt 1:
+3. **Katalogisiertes Schema finden** (`schema_list`). Der Filter `jobId`
+   erwartet die **Job-URI** — die `resourceUri` aus Schritt 1, nicht die
+   bloße `jobId` (mit ihr bleibt die Liste leer):
 
    ```json
-   {"jobId": "<jobId aus Schritt 1>"}
+   {"jobId": "<resourceUri aus Schritt 1>"}
    ```
 
    Die Antwort trägt `schemas[].resourceUri` — das ist die `schemaRef`,

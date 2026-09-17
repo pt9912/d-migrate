@@ -329,7 +329,7 @@ die Alternative („die Analyse kennt den Introducer") hat damit einen Vorläufe
 der sich dagegen entschieden hat.
 
 **Und der Posten bringt eine Anwenderstelle mit:** die Grenze von `E012` steht im
-Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2125`) — dort zieht P6 mit.
+Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2194`) — dort zieht P6 mit.
 
 ### D — Nachträge vor der Aktivierung (2026-09-17)
 

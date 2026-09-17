@@ -554,8 +554,8 @@ denselben Regeln wie bei `data export` (§1.4), aber ohne impliziten
 | `--include-functions` | Nein | Boolean | User-Defined Functions einschliessen |
 | `--include-triggers` | Nein | Boolean | Triggers einschliessen |
 | `--include-all` | Nein | Boolean | Alle optionalen Objekte einschliessen |
-| `--name` | Nein | String | Schemaname im Output statt des reverse-generierten Defaults |
-| `--version` | Nein | String | Schemaversion im Output statt `0.0.0-reverse` |
+| `--name` | Nein | String | Schemaname im Output statt des reverse-generierten Defaults. Ersetzt die Reverse-Markierung: die Datei gilt danach als handgeschrieben (siehe „Reverse-Markierung" unter `schema compare`) |
+| `--version` | Nein | String | Schemaversion im Output statt `0.0.0-reverse`. **Nur zusammen mit `--name`:** allein laesst es eine halbe Markierung zurueck (reservierter Name, andere Version), die `schema compare` mit Exit 7 abweist |
 | `--sqlite-autoincrement-width` | Nein | `32`\|`64` | SQLite-Reverse: AUTOINCREMENT-Primärschlüssel als 32-bit `identifier` (Default) oder 64-bit `biginteger`+`identity` schreiben (inhärente Mehrdeutigkeit, `dialect-preference-mechanism.md`); übersteuert `reverse.sqlite.autoincrement_width` |
 | `--sqlite-autoincrement-syntax` | Nein | `serial`\|`identity` | SQLite-Reverse unter Breite `64`: die Identity-Spalte als `serial` (Default, `legacy_serial_syntax`) oder als `identity` (ohne das Flag, Note `R205`) schreiben; unter Breite `32` ohne Wirkung; übersteuert `reverse.sqlite.autoincrement_syntax` |
 | `--mysql-autoincrement-syntax` | Nein | `serial`\|`identity` | MySQL-Reverse: ein `BIGINT AUTO_INCREMENT` als `serial` (Default, `legacy_serial_syntax`, PostgreSQL erzeugt `BIGSERIAL`) oder als `identity` (ohne das Flag, Note `R205`) schreiben (inhärente Mehrdeutigkeit, `dialect-preference-mechanism.md`); übersteuert `reverse.mysql.autoincrement_syntax` |
@@ -599,7 +599,7 @@ Messages werden vor der Ausgabe zentral gescrubbt.
 | `0` | Reverse erfolgreich (auch bei Warnungen und uebersprungenen Objekten) |
 | `2` | Ungueltige CLI-Argumente (Format/Endung-Mismatch, Output/Report-Kollision) |
 | `4` | Verbindungs- oder DB-Metadatenfehler |
-| `7` | Config-Aufloesung, URL-Parse oder Dateischreibfehler |
+| `7` | Config-Aufloesung (auch ein nicht erkannter Wert im Block `reverse:`), URL-Parse oder Dateischreibfehler |
 
 #### `schema compare`
 
@@ -858,7 +858,12 @@ Vergleichsgegenstand — auch gegen ein handgeschriebenes Schema entsteht dort
 kein Unterschied, und kein Bericht nennt die Markierung oder einen Platzhalter
 fuer sie. Zwei handgeschriebene Schemata vergleichen beide Felder. Traegt ein
 Name das reservierte Praefix bei unvollstaendiger Markierung, endet der Lauf
-mit Exit 7.
+mit Exit 7. So eine halbe Markierung entsteht etwa mit
+`schema reverse --version X` ohne `--name`: der Name bleibt die Markierung, die
+Version nicht. Mit `--name` (mit oder ohne `--version`) traegt die Datei keine
+Markierung mehr und gilt als handgeschrieben: sie liefert dem Vergleich keinen
+Dialekt, und gegen ein anderes handgeschriebenes Schema zaehlen Name und
+Version.
 
 **Sequenzname einer Identity-Spalte**: den Namen der Sequenz hinter einer
 Identity-Spalte vergibt bei PostgreSQL und Oracle der Server; er beschreibt,
@@ -955,7 +960,7 @@ abschnitt   := "views" | "sequences" | "custom_types"
 - `2`: Ungültige CLI-Argumente
 - `3`: Schema-Validierung fehlgeschlagen
 - `4`: Verbindungsfehler (nur bei `db:`-Operanden)
-- `7`: Datei-/Parse-/I/O-Fehler
+- `7`: Datei-/Parse-/I/O-Fehler, eine unvollstaendige Reverse-Markierung; bei `db:`-Operanden auch ein Konfigurationsfehler (unaufloesbare Verbindung, nicht erkannter Wert im Block `reverse:`)
 
 **Beispiele**:
 
@@ -1979,7 +1984,7 @@ Streaming-Fehlerpfad getrennt bleiben.
 | `3` | Preflight fehlgeschlagen (Inkompatibilität, FK-Zyklen) oder `--verify`-Divergenz (Quelle≠Ziel) |
 | `4` | Verbindungsfehler (Source oder Target) |
 | `5` | Streaming-/Schreibfehler während Transfer |
-| `7` | Konfigurationsfehler |
+| `7` | Konfigurationsfehler (auch ein nicht erkannter Wert einer Präferenz, `reverse.sqlite.autoincrement_width` oder `write.oracle.empty_string`) |
 
 **Beispiele**:
 

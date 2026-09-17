@@ -34,19 +34,68 @@ Beide müssen behoben werden — der Render-Fix allein lässt die Drift bestehen
    Präferenz muss bis in den Post-Compare-Re-Read (`SchemaMigrateExecutionStage`)
    gefädelt werden — oder der `migrate`-Kontext leitet sie deterministisch ab.
 
-## Nachtrag 2026-09-17 — derselbe Re-Read-Befund für MySQL
+## Nachtrag 2026-09-17 — MySQL: zwei Ursachen, nicht eine
 
 Seit dem vierten Bauabschnitt des Compare-Slices
 ([`../in-progress/compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md))
 gibt es die Reverse-Präferenz `serial`/`identity` für MySQLs
-`BIGINT AUTO_INCREMENT` (und SQLite unter der 64-Bit-Breite). `schema migrate`
-liest den Ist-Stand weiterhin **ohne** Präferenz. Gemessen gegen MySQL 9.7.2:
-ein mit `--mysql-autoincrement-syntax identity` zurückgelesenes Schema als Soll
-gegen dieselbe Datenbank plant fünf `AlterColumnGeneration`
-(`ALTER TABLE … MODIFY COLUMN … BIGINT NOT NULL AUTO_INCREMENT`, wirkungslos),
-ohne Präferenz keine Operation. Ursache 2 oben gilt damit für beide Dialekte;
-für MySQL fehlt nur das Threading, einen Render-Befund gibt es dort nicht.
-Das Handbuch rät bis dahin, für diesen Weg ohne `identity` zu lesen.
+`BIGINT AUTO_INCREMENT` (und SQLite unter der 64-Bit-Breite). Gegen MySQL 9.7.2
+gemessen, `schema migrate --plan-only` gegen dieselbe Datenbank, aus der das
+Soll stammt (eine Tabelle mit `BIGINT AUTO_INCREMENT`):
+
+| Soll | Plan |
+| ---- | ---- |
+| Reverse ohne Präferenz (`legacy_serial_syntax: true`) | keine Operation |
+| Reverse mit `--mysql-autoincrement-syntax identity` (ohne das Flag) | eine `AlterColumnGeneration`, gerendert als ``ALTER TABLE `t` MODIFY COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT`` — ändert die Spalte nicht |
+| **handgeschrieben**, `biginteger` + `generation: {type: identity, mode: by_default}`, **ohne** Präferenz | dieselbe `AlterColumnGeneration` — mit 1.7.1 genauso |
+| handgeschrieben wie oben, zusätzlich `legacy_serial_syntax: true` | keine Operation |
+
+Die dritte Zeile hat mit der Präferenz nichts zu tun; sie plante schon vor dem
+Compare-Slice so (der MySQL-Reverse setzte das Flag immer). Die erste Fassung
+dieses Nachtrags nannte nur das fehlende Threading — das ist die **zweite**
+Ursache, nicht die einzige (Review Runde 4, M-1):
+
+1. **Die zielbewusste Naht wertet das Flag gegen MySQL.**
+   `capabilityGenerationCanonicalizer`
+   ([`TypeCanonicalizerWiring.kt`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/TypeCanonicalizerWiring.kt))
+   projiziert Sequenzname und `stored`, nicht `legacy_serial_syntax`. Der
+   MySQL-Generator rendert beide Formen identisch
+   ([`spec/type-mapping.md`](../../../spec/type-mapping.md), Abschnitt 4.4:
+   „MySQL selbst erzeugt aus beiden Formen dieselbe Spalte"), der Vergleich
+   sieht trotzdem einen Unterschied. Das trifft **jedes** Soll ohne das Flag
+   gegen ein MySQL-Ziel, mit und ohne Präferenz. Für SQLite unter der
+   64-Bit-Breite gilt dieselbe Frage, sobald Ursache 1 des Abschnitts oben
+   (Render-Lücke) behoben ist.
+2. **Der Ist-Stand wird ohne Präferenz gelesen.** `schema migrate` (und
+   `schema rollback`) lesen die Datenbank mit dem Default, also mit dem Flag.
+   Ein mit `identity` gelesenes Soll unterscheidet sich darin vom Ist.
+
+**Welche Behebung was schließt.** Ursache 2 allein (Threading) schließt die
+zweite Zeile nur, wenn der Anwender die Präferenz auch für `schema migrate`
+deklariert; die dritte Zeile bleibt, solange er es nicht tut. Ursache 1 allein
+schließt beide Zeilen. **Ursache 1 zu beheben heißt aber, in der Naht zu
+falten, die auch den Fingerabdruck und die Overlay-Bindung speist**
+(`SchemaMigrateRunner`, `SchemaRollbackRunner`, `PartitionOverlayHint`) — genau
+das schließt [ADR 0027](../../adr/0027-reverse-preferences-inhaerente-mehrdeutigkeit.md)
+in Entscheidung 3 aus („Kein Fingerprint-Bump, kein Fold"). Das ist eine
+Architektur-Frage, keine Bau-Entscheidung: entweder eine Fähigkeit „rendert
+`SERIAL` und IDENTITY gleich" nur für den Plan (nicht für den Abdruck), oder ein
+Abdruck-Bump mit Begründung, oder die Präferenz bleibt der einzige Weg und der
+Plan mit der wirkungslosen Operation die dokumentierte Folge.
+
+**Spannung zur Spezifikation.**
+[`spec/dialect-preference-mechanism.md`](../../../spec/dialect-preference-mechanism.md)
+sagt unter „Reichweite der Konfiguration", eine Lese-Präferenz gelte „für jeden
+Reverse, dessen Ergebnis der Anwender liest oder vergleicht". Der Ist-Stand von
+`schema migrate … db:` ist ein solcher Reverse; er liest heute ohne. Die Spec
+beschreibt hier das Zielbild; Ursache 2 ist der Abstand dazu.
+
+**Handbuch bis dahin.** Das Anwenderhandbuch (Reverse-Abschnitt) nennt beide
+Wirkungen getrennt: wer eine mit `identity` gelesene Datei als Soll gegen
+dieselbe MySQL-Datenbank nimmt, liest ohne `identity`; ein handgeschriebenes
+Soll plant die wirkungslose Operation unabhängig von der Präferenz — wer es
+nur gegen MySQL einsetzt, trägt das Flag ein (letzte Zeile der Tabelle), mit
+der Folge `BIGSERIAL` auf PostgreSQL.
 
 ## Nicht-Scope
 

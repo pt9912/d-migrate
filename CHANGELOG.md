@@ -20,13 +20,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   und bestaetigt das im Report mit `R205`. Fuer SQLite gilt dasselbe unter der
   64-Bit-Breite (`--sqlite-autoincrement-syntax`,
   `reverse.sqlite.autoincrement_syntax`). Ohne Deklaration ist der Reverse
-  unveraendert. **Die Reverse-Praeferenzen der Konfiguration gelten jetzt auch
-  fuer `db:`-Operanden von `schema compare` und fuer `mcp serve`**
-  (`schema_reverse_start`, `schema_compare_start` mit Verbindungen, gelesen aus
-  der Datei von `--connection-config` bzw. `--config`) — das betrifft auch
-  `reverse.sqlite.autoincrement_width`, das beide bisher nicht sahen.
+  unveraendert.
+
+- **Die MCP-Lese-Jobs legen den Reverse-Report ab.** `schema_reverse_start`
+  veroeffentlicht neben dem Schema den Reverse-Report der gelesenen Verbindung
+  (dieselbe Form wie der Report von `schema reverse`, Art `OTHER`,
+  `application/x-yaml`): Notes, uebersprungene Objekte und die Bestaetigung
+  einer deklarierten Praeferenz (`R204`, `R205`). Bisher verwarf der Server
+  sie — wer `identity` ueber die Server-Konfiguration erklaerte, sah davon
+  nichts. `schema_compare_start` legt fuer jede Seite, die es aus einer
+  Verbindung liest, ebenfalls ihren Report ab. In `job_status_get.artifacts`
+  steht das Ergebnis weiter an erster Stelle, die Reports folgen (Quelle vor
+  Ziel).
 
 ### Changed
+
+- **Die Reverse-Praeferenzen der Konfiguration gelten jetzt auch fuer
+  `db:`-Operanden von `schema compare` und fuer `mcp serve`**
+  (`schema_reverse_start`, `schema_compare_start` mit Verbindungen, gelesen aus
+  der Datei von `--connection-config` bzw. `--config`, einmal beim Start).
+  Das betrifft auch `reverse.sqlite.autoincrement_width`, das beide bisher
+  nicht sahen — und es kann ein Ergebnis umkehren. Mit
+  `reverse.sqlite.autoincrement_width: 64` in der Konfiguration meldete
+  `schema compare db:<sqlite> file:<reverse mit Breite 64>` bisher je
+  `AUTOINCREMENT`-Schluessel `type: identifier(auto) -> biginteger` und eine
+  geaenderte Erzeugung (Exit 1); jetzt ist das Paar gleich (Exit 0). Umgekehrt
+  meldet dieselbe Konfiguration gegen eine mit der Breite `32` geschriebene
+  Datei jetzt diesen Unterschied, wo bisher keiner war.
+
+- **Ein nicht erkannter Wert einer Lese-Praeferenz ist ein
+  Konfigurationsfehler.** `reverse.mysql.autoincrement_syntax: identiy` oder
+  `reverse.sqlite.autoincrement_width: 16` fielen still auf den Default
+  zurueck; jetzt enden `schema reverse`, `schema compare` (mit `db:`-Operand)
+  und `data transfer` mit Exit 7, und `mcp serve` startet nicht (Exit 2). Ein
+  fehlender Block oder eine fehlende Datei bleiben „nicht erklaert".
+
+- **`R204` und `R205` nennen die Stelle, an der die Praeferenz erklaert
+  wurde** — das Flag (`--mysql-autoincrement-syntax identity`) oder den
+  Konfigurationsschluessel. Bisher stand dort immer der Schluessel, auch wenn
+  das Flag gesetzt war.
 
 - **`schema_compare` meldet je geaendertem Feld, und jeder Fund nennt seinen
   Ort im selben Schema.** Eine Sicht, Sequenz, ein benutzerdefinierter Typ,
@@ -89,6 +121,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`data transfer` meldet einen nicht erkannten Wert von
+  `write.oracle.empty_string` (bzw. `--oracle-empty-string`) mit Exit 7.**
+  Bisher endete der Lauf mit einem Java-Stacktrace und Exit 1, entgegen der
+  Spezifikation.
+
 - **`schema_compare` legt bei mehr Funden als `maxInlineFindings` das
   Ueberlauf-Artefakt an.** Bisher entstand es nur, wenn das Ergebnis mehr als
   die Haelfte von `maxToolResponseBytes` belegte; darunter war `truncated`
@@ -112,7 +149,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   MCP-Oberflaechen `SCHEMA_NAME_CHANGED`/`SCHEMA_VERSION_CHANGED` mit denselben
   Platzhaltern: Werte, die in keinem der beiden Schemata stehen. Die
   Markierung ist keine Eigenschaft des Schemas; zwei handgeschriebene Schemata
-  vergleichen `name` und `version` weiter.
+  vergleichen `name` und `version` weiter. **Der Exit-Code wechselt dabei:**
+  ein Reverse gegen ein sonst gleiches handgeschriebenes Schema endete mit
+  Exit 1 (`DIFFERENT`), jetzt mit Exit 0 (`IDENTICAL`).
 
 - **`schema compare` setzt weitere Dialekt-Schreibweisen gleich.** Klammern um
   die Operanden einer `AND`-/`OR`-Komposition

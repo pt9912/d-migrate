@@ -31,7 +31,11 @@ getan hat.
   Schreiben an der Schreibstelle. Nie im nachgelagerten Vergleich; die
   Fingerprint-Berechnung bleibt unverändert.
 - **Nicht stumm.** Weicht ein Lauf per Präferenz vom Default ab, wird das mit
-  einer INFO-Note im Report festgehalten (Audit-Trail).
+  einer INFO-Note im Report festgehalten (Audit-Trail). Die Note nennt die
+  Stelle, an der die Präferenz erklärt wurde — das Flag oder den
+  Konfigurationsschlüssel. Wo ein Lauf keinen Report-Pfad hat, legt er den
+  Report dort ab, wo er sein Ergebnis ablegt (MCP-Server: als Artefakt des
+  Jobs, siehe [`mcp-server.md`](mcp-server.md)).
 
 ## 2. Auflösungs-Präzedenz
 
@@ -44,6 +48,16 @@ gewinnt:
 3. **Konservativer Default**
 
 Die Granularität ist global (pro Lauf/Projekt).
+
+**Fehlt eine Deklaration, gilt der Default; ist sie unlesbar, ist das ein
+Fehler.** Für Lese- und Schreib-Präferenzen gleichermaßen: ein fehlender
+Eintrag, ein fehlender Block oder eine nicht lesbare Konfigurationsdatei
+heißen „nicht erklärt". Ein **vorhandener, aber nicht erkannter Wert** ist ein
+Konfigurationsfehler — in der CLI Exit 7, beim MCP-Server ein Startfehler —,
+keine stille Rückkehr zum Default: ein Tippfehler (`identiy`, `eror`) sähe
+sonst aus wie eine Entscheidung. Ein Flag prüft die CLI selbst (ungültiger
+Wert: Exit 2); ein gesetztes Flag verdeckt den Konfigurationswert desselben
+Dialekts.
 
 ## 3. Oberfläche
 
@@ -60,9 +74,9 @@ Die Granularität ist global (pro Lauf/Projekt).
 - **Reichweite der Konfiguration:** eine Lese-Präferenz aus `.d-migrate.yaml`
   gilt für jeden Reverse, dessen Ergebnis der Anwender liest oder vergleicht —
   auch für die `db:`-Operanden von `schema compare` und für den MCP-Server, der
-  sie aus seiner eigenen Konfigurationsdatei liest (`schema_reverse_start`,
-  `schema_compare_start` mit Verbindungen). Ein Pendant zum Flag pro Aufruf
-  gibt es über MCP nicht.
+  sie aus seiner eigenen Konfigurationsdatei einmal beim Start liest
+  (`schema_reverse_start`, `schema_compare_start` mit Verbindungen). Ein
+  Pendant zum Flag pro Aufruf gibt es über MCP nicht.
 
 Die konkreten Schlüssel und Flags stehen in
 [`connection-config-spec.md`](connection-config-spec.md) und
@@ -129,5 +143,5 @@ Wahl, die d-migrate anbietet; es gäbe keine zweite vertretbare Antwort.
 Der Ersatzwert trägt bewusst das Präfix `literal:` statt frei zu stehen. Ohne die
 Markierung wäre jeder Tippfehler (`eror`) ein gültiger Ersatztext und landete
 stillschweigend in der Spalte — genau die Überraschung, die dieser Mechanismus
-verhindern soll. **Ein nicht erkannter Wert ist ein Konfigurationsfehler**
-(Exit 7), keine stille Rückkehr zum Default.
+verhindern soll. Ein nicht erkannter Wert ist, wie bei jeder Präferenz
+(Abschnitt 2), ein Konfigurationsfehler (Exit 7).

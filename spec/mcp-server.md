@@ -232,9 +232,13 @@ Dieselbe Aussage trägt das Tool-Schema als `description` am
 derselbe Umgang mit dem Sequenznamen und mit `legacy_serial_syntax` einer
 Identity-Spalte (alles unter „`schema compare`" in der
 [CLI-Spezifikation](cli-spec.md)). Ob ein MySQL- oder SQLite-Reverse das
-Flag traegt, entscheidet die Reverse-Praeferenz des Servers (siehe
-„Async-Jobs"), nicht der Vergleich. Den Dialekt einer Seite liest der Server
-aus der Reverse-Markierung des referenzierten Schemas. Die Markierung selbst
+Flag traegt, entscheidet nicht der Vergleich, sondern die Reverse-Praeferenz
+dessen, der die Seite gelesen hat: bei einer Verbindung, die der Job selbst
+liest, die des Servers (siehe „Async-Jobs"); bei einem hochgeladenen oder
+gespeicherten Schema die des Werkzeugs, das die Datei erzeugt hat — der Server
+liest sie nicht nach. Den Dialekt einer Seite liest der Server aus der
+Reverse-Markierung des referenzierten Schemas; eine Datei ohne Markierung ist
+ein handgeschriebenes Schema. Die Markierung selbst
 zaehlt wie in der CLI nicht: traegt eine Seite sie, sind `name` und `version`
 kein Vergleichsgegenstand — weder zwei Reverses aus verschiedenen Dialekten
 noch ein Reverse gegen ein handgeschriebenes Schema ergeben
@@ -254,11 +258,13 @@ true`; ohne Verweis ist `truncated` nie gesetzt). Beide haben **eine** Form:
 ein Objekt mit `status` (`identical`/`different`), `summary` und `findings` —
 dieselben Felder und Eintraege wie die Antwort von `schema_compare`, aber nie
 gekuerzt. `truncated`, `diffArtifactRef` und `executionMeta` beschreiben einen
-Aufruf, nicht das Ergebnis, und stehen nicht im Artefakt. Das Artefakt des
-Jobs steht zusaetzlich im Index `diffs` (`diff_list`,
-`dmigrate://tenants/{tenantId}/diffs/{diffId}`, Feld `artifactRef`). Die Art
-`DIFF` erzeugt der Server nicht; ein Upload (`artifact_upload_init`) kann die
-Art `COMPARE` nicht tragen.
+Aufruf, nicht das Ergebnis, und stehen nicht im Artefakt. Gefunden wird das
+Artefakt des Jobs ueber `job_status_get` (`artifacts`, an erster Stelle) und
+`artifact_list` (Art `COMPARE`). Der Index `diffs` (`diff_list`,
+`dmigrate://tenants/{tenantId}/diffs/{diffId}`) fuehrt es in `mcp serve`
+nicht: dort ist er nicht verdrahtet und bleibt leer. Die Art `DIFF` erzeugt der
+Server nicht; ein Upload (`artifact_upload_init`) kann die Art `COMPARE` nicht
+tragen.
 
 Jeder Eintrag in `findings` traegt `severity`, `code`, `path` und `message`,
 optional `details` mit `before` und/oder `after`:
@@ -609,9 +615,29 @@ Vier Job-Tools:
 `connections`-Verweis — liest mit den Praeferenzen aus dem Block `reverse:`
 der Server-Konfiguration ([Dialekt-Praeferenzen](dialect-preference-mechanism.md),
 Schluessel in der [Konfigurations-Spezifikation](connection-config-spec.md)):
-die SQLite-Breite und `serial`/`identity` fuer MySQL und SQLite. Ohne den
-Block liest der Server mit den Defaults. Ein Tool-Argument, das die
-Praeferenz pro Aufruf setzt, gibt es nicht.
+die SQLite-Breite und `serial`/`identity` fuer MySQL und SQLite. Der Server
+liest den Block **einmal beim Start**, fuer den In-Memory-Betrieb wie fuer
+`--server-state`; eine Aenderung wirkt erst nach einem Neustart. Ohne den
+Block liest er mit den Defaults; ein nicht erkannter Wert ist ein
+Konfigurationsfehler, und der Server startet nicht (Exit 2, wie die uebrigen
+Konfigurationsfehler oben). Ein Tool-Argument, das die Praeferenz pro Aufruf
+setzt, gibt es nicht.
+
+**Artefakte der Lese-Jobs.** Ein Job, der eine Verbindung liest, legt neben
+seinem Ergebnis den **Reverse-Report** dieser Verbindung ab — dieselbe Form wie
+der Reverse-Report von `schema reverse` in der
+[CLI-Spezifikation](cli-spec.md): `source` (hier `kind: connection` und der
+Verbindungs-Verweis als `value`), `schema`, `summary`, `notes` und
+`skipped_objects`. Dort stehen die Hinweise des Readers, darunter die
+Bestaetigung einer deklarierten Praeferenz (`R204`, `R205`). Der Report ist
+ein Artefakt der Art `OTHER` (`application/x-yaml`) ohne eigenen Index. Die
+Reihenfolge in `artifacts` (`job_status_get`) ist fest:
+
+- `schema_reverse_start`: das Schema (Art `SCHEMA`), dann der Reverse-Report.
+- `schema_compare_start`: das Compare-Artefakt (Art `COMPARE`), dann je Seite,
+  die der Job aus einer Verbindung liest, ihr Reverse-Report — Quelle vor
+  Ziel. Zwei gespeicherte oder hochgeladene Schemata ergeben nur das
+  Compare-Artefakt.
 
 ### Wire-Contracts
 

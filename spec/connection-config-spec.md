@@ -306,10 +306,13 @@ pipeline:
 # ── Reverse-Engineering-Praeferenzen ───────────
 # Aufloesung inhaerenter Reverse-Mehrdeutigkeiten (dialect-preference-mechanism.md).
 # Gilt fuer die Reverses von `schema reverse`, von `schema compare`
-# (`db:`-Operanden) und von `mcp serve` (aus dessen Konfigurationsdatei);
-# die Breite zusaetzlich fuer `data transfer`. Ein fehlender Block, eine nicht
-# lesbare Datei oder ein nicht erkannter Wert gelten als "nicht erklaert" --
-# der Reverse laeuft dann mit dem Default weiter.
+# (`db:`-Operanden) und von `mcp serve` (aus dessen Konfigurationsdatei, einmal
+# beim Start gelesen); die Breite zusaetzlich fuer `data transfer`. Ein
+# fehlender Block oder eine nicht lesbare Datei gelten als "nicht erklaert" --
+# der Reverse laeuft dann mit dem Default weiter. Ein vorhandener, aber nicht
+# erkannter Wert (etwa `identiy` oder die Breite `16`) ist dagegen ein
+# Konfigurationsfehler wie bei den Schreib-Praeferenzen: Exit 7 in der CLI,
+# `mcp serve` startet nicht (Exit 2).
 reverse:
   sqlite:
     # Wie der SQLite-Reverse einen AUTOINCREMENT-Primaerschluessel ins neutrale
