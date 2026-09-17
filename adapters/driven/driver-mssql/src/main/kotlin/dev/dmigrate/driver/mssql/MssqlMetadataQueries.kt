@@ -218,7 +218,12 @@ internal object MssqlMetadataQueries {
                 directions = keyColumns.map { row ->
                     if (row.bool("is_descending_key")) IndexSortDirection.DESC else null
                 },
-                where = group.first()["filter_definition"] as? String,
+                // Das Praedikat eines gefilterten Index ist derselbe rohe
+                // Ausdruckstext wie ein CHECK und kommt aus demselben Katalog
+                // in Oberflaechensyntax (`([shipped_at] IS NULL)`); neutral
+                // steht dort `shipped_at IS NULL`.
+                where = (group.first()["filter_definition"] as? String)
+                    ?.let { MssqlTypeMapping.normalizeExpression(it) },
                 includeColumns = group.filter { it.bool("is_included_column") }
                     .map { it.string("column_name") },
                 clustered = group.first().int("type") == CLUSTERED_INDEX_TYPE,
@@ -341,7 +346,7 @@ internal object MssqlMetadataQueries {
             ConstraintProjection(
                 name = row.string("constraint_name"),
                 type = "CHECK",
-                expression = MssqlTypeMapping.normalizeCheckExpression(row.string("definition")),
+                expression = MssqlTypeMapping.normalizeExpression(row.string("definition")),
             )
         }
 

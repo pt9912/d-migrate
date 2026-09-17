@@ -305,9 +305,11 @@ internal object MssqlTypeMapping {
     }
 
     /**
-     * Bringt einen `sys.check_constraints.definition`-Ausdruck in die neutrale
-     * Form. Der Reverse liefert T-SQL-**Oberflaechensyntax**; im neutralen
-     * Modell steht derselbe Ausdruck in dialektfreier Schreibweise:
+     * Bringt einen rohen Ausdruck aus dem Katalog in die neutrale Form —
+     * `sys.check_constraints.definition` (CHECK) und
+     * `sys.computed_columns.definition` (Berechnungsausdruck einer Spalte).
+     * Der Reverse liefert T-SQL-**Oberflaechensyntax**; im neutralen Modell
+     * steht derselbe Ausdruck in dialektfreier Schreibweise:
      *
      * - der Unicode-Literal-Praefix `N'…'` faellt weg — `N` ist Syntax, kein
      *   Wert. Ohne das liest der Validator das `N` als Spaltenbezug und lehnt
@@ -318,12 +320,19 @@ internal object MssqlTypeMapping {
      *   Syntax.
      *
      * Der Ausdruck bleibt ansonsten unveraendert — das neutrale Modell
-     * transpiliert CHECK-Ausdruecke nicht.
+     * transpiliert rohe Ausdruecke nicht. Die aeussere Klammer, die SQL Server
+     * um jeden gespeicherten Ausdruck legt, faellt weg; der Generator setzt
+     * die Klammern, die sein Dialekt braucht.
+     *
+     * **Nicht** hierdurch laeuft [MssqlHashPartitionRecognition]: die erkennt
+     * die Hash-Emulation an der **Serverform** und liest deshalb die
+     * Katalogspalte unveraendert. Normalisiert wird an der Stelle, an der der
+     * Ausdruck ins Modell geht.
      *
      * Literal-bewusst: ein `N` oder eine Klammer INNERHALB eines Literals
      * (`'ABN'`, `'[x]'`) und ein `N` als Namensbestandteil bleiben unberuehrt.
      */
-    fun normalizeCheckExpression(raw: String): String {
+    fun normalizeExpression(raw: String): String {
         val value = unwrapOuterParens(raw)
         val out = StringBuilder(value.length)
         var index = 0

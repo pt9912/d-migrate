@@ -120,7 +120,8 @@ class MssqlMetadataQueriesTest : FunSpec({
         ixA.clustered shouldBe false
         val uxB = scan.indices.first { it.name == "ux_b" }
         uxB.isUnique shouldBe true
-        uxB.where shouldBe "([b] IS NOT NULL)"
+        // Serverform `([b] IS NOT NULL)`, im Modell neutral (P12).
+        uxB.where shouldBe "b IS NOT NULL"
     }
 
     test("listCheckConstraints unwraps the outer parenthesis pair") {

@@ -204,33 +204,33 @@ class MssqlTypeMappingTest : FunSpec({
         // Live am Pagila-Leg gefunden: mit dem `N`-Praefix liest der Validator
         // das N als Spaltenbezug und lehnt das reverse-gelesene Schema mit
         // E012 ab (Slice 4).
-        MssqlTypeMapping.normalizeCheckExpression("([rating]=N'NC-17' OR [rating]=N'PG-13')") shouldBe
+        MssqlTypeMapping.normalizeExpression("([rating]=N'NC-17' OR [rating]=N'PG-13')") shouldBe
             "rating='NC-17' OR rating='PG-13'"
         // Kleinschreibung ist derselbe Praefix.
-        MssqlTypeMapping.normalizeCheckExpression("([c]=n'x')") shouldBe "c='x'"
+        MssqlTypeMapping.normalizeExpression("([c]=n'x')") shouldBe "c='x'"
         // Ein N INNERHALB eines Literals bleibt stehen ...
-        MssqlTypeMapping.normalizeCheckExpression("([c]=N'ABN')") shouldBe "c='ABN'"
-        MssqlTypeMapping.normalizeCheckExpression("([c]='N')") shouldBe "c='N'"
+        MssqlTypeMapping.normalizeExpression("([c]=N'ABN')") shouldBe "c='ABN'"
+        MssqlTypeMapping.normalizeExpression("([c]='N')") shouldBe "c='N'"
         // ... ebenso ein N als Namensbestandteil (hier zusaetzlich quotiert,
         // weil der Name nicht rein kleingeschrieben ist).
-        MssqlTypeMapping.normalizeCheckExpression("([col_N]='x')") shouldBe "\"col_N\"='x'"
-        MssqlTypeMapping.normalizeCheckExpression("([col_n]='x')") shouldBe "col_n='x'"
+        MssqlTypeMapping.normalizeExpression("([col_N]='x')") shouldBe "\"col_N\"='x'"
+        MssqlTypeMapping.normalizeExpression("([col_n]='x')") shouldBe "col_n='x'"
         // Verdoppelte Quotes sind das Escape, kein Literal-Ende.
-        MssqlTypeMapping.normalizeCheckExpression("([c]=N'it''s N''ok''')") shouldBe "c='it''s N''ok'''"
+        MssqlTypeMapping.normalizeExpression("([c]=N'it''s N''ok''')") shouldBe "c='it''s N''ok'''"
         // Ausdruecke ohne Literale: nur Paren-Unwrap und Quoting.
-        MssqlTypeMapping.normalizeCheckExpression("([score]>=(0))") shouldBe "score>=(0)"
+        MssqlTypeMapping.normalizeExpression("([score]>=(0))") shouldBe "score>=(0)"
     }
 
     test("a reversed CHECK expression drops T-SQL bracket quoting") {
         // Klammer-Quoting wird neutral: unquotiert, wo eindeutig.
-        MssqlTypeMapping.normalizeCheckExpression("([rating]=N'NC-17')") shouldBe "rating='NC-17'"
-        MssqlTypeMapping.normalizeCheckExpression("([dbo].[t].[c]>(0))") shouldBe "dbo.t.c>(0)"
+        MssqlTypeMapping.normalizeExpression("([rating]=N'NC-17')") shouldBe "rating='NC-17'"
+        MssqlTypeMapping.normalizeExpression("([dbo].[t].[c]>(0))") shouldBe "dbo.t.c>(0)"
         // Quotierungsbeduerftige Namen bekommen ANSI-Doppelquotes; `]]` ist das
         // T-SQL-Escape fuer eine schliessende Klammer.
-        MssqlTypeMapping.normalizeCheckExpression("([my col]<>'')") shouldBe "\"my col\"<>''"
-        MssqlTypeMapping.normalizeCheckExpression("([od]]d]<>'')") shouldBe "\"od]d\"<>''"
+        MssqlTypeMapping.normalizeExpression("([my col]<>'')") shouldBe "\"my col\"<>''"
+        MssqlTypeMapping.normalizeExpression("([od]]d]<>'')") shouldBe "\"od]d\"<>''"
         // Eine Klammer INNERHALB eines Literals bleibt stehen.
-        MssqlTypeMapping.normalizeCheckExpression("([c]='[x]')") shouldBe "c='[x]'"
+        MssqlTypeMapping.normalizeExpression("([c]='[x]')") shouldBe "c='[x]'"
     }
 
     test("the T-SQL catalog spellings of the four neutral function defaults are canonicalised") {
@@ -257,10 +257,10 @@ class MssqlTypeMappingTest : FunSpec({
         // Die Generatoren quoten Spaltennamen IMMER: eine PascalCase-Spalte
         // steht im PG-Ziel als "CustomerID", ein unquotiertes CustomerID im
         // CHECK faltet dort auf customerid und das Apply scheitert.
-        MssqlTypeMapping.normalizeCheckExpression("([CustomerID]>(0))") shouldBe "\"CustomerID\">(0)"
-        MssqlTypeMapping.normalizeCheckExpression("([mixedCase]>(0))") shouldBe "\"mixedCase\">(0)"
+        MssqlTypeMapping.normalizeExpression("([CustomerID]>(0))") shouldBe "\"CustomerID\">(0)"
+        MssqlTypeMapping.normalizeExpression("([mixedCase]>(0))") shouldBe "\"mixedCase\">(0)"
         // Rein kleingeschrieben bleibt unquotiert — das traegt auf allen Zielen.
-        MssqlTypeMapping.normalizeCheckExpression("([snake_case_9]>(0))") shouldBe "snake_case_9>(0)"
+        MssqlTypeMapping.normalizeExpression("([snake_case_9]>(0))") shouldBe "snake_case_9>(0)"
     }
 
     test("a function default is only canonicalised where the neutral name is valid for the column type") {

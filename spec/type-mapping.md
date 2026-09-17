@@ -296,13 +296,22 @@ deshalb sind beide Schreibweisen abgedeckt. Ein nicht erkannter Funktions-Defaul
 bleibt als Text stehen und wird beim Round-Trip über das neutrale Format zum
 String-Literal — das neutrale Modell kennt nur diese vier als Funktion.
 
-**CHECK-Ausdrücke** kommen in **neutraler Syntax** ins Modell, nicht in
-T-SQL-Oberflächensyntax: der Unicode-Literal-Präfix `N'…'` entfällt (er ist
-Syntax, kein Wert) und Klammer-Quoting `[col]` wird zum unquotierten Namen bzw.
-— wo der Name Quoting braucht — zum ANSI-Doppelquote `"col"`. Der Ausdruck wird
-darüber hinaus nicht umgeschrieben. Ohne diese Normalisierung liest die
-Validierung das `N` als Spaltenbezug (E012) und jedes andere Ziel scheitert am
-T-SQL-Quoting.
+**Roher Ausdruckstext** kommt in **neutraler Syntax** ins Modell, nicht in
+T-SQL-Oberflächensyntax — für den **CHECK-Ausdruck**
+(`sys.check_constraints.definition`) und den **Berechnungsausdruck einer
+Spalte** (`sys.computed_columns.definition`) nach derselben Regel: der
+Unicode-Literal-Präfix `N'…'` entfällt (er ist Syntax, kein Wert),
+Klammer-Quoting `[col]` wird zum unquotierten Namen bzw. — wo der Name Quoting
+braucht — zum ANSI-Doppelquote `"col"`, und die äußere Klammer, die der Server
+um jeden gespeicherten Ausdruck legt, fällt weg (der Generator setzt die
+Klammern, die sein Dialekt braucht). Der Ausdruck wird darüber hinaus nicht
+umgeschrieben. Ohne diese Normalisierung liest die Validierung das `N` als
+Spaltenbezug (E012) und jedes andere Ziel scheitert am T-SQL-Quoting —
+gemessen: PostgreSQL mit `syntax error at or near "["`, MySQL mit
+`ERROR 1064`.
+
+Die **Erkennung der Hash-Partitions-Emulation** liest denselben Katalogtext
+weiter in Serverform: sie hängt an der Abfrage, nicht am Modell.
 
 ### 6.3 Bekannte Lücken
 
@@ -310,8 +319,9 @@ T-SQL-Quoting.
   auf `Text()` + R301.
 - Computed Columns kommen als berechnete Spalten zurueck
   (`generation.type: computed`), in allen fuenf Dialekten und mit ihrer
-  Speicherform. Der Ausdruck ist die **Serverform**, nicht der Autorentext, und
-  wird deshalb nur unter den Bedingungen aus
+  Speicherform. Der Ausdruck ist die **Serverform**, nicht der Autorentext — bis
+  auf die Dialekt-Anhaenge, die der Reverse entfernt (Abschnitt 6.2 fuer SQL
+  Server, 4.5 fuer MySQL) —, und wird deshalb nur unter den Bedingungen aus
   [`schema-reference.md`](schema-reference.md) verglichen.
   Gemeldet wird nur noch, was der Server nicht hergibt:
   `R343`, wenn die Spalte ohne ihren Ausdruck kommt;

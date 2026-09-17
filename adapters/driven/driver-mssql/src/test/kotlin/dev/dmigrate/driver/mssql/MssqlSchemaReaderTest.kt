@@ -188,7 +188,8 @@ class MssqlSchemaReaderTest : FunSpec({
         // gefilterte Index bleibt als Index-Definition stehen.
         table.indices shouldHaveSize 1
         table.indices[0].name shouldBe "ix_state_open"
-        table.indices[0].where shouldBe "([state]='open')"
+        // Serverform `([state]='open')`, im Modell neutral (P12).
+        table.indices[0].where shouldBe "state='open'"
         table.indices[0].type shouldBe IndexType.BTREE
         result.notes.shouldBeEmpty()
     }
@@ -229,8 +230,9 @@ class MssqlSchemaReaderTest : FunSpec({
         val generation = column.generation as? ColumnGeneration.Computed
         withClue(column.generation.toString()) {
             generation.shouldNotBeNull()
-            // Serverform, wie `sys.computed_columns` sie fuehrt.
-            generation.expression shouldBe "([a]+[b])"
+            // Der Server fuehrt `([a]+[b])`; ins Modell geht die neutrale
+            // Schreibweise (P12, `MssqlComputedExpressionNeutralTest`).
+            generation.expression shouldBe "a+b"
         }
         // Nichts mehr zu melden: die Berechnung wird getragen.
         result.notes.none { it.code == "R343" } shouldBe true

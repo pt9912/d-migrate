@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Ein SQL-Server-Reverse liefert den Berechnungsausdruck einer Spalte ohne
+  T-SQL-Quoting.** `sys.computed_columns.definition` fuehrt ihn in
+  Oberflaechensyntax (`([quantity]*[unit_price])`); der Reverse uebernahm ihn
+  unveraendert, und jedes andere Ziel lehnte die daraus erzeugte DDL ab
+  (gemessen: PostgreSQL `syntax error at or near "["`, MySQL `ERROR 1064`).
+  Jetzt gilt dieselbe Regel wie fuer einen CHECK: Klammer-Quoting wird zum
+  nackten Namen bzw. zu `"Name"`, der Praefix `N'…'` entfaellt, und die
+  aeussere Klammer des Servers faellt weg — sonst nichts. **Folge:** ein
+  Reverse derselben Datenbank liefert fuer dieses Feld anderen Text als bisher.
+  Die Erkennung der Hash-Partitions-Emulation liest den Katalogtext
+  unveraendert weiter.
+
 - **Der MySQL-Generator schreibt `"…"`-Bezeichner in rohen Ausdruecken in
   Backticks um.** Im neutralen Modell ist `"Name"` ein Bezeichner; MySQL liest
   es ohne `ANSI_QUOTES` als Zeichenkette. Ein CHECK, ein Berechnungsausdruck

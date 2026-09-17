@@ -2535,7 +2535,14 @@ Zurücklesen wiederfinden.
   Speicherform setzt d-migrate selbst (PostgreSQL `STORED`, MySQL/SQLite
   `STORED` bzw. `VIRTUAL`, Oracle `MATERIALIZED` bzw. `VIRTUAL`, SQL Server
   `PERSISTED` bzw. ohne Zusatz).
-- Ein Reverse liest die Spalte samt Ausdruck und Speicherform zurück.
+- Ein Reverse liest die Spalte samt Ausdruck und Speicherform zurück. Der
+  Ausdruck kommt dabei in der Form, die der **Server** führt (er druckt ihn aus
+  seinem Parsebaum), aber ohne dessen Dialekt-Schreibweise: ein
+  SQL-Server-Reverse liefert `quantity*unit_price` statt
+  `([quantity]*[unit_price])`, ein MySQL-Reverse `concat('x',menge)` statt
+  `` concat(_utf8mb4'x',`menge`) ``. Eine Spalte, die Anführungszeichen
+  braucht, steht als `"Menge"` da. Damit lässt sich die zurückgelesene Datei
+  auch gegen ein anderes Ziel erzeugen.
 
 **Hinweise:**
 

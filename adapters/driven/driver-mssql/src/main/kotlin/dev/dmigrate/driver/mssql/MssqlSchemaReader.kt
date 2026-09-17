@@ -162,11 +162,20 @@ class MssqlSchemaReader(
             }
             // `sys.computed_columns` fuehrt den Ausdruck in Serverform
             // (gemessen auf 2025: `([qty]*[price])`, aus `CAST` wird `CONVERT`)
-            // und `is_persisted` die Speicherform. Fehlt der Ausdruck, ist die
-            // Berechnung wirklich verloren — dann bleibt es bei der Meldung.
+            // und `is_persisted` die Speicherform. Ins Modell geht er in
+            // neutraler Schreibweise — dieselbe Regel wie beim CHECK
+            // (`MssqlTypeMapping.normalizeExpression`): ohne sie traegt jedes
+            // andere Ziel das Klammer-Quoting und lehnt die DDL ab. Fehlt der
+            // Ausdruck, ist die Berechnung wirklich verloren — dann bleibt es
+            // bei der Meldung.
             val computed = if (row.isComputed) {
                 row.computedDefinition?.takeIf { it.isNotBlank() }
-                    ?.let { ColumnGeneration.Computed(it, stored = row.computedPersisted) }
+                    ?.let {
+                        ColumnGeneration.Computed(
+                            MssqlTypeMapping.normalizeExpression(it),
+                            stored = row.computedPersisted,
+                        )
+                    }
             } else {
                 null
             }
