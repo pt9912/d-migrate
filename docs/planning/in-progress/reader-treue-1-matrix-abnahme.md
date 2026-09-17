@@ -1,9 +1,17 @@
 # Reader-Treue 1: die Compare-Matrix wird Abnahme (P6, P0, S4, P12, P11)
 
-> **Status:** **In Arbeit seit 2026-09-17** (Schnitt 2026-09-17 aus dem
-> ungeschnittenen Reader-Slice; Befunde aus Plan-Review und
-> Architektur-Prüfung eingearbeitet, Anker gegen `90c6c234f` nachgemessen).
-> Der Bauabschnitt unten hält Commits, Messungen, Sabotagen und Neu-Pins fest.
+> **Status:** **In Arbeit seit 2026-09-17; alle fünf Pakete geliefert**
+> (E1-Bauteil, P6, P0, S4, P12, P11), Graduierung nach der Review. Schnitt
+> 2026-09-17 aus dem ungeschnittenen Reader-Slice; Befunde aus Plan-Review und
+> Architektur-Prüfung eingearbeitet, Anker gegen `90c6c234f` nachgemessen.
+> Der Bauabschnitt unten hält Messungen, Sabotagen und Neu-Pins fest.
+>
+> **Commits** (in dieser Reihenfolge):
+> `33e6f8618` E1-Bauteil · `aa60e9422` P6 · `650bad844` Neu-Pin P6 ·
+> `5372496ea` P0 Teil 1 · `fe9681ac2` P0 Teile 2–5 · `c35edba1f` Neu-Pin P0 ·
+> `c5d2a8116` Typ-Smoke (Nebenbefund) · `32ee40b2f` S4 · `50065adb9` P12 ·
+> `6b4d2f15a` Neu-Pin P12 · `e9f21d464` P11 · `ca08a8173` Neu-Pin P11 ·
+> `e78fdd434` Nachtrag.
 > Teil des Umbrellas [`reader-treue.md`](reader-treue.md). Dort stehen der
 > gemeinsame Nenner, die Belegart, die Regeln der Abnahme (Neu-Pins,
 > betroffene Zellen, Nulllinie, Sabotage), die Doku-Pflichten und die Codes.
@@ -1141,6 +1149,26 @@ Befund selbst steht in
 6. Jeder Fix fällt nachweislich mit zurückgenommenem Fix.
 7. Spec, Anwenderhandbuch und CHANGELOG sind je Paket nachgezogen. Plan 1
    vergibt keinen neuen Code.
+
+## Stand der Akzeptanzkriterien (2026-09-17)
+
+| # | Kriterium | Stand |
+| --- | --- | --- |
+| 1 | MySQL-Reverse gültig und portabel, PostgreSQL ↔ MySQL meldet den CHECK nicht mehr, die MySQL-Zeile misst (P6) | erfüllt: `4`/`8`/`11` statt `INVALID`; Unit- und Integrationsfälle, Portabilität je Ziel geprüft |
+| 2 | Matrix fährt native Seeds und den Silent-Loss-Check mit vier Klassen; jeder stille Verlust ist benannt oder gelistet, `--update-expectations` pinnt keinen (P0) | erfüllt: vier Seeds, vier Klassen plus eine fünfte Selbstprüfung, 24 bekannte Befunde mit Paket, Sabotage (d) belegt den Pin-Schutz |
+| 3 | `schema migrate` gegen SQLite behält die FK-Aktionen, auch über einen Rebuild (S4) | erfüllt: gemessen vorher (`NO ACTION`, Exit 5) und nachher (`RESTRICT`/`CASCADE`, Exit 0) |
+| 4 | SQL-Server-Reverse ohne T-SQL-Quoting; SQL Server → PostgreSQL und → MySQL messen; keine Zelle rechnet still falsch (P12, E1) | erfüllt: `2` und `6` statt `APPLY-FAIL`; die PascalCase-Berechnung erreicht MySQL als `` `Menge`*`Preis` `` |
+| 5 | SQLite-Reverse liefert Namen aus der Quelle, gebildete sind eindeutig und stabil, ein FK ohne Spaltenliste ist lesbar; SQLite → SQL Server misst (P11) | erfüllt: `6` statt `Msg 2714`, `3` statt `uq_0`-Kollision |
+| 6 | Jeder Fix fällt nachweislich mit zurückgenommenem Fix | erfüllt: sechs Sabotage-Läufe (E1, P6, P0 mit sieben Eingriffen, S4, P12, P11), je mit Rücknahme-Beleg |
+| 7 | Spec, Anwenderhandbuch und CHANGELOG je Paket nachgezogen; kein neuer Code | erfüllt: `ddl-generation-rules.md` 2.3 und 8.3, `type-mapping.md` 4.5, 5.2a, 6.2, 6.3, `cli-spec.md` (Herkunfts-Felder), Handbuch 3.3, 3.19, 3.23, CHANGELOG; kein neuer W-/R-Code, also kein Ledger-Eintrag |
+
+**Offen geblieben und gemeldet:** die drei `open/`-Einträge
+([Herkunfts-Overlay](../open/provenance-overlay-nicht-rueckfuehrbar.md),
+[SQLite verschweigt Typmarke und Länge](../open/sqlite-generate-verschweigt-typmarke-und-laenge.md),
+[Fremdschlüssel ohne übersprungenen Schlüssel](../open/generate-fk-ohne-uebersprungenen-schluessel.md))
+und die 24 bekannten Befunde des Silent-Loss-Checks, die Plan 2 und Plan 4
+auflösen.
+
 
 ## Verifikation
 

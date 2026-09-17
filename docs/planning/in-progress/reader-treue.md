@@ -29,7 +29,7 @@ Die Reihenfolge ist Eigner-Entscheidung: 1 → 2 → 3 → 4.
 
 | Plan | Pakete | Abnahme | Hängt ab von |
 | --- | --- | --- | --- |
-| [1 — Matrix als Abnahme](reader-treue-1-matrix-abnahme.md) | P6 (MySQL-Server-Text), P0 (Seeds und Silent-Loss-Check), S4 (SQLite-Migrate verliert FK-Aktionen), P12 (T-SQL-Quoting im Berechnungsausdruck), P11 (SQLite-Constraint-Namen) | Compare-Matrix, `:test:integration-mysql`, `:test:integration-sqlite`, `:test:integration-mssql` | — |
+| [1 — Matrix als Abnahme](reader-treue-1-matrix-abnahme.md) — **alle Pakete geliefert (2026-09-17)** | P6 (MySQL-Server-Text), P0 (Seeds und Silent-Loss-Check), S4 (SQLite-Migrate verliert FK-Aktionen), P12 (T-SQL-Quoting im Berechnungsausdruck), P11 (SQLite-Constraint-Namen); dazu der E1-Bauteil | Compare-Matrix, `:test:integration-mysql`, `:test:integration-sqlite`, `:test:integration-mssql` | — |
 | [2 — Meldungen](../next/reader-treue-2-meldungen.md) | P5 (Array-Verlust MySQL und SQLite), P10 (`ALWAYS` ohne Entsprechung), P8 (`json`), P9 (ungebundene Zahl, unbekanntes Array-Element), P1 (Oracle-SRID), P3 (`search_path`); dazu S1 bis S3 (erst messen) | Matrix, Integrationsmodule je Dialekt | Plan 1 |
 | [3 — Spatial-Treue](../next/reader-treue-3-spatial.md) | P4 (PostgreSQL `geography`, nur Rückweg, samt Datenpfad), P7 (SpatiaLite `NOT NULL`), P2a/P2b (Oracle- und PostGIS-Systemobjekte) | `:test:integration-postgresql` mit PostGIS, `:test:integration-sqlite`, `:test:integration-oracle`, `:test:e2e-cli`, Matrix | Plan 1; P4 auf P3 aus Plan 2 |
 | [4 — Typ berechneter SQL-Server-Spalten](../next/reader-treue-4-mssql-berechneter-typ.md) | P13 (erst messen, dann nach der entschiedenen Regel) | `:test:integration-mssql`, Roundtrip-Harness, Matrix | P12 aus Plan 1 |
@@ -329,7 +329,9 @@ bestätigt**. Damit ist keine der Sperren mehr aktiv. Die Fragen im Wortlaut des
 Schnitts:
 
 
-1. **E1 — Bezeichner in `"…"` gegen MySQL** (Plan 1, P6 und P12). Beide
+1. **E1 — Bezeichner in `"…"` gegen MySQL** (Plan 1, P6 und P12) — **gebaut
+   (2026-09-17)**, samt zwei Punkten über den Wortlaut hinaus (Backslash im
+   Literal, CHECK-Preflight; s. Plan 1). Beide
    Reader normalisieren Server-Quoting zum neutralen Bezeichner: ein
    kleingeschriebener Name bleibt nackt, jeder andere wird `"Name"`. MySQL liest
    `"…"` ohne `ANSI_QUOTES` als Zeichenkette. Nach P12 würde eine
