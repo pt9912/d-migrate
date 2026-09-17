@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.FloatPrecision
 import dev.dmigrate.core.model.FunctionDefaultCompatibility
 import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.driver.NeutralExpressionIdentifier
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
 
@@ -260,7 +261,6 @@ internal object MssqlTypeMapping {
     private fun functionKey(value: String): String =
         value.lowercase().replace(COLLAPSE_WHITESPACE, " ").replace(WHITESPACE_AROUND_COMMA, ",").trim()
 
-    private val LOWERCASE_IDENTIFIER = Regex("""[a-z_][a-z0-9_]*""")
     private val COLLAPSE_WHITESPACE = Regex("""\s+""")
     private val WHITESPACE_AROUND_COMMA = Regex("""\s*,\s*""")
 
@@ -377,26 +377,12 @@ internal object MssqlTypeMapping {
     }
 
     /**
-     * `[col]` → `col`, aber NUR bei rein kleingeschriebenen Namen; sonst
-     * ANSI-Doppelquote.
-     *
-     * Die Kleinschreibung ist die Grenze, nicht die blosse Wohlgeformtheit:
-     * die Generatoren quoten Spaltennamen immer ([SqlIdentifiers]), eine
-     * PascalCase-Spalte steht im PostgreSQL-Ziel also als `"CustomerID"` und
-     * ein unquotiertes `CustomerID` im CHECK faltet dort auf `customerid` —
-     * `column "customerid" does not exist`. PascalCase ist in SQL Server die
-     * Regel, nicht die Ausnahme. Dieselbe Konvention liefert PostgreSQLs
-     * eigener Reverse (`pg_get_constraintdef` quotet genau diese Faelle).
-     *
-     * Bekannte Restluecke: ein kleingeschriebenes reserviertes Wort
-     * (`[order]`) bleibt unquotiert — dafuer braeuchte es eine
-     * zieldialekt-abhaengige Schluesselwortliste, die es im neutralen Modell
-     * nicht gibt.
+     * `[col]` → `col` bei rein kleingeschriebenen Namen, sonst `"col"` — die
+     * gemeinsame Regel der Reader ([NeutralExpressionIdentifier]); `]]` ist
+     * das Escape fuer `]`.
      */
-    private fun neutralIdentifier(bracketed: String): String {
-        val name = bracketed.replace("]]", "]")
-        return if (LOWERCASE_IDENTIFIER.matches(name)) name else "\"" + name.replace("\"", "\"\"") + "\""
-    }
+    private fun neutralIdentifier(bracketed: String): String =
+        NeutralExpressionIdentifier.of(bracketed.replace("]]", "]"))
 
     private fun isWrappedInParens(value: String): Boolean {
         if (value.length < 2 || value.first() != '(') return false

@@ -2208,6 +2208,13 @@ nennt).
   **zusammengesetzten** Fremdschlüsseln.
 - `expression` ist Raw-SQL (Trusted Input) und wird nicht umgeschrieben. Volle
   Felder: [Anhang F.7](#f7-constraints).
+- **Aus einem Reverse** kommt der Ausdruck in neutraler Schreibweise: ohne
+  MySQLs Zeichensatz-Introducer (`_utf8mb4'…'`) und Backticks, ohne SQL Servers
+  `N'…'` und Klammer-Quoting. Die zurückgelesene Datei ist damit gültig — sonst
+  läse die Validierung den Introducer als unbekannte Spalte (E012) — und der
+  Ausdruck lässt sich auch gegen ein anderes Ziel erzeugen. Beim Erzeugen
+  schreibt jeder Dialekt ihn wieder in seine eigene Schreibweise, MySQL etwa
+  `"Menge"` als `` `Menge` ``.
 
 ### 3.20 Große Tabellen partitionieren
 

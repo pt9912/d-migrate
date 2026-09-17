@@ -167,6 +167,39 @@ unverändert; MySQL selbst erzeugt aus beiden Formen dieselbe Spalte, und der
 Fingerprint bleibt unberührt. `INT AUTO_INCREMENT` trägt kein Flag, die
 Präferenz wirkt dort nicht.
 
+### 4.5 Roher Ausdruckstext kommt in neutraler Syntax
+
+CHECK-Ausdruck, Berechnungsausdruck einer Spalte und der Ausdrucks-Schlüssel
+eines Index kommen in **neutraler Syntax** ins Modell, nicht in
+MySQL-Oberflächensyntax. Der Server gibt sie aus seinem Parsebaum zurück
+(`information_schema.CHECK_CONSTRAINTS.CHECK_CLAUSE`,
+`COLUMNS.GENERATION_EXPRESSION`, `STATISTICS.EXPRESSION`) und legt dabei drei
+Dialekt-Anhänge darüber, die im neutralen Modell nichts zu suchen haben:
+
+| Anhang | Serverform | Neutral |
+| --- | --- | --- |
+| Zeichensatz-Introducer eines Literals | `_latin1'%@%'` | `'%@%'` |
+| Backslash-Escape in einem Literal | `'it\'s'` | `'it''s'` |
+| Backtick-Quoting eines Bezeichners | `` `Qty` `` | `"Qty"` (kleingeschrieben: nackt) |
+
+Der Introducer ist der Zeichensatz der Sitzung, die den Ausdruck anlegte —
+kein Wert. Ohne ihn zu entfernen liest die Validierung ihn als Spaltenbezug
+und weist jedes zurückgelesene MySQL-Schema ab (`E012` am CHECK, `E136` am
+Berechnungsausdruck); mit Backticks wäre der Ausdruck außerdem auf jedem
+anderen Ziel unportabel (`E053`). Die Regel entspricht Abschnitt 6.2 für SQL
+Server; wie dort wird der Ausdruck darüber hinaus **nicht** umgeschrieben.
+
+`information_schema` liefert diese Texte ein zweites Mal escapet, als wären sie
+selbst ein String-Literal (aus `'a\b'` wird `\'a\\b\'`). Diese Ebene zieht
+der Reverse ab, bevor er die drei Anhänge entfernt; ein Text, der die Form
+nicht trägt, gilt als bereits ausgepackt. Ein Steuerzeichen-Escape (`\n`,
+`\t`, `\0`) behält seinen Wert: im neutralen Literal steht das Zeichen selbst,
+wie es die übrigen vier Dialekte schreiben.
+
+Der Rückweg gehört zum Generator: er setzt `"…"` wieder in Backticks und
+verdoppelt den Backslash
+([`ddl-generation-rules.md`](ddl-generation-rules.md), „Roher Ausdruckstext").
+
 ---
 
 ## 5. SQLite: Bekannte Lücken

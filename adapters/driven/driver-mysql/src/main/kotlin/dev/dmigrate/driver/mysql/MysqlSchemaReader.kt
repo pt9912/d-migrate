@@ -276,12 +276,19 @@ class MysqlSchemaReader(
  *
  * `EXTRA` traegt "STORED GENERATED" bzw. "VIRTUAL GENERATED"
  * ([MysqlGeneratedColumns] -- `DEFAULT_GENERATED` ist keines von beiden),
- * `GENERATION_EXPRESSION` den Ausdruck in Serverform mit Backticks (gemessen
- * auf 9.7.2: "(`q` * `price`)"). Ohne Ausdruck gibt es nichts zu tragen —
- * dann meldet der Leser den Verlust, statt eine leere Berechnung zu erfinden.
+ * `GENERATION_EXPRESSION` den Ausdruck in Serverform: Backticks, Introducer
+ * und Backslash-Escapes, das Ganze ein zweites Mal escapet (gemessen auf
+ * 9.7.2: "(`q` * `price`)", "concat(`nm`,_utf8mb4\'x\')"). Ins Modell geht er
+ * in neutraler Schreibweise ([MysqlServerExpressionText]) — sonst liest die
+ * Validierung den Introducer als Spalte (`E136`). Ohne Ausdruck gibt es nichts
+ * zu tragen — dann meldet der Leser den Verlust, statt eine leere Berechnung
+ * zu erfinden.
  */
 private fun mysqlComputedGeneration(extra: String, expression: String?): ColumnGeneration.Computed? {
     if (!MysqlGeneratedColumns.isGenerated(extra)) return null
     val text = expression?.takeIf { it.isNotBlank() } ?: return null
-    return ColumnGeneration.Computed(text, stored = MysqlGeneratedColumns.isStored(extra))
+    return ColumnGeneration.Computed(
+        MysqlServerExpressionText.normalize(text),
+        stored = MysqlGeneratedColumns.isStored(extra),
+    )
 }

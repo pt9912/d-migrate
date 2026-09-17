@@ -461,6 +461,46 @@ class MysqlSchemaReaderTest : FunSpec({
         table.constraints[0].type shouldBe ConstraintType.CHECK
     }
 
+    test("CHECK and computed expression reach the model in neutral spelling (P6)") {
+        stubEmptyDefaults()
+        stubTableQueries()
+        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
+            mapOf("table_name" to "line", "table_schema" to "mydb", "table_type" to "BASE TABLE"),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.columns") }, any(), any()) } returns listOf(
+            mapOf("column_name" to "Qty", "data_type" to "int", "column_type" to "int",
+                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
+                "extra" to "", "character_maximum_length" to null,
+                "numeric_precision" to 10, "numeric_scale" to 0),
+            mapOf("column_name" to "label", "data_type" to "varchar", "column_type" to "varchar(50)",
+                "is_nullable" to "YES", "column_default" to null, "ordinal_position" to 2,
+                "extra" to "VIRTUAL GENERATED", "character_maximum_length" to 50,
+                "numeric_precision" to null, "numeric_scale" to null,
+                // Serverform, gemessen an 9.7.2.
+                "generation_expression" to """concat(_latin1\'q-\',`Qty`)"""),
+        )
+        every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns listOf(
+            mapOf("constraint_name" to "ck_qty", "check_clause" to """((`Qty` > 0) and (`label` <> _latin1\'x\'))"""),
+        )
+        // Ein funktionaler Index traegt denselben Servertext.
+        every { jdbc.queryList(match { it.contains("information_schema.statistics") }, any(), any()) } returns listOf(
+            mapOf("index_name" to "ix_label", "column_name" to null, "expression" to "lower(`label`)",
+                "non_unique" to 1, "seq_in_index" to 1, "index_type" to "BTREE"),
+        )
+
+        val result = reader.read(
+            pool,
+            SchemaReadOptions(includeViews = false, includeFunctions = false,
+                includeProcedures = false, includeTriggers = false),
+        )
+
+        val table = result.schema.tables.getValue("line")
+        (table.columns.getValue("label").generation as ColumnGeneration.Computed).expression shouldBe
+            "concat('q-',\"Qty\")"
+        table.constraints.single().expression shouldBe """(("Qty" > 0) and (label <> 'x'))"""
+        table.indices.single().columns.single().expression shouldBe "lower(label)"
+    }
+
     test("read table with FK where index name differs from FK name adds note") {
         stubEmptyDefaults()
         stubTableQueries()

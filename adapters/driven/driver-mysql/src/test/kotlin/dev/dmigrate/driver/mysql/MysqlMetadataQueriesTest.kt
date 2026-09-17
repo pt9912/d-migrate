@@ -143,6 +143,14 @@ class MysqlMetadataQueriesTest : FunSpec({
         result[0].expression shouldBe "(age > 0)"
     }
 
+    test("listCheckConstraints hands the expression on in neutral spelling (P6)") {
+        every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns listOf(
+            mapOf("constraint_name" to "ck_mail", "check_clause" to """(`email` like _latin1\'%@%\')"""),
+        )
+        MysqlMetadataQueries.listCheckConstraints(jdbc, "mydb", "users").single().expression shouldBe
+            "(email like '%@%')"
+    }
+
     test("listCheckConstraints scopes the query to schema and table without leaking OR precedence") {
         var capturedSql: String? = null
         every { jdbc.queryList(match { it.contains("FROM information_schema.table_constraints") }, any(), any()) } answers {

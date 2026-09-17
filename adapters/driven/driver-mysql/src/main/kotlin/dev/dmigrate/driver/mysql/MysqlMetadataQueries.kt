@@ -163,7 +163,9 @@ object MysqlMetadataQueries {
             ConstraintProjection(
                 name = row["constraint_name"] as String,
                 type = "CHECK",
-                expression = row["check_clause"] as? String,
+                // Serverform: Introducer, Backslash-Escapes, Backticks
+                // ([MysqlServerExpressionText]).
+                expression = (row["check_clause"] as? String)?.let(MysqlServerExpressionText::normalize),
             )
         }
     }
@@ -188,7 +190,7 @@ object MysqlMetadataQueries {
                 // war das ein NPE mitten im `schema reverse`.
                 columns = ordered.map { row ->
                     row["column_name"] as? String
-                        ?: row["expression"] as? String
+                        ?: (row["expression"] as? String)?.let(MysqlServerExpressionText::normalize)
                         ?: error("index column has neither COLUMN_NAME nor EXPRESSION")
                 },
                 isUnique = (idxRows.first()["non_unique"] as Number).toInt() == 0,

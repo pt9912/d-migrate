@@ -9,8 +9,10 @@ import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlStatement
+import dev.dmigrate.driver.RawSqlExpressionPortability
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
@@ -18,6 +20,7 @@ import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.test.images.TestImages
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.testcontainers.containers.MySQLContainer
@@ -144,4 +147,67 @@ class MysqlNeutralExpressionSpellingIntegrationTest : FunSpec({
         }
     }
 
+    /**
+     * P6: derselbe Weg zurueck. Der Server gibt CHECK, Berechnungsausdruck und
+     * den Ausdrucks-Schluessel eines Index in seiner eigenen Schreibweise
+     * zurueck — mit Zeichensatz-Introducer, Backslash-Escapes und Backticks,
+     * das Ganze ein zweites Mal escapet. Was davon im Modell landet, sagt nur
+     * der Server; ein Unit-Test wuerde die Serverform bloss behaupten.
+     */
+    test("the reverse reads the server text in neutral spelling and the schema is valid") {
+        val active = pool!!
+        active.borrow().asJdbc().use { c ->
+            c.createStatement().use { s ->
+                s.execute("DROP TABLE IF EXISTS Reverse_Line")
+                s.execute(
+                    """CREATE TABLE Reverse_Line (
+                         id INT PRIMARY KEY,
+                         email VARCHAR(100),
+                         `Qty` INT NOT NULL,
+                         `UnitPrice` DECIMAL(10,2) NOT NULL,
+                         `LineTotal` DECIMAL(12,2) GENERATED ALWAYS AS (`Qty` * `UnitPrice`) STORED,
+                         label VARCHAR(60) GENERATED ALWAYS AS (CONCAT('q-', `Qty`)) VIRTUAL,
+                         CONSTRAINT ck_reverse_mail CHECK (email LIKE '%@%'),
+                         CONSTRAINT ck_reverse_qty CHECK (`Qty` > 0))""",
+                )
+                s.execute("CREATE INDEX ix_reverse_label ON Reverse_Line ((lower(label)))")
+            }
+        }
+
+        val read = MysqlSchemaReader().read(active)
+        val table = read.schema.tables.getValue("Reverse_Line")
+
+        // Kein Introducer, kein Backslash-Escape, kein Backtick — und die
+        // PascalCase-Spalte in der neutralen Bezeichner-Schreibweise.
+        table.constraints.first { it.name == "ck_reverse_mail" }.expression shouldBe "(email like '%@%')"
+        table.constraints.first { it.name == "ck_reverse_qty" }.expression shouldBe "(\"Qty\" > 0)"
+        (table.columns.getValue("LineTotal").generation as ColumnGeneration.Computed).expression shouldBe
+            "(\"Qty\" * \"UnitPrice\")"
+        (table.columns.getValue("label").generation as ColumnGeneration.Computed).expression shouldBe
+            "concat('q-',\"Qty\")"
+        table.indices.first { it.name == "ix_reverse_label" }.columns.single().expression shouldBe "lower(label)"
+
+        // C1/M10: das Schema ist gueltig — vorher meldete die Validierung den
+        // Introducer als unbekannte Spalte (`E012`, `E136`).
+        val validation = SchemaValidator().validate(read.schema)
+        withClue(validation.errors.map { "${it.code}: ${it.message}" }.toString()) {
+            validation.errors.filter { it.code == "E012" || it.code == "E136" }.shouldBeEmpty()
+        }
+
+        // N2: und er ist auf jedem anderen Ziel portabel.
+        for (target in listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.SQLITE, DatabaseDialect.MSSQL)) {
+            for (constraint in table.constraints) {
+                withClue("$target: ${constraint.name}") {
+                    RawSqlExpressionPortability.assess(constraint.expression, target).portable shouldBe true
+                }
+            }
+            withClue("$target: LineTotal") {
+                RawSqlExpressionPortability.computedRefusal(
+                    "LineTotal",
+                    (table.columns.getValue("LineTotal").generation as ColumnGeneration.Computed).expression,
+                    target,
+                ) shouldBe null
+            }
+        }
+    }
 })

@@ -157,6 +157,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ein MySQL-Reverse ist wieder gueltig: CHECK und Berechnungsausdruck kommen
+  in neutraler Schreibweise.** MySQL gibt sie aus seinem Parsebaum zurueck, mit
+  dem Zeichensatz-Introducer der anlegenden Sitzung (`_utf8mb4'%@%'`),
+  Backslash-Escapes (`'it\'s'`) und Backtick-Quoting — und das Ganze ein
+  zweites Mal escapet. Der Reverse uebernahm den Text unveraendert; die
+  Validierung las den Introducer als Spaltenbezug und wies jedes solche Schema
+  ab (`schema validate`/`schema generate`/`schema compare`: `E012` am CHECK,
+  `E136` am Berechnungsausdruck, Exit 3), und die Backticks machten den
+  Ausdruck auf jedem anderen Ziel unportabel (`E053`). Jetzt entfallen
+  Introducer, Escape-Ebene und Backticks (eine nicht kleingeschriebene Spalte
+  wird `"Name"`), sonst bleibt der Ausdruck unveraendert. Dieselbe Regel gilt
+  fuer den Ausdrucks-Schluessel eines funktionalen Index. **Folge:** ein
+  Reverse derselben Datenbank liefert fuer diese Felder anderen Text als
+  bisher. Wer eine **aeltere** Reverse-Datei als Soll gegen dieselbe Datenbank
+  migriert, bekommt fuer jeden CHECK ein Drop und Add geplant (gemessen an
+  MySQL 9.7.2, `schema migrate --plan-only`: zwei Operationen, Exit 0); der
+  Berechnungsausdruck wird nicht geplant, sondern bleibt unentscheidbar
+  (`W137`). Ein frischer Reverse als Soll plant nichts.
+
+
 - **`data transfer` meldet einen nicht erkannten Wert von
   `write.oracle.empty_string` (bzw. `--oracle-empty-string`) mit Exit 7.**
   Bisher endete der Lauf mit einem Java-Stacktrace und Exit 1, entgegen der

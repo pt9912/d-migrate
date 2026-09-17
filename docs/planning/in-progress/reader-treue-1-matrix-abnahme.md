@@ -651,6 +651,83 @@ Integrationsfall mit derselben Sabotage
 DDL im Klartext (`GENERATED ALWAYS AS ("Qty" * "UnitPrice")`). Rücknahme per
 Prüfsumme belegt (`md5sum` gleich), danach grün.
 
+### P6 — MySQL: Server-Text-Anhänge gehören nicht ins Modell (2026-09-17)
+
+**Zuerst gemessen** (MySQL 9.7.2 im `mcp-e2e`-Stack, `--raw`, also ohne
+Client-Escaping):
+
+1. **Die Serverform, zwei Ebenen.** `CHECK_CLAUSE` und
+   `GENERATION_EXPRESSION` tragen Introducer, Backslash-Escapes und Backticks
+   — und das Ganze ein **zweites Mal** escapet, als wäre der Text selbst ein
+   Literal: jedes Anführungszeichen steht dort hinter einem Backslash und jeder
+   Backslash des Werts verdoppelt. Ein CHECK auf ein Literal aus `a`,
+   Backslash, `b` kommt als `_latin1` + escapetes Literal mit **vier**
+   Backslashes zurück; `'it''s'` als Literal mit dem Muster Backslash-Quote
+   um `it`, drei Backslashes, `s`. Ein `"` wird dabei **nicht** escapet, ein
+   Tab steht roh, die Escapes `0` und `n` bleiben Escapes. Betroffen sind auch
+   Bezeichner: ein Spaltenname mit Apostroph kommt escapet. Der Introducer ist der
+   Zeichensatz der **Sitzung** (`_latin1` über den mysql-Client, `_utf8mb4`
+   über JDBC), `N'…'` kommt als `_utf8mb3`, `X'41'` als `0x41`.
+2. **Der Ausdrucks-Schlüssel eines funktionalen Index trägt dieselbe Form**
+   (`information_schema.statistics.expression`: `` lower(`Note`) ``,
+   `` concat(`nm`,_utf8mb4\'x\') ``). Das ist über den Wortlaut von P6 hinaus
+   (der Plan nennt CHECK und Berechnungsausdruck), aber **derselbe Befund**:
+   ohne die Regel bleibt ein funktionaler MySQL-Index auf jedem anderen Ziel
+   unportabel (`E053`), und ein Introducer stünde im Modell. Mitgenommen und
+   hier gemeldet.
+3. **F5 — die Herkunftsplanung.** Die Frage ließ sich nicht wie geplant
+   beantworten: das Dokument aus `--provenance-output` weist
+   `--migration-overlay` **derselben Version** ab (`dialect` leer,
+   `schemaFingerprint` veraltet — auch gegen dieselbe Quelldatei). Das ist ein
+   vorbestehender Defekt, gemessen mit dem Image vom Stand `a77fc9bb7` auf
+   beiden Seiten, und steht jetzt in
+   [`../open/provenance-overlay-nicht-rueckfuehrbar.md`](../open/provenance-overlay-nicht-rueckfuehrbar.md).
+   Gemessen wurde deshalb der Fall **ohne** Herkunft, und zwar in drei
+   Richtungen (MySQL 9.7.2, `schema migrate --plan-only`):
+
+   | Soll | Reader | Plan |
+   | --- | --- | --- |
+   | alter Reverse | alt | `no_op`, 0 Operationen |
+   | neuer Reverse | neu | `no_op`, 0 Operationen |
+   | **alter** Reverse | **neu** | 2 Operationen: `DropConstraint` + `AddConstraint` für den CHECK; **keine** `AlterColumnGeneration` — der Berechnungsausdruck bleibt unentscheidbar (`W137`), Exit 0 |
+
+   Der Umstieg kostet also je CHECK ein Drop und Add, wenn jemand eine alte
+   Reverse-Datei als Soll behält; ein frischer Reverse plant nichts. Der
+   CHANGELOG nennt es unter „Fixed".
+
+**Gebaut** (`MysqlServerExpressionText`, eigener Normalisierer im
+MySQL-Treiber): die zweite Escape-Ebene wird abgezogen, wenn der Text sie
+durchgehend trägt; dann fallen Introducer, Backslash-Escapes (`\'` → `''`,
+`\\` → `\`, Steuerzeichen als Zeichen, `\%`/`\_` behalten ihren Backslash)
+und Backtick-Quoting weg. Die Bezeichner-Regel (kleingeschrieben nackt, sonst
+`"Name"`) ist die des SQL-Server-Readers und liegt jetzt als
+`NeutralExpressionIdentifier` in `driver-common`; `MssqlTypeMapping` geht
+darüber. Eine gemeinsame **Normalisierung** mit SQL Server gibt es nicht — die
+Regeln decken sich nur im Bezeichner.
+
+**Doku:** `spec/type-mapping.md` bekommt Abschnitt 4.5 nach dem Muster von 6.2;
+Anwenderhandbuch 3.19 (die `E012`-Stelle) sagt, was aus einem Reverse kommt und
+dass der Generator es zurückschreibt; CHANGELOG „Fixed". Kein neuer Code, kein
+Ledger. **Nebenbefund korrigiert:** `spec/cli-spec.md` nannte den
+Berechnungsausdruck weder bei `--provenance-output` noch in der Feldtabelle des
+`raw-text-provenance`-Overlays, obwohl der Code ihn schreibt.
+
+**Sabotage S-P6** (beide Eingriffe zugleich: Introducer nicht erkannt,
+Bezeichner nicht umgesetzt): **22 von 899 Tests rot** —
+`MysqlServerExpressionTextTest` (alle gemessenen Formen, Portabilität),
+`MysqlMetadataQueriesTest`, `MysqlSchemaReaderTest`. Integrationsfall mit
+derselben Sabotage: rot mit der Serverform im Klartext
+(`` (`email` like _utf8mb4'%@%') ``). Rücknahme per Prüfsumme belegt.
+
+**Gates E1 und P6:** `make docker-check MODULES=":adapters:driven:driver-mysql
+:adapters:driven:driver-mssql :adapters:driven:driver-common :hexagon:core"`
+grün (core 1484, driver-common 544, driver-mysql 899, driver-mssql 485 Tests,
+0 Fehler; Zählung aus dem Image); `make integration
+INTEGRATION_TASKS=":test:integration-mysql:test"` grün (8 min 30 s);
+`make docs-check` (353 Dateien, 0 Befunde); `make solid-suppression-gate` vor
+jedem Commit.
+
+
 ## Akzeptanzkriterien
 
 1. Ein MySQL-Reverse mit Introducer, Backslash-Escape und Backtick-Quoting
