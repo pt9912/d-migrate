@@ -6,6 +6,8 @@ import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.*
+import dev.dmigrate.cli.commands.SchemaCompareSemantics
+import dev.dmigrate.driver.AutoIncrementSyntaxReverse
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.SchemaReadSeverity
@@ -240,6 +242,61 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             val result = reader.read(pool)
             val ddl = MysqlDdlGenerator().generate(result.schema).render()
             ddl shouldContain "`id` BIGINT NOT NULL AUTO_INCREMENT"
+        }
+    }
+
+    // ── AUTO_INCREMENT: serial oder identity (deklarierte Reverse-Praeferenz) ──
+
+    test("the identity preference reads bigint auto_increment without the serial flag and says so") {
+        pool().use { pool ->
+            val declared = reader.read(pool, SchemaReadOptions(autoIncrementSyntax = AutoIncrementSyntaxReverse.IDENTITY))
+            val orderId = declared.schema.tables["orders"]!!.columns["id"]!!
+            orderId.type shouldBe NeutralType.BigInteger
+            orderId.generation shouldBe ColumnGeneration.Identity()
+            declared.notes.single { it.code == "R205" }.run {
+                severity shouldBe SchemaReadSeverity.INFO
+                objectName shouldBe "orders.id"
+            }
+            // Das INT AUTO_INCREMENT traegt kein Flag — die Praeferenz laesst es stehen.
+            declared.schema.tables["customers"]!!.columns["id"]!!.type shouldBe
+                NeutralType.Identifier(autoIncrement = true)
+            // MySQL selbst erzeugt daraus dieselbe Spalte.
+            MysqlDdlGenerator().generate(declared.schema).render() shouldContain "`id` BIGINT NOT NULL AUTO_INCREMENT"
+            // Ohne Deklaration ist der Reverse unveraendert: kein R205, dasselbe Schema bis aufs Flag.
+            val default = reader.read(pool)
+            default.notes.none { it.code == "R205" } shouldBe true
+            default.schema.tables["orders"]!!.columns["id"]!!.generation shouldBe
+                ColumnGeneration.Identity(legacySerialSyntax = true)
+        }
+    }
+
+    test("schema compare: a PostgreSQL IDENTITY against this reverse, with and without the preference") {
+        pool().use { pool ->
+            fun withPostgresIdentity(schema: SchemaDefinition) = schema.copy(
+                name = ReverseScopeCodec.postgresName("dmigrate_test", "public"),
+                tables = schema.tables + (
+                    "orders" to schema.tables["orders"]!!.let { orders ->
+                        orders.copy(
+                            columns = orders.columns + (
+                                "id" to orders.columns["id"]!!.copy(
+                                    generation = ColumnGeneration.Identity(sequenceName = "public.orders_id_seq"),
+                                )
+                                ),
+                        )
+                    }
+                    ),
+            )
+            fun compare(mysql: SchemaDefinition) = SchemaCompareSemantics.compare(
+                SchemaCompareSemantics.side(withPostgresIdentity(mysql)),
+                SchemaCompareSemantics.side(mysql),
+            )
+
+            val serial = compare(reader.read(pool).schema)
+            serial.tablesChanged.single().name shouldBe "orders"
+            serial.tablesChanged.single().columnsChanged.single().generation.shouldNotBeNull()
+
+            val identity = reader.read(pool, SchemaReadOptions(autoIncrementSyntax = AutoIncrementSyntaxReverse.IDENTITY))
+            compare(identity.schema).isEmpty() shouldBe true
         }
     }
 

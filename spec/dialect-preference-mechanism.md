@@ -53,9 +53,16 @@ Die Granularität ist global (pro Lauf/Projekt).
   Neutraltyp-Namen), damit der stabile Konfigurations-Vertrag nicht an
   Implementierungs-Interna koppelt.
 - **CLI-Flag:** ein gleichbedeutendes Flag auf den betroffenen Kommandos, das die
-  Konfiguration übersteuert — für Lese-Präferenzen die reverse-lesenden
-  (`schema reverse`, `data transfer`), für Schreib-Präferenzen die schreibenden
+  Konfiguration übersteuert — für Lese-Präferenzen die reverse-lesenden, deren
+  Ergebnis die Präferenz verändert (`schema reverse`; `data transfer` für die
+  SQLite-Breite), für Schreib-Präferenzen die schreibenden
   (`data import`, `data transfer`).
+- **Reichweite der Konfiguration:** eine Lese-Präferenz aus `.d-migrate.yaml`
+  gilt für jeden Reverse, dessen Ergebnis der Anwender liest oder vergleicht —
+  auch für die `db:`-Operanden von `schema compare` und für den MCP-Server, der
+  sie aus seiner eigenen Konfigurationsdatei liest (`schema_reverse_start`,
+  `schema_compare_start` mit Verbindungen). Ein Pendant zum Flag pro Aufruf
+  gibt es über MCP nicht.
 
 Die konkreten Schlüssel und Flags stehen in
 [`connection-config-spec.md`](connection-config-spec.md) und
@@ -66,6 +73,16 @@ Die konkreten Schlüssel und Flags stehen in
 | Dialekt | Mehrdeutigkeit | Präferenz-Werte | Default | Detail |
 | ------- | -------------- | --------------- | ------- | ------ |
 | SQLite | `INTEGER PRIMARY KEY AUTOINCREMENT` (64-bit-Rowid) ist speicher-ununterscheidbar vom 32-bit-`identifier`-Vertrag und von 64-bit `biginteger` + `generation: identity` | Breite `32` (→ `identifier`) · `64` (→ `biginteger` + `identity`) | `32` | [`type-mapping.md`](type-mapping.md) |
+| MySQL | `BIGINT … AUTO_INCREMENT` ist eine Legacy-Autowert-Spalte; ob sie eine `SERIAL`-Spalte oder eine SQL-Standard-IDENTITY-Spalte meint, trägt die Datenbank nicht | `serial` (→ `generation: identity` mit `legacy_serial_syntax`) · `identity` (→ ohne das Flag) | `serial` | [`type-mapping.md`](type-mapping.md) |
+| SQLite | dieselbe Frage für einen `AUTOINCREMENT`-Primärschlüssel, den die Breite `64` als `biginteger` + `generation: identity` schreibt (unter Breite `32` entsteht keine Identity-Spalte, die Präferenz wirkt dort nicht) | `serial` · `identity` | `serial` | [`type-mapping.md`](type-mapping.md) |
+
+Die Serial-Frage ist ein Beispiel dafür, dass eine Mehrdeutigkeit nicht im
+Vergleich aufgelöst wird: ohne Deklaration liest der Reverse `serial`, und
+`schema compare` meldet eine IDENTITY-Spalte aus PostgreSQL gegen ein solches
+`AUTO_INCREMENT` als Unterschied in `legacy_serial_syntax`. Wer `identity`
+erklärt, bekommt eine Spalte ohne das Flag; der Unterschied entfällt, weil der
+Reverse ihn nicht mehr erzeugt. Der **Modus** einer Identity-Spalte ist keine
+Mehrdeutigkeit dieser Art und bleibt ein Unterschied.
 
 Weitere inhärente Reverse-Mehrdeutigkeiten (nur dann, wenn ein Dialekt eine
 Repräsentation nicht eindeutig rekonstruieren kann) tragen sich hier als zusätzliche

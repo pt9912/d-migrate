@@ -4,7 +4,7 @@ import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.audit.CliAuditRecorder
 import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.NamedConnectionResolver
-import dev.dmigrate.cli.config.ReverseAutoincrementResolver
+import dev.dmigrate.cli.config.ReversePreferencesResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
@@ -35,6 +35,8 @@ internal data class SchemaReverseOptions(
     val schemaName: String?,
     val schemaVersion: String?,
     val sqliteAutoincrementWidth: Int? = null,
+    /** Der Wert von `--mysql-autoincrement-syntax` bzw. `--sqlite-autoincrement-syntax`, je Dialekt. */
+    val autoIncrementSyntax: Map<DatabaseDialect, String?> = emptyMap(),
     val migrationOverlays: List<Path> = emptyList(),
     val cliContext: CliContext,
     val configPath: Path?,
@@ -92,6 +94,8 @@ internal object SchemaReverseWiring {
         factory: SchemaReverseWiringFactory,
     ): Int {
         val bundle = factory.build(options.cliContext)
+        val preferences = ReversePreferencesResolver(configPathFromCli = options.configPath)
+            .resolve(options.sqliteAutoincrementWidth, options.autoIncrementSyntax)
         val request = SchemaReverseRequest(
             source = options.source,
             output = options.output,
@@ -108,8 +112,8 @@ internal object SchemaReverseWiring {
             verbose = options.cliContext.verbose,
             schemaName = options.schemaName,
             schemaVersion = options.schemaVersion,
-            sqliteAutoincrement = ReverseAutoincrementResolver(configPathFromCli = options.configPath)
-                .resolve(options.sqliteAutoincrementWidth),
+            sqliteAutoincrement = preferences.sqliteAutoincrement,
+            autoIncrementSyntax = preferences.autoIncrementSyntax,
             migrationOverlays = MigrationOverlayFileLoader.load(options.migrationOverlays),
         )
         val runner = SchemaReverseRunner(

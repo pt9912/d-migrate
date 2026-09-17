@@ -34,9 +34,6 @@ object SqliteCapabilities : DialectReadCapabilityProvider {
         supportsTriggerStrict = false,
         supportsSchemaParameter = false,
         carriesFullTextConfiguration = false,
-        // Nur `AUTOINCREMENT`: der Reverse setzt `legacy_serial_syntax`
-        // fuer jede als 64 Bit rekonstruierte Spalte.
-        distinguishesSerialFromIdentity = false,
     )
 
         private val SEQUENCE = SequenceCapability(

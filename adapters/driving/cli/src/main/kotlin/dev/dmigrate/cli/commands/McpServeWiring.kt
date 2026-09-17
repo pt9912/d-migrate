@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import dev.dmigrate.cli.config.ReversePreferencesResolver
 import dev.dmigrate.mcp.cursor.CursorKeyring
 import dev.dmigrate.mcp.registry.AiMcpRegistries
 import dev.dmigrate.mcp.registry.AiMcpWiring
@@ -339,7 +340,8 @@ internal class McpServeWiring(
         }
     }
 
-    private fun mcpCoreJobWorkerFactory(
+    /** Die Job-Fabrik der Lese-Jobs; `internal` fuer den Test der Praeferenz-Verdrahtung. */
+    internal fun mcpCoreJobWorkerFactory(
         phaseC: McpRuntimeWiring,
         connectionSecretResolver: dev.dmigrate.server.ports.ConnectionSecretResolver,
     ) = McpCoreJobWorkerFactory(
@@ -352,6 +354,10 @@ internal class McpServeWiring(
         diffStore = phaseC.diffStore,
         limits = phaseC.limits,
         clock = phaseC.clock,
+        // Die Reverse-Praeferenzen aus dem `reverse:`-Block derselben
+        // Konfiguration, die die Verbindungen traegt; ein Pendant zum Flag
+        // pro Lauf gibt es ueber MCP nicht.
+        reversePreferences = ReversePreferencesResolver(configPathFromCli = effectiveConnectionConfigPath).resolve(),
     )
 
     fun startArtifactRetentionLoop(phaseC: McpRuntimeWiring): AutoCloseable {

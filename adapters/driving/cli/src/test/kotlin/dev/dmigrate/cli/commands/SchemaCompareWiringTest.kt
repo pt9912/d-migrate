@@ -9,6 +9,8 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.sqlite.SqliteDriver
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -17,6 +19,7 @@ import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.DriverManager
 
 class SchemaCompareWiringTest : FunSpec({
 
@@ -218,6 +221,29 @@ class SchemaCompareWiringTest : FunSpec({
         val scrubbed = bundle.urlScrubber("postgresql://admin:secret@host/db")
         scrubbed shouldNotContain "secret"
         scrubbed shouldContain "***"
+    }
+
+    test("a db: operand is read with the reverse preferences of the config") {
+        // Ein `db:`-Operand ist ein Reverse: er sieht denselben `reverse:`-Block
+        // wie `schema reverse`, sonst verglichen sich die mit Praeferenz
+        // geschriebene Datei und die Datenbank verschieden.
+        DatabaseDriverRegistry.register(SqliteDriver())
+        val dir = Files.createTempDirectory("dmigrate-compare-db-prefs")
+        val db = dir.resolve("shop.db")
+        DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
+            conn.createStatement().use { it.execute("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)") }
+        }
+        val dbLoader = DefaultSchemaCompareWiringFactory.build(CliContext(quiet = true)).dbLoader
+        fun idColumn(config: String?): ColumnDefinition {
+            val cfg = dir.resolve("cfg-${System.nanoTime()}.yaml").also { if (config != null) Files.writeString(it, config) }
+            return dbLoader(CompareOperand.Database("sqlite://$db"), cfg).schema.tables["t"]!!.columns["id"]!!
+        }
+
+        idColumn(null).type shouldBe NeutralType.Identifier(autoIncrement = true)
+        idColumn("reverse:\n  sqlite:\n    autoincrement_width: 64\n").generation shouldBe
+            ColumnGeneration.Identity(legacySerialSyntax = true)
+        idColumn("reverse:\n  sqlite:\n    autoincrement_width: 64\n    autoincrement_syntax: identity\n")
+            .generation shouldBe ColumnGeneration.Identity()
     }
 
     test("the default comparator folds the identity sequence name only where a reverse reads it as bookkeeping") {

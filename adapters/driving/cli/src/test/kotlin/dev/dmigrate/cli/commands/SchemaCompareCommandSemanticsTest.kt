@@ -92,15 +92,31 @@ class SchemaCompareCommandSemanticsTest : FunSpec({
         }
     }
 
-    context("Reverse-Markierung und Erzeugungs-Projektion sind verdrahtet (P6, P10)") {
+    context("Reverse-Markierung und Erzeugungs-Projektion sind verdrahtet (P6)") {
 
         val reverse = ReverseScopeCodec.REVERSE_VERSION
         val pgName = ReverseScopeCodec.postgresName("shop", "public")
         val myName = ReverseScopeCodec.mysqlName("shop")
         val pgIdentity = "{ type: identity, mode: by_default, sequence_name: public.orders_id_seq }"
-        val myIdentity = "{ type: identity, mode: by_default, legacy_serial_syntax: true }"
+        // Wie der MySQL-Reverse `AUTO_INCREMENT` auf `bigint` liest: ohne
+        // Deklaration als `serial`, mit `--mysql-autoincrement-syntax identity`
+        // ohne das Flag.
+        val mySerial = "{ type: identity, mode: by_default, legacy_serial_syntax: true }"
+        val myIdentity = "{ type: identity, mode: by_default }"
 
-        test("a PostgreSQL IDENTITY against MySQL's AUTO_INCREMENT: neither name nor flag is a change") {
+        test("a PostgreSQL IDENTITY against MySQL's AUTO_INCREMENT read as serial: the flag is a change, the name is not") {
+            val (exit, report) = compare(
+                schema(pgName, reverse, pgCheck, pgPredicate, pgIdentity),
+                schema(myName, reverse, pgCheck, pgPredicate, mySerial),
+            )
+            withClue(report) {
+                exit shouldBe 1
+                report shouldContain "legacy_serial_syntax=true"
+                report shouldNotContain "__dmigrate_reverse__"
+            }
+        }
+
+        test("… and identical once the MySQL reverse declared identity") {
             val (exit, report) = compare(
                 schema(pgName, reverse, pgCheck, pgPredicate, pgIdentity),
                 schema(myName, reverse, pgCheck, pgPredicate, myIdentity),
@@ -119,7 +135,7 @@ class SchemaCompareCommandSemanticsTest : FunSpec({
             )
             withClue(report) {
                 exit shouldBe 1
-                report shouldContain "legacy_serial_syntax=true"
+                report shouldContain "sequence=public.orders_id_seq"
             }
         }
     }

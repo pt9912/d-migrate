@@ -58,9 +58,6 @@ object PostgresCapabilities : DialectReadCapabilityProvider {
             // `SERIAL` und `GENERATED ... AS IDENTITY` sind in PostgreSQL
             // zwei verschiedene Dinge, nicht zwei Schreibweisen desselben.
             rendersAutoIncrementAsIdentity = false,
-            // Aus demselben Grund liest der Reverse `legacy_serial_syntax`
-            // je Spalte: `SERIAL` setzt es, `IDENTITY` nicht.
-            distinguishesSerialFromIdentity = true,
         )
     }
 

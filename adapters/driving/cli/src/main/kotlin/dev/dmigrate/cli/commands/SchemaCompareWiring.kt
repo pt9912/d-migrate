@@ -5,6 +5,7 @@ import dev.dmigrate.cli.audit.CliAuditRecorder
 import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.audit.recordIf
 import dev.dmigrate.cli.config.NamedConnectionResolver
+import dev.dmigrate.cli.config.ReversePreferencesResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.validation.SchemaValidator
@@ -92,11 +93,16 @@ internal object DefaultSchemaCompareWiringFactory : SchemaCompareWiringFactory {
         }
         val userRef = if (op.source.contains("://")) LogScrubber.maskUrl(url) else op.source
 
-        // Phase 2: Connection/read (exit 4 on failure)
+        // Phase 2: Connection/read (exit 4 on failure). Die Reverse-Praeferenzen
+        // der Konfiguration gelten auch hier: ein `db:`-Operand ist ein Reverse,
+        // und ohne sie verglich er anders als die mit `schema reverse`
+        // geschriebene Datei.
+        val readOptions = ReversePreferencesResolver(configPathFromCli = cfgPath).resolve()
+            .applyTo(SchemaReadOptions(), config.dialect)
         val pool = HikariConnectionPoolFactory.create(config)
         pool.use { p ->
             val result = DatabaseDriverRegistry.get(config.dialect).schemaReader()
-                .read(p, SchemaReadOptions())
+                .read(p, readOptions)
             return ResolvedSchemaOperand(
                 reference = userRef,
                 schema = result.schema,

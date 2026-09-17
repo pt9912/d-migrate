@@ -143,7 +143,7 @@ class SchemaMigrateComparatorsTest : FunSpec({
             SchemaMigrateComparators.strict(pg, mysql).isEmpty() shouldBe false
         }
 
-        test("legacy_serial_syntax is compared, not projected away as in schema compare (P10)") {
+        test("legacy_serial_syntax is compared: on PostgreSQL it renders a different column") {
             val identity = table("qty > 0", null)
             val autoIncrement = table("qty > 0", null, legacySerial = true)
             SchemaMigrateComparators.strict(identity, autoIncrement).isEmpty() shouldBe false

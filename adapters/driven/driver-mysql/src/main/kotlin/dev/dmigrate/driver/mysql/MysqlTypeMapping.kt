@@ -1,8 +1,10 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
+import dev.dmigrate.driver.AutoIncrementSyntaxReverse
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.metadata.AutoIncrementSyntaxNote
 
 /**
  * Pure functions for mapping MySQL metadata to neutral types.
@@ -30,17 +32,24 @@ internal object MysqlTypeMapping {
         val srsId: Int? = null,
     )
 
-    fun mapColumn(input: ColumnInput): MappingResult {
+    /**
+     * @param autoIncrementSyntax die deklarierte Praeferenz, ob ein
+     *   `AUTO_INCREMENT` auf `bigint` eine `SERIAL`- oder eine IDENTITY-Spalte
+     *   meint (`spec/dialect-preference-mechanism.md`). Der Default haelt den
+     *   Fingerabdruck-Kanonisierer ([MysqlNeutralTypeCanonicalizer], der ohne
+     *   Praeferenz aufruft) und den Reverse ohne Deklaration unveraendert.
+     */
+    fun mapColumn(
+        input: ColumnInput,
+        autoIncrementSyntax: AutoIncrementSyntaxReverse = AutoIncrementSyntaxReverse.SERIAL,
+    ): MappingResult {
         val dt = input.dataType.lowercase()
         val ct = input.columnType.lowercase()
 
         if (input.isAutoIncrement) {
             return when (dt) {
                 "int" -> MappingResult(NeutralType.Identifier(autoIncrement = true))
-                "bigint" -> MappingResult(
-                    NeutralType.BigInteger,
-                    generation = ColumnGeneration.Identity(legacySerialSyntax = true),
-                )
+                "bigint" -> bigintAutoIncrement(input, autoIncrementSyntax)
                 else -> MappingResult(NeutralType.Identifier(autoIncrement = true))
             }
         }
@@ -59,6 +68,30 @@ internal object MysqlTypeMapping {
                 ),
             )
     }
+
+    /**
+     * `AUTO_INCREMENT` auf `bigint`: `biginteger` mit `generation: identity`.
+     * Ob die Spalte als `SERIAL` gemeint war, traegt MySQL nicht — ohne
+     * Deklaration liest der Reverse sie so (`legacy_serial_syntax`,
+     * PostgreSQL erzeugt `BIGSERIAL`); mit `identity` ohne das Flag, und
+     * `R205` haelt die Abweichung fest.
+     */
+    private fun bigintAutoIncrement(input: ColumnInput, syntax: AutoIncrementSyntaxReverse): MappingResult =
+        when (syntax) {
+            AutoIncrementSyntaxReverse.SERIAL -> MappingResult(
+                NeutralType.BigInteger,
+                generation = ColumnGeneration.Identity(legacySerialSyntax = true),
+            )
+            AutoIncrementSyntaxReverse.IDENTITY -> MappingResult(
+                NeutralType.BigInteger,
+                generation = ColumnGeneration.Identity(),
+                note = AutoIncrementSyntaxNote.identity(
+                    "${input.tableName}.${input.colName}",
+                    "MySQL AUTO_INCREMENT",
+                    "reverse.mysql.autoincrement_syntax",
+                ),
+            )
+        }
 
     private fun mapIntegerTypes(dt: String, ct: String): MappingResult? = when (dt) {
         "int" -> MappingResult(NeutralType.Integer)

@@ -41,7 +41,6 @@ import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
-import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayInputStream
@@ -67,8 +66,9 @@ private data class Result(val status: String, val codes: List<String>)
  *   Slice-Befund M3: ein strikter Comparator an der Verdrahtung blieb gruen);
  * - die Reverse-Markierung zaehlt nicht (P11b: zwei Reverses verschiedener
  *   Dialekte ergaben `SCHEMA_NAME_CHANGED`);
- * - Sequenzname und `legacy_serial_syntax` zaehlen nicht, wo ein Reverse sie
- *   als Server- bzw. Reader-Buchhaltung liest (P6, P10);
+ * - der Sequenzname zaehlt nicht, wo ein Server ihn vergibt (P6);
+ *   `legacy_serial_syntax` zaehlt — die Mehrdeutigkeit loest die
+ *   Reverse-Praeferenz, nicht der Vergleich;
  * - der Job veroeffentlicht dieselben Funde wie das Werkzeug.
  */
 class SchemaCompareRuntimeSemanticsTest : FunSpec({
@@ -212,12 +212,17 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
     stage("changed", schema("shop", "1", pgCheck, "status <> 'VOID'", identity))
 
     val pgIdentity = """{"type":"identity","mode":"by_default","sequence_name":"public.orders_id_seq"}"""
-    val myIdentity = """{"type":"identity","mode":"by_default","legacy_serial_syntax":true}"""
+    // Wie der MySQL-Reverse `AUTO_INCREMENT` auf `bigint` liest: ohne
+    // Deklaration als `serial`, mit der Praeferenz `identity` ohne das Flag.
+    val mySerial = """{"type":"identity","mode":"by_default","legacy_serial_syntax":true}"""
+    val myIdentity = """{"type":"identity","mode":"by_default"}"""
+    val myName = ReverseScopeCodec.mysqlName("shop")
     stage("pg-reverse", schema(ReverseScopeCodec.postgresName("shop", "public"), reverse, pgCheck, pgPredicate, pgIdentity))
-    stage("my-reverse", schema(ReverseScopeCodec.mysqlName("shop"), reverse, pgCheck, pgPredicate, myIdentity))
+    stage("my-reverse", schema(myName, reverse, pgCheck, pgPredicate, mySerial))
+    stage("my-reverse-identity", schema(myName, reverse, pgCheck, pgPredicate, myIdentity))
     stage("pg-authored", schema("shop", "1", pgCheck, pgPredicate, pgIdentity))
     stage("my-authored", schema("shop", "1", pgCheck, pgPredicate, myIdentity))
-    stage("broken-marker", schema(ReverseScopeCodec.mysqlName("shop"), "1", pgCheck, pgPredicate, myIdentity))
+    stage("broken-marker", schema(myName, "1", pgCheck, pgPredicate, mySerial))
 
     context("die Faltung roher Ausdruecke ist verdrahtet") {
 
@@ -238,11 +243,16 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
 
     context("Reverse-Markierung und Erzeugungs-Projektion") {
 
-        test("two reverses from different dialects: no name change, no identity change") {
+        test("two reverses from different dialects: no name change; the serial flag of MySQL's reverse is one") {
             bothSurfaces("pg-reverse", "my-reverse") { result ->
-                result.codes shouldNotContain "SCHEMA_NAME_CHANGED"
-                result.codes shouldNotContain "SCHEMA_VERSION_CHANGED"
-                result.codes shouldNotContain "TABLE_COLUMN_GENERATION_CHANGED"
+                result.codes shouldBe listOf("TABLE_COLUMN_GENERATION_CHANGED")
+                result.status shouldBe "different"
+            }
+        }
+
+        test("… and none once the MySQL reverse declared identity") {
+            bothSurfaces("pg-reverse", "my-reverse-identity") { result ->
+                result.codes.shouldBeEmpty()
                 result.status shouldBe "identical"
             }
         }

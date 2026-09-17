@@ -10,6 +10,8 @@ import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
+import dev.dmigrate.cli.config.ReverseAutoIncrementSyntaxResolver
+import dev.dmigrate.driver.DatabaseDialect
 import com.github.ajalt.clikt.parameters.options.multiple
 
 class SchemaReverseCommand : CliktCommand(name = "reverse") {
@@ -35,6 +37,16 @@ class SchemaReverseCommand : CliktCommand(name = "reverse") {
         help = "SQLite reverse: render an AUTOINCREMENT primary key as 32-bit identifier (default) " +
             "or 64-bit biginteger+identity (faithful to SQLite's 64-bit rowid)",
     ).choice("32", "64")
+    val mysqlAutoincrementSyntax by option(
+        "--mysql-autoincrement-syntax",
+        help = "MySQL reverse: read a BIGINT AUTO_INCREMENT column as serial (default, PostgreSQL BIGSERIAL) " +
+            "or as SQL-standard identity",
+    ).choice(*ReverseAutoIncrementSyntaxResolver.VALUES.toTypedArray())
+    val sqliteAutoincrementSyntax by option(
+        "--sqlite-autoincrement-syntax",
+        help = "SQLite reverse: read a 64-bit AUTOINCREMENT primary key (--sqlite-autoincrement-width 64) " +
+            "as serial (default) or as SQL-standard identity",
+    ).choice(*ReverseAutoIncrementSyntaxResolver.VALUES.toTypedArray())
 
     val migrationOverlays by option(
         "--migration-overlay",
@@ -58,6 +70,10 @@ class SchemaReverseCommand : CliktCommand(name = "reverse") {
                 schemaName = schemaName,
                 schemaVersion = schemaVersion,
                 sqliteAutoincrementWidth = sqliteAutoincrementWidth?.toInt(),
+                autoIncrementSyntax = mapOf(
+                    DatabaseDialect.MYSQL to mysqlAutoincrementSyntax,
+                    DatabaseDialect.SQLITE to sqliteAutoincrementSyntax,
+                ),
                 migrationOverlays = migrationOverlays,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,

@@ -34,9 +34,6 @@ object MysqlCapabilities : DialectReadCapabilityProvider {
         supportsTriggerStrict = false,
         supportsSchemaParameter = true,
         carriesFullTextConfiguration = false,
-        // Nur `AUTO_INCREMENT`: der Reverse setzt `legacy_serial_syntax`
-        // fuer jede solche `bigint`-Spalte.
-        distinguishesSerialFromIdentity = false,
     )
 
         private val SEQUENCE = SequenceCapability(

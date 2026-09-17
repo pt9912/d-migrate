@@ -31,6 +31,12 @@ data class SchemaReverseRequest(
     // (CLI flag > config > default). Only the SQLite reader honours it.
     val sqliteAutoincrement: SqliteAutoincrementReverse = SqliteAutoincrementReverse.IDENTIFIER,
     /**
+     * Die aufgeloeste Praeferenz `serial`/`identity` je Dialekt (Flag >
+     * Konfiguration > Default); gelesen wird der Wert des Dialekts der
+     * Quelle. Ohne Eintrag bleibt der Reverse unveraendert.
+     */
+    val autoIncrementSyntax: Map<DatabaseDialect, AutoIncrementSyntaxReverse> = emptyMap(),
+    /**
      * `partition-mapping`-Overlays, die Kindnamen beisteuern, die der Server
      * nicht fuehrt. Darstellungs-gebunden (ADR 0050): sie beschreiben das
      * gelesene Schema, nicht einen Uebergang.
@@ -177,6 +183,8 @@ class SchemaReverseRunner(
                     includeFunctions = request.includeAll || request.includeFunctions,
                     includeTriggers = request.includeAll || request.includeTriggers,
                     sqliteAutoincrement = request.sqliteAutoincrement,
+                    autoIncrementSyntax = ReversePreferences(autoIncrementSyntax = request.autoIncrementSyntax)
+                        .autoIncrementSyntaxFor(ctx.config.dialect),
                 )
                 val reader = driverLookup(ctx.config.dialect).schemaReader()
                 val result = reader.read(p, options)

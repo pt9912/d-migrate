@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.AutoIncrementSyntaxReverse
 import dev.dmigrate.driver.SqliteAutoincrementReverse
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.asJdbc
@@ -82,6 +83,22 @@ class SqliteSchemaReaderTest : FunSpec({
             col.type shouldBe NeutralType.BigInteger
             col.generation shouldBe ColumnGeneration.Identity(legacySerialSyntax = true)
             result.notes.any { it.code == "R204" } shouldBe true
+        }
+    }
+
+    test("reverse-preferences: 64-bit width with the identity syntax drops the serial flag + R205") {
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)") { pool ->
+            val result = reader.read(
+                pool,
+                SchemaReadOptions(
+                    sqliteAutoincrement = SqliteAutoincrementReverse.BIGINTEGER_IDENTITY,
+                    autoIncrementSyntax = AutoIncrementSyntaxReverse.IDENTITY,
+                ),
+            )
+            val col = result.schema.tables["t"]!!.columns["id"]!!
+            col.type shouldBe NeutralType.BigInteger
+            col.generation shouldBe ColumnGeneration.Identity()
+            result.notes.map { it.code }.filter { it.startsWith("R20") } shouldBe listOf("R204", "R205")
         }
     }
 

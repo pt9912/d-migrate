@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.ReversePreferences
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionUrlParser
@@ -75,6 +76,14 @@ class McpCoreJobWorkerFactory(
     private val diffStore: DiffStore,
     private val limits: McpLimitsConfig,
     private val clock: Clock,
+    /**
+     * Die deklarierten Reverse-Praeferenzen des Servers (Block `reverse:` seiner
+     * Konfiguration, `spec/dialect-preference-mechanism.md`) — fuer jeden
+     * Lesezugriff auf eine Verbindung: `schema_reverse_start` und
+     * `schema_compare_start` mit einem Verbindungs-Verweis. Ohne Deklaration
+     * bleibt jeder Reverse unveraendert.
+     */
+    private val reversePreferences: ReversePreferences = ReversePreferences(),
 ) : JobWorkerFactory {
 
     /** Der Vergleich von `schema_compare_start` — derselbe wie in CLI und `schema_compare`. */
@@ -95,7 +104,7 @@ class McpCoreJobWorkerFactory(
                 HikariConnectionPoolFactory.create(config).use { pool ->
                     token.throwIfCancellationRequested()
                     DatabaseDriverRegistry.get(config.dialect).schemaReader()
-                        .read(pool, SchemaReadOptions()).schema
+                        .read(pool, readOptions(config.dialect)).schema
                 }
             },
             publisher = publisher(),
@@ -135,7 +144,7 @@ class McpCoreJobWorkerFactory(
                             HikariConnectionPoolFactory.create(config).use { pool ->
                                 token.throwIfCancellationRequested()
                                 DatabaseDriverRegistry.get(config.dialect).schemaReader()
-                                    .read(pool, SchemaReadOptions()).schema
+                                    .read(pool, readOptions(config.dialect)).schema
                             }
                         }
                         else -> error("schema_compare_start does not support ${uri.uri.kind.pathSegment} refs")
@@ -151,6 +160,9 @@ class McpCoreJobWorkerFactory(
                 targetRef = request.requiredString("targetUri"),
             ),
         )
+
+    private fun readOptions(dialect: DatabaseDialect): SchemaReadOptions =
+        reversePreferences.applyTo(SchemaReadOptions(), dialect)
 
     private fun materializer(request: JobStartRequest): ConnectionMaterializer {
         val principal = request.principal()

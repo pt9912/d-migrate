@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
+import dev.dmigrate.driver.AutoIncrementSyntaxReverse
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
@@ -356,6 +357,15 @@ class MysqlSchemaReaderTest : FunSpec({
         id.type shouldBe NeutralType.BigInteger
         id.generation shouldBe ColumnGeneration.Identity(legacySerialSyntax = true)
         result.notes.none { it.code == "R300" } shouldBe true
+        result.notes.none { it.code == "R205" } shouldBe true
+
+        // Dieselbe Spalte unter der deklarierten Praeferenz `identity`: kein
+        // serial-Flag, und der Report haelt die Abweichung fest.
+        val declared = reader.read(pool, opts.copy(autoIncrementSyntax = AutoIncrementSyntaxReverse.IDENTITY))
+        val declaredId = declared.schema.tables["big_table"]!!.columns["id"]!!
+        declaredId.type shouldBe NeutralType.BigInteger
+        declaredId.generation shouldBe ColumnGeneration.Identity()
+        declared.notes.single { it.code == "R205" }.objectName shouldBe "big_table.id"
     }
 
     test("read table with required column and unique index") {

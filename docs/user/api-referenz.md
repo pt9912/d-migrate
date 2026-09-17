@@ -389,7 +389,7 @@ bleiben secret-frei (`connectionId` + `sensitivity`, keine URLs/Secrets).
 | `--auth-mode` / `--issuer` / `--jwks-url` / `--introspection-url` / `--introspection-client-id` / `--introspection-client-secret` / `--audience` | Authentifizierung (4.2) |
 | `--stdio-token-file` | stdio-Token-Registry |
 | `--allow-origin` (mehrfach) | CORS-Origin-Allowlist |
-| `--connection-config` | Server-YAML mit secret-freien Connection-Refs (sonst Root-`--config`) |
+| `--connection-config` | Server-YAML mit secret-freien Connection-Refs und den Reverse-Präferenzen (`reverse:`) für `schema_reverse_start`/`schema_compare_start` (sonst Root-`--config`) |
 | `--cursor-keyring-file` | HMAC-Cursor-Keyring (Multi-Instanz) |
 | `--approval-grants-file` | Freigabe-Store |
 | `--policy-file` | Allow/Challenge/Deny-Regeln pro Tool/Tenant/Aufrufer (einmal beim Start geladen) |

@@ -2,6 +2,7 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.AutoIncrementSyntaxReverse
 import dev.dmigrate.driver.SqliteAutoincrementReverse
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -67,6 +68,44 @@ class SqliteTypeMappingTest : FunSpec({
         r.generation shouldBe ColumnGeneration.Identity(legacySerialSyntax = true)
         r.note?.code shouldBe "R204"
         r.note?.severity shouldBe SchemaReadSeverity.INFO
+    }
+
+    test("AUTOINCREMENT under 64-bit width and the identity preference → Identity without flag + R205") {
+        val r = SqliteTypeMapping.mapColumn(
+            "INTEGER", isAutoIncrement = true, "t", "c",
+            SqliteAutoincrementReverse.BIGINTEGER_IDENTITY,
+            AutoIncrementSyntaxReverse.IDENTITY,
+        )
+        r.type shouldBe NeutralType.BigInteger
+        r.generation shouldBe ColumnGeneration.Identity()
+        r.note?.code shouldBe "R204"
+        r.preferenceNote?.code shouldBe "R205"
+        r.preferenceNote?.severity shouldBe SchemaReadSeverity.INFO
+        r.preferenceNote?.objectName shouldBe "t.c"
+    }
+
+    test("the declared serial syntax is the default: byte-identical, no second note") {
+        val default = SqliteTypeMapping.mapColumn(
+            "INTEGER", isAutoIncrement = true, "t", "c",
+            SqliteAutoincrementReverse.BIGINTEGER_IDENTITY,
+        )
+        SqliteTypeMapping.mapColumn(
+            "INTEGER", isAutoIncrement = true, "t", "c",
+            SqliteAutoincrementReverse.BIGINTEGER_IDENTITY,
+            AutoIncrementSyntaxReverse.SERIAL,
+        ) shouldBe default
+        default.preferenceNote.shouldBeNull()
+    }
+
+    test("under the 32-bit width the syntax preference has nothing to act on") {
+        val r = SqliteTypeMapping.mapColumn(
+            "INTEGER", isAutoIncrement = true, "t", "c",
+            SqliteAutoincrementReverse.IDENTIFIER,
+            AutoIncrementSyntaxReverse.IDENTITY,
+        )
+        r shouldBe map("INTEGER", isAI = true)
+        r.generation.shouldBeNull()
+        r.preferenceNote.shouldBeNull()
     }
 
     test("AUTOINCREMENT explicit IDENTIFIER preference stays 32-bit (canonicaliser-safe default)") {

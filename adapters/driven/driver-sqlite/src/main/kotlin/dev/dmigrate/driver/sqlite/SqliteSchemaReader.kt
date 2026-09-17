@@ -99,7 +99,7 @@ class SqliteSchemaReader : SchemaReader {
                     session, tableName, createSql,
                     geometryByTable[tableName.lowercase()].orEmpty(),
                     fts5ByContentTable[tableName.lowercase()].orEmpty(), notes,
-                    options.sqliteAutoincrement,
+                    options,
                 )
             }
 
@@ -164,7 +164,7 @@ class SqliteSchemaReader : SchemaReader {
         geometryColumns: List<SqliteGeometryColumn>,
         fts5Defs: List<SqliteFts5Reverse.Fts5Definition>,
         notes: MutableList<SchemaReadNote>,
-        autoincrementReverse: SqliteAutoincrementReverse,
+        options: SchemaReadOptions,
     ): TableDefinition {
         val columns = SqliteMetadataQueries.listColumns(session, tableName)
         // `table_info` laesst generierte Spalten ganz weg; `table_xinfo` fuehrt
@@ -193,8 +193,12 @@ class SqliteSchemaReader : SchemaReader {
             val isAutoInc = isPkCol && hasAutoincrement && pkColumns.size == 1
                 && col.dataType.equals("INTEGER", ignoreCase = true)
 
-            val mapping = SqliteTypeMapping.mapColumn(col.dataType, isAutoInc, tableName, col.name, autoincrementReverse)
+            val mapping = SqliteTypeMapping.mapColumn(
+                col.dataType, isAutoInc, tableName, col.name,
+                options.sqliteAutoincrement, options.autoIncrementSyntax,
+            )
             if (mapping.note != null) notes += mapping.note
+            if (mapping.preferenceNote != null) notes += mapping.preferenceNote
             // Befund 3: die SRID steht NICHT in PRAGMA table_info (nur der Subtyp),
             // sondern in geometry_columns — sonst käme der Round-Trip mit SRID 0 zurück.
             val neutralType = mapping.type.let { t ->
@@ -220,7 +224,7 @@ class SqliteSchemaReader : SchemaReader {
             )
         }
 
-        mergeGeneratedColumns(columnDefs, generated, generatedExpressions, tableName, notes, autoincrementReverse)
+        mergeGeneratedColumns(columnDefs, generated, generatedExpressions, tableName, notes, options.sqliteAutoincrement)
 
         val constraints = mutableListOf<ConstraintDefinition>()
         constraints += SchemaReaderUtils.buildForeignKeyConstraints(fks)

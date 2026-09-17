@@ -231,7 +231,9 @@ Dieselbe Aussage trägt das Tool-Schema als `description` am
 `schema compare` in der CLI: dieselbe Gleichsetzung der Dialekt-Schreibweise,
 derselbe Umgang mit dem Sequenznamen und mit `legacy_serial_syntax` einer
 Identity-Spalte (alles unter „`schema compare`" in der
-[CLI-Spezifikation](cli-spec.md)). Den Dialekt einer Seite liest der Server
+[CLI-Spezifikation](cli-spec.md)). Ob ein MySQL- oder SQLite-Reverse das
+Flag traegt, entscheidet die Reverse-Praeferenz des Servers (siehe
+„Async-Jobs"), nicht der Vergleich. Den Dialekt einer Seite liest der Server
 aus der Reverse-Markierung des referenzierten Schemas; die Markierung selbst
 (`name`/`version`) zaehlt wie in der CLI nicht — zwei Reverses aus
 verschiedenen Dialekten ergeben keinen `SCHEMA_NAME_CHANGED`. Traegt ein Name
@@ -573,7 +575,7 @@ Response-Projektion ist wie bei `resources/read` minimal: kein
 | `--audience`                | Erwartetes `aud`/Resource-Indicator.                             |
 | `--stdio-token-file`        | Token-Registry für stdio (JSON oder YAML).                       |
 | `--allow-origin`            | Origin-Allowlist-Eintrag (mehrfach setzbar).                     |
-| `--connection-config`       | Project/server YAML fuer Connection-Refs. Wenn nicht gesetzt, wird ein globales `--config <path>` wiederverwendet. |
+| `--connection-config`       | Project/server YAML fuer Connection-Refs und fuer die Reverse-Praeferenzen (Block `reverse:`). Wenn nicht gesetzt, wird ein globales `--config <path>` wiederverwendet. |
 | `--cursor-keyring-file`     | YAML-Keyring fuer deterministische HMAC-Cursor in Multi-Instanz-Deployments. |
 | `--policy-file`             | JSON/YAML mit `PolicyRule`-Eintraegen (Allow/Challenge/Deny pro Tool/Tenant/Aufrufer), einmal beim Start geladen. Ohne Angabe bleibt die Regelliste leer (fail-closed Default, siehe „Policy-Regeln konfigurieren" unten). |
 
@@ -587,6 +589,15 @@ Vier Job-Tools:
 - `data_profile_start` — startet einen Daten-Profiling-Job (read-only).
 - `schema_compare_start` — startet einen Schema-Vergleichs-Job (zwei Refs).
 - `job_cancel` — cancelt einen laufenden oder gequeueten Job.
+
+**Reverse-Praeferenzen.** Jeder Lesezugriff auf eine Verbindung —
+`schema_reverse_start` und `schema_compare_start` mit einem
+`connections`-Verweis — liest mit den Praeferenzen aus dem Block `reverse:`
+der Server-Konfiguration ([Dialekt-Praeferenzen](dialect-preference-mechanism.md),
+Schluessel in der [Konfigurations-Spezifikation](connection-config-spec.md)):
+die SQLite-Breite und `serial`/`identity` fuer MySQL und SQLite. Ohne den
+Block liest der Server mit den Defaults. Ein Tool-Argument, das die
+Praeferenz pro Aufruf setzt, gibt es nicht.
 
 ### Wire-Contracts
 

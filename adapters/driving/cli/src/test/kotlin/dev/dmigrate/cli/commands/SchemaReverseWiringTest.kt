@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.AutoIncrementSyntaxReverse
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.ReverseSourceKind
@@ -10,6 +11,7 @@ import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.SchemaReadReportInput
 import dev.dmigrate.driver.SchemaReadResult
 import dev.dmigrate.driver.SchemaReader
+import dev.dmigrate.driver.SqliteAutoincrementReverse
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.DatabaseConnection
@@ -38,6 +40,8 @@ class SchemaReverseWiringTest : FunSpec({
         schemaVersion: String? = null,
         cliContext: CliContext = CliContext(quiet = true),
         configPath: Path? = Path.of(".d-migrate-test.yaml"),
+        sqliteAutoincrementWidth: Int? = null,
+        autoIncrementSyntax: Map<DatabaseDialect, String?> = emptyMap(),
     ) = SchemaReverseOptions(
         source = source,
         output = output,
@@ -52,6 +56,8 @@ class SchemaReverseWiringTest : FunSpec({
         schemaVersion = schemaVersion,
         cliContext = cliContext,
         configPath = configPath,
+        sqliteAutoincrementWidth = sqliteAutoincrementWidth,
+        autoIncrementSyntax = autoIncrementSyntax,
     )
 
     test("wires fake dependencies through successful reverse") {
@@ -107,6 +113,52 @@ class SchemaReverseWiringTest : FunSpec({
         optionsRead.includeProcedures shouldBe true
         optionsRead.includeFunctions shouldBe true
         optionsRead.includeTriggers shouldBe true
+    }
+
+    context("Reverse-Praeferenz serial/identity: Flag > Datei > Default") {
+
+        fun config(content: String): Path =
+            Files.createTempFile("dmigrate-reverse-syntax-", ".yaml").also { Files.writeString(it, content) }
+
+        fun readWith(
+            configPath: Path? = Path.of(".d-migrate-test.yaml"),
+            width: Int? = null,
+            flags: Map<DatabaseDialect, String?> = emptyMap(),
+        ): SchemaReadOptions {
+            val factory = RecordingSchemaReverseFactory()
+            SchemaReverseWiring.execute(
+                options(configPath = configPath, sqliteAutoincrementWidth = width, autoIncrementSyntax = flags),
+                factory,
+            ) shouldBe 0
+            return factory.readOptions.single()
+        }
+
+        test("without flag and file the reverse reads the default: serial, byte-identical options") {
+            readWith() shouldBe SchemaReadOptions(
+                includeViews = false, includeProcedures = false, includeFunctions = false, includeTriggers = false,
+            )
+            readWith().autoIncrementSyntax shouldBe AutoIncrementSyntaxReverse.SERIAL
+        }
+
+        test("the flag of the dialect being read is applied, the other dialect's flag is not") {
+            readWith(width = 64, flags = mapOf(DatabaseDialect.SQLITE to "identity")).run {
+                sqliteAutoincrement shouldBe SqliteAutoincrementReverse.BIGINTEGER_IDENTITY
+                autoIncrementSyntax shouldBe AutoIncrementSyntaxReverse.IDENTITY
+            }
+            // Der Fake liest SQLite: das MySQL-Flag gilt dort nicht.
+            readWith(flags = mapOf(DatabaseDialect.MYSQL to "identity")).autoIncrementSyntax shouldBe
+                AutoIncrementSyntaxReverse.SERIAL
+        }
+
+        test("the file applies without a flag, and the flag beats the file") {
+            val file = config("reverse:\n  sqlite:\n    autoincrement_width: 64\n    autoincrement_syntax: identity\n")
+            readWith(configPath = file).run {
+                sqliteAutoincrement shouldBe SqliteAutoincrementReverse.BIGINTEGER_IDENTITY
+                autoIncrementSyntax shouldBe AutoIncrementSyntaxReverse.IDENTITY
+            }
+            readWith(configPath = file, flags = mapOf(DatabaseDialect.SQLITE to "serial")).autoIncrementSyntax shouldBe
+                AutoIncrementSyntaxReverse.SERIAL
+        }
     }
 
     test("explicit report path bypasses default sidecar path") {

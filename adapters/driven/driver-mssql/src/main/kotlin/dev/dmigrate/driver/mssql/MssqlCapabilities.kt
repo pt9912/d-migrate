@@ -61,8 +61,6 @@ object MssqlCapabilities : DialectReadCapabilityProvider {
         carriesFullTextConfiguration = false,
         namesPartitions = false,
         supportsListPartitioning = false,
-        // Nur `IDENTITY`: der Reverse setzt `legacy_serial_syntax` nie.
-        distinguishesSerialFromIdentity = false,
     )
 
         // Die Defaults spiegeln Renderer-Realitaet (KDoc oben): der MSSQL-

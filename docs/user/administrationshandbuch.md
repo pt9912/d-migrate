@@ -86,6 +86,7 @@ Die Konfigurationsdatei ist optional; alle Felder haben Defaults. Sektionen
 | `i18n` | Sprache, Zeitzone, Unicode-Normalisierung (siehe 3.4) |
 | `ddl` / `docgen` | DDL-Generierungs- und Doku-Optionen |
 | `logging` | Log-Level und -Ausgabe (siehe [§8.1](#8-logging-und-telemetrie)) |
+| `reverse` / `write` | Präferenzen für Fälle, in denen ein Dialekt beim Lesen bzw. Schreiben mehrere Antworten zulässt; der MCP-Server liest `reverse` aus der Datei von `--connection-config` |
 | `artifacts` | nur MCP-Server: Artefakt-Speicher-Backend (siehe [§5](#5-object-storage--artifactstore-s3)) |
 
 ### 3.2 Effektiver Konfigurationspfad

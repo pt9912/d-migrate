@@ -2,6 +2,11 @@ package dev.dmigrate.mcp.registry
 
 import dev.dmigrate.core.cancel.CancellationTokenSource
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.AutoIncrementSyntaxReverse
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.ReversePreferences
+import dev.dmigrate.driver.SqliteAutoincrementReverse
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.profiling.model.DatabaseProfile
 import dev.dmigrate.server.application.fingerprint.JsonValue
@@ -41,11 +46,13 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
 import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
+import java.sql.DriverManager
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -219,6 +226,77 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
         }
         withClue("Fehler: ${failure::class.simpleName}: ${failure.message}") {
             failure.message.orEmpty() shouldNotContain "does not support dialect oracle"
+        }
+    }
+
+    test("the reverse worker reads with the server's declared reverse preferences") {
+        // `mcp serve` reicht den `reverse:`-Block seiner Konfiguration herein;
+        // ohne ihn bleibt jeder Reverse unveraendert. Gemessen an SQLite, dem
+        // einzigen Dialekt ohne Server: 64-Bit-Breite, einmal mit `serial`
+        // (Default), einmal mit `identity`.
+        DatabaseDriverRegistry.loadAll()
+        val db = Files.createTempFile("mcp-reverse-preferences-", ".sqlite")
+        DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
+            conn.createStatement().use { it.execute("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)") }
+        }
+        val connectionStore = InMemoryConnectionReferenceStore()
+        connectionStore.save(
+            ConnectionReference(
+                connectionId = "c1",
+                tenantId = TENANT,
+                resourceUri = ServerResourceUri(TENANT, ResourceKind.CONNECTIONS, "c1"),
+                displayName = "sqlite-test",
+                dialectId = "sqlite",
+                sensitivity = ConnectionSensitivity.NON_PRODUCTION,
+                credentialRef = "stub:cred",
+                allowedPrincipalIds = setOf(PRINCIPAL),
+            ),
+        )
+        val resolver = object : ConnectionSecretResolver {
+            override fun resolve(
+                reference: ConnectionReference,
+                principal: dev.dmigrate.server.core.principal.PrincipalContext,
+            ): ResolvedConnection = ResolvedConnection.Success("sqlite:$db")
+        }
+
+        fun reversedYaml(preferences: ReversePreferences): String {
+            val artifactStore = InMemoryArtifactStore()
+            val contentStore = InMemoryArtifactContentStore()
+            val factory = McpCoreJobWorkerFactory(
+                connectionStore = connectionStore,
+                connectionSecretResolver = resolver,
+                artifactStore = artifactStore,
+                artifactContentStore = contentStore,
+                schemaStore = InMemorySchemaStore(),
+                profileStore = InMemoryProfileStore(),
+                diffStore = InMemoryDiffStore(),
+                limits = McpLimitsConfig(),
+                clock = Clock.fixed(NOW, ZoneOffset.UTC),
+                reversePreferences = preferences,
+            )
+            val record = operationRecord("job-reverse", SchemaReverseStartHandler.OPERATION)
+            val outcome = factory.create(record, connectionRequest(SchemaReverseStartHandler.TOOL_NAME))
+                .shouldNotBeNull()
+                .execute(record, CancellationTokenSource.create().token)
+            val artifactId = outcome.shouldBeInstanceOf<JobWorkerOutcome.Succeeded>().artifactRefs.single()
+                .substringAfterLast('/')
+            val size = artifactStore.findById(TENANT, artifactId)!!.managedArtifact.sizeBytes
+            return contentStore.openRangeRead(artifactId, 0, size).readAllBytes().toString(Charsets.UTF_8)
+        }
+
+        val width64 = ReversePreferences(sqliteAutoincrement = SqliteAutoincrementReverse.BIGINTEGER_IDENTITY)
+        try {
+            reversedYaml(ReversePreferences()) shouldContain "identifier"
+            reversedYaml(width64) shouldContain "legacy_serial_syntax: true"
+            val declared = reversedYaml(
+                width64.copy(autoIncrementSyntax = mapOf(DatabaseDialect.SQLITE to AutoIncrementSyntaxReverse.IDENTITY)),
+            )
+            withClue(declared) {
+                declared shouldContain "type: identity"
+                declared shouldNotContain "legacy_serial_syntax"
+            }
+        } finally {
+            Files.deleteIfExists(db)
         }
     }
 

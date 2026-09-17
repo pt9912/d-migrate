@@ -1,25 +1,54 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationTokenSource
+import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.sqlite.SqliteDriver
 import dev.dmigrate.mcp.registry.FileBackedApprovalGrantStore
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
+import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
 import dev.dmigrate.server.adapter.storage.s3.S3ArtifactContentStore
 import dev.dmigrate.server.adapter.storage.s3.S3StorageConfig
 import dev.dmigrate.server.adapter.storage.s3.S3UploadSegmentStore
+import dev.dmigrate.server.application.fingerprint.JsonValue
+import dev.dmigrate.server.application.job.JobStartRequest
 import dev.dmigrate.server.application.policy.PolicyAttempt
+import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
+import dev.dmigrate.server.core.connection.ConnectionReference
+import dev.dmigrate.server.core.connection.ConnectionSensitivity
 import dev.dmigrate.server.core.policy.PolicyDecision
+import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.ports.ConnectionSecretResolver
+import dev.dmigrate.server.ports.JobWorkerOutcome
+import dev.dmigrate.server.ports.ResolvedConnection
+import dev.dmigrate.server.ports.contract.Fixtures
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
+import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
+import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import dev.dmigrate.server.ports.memory.InMemoryConnectionReferenceStore
+import dev.dmigrate.server.ports.memory.InMemoryJobStore
+import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
+import dev.dmigrate.server.ports.memory.InMemorySchemaStore
+import dev.dmigrate.server.ports.memory.InMemoryUploadSegmentStore
+import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.DriverManager
+import java.time.Clock
+import java.time.Instant
 
 /**
  * Unit-Tests fuer [McpServeWiring]. In-Memory- und persistenter Branch
@@ -102,6 +131,75 @@ class McpServeWiringTest : FunSpec({
             }
         }
     }
+    context("Reverse-Praeferenzen der Lese-Jobs") {
+        test("the job factory reads with the reverse block of the connection config") {
+            DatabaseDriverRegistry.register(SqliteDriver())
+            val dir = Files.createTempDirectory("dmigrate-wiring-reverse-prefs-")
+            val db = dir.resolve("shop.db")
+            DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
+                conn.createStatement().use { it.execute("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)") }
+            }
+            val tenant = TenantId("acme")
+            val owner = PrincipalId("alice")
+            val connectionStore = InMemoryConnectionReferenceStore().apply {
+                save(
+                    ConnectionReference(
+                        connectionId = "c1", tenantId = tenant, displayName = "sqlite", dialectId = "sqlite",
+                        sensitivity = ConnectionSensitivity.NON_PRODUCTION,
+                        resourceUri = ServerResourceUri(tenant, ResourceKind.CONNECTIONS, "c1"),
+                        credentialRef = "stub:cred",
+                    ),
+                )
+            }
+            val artifactStore = InMemoryArtifactStore()
+            val contentStore = InMemoryArtifactContentStore()
+            val phaseC = McpRuntimeWiring(
+                uploadSessionStore = InMemoryUploadSessionStore(),
+                uploadSegmentStore = InMemoryUploadSegmentStore(),
+                artifactStore = artifactStore,
+                artifactContentStore = contentStore,
+                schemaStore = InMemorySchemaStore(),
+                jobStore = InMemoryJobStore(),
+                quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
+                limits = McpLimitsConfig(),
+                clock = Clock.systemUTC(),
+                connectionStore = connectionStore,
+            )
+            val resolver = object : ConnectionSecretResolver {
+                override fun resolve(reference: ConnectionReference, principal: PrincipalContext): ResolvedConnection =
+                    ResolvedConnection.Success("sqlite:$db")
+            }
+            fun reversed(config: String): String {
+                val cfg = dir.resolve("cfg-${System.nanoTime()}.yaml").also { Files.writeString(it, config) }
+                val record = Fixtures.jobRecord("job-reverse").let { job ->
+                    job.copy(managedJob = job.managedJob.copy(operation = "schema_reverse"))
+                }
+                val request = JobStartRequest(
+                    toolName = "schema_reverse_start", tenantId = tenant, callerId = owner,
+                    idempotencyKey = "idem-${System.nanoTime()}", approvalToken = null,
+                    payload = JsonValue.Obj(
+                        linkedMapOf("connectionId" to JsonValue.Str("dmigrate://tenants/acme/connections/c1")),
+                    ),
+                    refs = emptyList(), now = Instant.now(), principalContext = Fixtures.principalContext(),
+                    jobBuilder = { _, _ -> record },
+                )
+                val worker = newWiring(connectionConfigPath = cfg).mcpCoreJobWorkerFactory(phaseC, resolver)
+                    .create(record, request)!!
+                val outcome = worker.execute(record, CancellationTokenSource.create().token)
+                val artifactId = (outcome as JobWorkerOutcome.Succeeded).artifactRefs.single().substringAfterLast('/')
+                val size = artifactStore.findById(record.tenantId, artifactId)!!.managedArtifact.sizeBytes
+                return contentStore.openRangeRead(artifactId, 0, size).readAllBytes().toString(Charsets.UTF_8)
+            }
+
+            reversed("reverse:\n  sqlite:\n    autoincrement_width: 64\n") shouldContain "legacy_serial_syntax: true"
+            val declared = reversed(
+                "reverse:\n  sqlite:\n    autoincrement_width: 64\n    autoincrement_syntax: identity\n",
+            )
+            declared shouldContain "type: identity"
+            declared shouldNotContain "legacy_serial_syntax"
+        }
+    }
+
     context("build (in-memory branch — no server.state)") {
         test("returns a fully-wired closeable McpCliServerWiring") {
             val stateDir = Files.createTempDirectory("dmigrate-build-im-")

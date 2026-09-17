@@ -1,11 +1,13 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
+import dev.dmigrate.driver.AutoIncrementSyntaxReverse
 import dev.dmigrate.driver.SchemaReadSeverity
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.string.shouldContain
 
 class MysqlTypeMappingTest : FunSpec({
 
@@ -78,6 +80,46 @@ class MysqlTypeMappingTest : FunSpec({
         val result = map("bigint", isAI = true)
         result.type shouldBe NeutralType.BigInteger
         result.generation shouldBe ColumnGeneration.Identity(legacySerialSyntax = true)
+        result.note.shouldBeNull()
+    }
+
+    // ── AUTO_INCREMENT: serial oder identity (deklarierte Reverse-Praeferenz) ──
+
+    test("without a declaration the bigint AUTO_INCREMENT reads as today: serial, no note") {
+        val default = map("bigint", isAI = true)
+        val declaredSerial = MysqlTypeMapping.mapColumn(
+            MysqlTypeMapping.ColumnInput("bigint", "bigint", true, null, 19, 0, "t", "c"),
+            AutoIncrementSyntaxReverse.SERIAL,
+        )
+        declaredSerial shouldBe default
+        default shouldBe MysqlTypeMapping.MappingResult(
+            NeutralType.BigInteger,
+            generation = ColumnGeneration.Identity(legacySerialSyntax = true),
+        )
+    }
+
+    test("the identity preference drops the serial flag and says so (R205)") {
+        val result = MysqlTypeMapping.mapColumn(
+            MysqlTypeMapping.ColumnInput("bigint", "bigint", true, null, 19, 0, "orders", "id"),
+            AutoIncrementSyntaxReverse.IDENTITY,
+        )
+        result.type shouldBe NeutralType.BigInteger
+        result.generation shouldBe ColumnGeneration.Identity()
+        (result.generation as ColumnGeneration.Identity).legacySerialSyntax shouldBe false
+        val note = result.note.shouldNotBeNull()
+        note.code shouldBe "R205"
+        note.severity shouldBe SchemaReadSeverity.INFO
+        note.objectName shouldBe "orders.id"
+        note.message shouldContain "reverse.mysql.autoincrement_syntax: identity"
+    }
+
+    test("the identity preference leaves an int AUTO_INCREMENT alone: it carries no flag") {
+        val result = MysqlTypeMapping.mapColumn(
+            MysqlTypeMapping.ColumnInput("int", "int", true, null, 10, 0, "t", "c"),
+            AutoIncrementSyntaxReverse.IDENTITY,
+        )
+        result.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        result.generation.shouldBeNull()
         result.note.shouldBeNull()
     }
 

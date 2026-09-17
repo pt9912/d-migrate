@@ -3,7 +3,9 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.AutoIncrementSyntaxReverse
 import dev.dmigrate.driver.SqliteAutoincrementReverse
+import dev.dmigrate.driver.metadata.AutoIncrementSyntaxNote
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 
 /**
@@ -20,6 +22,9 @@ internal object SqliteTypeMapping {
         // Identity generation on the neutral column — mirrors
         // MysqlTypeMapping.MappingResult.generation.
         val generation: ColumnGeneration? = null,
+        // Die Bestaetigung einer zweiten deklarierten Praeferenz (R205) neben
+        // [note] — beide halten je eine Abweichung vom Default fest.
+        val preferenceNote: SchemaReadNote? = null,
     )
 
     fun mapColumn(
@@ -32,6 +37,10 @@ internal object SqliteTypeMapping {
         // (SqliteNeutralTypeCanonicalizer, which calls this with the default)
         // unchanged — the preference only affects the live reverse read.
         autoincrementReverse: SqliteAutoincrementReverse = SqliteAutoincrementReverse.IDENTIFIER,
+        // Ob die 64-Bit-Rekonstruktion als `SERIAL` (Default) oder als
+        // IDENTITY gemeint war — wirkt nur unter BIGINTEGER_IDENTITY, denn nur
+        // dort entsteht `generation: identity`.
+        autoIncrementSyntax: AutoIncrementSyntaxReverse = AutoIncrementSyntaxReverse.SERIAL,
     ): MappingResult {
         // SQLite's AUTOINCREMENT rowid is 64-bit and maps equally to the neutral
         // 32-bit `identifier` contract (PG SERIAL, MySQL INT AUTO_INCREMENT) and
@@ -54,8 +63,20 @@ internal object SqliteTypeMapping {
                 // legacySerialSyntax = true mirrors the MySQL reverse of the same
                 // legacy auto-increment construct (MysqlTypeMapping bigint path) →
                 // PG target BIGSERIAL; SQLite AUTOINCREMENT is legacy, not
-                // SQL-standard IDENTITY.
-                generation = ColumnGeneration.Identity(legacySerialSyntax = true),
+                // SQL-standard IDENTITY — unless the user declared identity
+                // (reverse.sqlite.autoincrement_syntax), confirmed by R205.
+                generation = ColumnGeneration.Identity(
+                    legacySerialSyntax = autoIncrementSyntax == AutoIncrementSyntaxReverse.SERIAL,
+                ),
+                preferenceNote = if (autoIncrementSyntax == AutoIncrementSyntaxReverse.IDENTITY) {
+                    AutoIncrementSyntaxNote.identity(
+                        "$tableName.$colName",
+                        "SQLite AUTOINCREMENT",
+                        "reverse.sqlite.autoincrement_syntax",
+                    )
+                } else {
+                    null
+                },
             )
             SqliteAutoincrementReverse.IDENTIFIER -> MappingResult(
                 type = NeutralType.Identifier(autoIncrement = true),

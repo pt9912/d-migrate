@@ -508,6 +508,17 @@ triggers:
   ergänzen Sie `--sqlite-autoincrement-width 64` (auch bei `data transfer`) — dann
   entsteht `biginteger` mit Identity (Ziel `BIGSERIAL`/`BIGINT`). Alternativ dauerhaft
   über die Konfiguration (`reverse.sqlite.autoincrement_width: 64` in `.d-migrate.yaml`).
+- **`AUTO_INCREMENT` als IDENTITY lesen:** MySQL speichert nicht, ob eine
+  `BIGINT AUTO_INCREMENT`-Spalte als `SERIAL` oder als IDENTITY gemeint war.
+  Standardmäßig liest d-migrate sie als `serial` (`legacy_serial_syntax`,
+  PostgreSQL erzeugt daraus `BIGSERIAL`). Soll daraus eine IDENTITY-Spalte
+  werden — etwa weil das PostgreSQL-Gegenstück eine ist —, ergänzen Sie
+  `--mysql-autoincrement-syntax identity`; der Report bestätigt das mit `R205`.
+  Für SQLite gilt dasselbe mit `--sqlite-autoincrement-syntax identity`, aber
+  nur zusammen mit `--sqlite-autoincrement-width 64`. Damit auch `schema compare`
+  mit `db:`-Operanden und der MCP-Server so lesen, tragen Sie es in die
+  Konfiguration ein (`reverse.mysql.autoincrement_syntax: identity` bzw.
+  `reverse.sqlite.autoincrement_syntax: identity`).
 
 #### Ihre Partitionsnamen gehen beim Auslesen verloren
 
@@ -611,11 +622,17 @@ nützlich in Skripten.
   wiederholen (`(status)::text = 'x'::text` gegen `status = 'x'`); beim Rumpf
   einer Sicht Anführungszeichen, Leerraum und abschließende Semikola. Was die
   Datenbank selbst vergibt, zählt ebenfalls nicht: der Name der Sequenz hinter
-  einer Identity-Spalte, sobald eine Seite aus PostgreSQL oder Oracle stammt,
-  und die Kennzeichnung als `serial` (`legacy_serial_syntax`), sobald eine
-  Seite aus MySQL, SQLite, SQL Server oder Oracle stammt. Woher eine Seite
-  stammt, liest d-migrate aus der Markierung, die `schema reverse` in `name`
-  und `version` schreibt — lassen Sie beide Felder deshalb unverändert.
+  einer Identity-Spalte, sobald eine Seite aus PostgreSQL oder Oracle stammt.
+  Woher eine Seite stammt, liest d-migrate aus der Markierung, die
+  `schema reverse` in `name` und `version` schreibt — lassen Sie beide Felder
+  deshalb unverändert.
+- **Eine IDENTITY-Spalte aus PostgreSQL erscheint gegen MySQL als geändert
+  (`legacy_serial_syntax`)?** Der MySQL-Reverse liest `BIGINT AUTO_INCREMENT`
+  standardmäßig als `serial`. Lesen Sie die MySQL-Seite mit
+  `--mysql-autoincrement-syntax identity` (bzw. über
+  `reverse.mysql.autoincrement_syntax: identity`, das auch `db:`-Operanden
+  sehen) — dann entfällt der Unterschied. Unterscheidet sich zusätzlich der
+  Modus (`always` gegen `by_default`), bleibt der gemeldet (siehe unten).
 - **Was trotzdem gemeldet wird:** eine anders formulierte Bedingung
   (`status IN ('A','B')` gegen `status = ANY (ARRAY['A','B'])`), die Groß-
   und Kleinschreibung von Schlüsselwörtern (`like` gegen `LIKE`) und der
@@ -3212,6 +3229,8 @@ Fortschritt/Warnungen nach stderr.
 | `--include-all` | alle optionalen Objekttypen |
 | `--name` / `--version` | Name bzw. Version im erzeugten Schema überschreiben |
 | `--sqlite-autoincrement-width` | `32` (Standard) oder `64` — Breite für SQLites `AUTOINCREMENT`-Primärschlüssel |
+| `--sqlite-autoincrement-syntax` | `serial` (Standard) oder `identity` — wie ein unter Breite `64` gelesener `AUTOINCREMENT`-Schlüssel markiert wird |
+| `--mysql-autoincrement-syntax` | `serial` (Standard) oder `identity` — wie eine `BIGINT AUTO_INCREMENT`-Spalte markiert wird |
 | `--migration-overlay` | Overlay-Datei mit Partitionsnamen, die der Server nicht führt (wiederholbar); siehe [3.3](#ihre-partitionsnamen-gehen-beim-auslesen-verloren) |
 
 > Beispiel einer erzeugten Schema-Datei (Tabelle + Function + View + Trigger):
