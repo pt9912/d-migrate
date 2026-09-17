@@ -2,7 +2,7 @@
 
 > **Status:** Vorabklärung / Spec-Regeländerung (2026-09-17)
 > **Trigger:** Posten D6 des Reader-Slices
-> ([`../in-progress/reader-treue-1-matrix-abnahme.md`](../in-progress/reader-treue-1-matrix-abnahme.md)),
+> ([`../done/reader-treue-1-matrix-abnahme.md`](../done/reader-treue-1-matrix-abnahme.md)),
 > zweite Hälfte. Die erste Hälfte (der SQL-Server-Reverse liefert den
 > Berechnungsausdruck ohne T-SQL-Quoting) wird dort gebaut; diese hier war im
 > Slice unter „Offen" geführt und ist beim Schnitt in vier Pläne hierher
@@ -62,6 +62,6 @@ gehört sie hierher.
 
 ## Referenzen
 
-- Befund D6: [`../in-progress/reader-treue-1-matrix-abnahme.md`](../in-progress/reader-treue-1-matrix-abnahme.md).
+- Befund D6: [`../done/reader-treue-1-matrix-abnahme.md`](../done/reader-treue-1-matrix-abnahme.md).
 - Messung: [`../done/compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md),
   Abschnitt „Offen".

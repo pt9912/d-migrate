@@ -2,7 +2,7 @@
 
 > **Status:** Befund (gemessen 2026-09-17), ohne Scope.
 > **Trigger:** der Silent-Loss-Check der Compare-Matrix (P0 aus
-> [`../in-progress/reader-treue-1-matrix-abnahme.md`](../in-progress/reader-treue-1-matrix-abnahme.md)).
+> [`../done/reader-treue-1-matrix-abnahme.md`](../done/reader-treue-1-matrix-abnahme.md)).
 > Er verlangt für jede Degradierung einen Code im Generate-Report; für diese
 > beiden gibt es keinen, und sie stehen deshalb in der Liste bekannter Befunde
 > des Harness — mit diesem Eintrag als Ort.

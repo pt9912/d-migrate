@@ -5,7 +5,8 @@
 > Anker gegen `90c6c234f` nachgemessen). Teil des Umbrellas
 > [`reader-treue.md`](../in-progress/reader-treue.md); dort stehen Nenner, Belegart, Regeln
 > der Abnahme, Doku-Pflichten und die Code-Tabelle.
-> **Vorbedingung / Gate:** Plan 1 ist geliefert — die Matrix ist Abnahme, und
+> **Vorbedingung / Gate:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md) ist geliefert und graduiert
+> (2026-09-18) — die Matrix ist Abnahme, und
 > ihre Liste bekannter Befunde trägt die Einträge dieses Plans. F2 ist
 > entschieden
 > ([ADR 0058](../../adr/0058-verlorener-srid-beim-reverse-ist-warnung.md)); P1
@@ -15,7 +16,7 @@
 > Keine Sperre mehr (Umbrella, „Offen").
 > **Aktivierung:** Move nach `../in-progress/` beim ersten
 > Implementierungs-Commit dieses Plans.
-> **Abhängigkeit:** Plan 1. Innerhalb: P10 nach P5 (dieselben Stellen); der
+> **Abhängigkeit:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md). Innerhalb: P10 nach P5 (dieselben Stellen); der
 > `json[]`-Teil von P8 nach S3; Plan 3 baut P4 auf P3 auf.
 
 ## Befund

@@ -2,7 +2,7 @@
 
 > **Status:** Befund (gemessen 2026-09-17), ohne Scope.
 > **Trigger:** der SQLite-Seed von P0/P11 in der Compare-Matrix
-> ([`../in-progress/reader-treue-1-matrix-abnahme.md`](../in-progress/reader-treue-1-matrix-abnahme.md)).
+> ([`../done/reader-treue-1-matrix-abnahme.md`](../done/reader-treue-1-matrix-abnahme.md)).
 > Die Zelle SQLite → SQL Server wechselte dabei von `Msg 2714` auf `Msg 1776`
 > — ein zweiter, eigener Grund.
 > **Aktivierungsbedingung:** Eine Entscheidung darüber, was der Generator tut,

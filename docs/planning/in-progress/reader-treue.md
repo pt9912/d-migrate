@@ -1,7 +1,8 @@
 # Reader-Treue: stille Verluste und Fremdes im Reverse und am Generator (Umbrella)
 
-> **Status:** **In Arbeit seit 2026-09-17** (Plan 1 gebaut; die Pläne 2 bis 4
-> stehen weiter in [`../next/`](../next/)), **Umbrella über vier Pläne**
+> **Status:** **In Arbeit seit 2026-09-17** (Plan 1 geliefert und am
+> 2026-09-18 nach [`../done/`](../done/) graduiert; die Pläne 2 bis 4 stehen
+> weiter in [`../next/`](../next/)), **Umbrella über vier Pläne**
 > (Schnitt 2026-09-17, Eigner-Entscheidung „E-Schnitt"). Eingearbeitet sind die Befunde
 > aus Plan-Review und Architektur-Prüfung (gegen `da29034b1`); die Anker sind
 > gegen `90c6c234f` nachgemessen. Der Umbrella ersetzt den ungeschnittenen
@@ -17,11 +18,12 @@
 > Plan 1 nach `in-progress/` gewandert und geht, mit einer
 > `## Closure`-Sektion, nach `../done/`, sobald Plan 4 geliefert ist. Jeder der
 > vier Pläne wandert einzeln.
-> **Warum ein Umbrella und nicht der erste Plan:** Plan 1 ist als erster
-> fertig und wandert als erster nach `done/`. Stünden Nenner, Messmethodik und
-> Code-Tabelle dort, verwiesen die Pläne 2 bis 4 für ihre gemeinsamen Regeln auf
-> einen abgeschlossenen Plan. ADR 0004 sieht für diesen Fall den Umbrella vor,
-> der „Planung läuft weiter" und „erste Teile geliefert" zugleich trägt.
+> **Warum ein Umbrella und nicht der erste Plan:** Plan 1 war als erster
+> fertig und ist als erster nach `done/` gewandert (2026-09-18). Stünden
+> Nenner, Messmethodik und Code-Tabelle dort, verwiesen die Pläne 2 bis 4 für
+> ihre gemeinsamen Regeln jetzt auf einen abgeschlossenen Plan. ADR 0004 sieht
+> für diesen Fall den Umbrella vor, der „Planung läuft weiter" und „erste Teile
+> geliefert" zugleich trägt.
 
 ## Die vier Pläne
 
@@ -29,10 +31,10 @@ Die Reihenfolge ist Eigner-Entscheidung: 1 → 2 → 3 → 4.
 
 | Plan | Pakete | Abnahme | Hängt ab von |
 | --- | --- | --- | --- |
-| [1 — Matrix als Abnahme](reader-treue-1-matrix-abnahme.md) — **alle Pakete geliefert (2026-09-17)** | P6 (MySQL-Server-Text), P0 (Seeds und Silent-Loss-Check), S4 (SQLite-Migrate verliert FK-Aktionen), P12 (T-SQL-Quoting im Berechnungsausdruck), P11 (SQLite-Constraint-Namen); dazu der E1-Bauteil | Compare-Matrix, `:test:integration-mysql`, `:test:integration-sqlite`, `:test:integration-mssql` | — |
-| [2 — Meldungen](../next/reader-treue-2-meldungen.md) | P5 (Array-Verlust MySQL und SQLite), P10 (`ALWAYS` ohne Entsprechung), P8 (`json`), P9 (ungebundene Zahl, unbekanntes Array-Element), P1 (Oracle-SRID), P3 (`search_path`); dazu S1 bis S3 (erst messen) | Matrix, Integrationsmodule je Dialekt | Plan 1 |
-| [3 — Spatial-Treue](../next/reader-treue-3-spatial.md) | P4 (PostgreSQL `geography`, nur Rückweg, samt Datenpfad), P7 (SpatiaLite `NOT NULL`), P2a/P2b (Oracle- und PostGIS-Systemobjekte) | `:test:integration-postgresql` mit PostGIS, `:test:integration-sqlite`, `:test:integration-oracle`, `:test:e2e-cli`, Matrix | Plan 1; P4 auf P3 aus Plan 2 |
-| [4 — Typ berechneter SQL-Server-Spalten](../next/reader-treue-4-mssql-berechneter-typ.md) | P13 (erst messen, dann nach der entschiedenen Regel) | `:test:integration-mssql`, Roundtrip-Harness, Matrix | P12 aus Plan 1 |
+| [1 — Matrix als Abnahme](../done/reader-treue-1-matrix-abnahme.md) — **geliefert, graduiert 2026-09-18 (`../done/`)** | P6 (MySQL-Server-Text), P0 (Seeds und Silent-Loss-Check), S4 (SQLite-Migrate verliert FK-Aktionen), P12 (T-SQL-Quoting im Berechnungsausdruck), P11 (SQLite-Constraint-Namen); dazu der E1-Bauteil | Compare-Matrix, `:test:integration-mysql`, `:test:integration-sqlite`, `:test:integration-mssql` | — |
+| [2 — Meldungen](../next/reader-treue-2-meldungen.md) | P5 (Array-Verlust MySQL und SQLite), P10 (`ALWAYS` ohne Entsprechung), P8 (`json`), P9 (ungebundene Zahl, unbekanntes Array-Element), P1 (Oracle-SRID), P3 (`search_path`); dazu S1 bis S3 (erst messen) | Matrix, Integrationsmodule je Dialekt | [Plan 1](../done/reader-treue-1-matrix-abnahme.md) |
+| [3 — Spatial-Treue](../next/reader-treue-3-spatial.md) | P4 (PostgreSQL `geography`, nur Rückweg, samt Datenpfad), P7 (SpatiaLite `NOT NULL`), P2a/P2b (Oracle- und PostGIS-Systemobjekte) | `:test:integration-postgresql` mit PostGIS, `:test:integration-sqlite`, `:test:integration-oracle`, `:test:e2e-cli`, Matrix | [Plan 1](../done/reader-treue-1-matrix-abnahme.md); P4 auf P3 aus Plan 2 |
+| [4 — Typ berechneter SQL-Server-Spalten](../next/reader-treue-4-mssql-berechneter-typ.md) | P13 (erst messen, dann nach der entschiedenen Regel) | `:test:integration-mssql`, Roundtrip-Harness, Matrix | P12 aus [Plan 1](../done/reader-treue-1-matrix-abnahme.md) |
 
 ## Der gemeinsame Nenner
 
@@ -107,20 +109,20 @@ Befunde, die beim Schnitt dazukamen.
 | B2 | der Array-Verlust über MySQL ist irreversibel | gemeldet | Plan 2, P5 (Grenze) |
 | B3 | PostgreSQL `json` wird `jsonb` (entschieden: laut) | im Code bestätigt | Plan 2, P8 |
 | B4 | `interval` still | widerlegt | entfällt |
-| C1 | MySQL-Introducer macht das Schema ungültig | nachgemessen | Plan 1, P6 |
+| C1 | MySQL-Introducer macht das Schema ungültig | nachgemessen | [Plan 1](../done/reader-treue-1-matrix-abnahme.md), P6 — **geliefert** |
 | D1 | Typ berechneter SQL-Server-Spalten | nachgemessen | Plan 4, P13 |
 | D2 | `numeric` ohne Präzision wird `float` | nachgemessen | Plan 2, P9; Modellfrage in [`../open/decimal-ohne-praezision-verlustfrei.md`](../open/decimal-ohne-praezision-verlustfrei.md) |
 | D3 | `varchar` ohne Länge ist `text` | nachgemessen | kein Paket (oben) |
 | D4 | MySQL rendert `ALWAYS` ohne Warnung | nachgemessen (MySQL), im Code geprüft (SQLite) | Plan 2, P10 |
-| D5 | SQLite nennt jeden Fremdschlüssel `fk_0` | nachgemessen (`Msg 2714`), Rest im Code geprüft | Plan 1, P11 |
-| D6 | T-SQL-Quoting im Berechnungsausdruck | nachgemessen | Reader-Hälfte: Plan 1, P12; Prüfungs-Hälfte: [`../open/ausdrucks-portabilitaet-mit-herkunft.md`](../open/ausdrucks-portabilitaet-mit-herkunft.md) |
+| D5 | SQLite nennt jeden Fremdschlüssel `fk_0` | nachgemessen (`Msg 2714`), Rest im Code geprüft | [Plan 1](../done/reader-treue-1-matrix-abnahme.md), P11 — **geliefert** |
+| D6 | T-SQL-Quoting im Berechnungsausdruck | nachgemessen | Reader-Hälfte: [Plan 1](../done/reader-treue-1-matrix-abnahme.md), P12 — **geliefert**; Prüfungs-Hälfte: [`../open/ausdrucks-portabilitaet-mit-herkunft.md`](../open/ausdrucks-portabilitaet-mit-herkunft.md) |
 | N1 | unbekanntes PostgreSQL-Array-Element ohne `R301` | im Code geprüft | Plan 2, P9 |
-| N2 | MySQL-Server-Text trägt Backtick-Quoting; nach P6 lehnte `E053` jeden MySQL-CHECK auf jedem anderen Ziel ab | im Code geprüft (Schnitt) | Plan 1, P6 |
+| N2 | MySQL-Server-Text trägt Backtick-Quoting; nach P6 lehnte `E053` jeden MySQL-CHECK auf jedem anderen Ziel ab | im Code geprüft (Schnitt) | [Plan 1](../done/reader-treue-1-matrix-abnahme.md), P6 — **geliefert** |
 | N3 | `W120` ist doppelt belegt (SRID-Hinweis und SQLite-Trigger-Body) | im Code geprüft (Schnitt) | [`../open/warn-code-ledger-completeness.md`](../open/warn-code-ledger-completeness.md) |
 | S1 | PostgreSQL `integer`-Identity als alleiniger Primärschlüssel verliert den Modus (Review H2) | im Code geprüft | Plan 2 |
 | S2 | SQLite-Migrate verliert `AUTOINCREMENT` einer `generation: identity`-Spalte (Review M4) | im Code geprüft; bekannt aus [`../open/sqlite-migrate-biginteger-identity-render-gap.md`](../open/sqlite-migrate-biginteger-identity-render-gap.md), Ursache 1 | Plan 2 |
 | S3 | PostgreSQL-Generator rendert Array-Elemente außer `text`/`integer`/`boolean`/`uuid` als `TEXT[]` (Review M5) | im Code geprüft | Plan 2 |
-| S4 | SQLite-Migrate verwirft `ON DELETE`/`ON UPDATE` an Fremdschlüsseln der Tabellenebene (Review M15) | im Code geprüft | Plan 1 (stört die Konvergenzmessung von P11) |
+| S4 | SQLite-Migrate verwirft `ON DELETE`/`ON UPDATE` an Fremdschlüsseln der Tabellenebene (Review M15) | im Code geprüft | [Plan 1](../done/reader-treue-1-matrix-abnahme.md) — **geliefert** (stört die Konvergenzmessung von P11) |
 | F4 | Ledger: R-Codes mit `WARNING`, gültige Datei, `W137`-Richtung, `W160` | im Code und in der Spec geprüft | [`../open/warn-code-ledger-completeness.md`](../open/warn-code-ledger-completeness.md) |
 
 Die Review-Befunde H1, M1–M3, M6–M13, L1–L7 und die Architektur-Befunde F1,
@@ -131,10 +133,12 @@ Plänen dort eingearbeitet, wo ihr Paket steht.
 
 ### Die Matrix
 
-Plan 1 macht die 5x5-Compare-Matrix
+Plan 1 hat die 5x5-Compare-Matrix
 ([`smoke-compare-matrix.sh`](../../../examples/mcp-e2e/scripts/smoke-compare-matrix.sh))
-zur Abnahme: native Seeds, ein Silent-Loss-Check, die Codes je Reverse und je
-Generate. Danach gilt für jedes Paket, das die Matrix berührt:
+zur Abnahme gemacht: native Seeds, ein Silent-Loss-Check, die Codes je Reverse
+und je Generate. **Elf der zwölf gefahrenen Zellen messen**, keine steht mehr
+auf `INVALID`; die zwölfte (SQLite → MySQL) ist `APPLY-FAIL` aus einer anderen
+Ursache. Danach gilt für jedes Paket, das die Matrix berührt:
 
 - **Rot ohne Fix.** Der Fall des Pakets läuft in der Matrix, **bevor** der
   Fix kommt, und steht bis dahin in der Liste bekannter Befunde. Das Paket
@@ -160,6 +164,17 @@ Generate. Danach gilt für jedes Paket, das die Matrix berührt:
   Messhost bis zur Klärung von
   [`../open/mcp-e2e-oracle-nicht-gefahren.md`](../open/mcp-e2e-oracle-nicht-gefahren.md)
   nicht zulässig. Oracle-Pakete nehmen in `:test:integration-oracle` ab.
+- **Die Matrix ist lokal zu fahren — das Gate fängt sie nicht auf.** Der
+  Workflow löste bei Push nur für `examples/mcp-e2e/**`, `Makefile`, `make/**`
+  und `Dockerfile` aus, also **nicht** für den Code, dessen Wirkung er pinnt;
+  genau den ändern die Pakete dieses Umbrellas. Plan 1 hat die Pfade um
+  `adapters/**` und `hexagon/**` erweitert. Die Grenze bleibt: **kein
+  PR-Gate** und kein Pflicht-Check — Push auf `main`, `workflow_dispatch` und
+  ein Wochen-Cron, sichtbar rot statt blockierend. Ein Paket, das seine Zellen
+  nicht selbst gemessen hat, hat sie nicht gemessen. Der erste CI-Lauf steht
+  als Beobachtungspunkt in
+  [`../open/ci-verdeckte-fehlschlaege.md`](../open/ci-verdeckte-fehlschlaege.md),
+  Teil 3.
 
 ### Die Nulllinie der Integrationsmodule
 
@@ -171,25 +186,35 @@ nur dann etwas, wenn vorher feststand, dass das Modul läuft.
 | --- | --- | --- |
 | `:test:integration-oracle` | gemessen 2026-09-16: `executed`, 33/33, keine Selbstüberspringung | Plan 2 (P1, P9), Plan 3 (P2a) |
 | `:test:integration-postgresql` | gemessen 2026-09-16: `executed`, 43/43, keine Selbstüberspringung | Plan 2 (P3, P8, P9, S1, S3), Plan 3 (P2b, P4) |
-| `:test:integration-mysql` | gemessen 2026-09-16: `executed`, keine Selbstüberspringung | Plan 1 (P6), Plan 2 (P5, P10) |
-| `:test:integration-sqlite` | gemessen 2026-09-17: `executed`, keine Selbstüberspringung | Plan 1 (S4, P11), Plan 2 (P5, P9, P10, S2), Plan 3 (P7) |
-| `:test:integration-mssql` | gemessen 2026-09-17: `executed`; **eine** Selbstüberspringung, s. unten | Plan 1 (P12), Plan 4 (P13) |
+| `:test:integration-mysql` | gemessen 2026-09-17 (Plan 1): `executed`, keine Selbstüberspringung | Plan 1 (P6) **geliefert**, Plan 2 (P5, P10) |
+| `:test:integration-sqlite` | gemessen 2026-09-17 (Plan 1): `executed`, keine Selbstüberspringung | Plan 1 (S4, P11) **geliefert**, Plan 2 (P5, P9, P10, S2), Plan 3 (P7) |
+| `:test:integration-mssql` | gemessen 2026-09-17 (Plan 1): `executed`; **eine** Selbstüberspringung, s. unten | Plan 1 (P12) **geliefert**, Plan 4 (P13) |
 | `:test:e2e-cli` | **nicht gemessen** | Plan 3 (P4, Datenpfad) |
+
+Die drei Zeilen von Plan 1 stammen aus **einem** Lauf über alle drei Module
+(`--continue`): `BUILD SUCCESSFUL`, 55 Tasks, alle `executed`. **Eine Testzahl
+je Modul steht dort nicht** — das Integrations-Image trägt das Repo als Kopie,
+die Reports bleiben im Container, und Gradle zählt in der Konsolenausgabe
+nichts. Gemessen ist deshalb der ausgeführte Task, nicht die Zahl; die
+`33/33`- und `43/43`-Angaben der beiden oberen Zeilen stammen aus einer anderen
+Messart und sind nicht vergleichbar.
 
 Ein Plan misst die Nulllinie seiner noch offenen Module **vor** seinem ersten
 Paket: `make integration INTEGRATION_TASKS=":test:<modul>:test"`, der Task
 steht als `executed` im Lauf (nicht `SKIPPED`, nicht `UP-TO-DATE`), und das
 Modul trägt keine Selbstüberspringung (`assumeTrue`, `Assumptions`,
-`@Disabled`). Ein PostGIS-Container ist in `:test:integration-postgresql` neu
-(`TestImages.POSTGIS` benutzt bisher nur `:test:e2e-cli`); die gemessene
-Nulllinie deckt ihn nicht.
+`@Disabled`, `xtest`). Ein PostGIS-Container ist in
+`:test:integration-postgresql` neu (`TestImages.POSTGIS` benutzt bisher nur
+`:test:e2e-cli`); die gemessene Nulllinie deckt ihn nicht.
 
 **Eine Selbstüberspringung gibt es:** `MssqlFullTextEnvironmentIntegrationTest`
 in `:test:integration-mssql` überspringt sich (`xtest`), wenn das abgeleitete
 Volltext-Image fehlt (`MSSQL_FTS_IMAGE`, sonst `d-migrate-mssql-fts:local`;
 `make mssql-fts-image` baut es). Auf dem Messhost vom 2026-09-17 lag es, die
 Spec lief mit. Wer die Nulllinie anderswo misst, prüft das Image mit —
-sonst ist der Lauf grün und diese Spec stumm.
+sonst ist der Lauf grün und diese Spec stumm. Der Fall ist seit der
+Graduation von Plan 1 auch außerhalb dieses Umbrellas festgehalten
+([`../open/mssql-testimage-2025-cu1-startet-nicht.md`](../open/mssql-testimage-2025-cu1-startet-nicht.md)).
 
 ### Sabotage
 
@@ -393,4 +418,21 @@ Schnitts:
   [`../open/warn-code-ledger-completeness.md`](../open/warn-code-ledger-completeness.md).
 - Portabilitätsprüfung mit Herkunft (D6, zweite Hälfte):
   [`../open/ausdrucks-portabilitaet-mit-herkunft.md`](../open/ausdrucks-portabilitaet-mit-herkunft.md).
+- **Nackte reservierte Wörter gegen PostgreSQL, SQL Server und Oracle** (aus
+  der Review von Plan 1, M1; der MySQL-Teil ist dort behoben):
+  [`../open/nackte-reservierte-woerter-im-rohen-ausdruck.md`](../open/nackte-reservierte-woerter-im-rohen-ausdruck.md),
+  benannt in der Abgrenzung von Plan 2.
+- **L5 — die lautere Antwort auf einen nicht abgrenzbaren Ausdruckstext**
+  (aus der Review von Plan 1). Ein Text, den die Standardregeln nicht abgrenzen
+  können (offene Quotierung, offener Blockkommentar), bleibt beim Rendern
+  gegen MySQL **wortgleich**. Das ist kein Rückschritt — vor der
+  Umschreibe-Regel (E1) galt dieselbe Lesart für jeden Text —, und der Fall
+  ist eng: ein Reverse erzeugt ihn nie, nur eine von Hand geschriebene Datei in
+  MySQLs eigener Schreibweise (`'it\'s'`). Die Grenze steht geschrieben
+  ([`spec/ddl-generation-rules.md`](../../../spec/ddl-generation-rules.md),
+  8.3, und die KDoc). **Offen ist die Entscheidung**, ob daraus `E053` werden
+  soll: das bräuchte den Lexer an einer Stelle, die
+  `RawSqlExpressionPortability` erreicht, und verwürfe dann auch Texte, die
+  MySQL heute annimmt. Eine Entscheidung, keine Nacharbeit — und keines der
+  Pakete der Pläne 2 bis 4 hängt an ihr.
 - Die Modellfragen: s. „Abgrenzung".

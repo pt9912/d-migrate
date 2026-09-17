@@ -40,5 +40,5 @@ Gehört die Validierung zur Semantik von `schema compare`?
 ## Bezug
 
 - Der Reader-Fix für den MySQL-Introducer (Reader-Slice
-  [`reader-treue-1-matrix-abnahme.md`](../in-progress/reader-treue-1-matrix-abnahme.md),
+  [`reader-treue-1-matrix-abnahme.md`](../done/reader-treue-1-matrix-abnahme.md),
   P6) nimmt dem Befund seinen häufigsten Auslöser, nicht die Frage.

@@ -5,14 +5,14 @@
 > Anker gegen `90c6c234f` nachgemessen). Teil des Umbrellas
 > [`reader-treue.md`](../in-progress/reader-treue.md); dort stehen Nenner, Belegart, Regeln
 > der Abnahme, Doku-Pflichten und die Code-Tabelle.
-> **Vorbedingung / Gate:** P12 aus Plan 1 ist geliefert — die Rückführung
+> **Vorbedingung / Gate:** P12 aus [Plan 1](../done/reader-treue-1-matrix-abnahme.md) ist geliefert — die Rückführung
 > arbeitet auf normalisiertem Text. Die Entscheidungsregel ist vom Eigner
 > bestätigt (2026-09-17). Kein ADR: die Regel „ohne Typ" steht in
 > `spec/ddl-generation-rules.md` 3.2a und ist eine Spec-Regel.
 > **Aktivierung:** Move nach `../in-progress/` beim ersten
 > Implementierungs-Commit dieses Plans; die Messungen allein sind noch kein
 > Implementierungs-Commit.
-> **Abhängigkeit:** Plan 1 (P12, Nulllinie von `:test:integration-mssql`).
+> **Abhängigkeit:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md) (P12, Nulllinie von `:test:integration-mssql`).
 > Plan 2 und Plan 3 sind keine Vorbedingung; der Plan kommt nach Eigner-Reihenfolge
 > zuletzt.
 

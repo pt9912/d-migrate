@@ -425,7 +425,7 @@ wäre die erste Ungenauigkeit:
 
 **Posten 4 ist am 2026-09-16 aus diesem Slice heraus:** er ist ein Reader-Thema
 und steht als Posten C1 mit Paket P6 im
-[Reader-Slice](../in-progress/reader-treue-1-matrix-abnahme.md) — dieselbe Messung, dieselbe
+[Reader-Slice](reader-treue-1-matrix-abnahme.md) — dieselbe Messung, dieselbe
 Woche. Die Postennummer hier bleibt frei, damit die Querverweise in beiden
 Dokumenten stabil bleiben.
 
@@ -632,7 +632,7 @@ Nachzug in P7 ist Teil des Paketabschlusses, keine Zutat.
 ### P4 — entfällt hier: der Posten steht im Reader-Slice
 
 Der MySQL-Introducer ist ein **Reader**-Thema (Abschnitt 4) und am 2026-09-16
-mit seinem Paket in den [Reader-Slice](../in-progress/reader-treue-1-matrix-abnahme.md)
+mit seinem Paket in den [Reader-Slice](reader-treue-1-matrix-abnahme.md)
 gewandert — dort als Posten C1 mit Paket P6, samt DoD und Modulzeile. Die Nummer
 bleibt hier frei, damit die Querverweise stabil bleiben.
 
@@ -2639,7 +2639,7 @@ unberührt, kein Oracle-Opt-in.
   `smoke-scope-matrix.sh` trägt zwei vorbestehende Befunde).
 - **Native Typ-Seeds und der Silent-Loss-Check der Compare-Matrix** — stehen
   seit dem sechsten Bauabschnitt im
-  [Reader-Slice](../in-progress/reader-treue-1-matrix-abnahme.md) unter
+  [Reader-Slice](reader-treue-1-matrix-abnahme.md) unter
   „Verifikation" (Punkt 5) als Abnahme seiner Pakete (Klassen aus A5, B4,
   D3). Die Matrix wendet `fixtures/seeds/<dialekt>.sql` bereits an, wenn es
   die Datei gibt.
@@ -2657,7 +2657,7 @@ Reverse ohne Aussage setzte und das jetzt der Anwender am Reverse erklärt
 dabei eine ADR-Linie — das ist kein Nebeneffekt, sondern P7.
 
 **Nicht mehr hier:** Posten 4 (MySQL-Reader) ist am 2026-09-16 in den
-[Reader-Slice](../in-progress/reader-treue-1-matrix-abnahme.md) gewandert, als Posten C1 mit
+[Reader-Slice](reader-treue-1-matrix-abnahme.md) gewandert, als Posten C1 mit
 Paket P6. **Nicht behoben** wird die Umschreibung `= ANY(…)` gegen `IN (…)`:
 sie ist in ADR 0055 entschieden.
 

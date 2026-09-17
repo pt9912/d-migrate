@@ -2,7 +2,7 @@
 
 > **Status:** Befund (gemessen 2026-09-17), ohne Scope.
 > **Trigger:** die Messung F5 aus
-> [`../in-progress/reader-treue-1-matrix-abnahme.md`](../in-progress/reader-treue-1-matrix-abnahme.md)
+> [`../done/reader-treue-1-matrix-abnahme.md`](../done/reader-treue-1-matrix-abnahme.md)
 > (P6). Sie fragte, was ein `schema migrate` mit einer älteren Herkunft nach
 > der Reader-Normalisierung plant — und kam gar nicht so weit: das Dokument,
 > das `--provenance-output` schreibt, weist `--migration-overlay` **derselben

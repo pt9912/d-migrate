@@ -464,7 +464,7 @@ verweist dabei **nicht** auf den ADR; Verweise von `spec` auf `adr` sind laut
   lassen. ADR 0056 lässt das offen, und es darf keine Nebenwirkung einer
   Toleranz sein.
 - **Reader-Slice**, Posten C1/P6 (MySQL-Introducer,
-  [`reader-treue-1-matrix-abnahme.md`](../in-progress/reader-treue-1-matrix-abnahme.md)).
+  [`reader-treue-1-matrix-abnahme.md`](../done/reader-treue-1-matrix-abnahme.md)).
   Ohne ihn enden die MySQL-Paarungen mit Exit 3. K1 lässt sich an echten
   MySQL-Reverses erst nach diesem Posten abnehmen; der Repro hat den Fix nur
   simuliert.

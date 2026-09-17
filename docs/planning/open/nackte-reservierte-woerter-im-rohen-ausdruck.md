@@ -2,7 +2,7 @@
 
 > **Status:** Befund (gemessen 2026-09-18), ohne Scope.
 > **Trigger:** die Review von
-> [`../in-progress/reader-treue-1-matrix-abnahme.md`](../in-progress/reader-treue-1-matrix-abnahme.md)
+> [`../done/reader-treue-1-matrix-abnahme.md`](../done/reader-treue-1-matrix-abnahme.md)
 > (Befund M1). Der MySQL-Teil ist dort behoben; dieser Eintrag hält fest, was
 > derselbe Mechanismus auf den übrigen Zielen anrichtet.
 > **Aktivierungsbedingung:** Eine Entscheidung darüber, ob PostgreSQL, SQL

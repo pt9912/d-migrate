@@ -1,19 +1,26 @@
 # Reader-Treue 1: die Compare-Matrix wird Abnahme (P6, P0, S4, P12, P11)
 
-> **Status:** **In Arbeit seit 2026-09-17; alle fünf Pakete geliefert**
-> (E1-Bauteil, P6, P0, S4, P12, P11), Graduierung nach der Review. Schnitt
+> **Status:** **Done — graduiert 2026-09-18.** Aktiv seit 2026-09-17; alle
+> fünf Pakete geliefert (E1-Bauteil, P6, P0, S4, P12, P11), dazu eine
+> Korrekturrunde nach der Review. Noch nicht released: die Wirkung steht in
+> `CHANGELOG.md` unter `[Unreleased]` (Stand `main`, 1.8.0-SNAPSHOT). Schnitt
 > 2026-09-17 aus dem ungeschnittenen Reader-Slice; Befunde aus Plan-Review und
 > Architektur-Prüfung eingearbeitet, Anker gegen `90c6c234f` nachgemessen.
-> Der Bauabschnitt unten hält Messungen, Sabotagen und Neu-Pins fest.
+> Der Bauabschnitt unten hält Messungen, Sabotagen und Neu-Pins fest; die
+> Closure mit Paket → Commit steht am Ende, jeder offene Punkt mit seinem Ort
+> unter „Restflächen" direkt unter diesem Kopf.
 >
 > **Commits** (in dieser Reihenfolge):
 > `33e6f8618` E1-Bauteil · `aa60e9422` P6 · `650bad844` Neu-Pin P6 ·
 > `5372496ea` P0 Teil 1 · `fe9681ac2` P0 Teile 2–5 · `c35edba1f` Neu-Pin P0 ·
 > `c5d2a8116` Typ-Smoke (Nebenbefund) · `32ee40b2f` S4 · `50065adb9` P12 ·
 > `6b4d2f15a` Neu-Pin P12 · `e9f21d464` P11 · `ca08a8173` Neu-Pin P11 ·
-> `e78fdd434` Nachtrag.
-> Teil des Umbrellas [`reader-treue.md`](reader-treue.md). Dort stehen der
-> gemeinsame Nenner, die Belegart, die Regeln der Abnahme (Neu-Pins,
+> `e78fdd434` Nachtrag · `ca01ec260` Plan · Korrekturrunde `658f98fad`,
+> `f95d67c25`, `5a3715959`, `f5eba2ff8` · `ac91ab0c3` Plan.
+> Teil des Umbrellas
+> [`reader-treue.md`](../in-progress/reader-treue.md), der in
+> `in-progress/` **bleibt**, solange die Pläne 2 bis 4 offen sind. Dort stehen
+> der gemeinsame Nenner, die Belegart, die Regeln der Abnahme (Neu-Pins,
 > betroffene Zellen, Nulllinie, Sabotage), die Doku-Pflichten und die Codes.
 > **Vorbedingung / Gate:** keins. Die Eigner-Frage **E1** (Bezeichner in
 > `"…"` gegen MySQL, s. Umbrella) ist am 2026-09-17 als **(b)** entschieden:
@@ -23,8 +30,32 @@
 > von P6 und P12 (Spec 8.3 zieht mit); die Neu-Pins sind damit frei.
 > **Aktivierung:** mit dem ersten Implementierungs-Commit nach `in-progress/`
 > gewandert, zusammen mit dem Umbrella.
+> **Graduiert** am 2026-09-18 (Move nach `../done/`); der Umbrella bleibt in
+> `../in-progress/`.
 > **Abhängigkeit:** kein Vorgänger. Plan 2 und Plan 3 setzen die Matrix aus P0
 > voraus, Plan 4 die Normalisierung aus P12.
+
+## Restflächen (2026-09-18)
+
+**Nichts davon ist Bauschuld dieses Plans.** Jeder Punkt ist eine
+Eigner-Entscheidung, ein beim Bauen sichtbar gewordener Befund oder eine
+Grenze, die der Plan bewusst zieht. Jeder hat einen Ort außerhalb; die Liste
+„Offen" weiter unten bleibt als Stand vor der Graduation stehen.
+
+| Punkt | Ort |
+| --- | --- |
+| Nackte reservierte Wörter gegen PostgreSQL, SQL Server und Oracle (M1, zweite Hälfte — nur der MySQL-Generator quotiert zurück) | [`../open/nackte-reservierte-woerter-im-rohen-ausdruck.md`](../open/nackte-reservierte-woerter-im-rohen-ausdruck.md); als Posten in der Abgrenzung von [Plan 2](../next/reader-treue-2-meldungen.md) |
+| **L5 — die lautere Antwort** auf einen nicht abgrenzbaren Ausdruckstext: `E053` statt wortgleichem Rückfall. Entscheidung offen, kein Bau; sie bräuchte den Lexer an einer Stelle, die `RawSqlExpressionPortability` erreicht, und verwürfe dann auch Texte, die MySQL heute annimmt | [`../in-progress/reader-treue.md`](../in-progress/reader-treue.md), „Offen" → „Außerhalb der vier Pläne". Die heutige Grenze steht geschrieben (`spec/ddl-generation-rules.md`, 8.3, und die KDoc) |
+| Herkunftsdokument aus `--provenance-output` ist über `--migration-overlay` nicht rückführbar (gefunden bei Messung F5) | [`../open/provenance-overlay-nicht-rueckfuehrbar.md`](../open/provenance-overlay-nicht-rueckfuehrbar.md) |
+| SQLite-Generate verschweigt Typmarke und Länge, und `W200` trifft die berechnete Spalte nicht | [`../open/sqlite-generate-verschweigt-typmarke-und-laenge.md`](../open/sqlite-generate-verschweigt-typmarke-und-laenge.md) |
+| Fremdschlüssel bleibt auf einem übersprungenen Schlüssel stehen (`Msg 1776`, im Seed umgangen) | [`../open/generate-fk-ohne-uebersprungenen-schluessel.md`](../open/generate-fk-ohne-uebersprungenen-schluessel.md) |
+| Die **25 bekannten Befunde** des Silent-Loss-Checks — 19 auf [Plan 2](../next/reader-treue-2-meldungen.md), 1 auf [Plan 4](../next/reader-treue-4-mssql-berechneter-typ.md) (D1), 5 auf den SQLite-Eintrag oben | die Liste ist Code: `SILENT_LOSS_KNOWN` in [`examples/mcp-e2e/scripts/lib/silent-loss.sh`](../../../examples/mcp-e2e/scripts/lib/silent-loss.sh); jeder Eintrag nennt sein Paket, und ein Eintrag, der im Lauf nicht auftritt, macht ihn rot |
+| `MssqlFullTextEnvironmentIntegrationTest` überspringt sich (`xtest`), wenn das abgeleitete Volltext-Image fehlt — ein Lauf ohne `make mssql-fts-image` ist grün und diese Spec stumm | [`../open/mssql-testimage-2025-cu1-startet-nicht.md`](../open/mssql-testimage-2025-cu1-startet-nicht.md), Nachtrag zur Selbstüberspringung; die Nulllinie steht im Umbrella |
+| **Grenze des Matrix-Gates** nach der Pfad-Erweiterung: der Workflow löst jetzt auch für `adapters/**` und `hexagon/**` aus, bleibt aber **kein PR-Gate** — Push auf `main`, `workflow_dispatch` und ein Wochen-Cron, sichtbar rot statt blockierend | [`../in-progress/reader-treue.md`](../in-progress/reader-treue.md), „Die Matrix"; der erste CI-Lauf als Beobachtungspunkt in [`../open/ci-verdeckte-fehlschlaege.md`](../open/ci-verdeckte-fehlschlaege.md), Teil 3 |
+
+**Und die `Datei:Zeile`-Anker im Text sind Entwurfs- bzw. Bauabschnittsstand.**
+Wer einen Beleg nachfährt, sucht über den Symbolnamen; nachgezogen ist nur der
+Anker, den P12 selbst umbenannt hat (`MssqlTypeMapping.normalizeExpression`).
 
 ## Befund
 
@@ -638,7 +669,7 @@ kann (offene Quotierung, offener Blockkommentar), bleibt unverändert.
    ist dieselbe Regel, nach der `SqlIdentifiers.quoteStringLiteral` jeden
    anderen MySQL-Literalwert schreibt (Default-`sql_mode` ohne
    `NO_BACKSLASH_ESCAPES`); der Präzedenzfall steht in
-   [`../done/mysql-string-literal-backslash-escaping.md`](../done/mysql-string-literal-backslash-escaping.md).
+   [`mysql-string-literal-backslash-escaping.md`](mysql-string-literal-backslash-escaping.md).
 2. **Die CHECK-Preflight-Sonde** prüft jetzt dieselbe Schreibweise, die der
    Generator anlegt (`CheckPreflightPlanner.plan(expressionText = …)`,
    Voreinstellung unverändert). Ohne das zählte `SELECT count(*) … WHERE NOT
@@ -1392,3 +1423,220 @@ diesen Slice gehört:
   MySQL heute annimmt — eine Entscheidung, keine Nacharbeit.
 - Die drei `open/`-Einträge aus dem Bau und die 25 bekannten Befunde des
   Silent-Loss-Checks (s. Stand der Akzeptanzkriterien).
+
+## Closure
+
+**Graduiert 2026-09-18.** Alle fünf Pakete sind gebaut (P6, P0, S4, P12, P11),
+dazu der vorgeschaltete E1-Bauteil und eine Korrekturrunde nach der Review.
+Released ist es nicht: die Wirkung steht in `CHANGELOG.md` unter
+`[Unreleased]`. Offen bleibt in diesem Plan nichts; jeder verbliebene Punkt hat
+unter „Restflächen" einen Ort außerhalb. Der Umbrella
+[`reader-treue.md`](../in-progress/reader-treue.md) bleibt in
+`../in-progress/`, weil die Pläne 2 bis 4 offen sind.
+
+**Woran „fertig" gemessen ist** — am Vertrag, nicht an diesem Plan:
+
+- [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004)
+  (Reverse-Engineering): ein MySQL-Reverse ist **gültig** — Introducer,
+  Backslash-Escape und Backtick-Quoting stehen nicht mehr im Modell, `E012` und
+  `E136` lösen dort nicht mehr aus; ein SQL-Server-Reverse liefert
+  Berechnungsausdruck und Index-Prädikat ohne T-SQL-Quoting; ein
+  SQLite-Reverse liefert Constraint-Namen aus der Quelle statt `fk_0`/`uq_0`.
+  Was ein Reverse liefert, ist damit auf den vier gemessenen Dialekten
+  neutraler Text, nicht Servertext.
+- [`spec/lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md),
+  Abschnitt 8.4 (Constraint-Typen, Multi-Column Foreign Keys): ein
+  mehrspaltiger SQLite-Fremdschlüssel reist mit seinem Namen und ist auf SQL
+  Server anwendbar (`Msg 2714` ist weg), und `schema migrate` gegen SQLite
+  verliert `ON DELETE`/`ON UPDATE` nicht mehr — auch nicht über einen Rebuild.
+- [ADR 0056](../../adr/0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md),
+  neu gefasste Entscheidung 1 („keine lokale Normalisierung in `schema migrate`
+  und im Fingerabdruck"), ist **eingehalten**: normalisiert wird im Reader, an
+  der Stelle, an der der Text ins Modell geht. Die Folgen für die
+  Herkunftsplanung sind gemessen, nicht vermutet — MySQL kostet der Umstieg je
+  CHECK ein Drop und Add, wenn eine alte Reverse-Datei als Soll bleibt (Exit 0,
+  keine `AlterColumnGeneration`); SQL Server plant `no_op` mit 0 Operationen.
+- [ADR 0057](../../adr/0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md),
+  Abschnitt 2: keine `names*`-Fähigkeit wurde geändert oder angelegt, und der
+  Generator schreibt weiterhin keinen Namen für einen Spalten-Fremdschlüssel.
+  Die Stopp-Regel von P11 hat deshalb nicht gegriffen; die Änderung liegt
+  vollständig im Reader.
+- Die Spec beschreibt das Gebaute:
+  [`spec/type-mapping.md`](../../../spec/type-mapping.md) 4.5 (MySQL), 5.2a
+  (SQLite-Constraint-Namen), 6.2 und 6.3 (SQL Server, jetzt CHECK,
+  Berechnungsausdruck und `sys.indexes.filter_definition`, mit der Ausnahme
+  der Hash-Erkennung);
+  [`spec/ddl-generation-rules.md`](../../../spec/ddl-generation-rules.md) 2.3
+  (String-Literale) und 8.3 (roher Ausdruckstext samt Berechnungsausdruck, der
+  Umschreibe-Regel und ihrer Grenze);
+  [`spec/cli-spec.md`](../../../spec/cli-spec.md) (der Berechnungsausdruck bei
+  `--provenance-output` und im `raw-text-provenance`-Overlay).
+  `docs/user/` beschreibt den Ist-Zustand (Anwenderhandbuch 3.3, 3.19, 3.23).
+  **Kein neuer W- oder R-Code**, also kein Ledger-Eintrag.
+
+**Paket → Commit**
+
+| Abschnitt | Paket | Commit |
+| --- | --- | --- |
+| Vorlauf | E1-Bauteil: der MySQL-Generator schreibt `"…"`-Bezeichner in rohen Ausdrücken in Backticks um | `33e6f8618` |
+| 1 | P6 — CHECK und Berechnungsausdruck kommen in neutraler Schreibweise ins Modell | `aa60e9422` |
+| 1 | Neu-Pin P6 — die MySQL-Zeile misst | `650bad844` |
+| 2 | P0 Teil 1 — PostGIS im eigenen Schema, **ohne** Neu-Pin | `5372496ea` |
+| 2 | P0 Teile 2–5 — Seeds, Anmerkungen, Silent-Loss-Check, Selbstprüfung | `fe9681ac2` |
+| 2 | Neu-Pin P0 — Seeds und die zwei neuen Schlüsselfamilien | `c35edba1f` |
+| 2 | Nebenbefund: der Typ-Smoke prüft den Fingerabdruck-Algorithmus, nicht seine Nummer | `c5d2a8116` |
+| 3 | S4 — `schema migrate` behält die Aktionen eines Fremdschlüssels | `32ee40b2f` |
+| 4 | P12 — Berechnungsausdruck und Index-Prädikat ohne T-SQL-Quoting | `50065adb9` |
+| 4 | Neu-Pin P12 — die SQL-Server-Zeile misst | `6b4d2f15a` |
+| 5 | P11 — SQLite-Constraint-Namen aus der Quelle, schemaweit eindeutig | `e9f21d464` |
+| 5 | Neu-Pin P11 — die SQLite-Zeile misst | `ca08a8173` |
+| 5 | Nachtrag zu P11 und P12: README-Zeile, Integrationsfall, KDoc-Verweis | `e78fdd434` |
+| 5 | Plan | `ca01ec260` |
+| Korrektur | M1, M2 — reservierte Wörter zurückquotieren, `"` nicht als Literal lesen (samt `open/`-Eintrag und Posten in Plan 2) | `658f98fad` |
+| Korrektur | L1, L7, L4 — `FOREIGN␣␣KEY` behält seinen Namen; Zerlegen und `referentialActionSql` liegen einmal | `f95d67c25` |
+| Korrektur | L2, L3, M4/F1, F5 — Report-Leser dicht, zwei Seed-Fälle, Matrix-Workflow sieht Treiber-Änderungen | `5a3715959` |
+| Korrektur | M3/F2, L5, L6, L8, I1, I4–I6 — die Grenzen ausschreiben (Spec, Handbuch, CHANGELOG) | `f5eba2ff8` |
+| Korrektur | Plan | `ac91ab0c3` |
+| Graduation | Closure, Restflächen, Move nach `../done/`; Nachträge im Umbrella und in `open/` | der Move-Commit |
+
+**Was über den Entwurf hinausging**
+
+- **Der E1-Bauteil wurde größer als die Frage.** Ohne die
+  **Backslash-Verdopplung** wäre P6 an dieser Stelle still falsch geworden (der
+  Reader packt `'a\\b'` aus, MySQL läse beim Rendern `a<BS>`), und ohne die
+  **CHECK-Preflight-Sonde** hätte `SELECT count(*) … WHERE NOT ('Qty' > 0)`
+  gegen MySQL jede Zeile als Verstoß gezählt und die Migration geblockt — laut,
+  aber falsch. Beide Punkte sind gemeldet und in der Spec nachgezogen (2.3 und
+  8.3).
+- **P6 und P12 nahmen je ein Feld mehr mit**, aus demselben Katalogtext:
+  P6 den **Ausdrucks-Schlüssel eines funktionalen Index**
+  (`information_schema.statistics.expression`), P12 das **Index-Prädikat**
+  (`sys.indexes.filter_definition`). Bei P12 war das nicht Kür: die Zelle SQL
+  Server → PostgreSQL blieb ohne das Prädikat `APPLY-FAIL`, DoD 3 wäre nicht
+  erfüllt gewesen.
+- **Das Modell des Silent-Loss-Checks kam aus einem zweiten CLI-Reverse.**
+  Der Check braucht die neutralen Formen; die stehen im Schema-Dokument, das
+  MCP-Artefakt ist YAML, und der Harness hat keinen YAML-Leser. Der Lauf liest
+  deshalb je Dialekt ein zweites Reverse über die CLI
+  (`schema reverse --format json`) — dieselbe Datenbank, derselbe Reader,
+  dieselbe Konfiguration. Die **Zellen** kommen unverändert aus dem
+  MCP-Reverse; nur die Formen aus dem JSON.
+- **Der SQLite-Seed wurde auf Zahlenspalten umgestellt.** Die erste Fassung
+  ließ SQLite → SQL Server nur den Grund wechseln (`Msg 2714` → `Msg 1776`):
+  der mehrspaltige Fremdschlüssel verwies auf zwei Textspalten, deren
+  UNIQUE-Klausel SQL Server nicht als Schlüssel nimmt (`E057`), und der
+  Generator ließ die Klausel weg und den Fremdschlüssel darauf stehen. Der Seed
+  weicht aus, der Befund hat einen eigenen Ort.
+- **`MysqlReservedWords` ist gemessen, nicht abgeschrieben.** Die Wortliste
+  kommt aus `information_schema.KEYWORDS` (`RESERVED = 1`) auf 9.7.2 **und**
+  8.0.46, als Vereinigung; ausgenommen sind die Wörter, die in einem skalaren
+  Ausdruck Syntax sind, sowie die Stellungen vor `(` und hinter `AS`.
+- **M2 ist widerlegt und anders gelöst.** Die Review nahm an,
+  `information_schema` drucke unter `ANSI_QUOTES` Bezeichner mit `"`. Auf 9.7.2
+  und 8.0.46 gemessen: `CHECK_CLAUSE`, `GENERATION_EXPRESSION` und
+  `STATISTICS.EXPRESSION` führen Bezeichner **immer** in Backticks und
+  Zeichenketten immer in `'…'`, auch mit `ANSI_QUOTES` in beiden Sitzungen. Ein
+  `"` in diesen Feldern ist also nie eine Zeichenkette; der Leser übernimmt ihn
+  wortgleich als neutralen Bezeichner. `sql_mode` zu lesen wäre Maschinerie für
+  einen Fall, den es nicht gibt.
+
+**Abnahme**
+
+- **Compare-Matrix, Endstand** (`expected/compare-matrix.env`, `d-migrate:dev`
+  1.8.0-SNAPSHOT, gemessen 2026-09-17; PostgreSQL 18.6 mit PostGIS,
+  MySQL 9.7.2, SQL Server 2025, SQLite 3.45 vom Host; Oracle nicht gefahren).
+  **Elf von zwölf Zellen messen**, keine steht mehr auf `INVALID`:
+
+  | Quelle → Ziel | Funde | Codes |
+  | --- | --- | --- |
+  | PostgreSQL → MySQL | `11` | `TABLE_COLUMN_GENERATION_CHANGED:2 TABLE_COLUMN_TYPE_CHANGED:4 TABLE_CONSTRAINT_CHANGED:1 TABLE_CONSTRAINT_REMOVED:3 TABLE_INDEX_REMOVED:1` |
+  | PostgreSQL → SQL Server | `11` | `TABLE_COLUMN_GENERATION_CHANGED:2 TABLE_COLUMN_TYPE_CHANGED:6 TABLE_CONSTRAINT_REMOVED:3` |
+  | PostgreSQL → SQLite | `22` | `TABLE_COLUMN_GENERATION_CHANGED:3 TABLE_COLUMN_TYPE_CHANGED:16 TABLE_CONSTRAINT_REMOVED:3` |
+  | MySQL → PostgreSQL | `4` | `TABLE_CONSTRAINT_CHANGED:2 W137:2` |
+  | MySQL → SQL Server | `8` | `TABLE_COLUMN_GENERATION_CHANGED:1 TABLE_COLUMN_REQUIRED_TIGHTENED:1 TABLE_COLUMN_TYPE_CHANGED:2 TABLE_CONSTRAINT_CHANGED:2 W137:2` |
+  | MySQL → SQLite | `11` | `TABLE_COLUMN_GENERATION_CHANGED:1 TABLE_COLUMN_TYPE_CHANGED:10` |
+  | SQL Server → PostgreSQL | `2` | `W137:2` |
+  | SQL Server → MySQL | `6` | `TABLE_COLUMN_GENERATION_CHANGED:1 TABLE_CONSTRAINT_CHANGED:2 TABLE_INDEX_REMOVED:1 W137:2` |
+  | SQL Server → SQLite | `11` | `TABLE_COLUMN_GENERATION_CHANGED:1 TABLE_COLUMN_TYPE_CHANGED:10` |
+  | SQLite → PostgreSQL | `3` | `TABLE_CONSTRAINT_CHANGED:2 W137:1` |
+  | SQLite → SQL Server | `6` | `TABLE_COLUMN_REQUIRED_TIGHTENED:1 TABLE_CONSTRAINT_CHANGED:2 TABLE_CONSTRAINT_REMOVED:2 W137:1` |
+  | SQLite → MySQL | `APPLY-FAIL` | `apply:ERROR 1170` — andere Ursache, s. [`../next/pk-constraint-prefix-length.md`](../next/pk-constraint-prefix-length.md) |
+
+  Dazu die beiden neuen Schlüsselfamilien: `REPORT_CODES_POSTGRESQL`
+  `R301:1 R400:1`, `REPORT_CODES_MYSQL` `R205:1 R330:1`, `REPORT_CODES_SQLITE`
+  `R202:5`, `REPORT_CODES_MSSQL` leer; `GEN_CODES_*` von leer (SQL Server →
+  PostgreSQL, MySQL → PostgreSQL, SQLite → PostgreSQL) bis
+  `E053:4 W137:6 W140:1` (PostgreSQL → SQL Server). Zwei aufeinanderfolgende
+  Läufe auf dem Endstand sind identisch — Zellen, Codes und die Liste der
+  bekannten Befunde.
+- **Roundtrip** (`make mcp-e2e-roundtrip`): PostgreSQL `1`, MySQL `5`, SQL
+  Server `5`, SQLite `6`, Oracle nicht gefahren. MySQL ist damit nicht mehr
+  „ungültig"; `INVALID`/`E012-introducer` bleibt als **Wächter gegen einen
+  Rückfall** im Harness und in der Erwartungsdatei stehen.
+- **Die vier Neu-Pins, je einzeln und je mit seinen Zellen:**
+
+  | Neu-Pin | Commit | Schlüssel | Zellen |
+  | --- | --- | --- | --- |
+  | P6 | `650bad844` | 6 | MySQL → PostgreSQL `INVALID` → `4`, → SQL Server `INVALID` → `8`, → SQLite `INVALID` → `11`; keine andere Zelle bewegt sich |
+  | P0 | `c35edba1f` | 24 (16 neu, 8 geändert) | PostgreSQL → MySQL `6` → `11`, → SQL Server `5` → `11`, → SQLite `13` → `22`; SQLite → PostgreSQL `3` → `APPLY-FAIL` (`uq_0` doppelt — **vom Plan vorhergesagt**, L5) |
+  | P12 | `6b4d2f15a` | 7 | SQL Server → PostgreSQL `APPLY-FAIL` → `2`, → MySQL `APPLY-FAIL` → `6`, → SQLite `9` → `11`; keine Zelle mit **Ziel** SQL Server bewegt sich (geprüft) |
+  | P11 | `ca08a8173` | 6 | SQLite → PostgreSQL `APPLY-FAIL` → `3`, → SQL Server `APPLY-FAIL` → `6`; `GEN_CODES_SQLITE_MSSQL` `E057:3` → `E057:2`, `GEN_CODES_SQLITE_MYSQL` `E057:1 W125:2` → `E057:1 W125:1` |
+
+  P0 Teil 1 (PostGIS) und S4 ändern die Erwartungsdatei **nicht** — gemessen,
+  wie der Plan es verlangt. Auch die zwei Seed-Fälle der Korrekturrunde
+  brauchten keinen Neu-Pin: die Datei blieb byte-gleich (Prüfsumme
+  `39e064bc…`), und **dass die neuen Tabellen trotzdem gemessen werden**,
+  belegt eine eigene Sabotage (Anmerkung auf `identifier(auto)` gestellt → drei
+  nicht pinnbare Abweichungen, Exit 2).
+- **Integration** (`make integration`): `:test:integration-mysql` (P6 und
+  Korrekturrunde), `:test:integration-sqlite` (S4, P11, Korrekturrunde) und
+  `:test:integration-mssql` (P12) je grün und je als **ausgeführter** Task im
+  Lauf. Die Nulllinie vom 2026-09-17 über alle drei: `BUILD SUCCESSFUL`,
+  **55 Tasks, alle `executed`** — keiner `SKIPPED`, keiner `UP-TO-DATE`.
+  **Eine Testzahl je Integrationsmodul steht nicht im Lauf** (das
+  Integrations-Image trägt das Repo als Kopie, die Reports bleiben im
+  Container, und Gradle zählt in der Konsolenausgabe nichts); gemessen ist
+  dort der Task, nicht die Zahl. **Stille Übersprünge:** in
+  `:test:integration-mysql` und `:test:integration-sqlite` **keine** (weder
+  `assumeTrue`/`Assumptions`, `@Disabled` noch `xtest`); in
+  `:test:integration-mssql` genau **eine**,
+  `MssqlFullTextEnvironmentIntegrationTest`, die auf dem Messhost mitlief, weil
+  das Volltext-Image dort lag — als Restfläche festgehalten.
+- **Unit und Gates.** `make docker-check` je berührtem Modul (Zahlen aus dem
+  Image: `hexagon:core` 1484, `driver-common` 544, `driver-mysql` 899,
+  `driver-mssql` 490, `driver-sqlite` 766) und **einmal ohne `MODULES` über das
+  ganze Repo: 12 285 Tests, 0 Fehler** — nötig, weil `ReferentialActions` und
+  `NeutralExpressionIdentifier` in `driver-common` liegen und von mehreren
+  Modulen benutzt werden. Dazu `make sample-db-types-smoke` (Konvergenz T3 und
+  der PK-Fall planen 0 Anweisungen), `make mcp-e2e-smoke`, `bash -n` und
+  shellcheck im Container für die geänderten Skripte, `make docs-check`
+  (zuletzt 357 Dateien, 0 Befunde) und `make solid-suppression-gate` vor jedem
+  Commit. Die vier Detekt-Größenbefunde aus P11 sind **aufgeteilt**, nicht
+  unterdrückt.
+- **Sabotage-Protokoll, Bau:** sechs Läufe — S-E1 (20 von 877 Tests rot, dazu
+  der Integrationsfall mit dem DDL im Klartext), S-P6 (22 von 899 rot, dazu der
+  Integrationsfall mit der Serverform im Klartext), P0 mit sieben Eingriffen
+  am Harness (jeder rot, die Erwartungsdatei in jedem unverändert; Eingriff (d)
+  belegt den Pin-Schutz mit Exit 2), S-S4 (2 von 757 rot **und** beide
+  Integrationsfälle rot, mit Drift-Exit 5), S-P12 (4 von 490 rot), S-P11 (6 von
+  766 rot). Jede Rücknahme ist per Prüfsumme belegt, danach grün.
+  **Sabotage-Protokoll, Korrekturrunde:** drei Code-Sabotagen (M1+M2 zusammen:
+  6 Tests rot; L1: der neue Fall rot; L4 einseitig: der Drift-Fall rot) und
+  eine Harness-Sabotage an den zwei neuen Seed-Fällen (drei nicht pinnbare
+  Abweichungen, Exit 2).
+- **Drei Fehler, die erst die Sabotage zeigte** (alle behoben): die Prüfung auf
+  nicht angemerkte Seed-Spalten lief still leer (`$annotated | index(.)` — das
+  `.` ist hinter dem Pipe der **Array**, nicht der Schlüssel), dieselbe Falle
+  in der Prüfung auf verlorene Spalten, und ein jq-Fehler des Erzeugers ging in
+  `erzeuger | bewerter` unter. Ein Wächter, der nie anschlägt, sieht aus wie
+  ein grüner Lauf.
+- **Abschluss-Verifikation:** läuft zur Graduation in einem eigenen Klon; ihr
+  Ergebnis wird hier nachgetragen.
+
+**Was von diesem Plan lesenswert bleibt.** Zweimal hat eine Messung die
+Vorlage geschlagen: M2 („`information_schema` druckt unter `ANSI_QUOTES`
+Bezeichner mit `"`") ist an zwei Serverversionen widerlegt worden, und die
+Stopp-Regeln von P12 und P11 haben beide **nicht** gegriffen — beides hätte
+man sonst gebaut oder beim Eigner angefragt. Und der teuerste Fund des Slices
+kam nicht aus einem Test, sondern aus einer Sabotage an einem Harness, der
+grün war: drei jq-Fallen, die still nichts prüften.
