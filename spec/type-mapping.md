@@ -255,6 +255,14 @@ dem DDL-Text gewinnt immer; ein gebildeter weicht ihm mit einem Zähler aus
 steht. Gekürzt wird auf **63 Zeichen** — die kleinste Bezeichnergrenze der
 fünf Ziele (PostgreSQL); so kommt der Name überall unverändert an. Die Vergabe
 ist deterministisch: zwei Reverses derselben Datenbank liefern dieselben Namen.
+Die Zusage gilt **je Schema**: ändert sich der gelesene Bestand, kann sich ein
+Zähler verschieben.
+
+**Zwei echte Namen bleiben zwei echte Namen.** SQLite lässt denselben
+Constraint-Namen in zwei Tabellen zu; der Reverse übernimmt beide, wie sie
+dastehen, und benennt nicht um. Ein Ziel, das Constraint-Namen schemaweit
+eindeutig verlangt, lehnt die erzeugte DDL dann ab — mit seiner eigenen
+Meldung. Eindeutig gemacht wird nur, was der Reverse selbst bildet.
 
 **Ein Fremdschlüssel ohne Spaltenliste** (`REFERENCES t` statt
 `REFERENCES t(id)`) meint den Primärschlüssel der Zieltabelle; der Reverse

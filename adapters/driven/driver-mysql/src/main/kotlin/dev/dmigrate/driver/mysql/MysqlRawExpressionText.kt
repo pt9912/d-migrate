@@ -32,6 +32,17 @@ import dev.dmigrate.driver.renderKey
  * geschlossener Blockkommentar), gibt er ihn unveraendert zurueck — ein falsch
  * gesetztes Anfuehrungszeichen waere schlimmer als ein fehlendes.
  *
+ * **Was der Rueckfall kostet.** Ein so nicht abgrenzbarer Text ist im
+ * neutralen Modell fehlerhaft, und jedes andere Ziel lehnt ihn ab. MySQL nicht
+ * unbedingt: seine **eigene** Escape-Schreibweise (`'it\'s'`) ist unter
+ * Standardregeln nicht abgrenzbar, fuer MySQL aber gueltig. Ein solcher Text
+ * wird wortgleich gerendert, und MySQL liest ihn nach seinen Regeln — ein
+ * `"…"` darin bleibt dort eine Zeichenkette. Das ist dieselbe Lesart, die vor
+ * dieser Umschreibe-Regel fuer **jeden** Text galt; die Regel macht also
+ * nichts still, was vorher laut war, sie erreicht diesen einen Fall nur nicht.
+ * Ein Reverse erzeugt ihn nie (er schreibt die neutrale Form), eine von Hand
+ * geschriebene Datei kann ihn tragen.
+ *
  * Die Regel steht in `spec/ddl-generation-rules.md`, „Roher Ausdruckstext".
  */
 internal object MysqlRawExpressionText {

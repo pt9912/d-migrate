@@ -48,7 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schemaweit eindeutig, auf 63 Zeichen gekuerzt und bei jedem Lauf gleich.
   Zwei weitere Faelle desselben Textes: ein Fremdschluessel **ohne
   Spaltenliste** (`REFERENCES t`) liest jetzt den Primaerschluessel der
-  Zieltabelle, statt den Lauf mit einem Typfehler abzubrechen; und die Scanner
+  Zieltabelle, statt den Lauf mit einem Typfehler abzubrechen — hat die
+  Zieltabelle keinen, bricht der Lauf weiter ab, jetzt aber mit einer Meldung,
+  die beide Tabellen nennt (die Klausel ist dann in SQLite selbst unbrauchbar,
+  `foreign key mismatch`); und die Scanner
   ueberspringen Kommentare — ein `AUTOINCREMENT` oder ein `CHECK` in einem
   Kommentar wurde bisher mitgelesen. **Folge:** ein Reverse derselben Datenbank
   liefert andere Constraint-Namen als bisher.
@@ -106,6 +109,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   diese Rueckquotierung **nicht**: eine Spalte, die dort reserviert ist
   (gemessen: PostgreSQL lehnt `CHECK (order > 0)` ab, `key` nimmt es an),
   scheitert weiter am Server.
+
+  **Folge beim Umstieg:** eine neutrale Datei, die einen rohen Ausdruck in
+  MySQLs **eigener** Schreibweise traegt — etwa ein vor diesem Stand
+  geschriebener MySQL-Reverse oder ein von Hand kopierter CHECK —, wird jetzt
+  als **neutraler** Text gelesen: ein schon fuer MySQL verdoppelter Backslash
+  (`'a\\b'`) wird ein zweites Mal verdoppelt, und MySQL legt dann einen
+  Backslash zu viel ab. Ein frisch erzeugter Reverse traegt die neutrale Form
+  (ein Backslash je Backslash) und ist davon nicht betroffen. Einen Text, den
+  die Standardregeln gar nicht abgrenzen koennen (`'it\'s'`), laesst der
+  Generator wortgleich stehen; MySQL liest ihn dann nach seinen eigenen Regeln.
 
 - **Die MCP-Lese-Jobs nennen mehr als ein Artefakt.** `job_status_get`
   meldet fuer `schema_reverse_start` jetzt **zwei** Eintraege in `artifacts`

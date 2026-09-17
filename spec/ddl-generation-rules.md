@@ -1535,6 +1535,16 @@ Blockkommentar —, bleibt er wortgleich; ein falsch gesetztes
 Anführungszeichen wäre schlimmer als ein fehlendes. Der Inhalt eines
 String-Literals, ein Backtick-Bezeichner und ein Kommentar bleiben unberührt.
 
+**Was der Rückfall bedeutet — die Grenze, ausgeschrieben.** Ein Text, den die
+Standardregeln nicht abgrenzen können, ist im neutralen Modell fehlerhaft, und
+jedes Ziel lehnt ihn ab. Eine Ausnahme gibt es: ein Text in MySQLs **eigener**
+Escape-Schreibweise (`'it\'s'`) ist unter Standardregeln nicht abgrenzbar, für
+MySQL aber gültig. Er wird deshalb wortgleich gerendert — und MySQL liest ihn
+nach seinen Regeln, nicht nach denen des Modells: ein `"…"` darin bleibt eine
+Zeichenkette, ein Backslash bleibt ein Escape. Das ist dieselbe Lesart wie vor
+der Umschreibe-Regel; ein Reverse erzeugt einen solchen Text nie, eine von Hand
+geschriebene Datei kann ihn tragen.
+
 Weiter gilt: **übersetzt wird nicht.** `~~` → `LIKE` wäre eine Regel, keine
 Übersetzung roher Ausdrücke, und sie flösse bis in die erzeugte DDL. Kein
 anderer Dialekt schreibt um.

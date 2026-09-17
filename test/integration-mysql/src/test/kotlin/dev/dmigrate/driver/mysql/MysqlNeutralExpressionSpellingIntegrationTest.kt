@@ -255,7 +255,12 @@ class MysqlNeutralExpressionSpellingIntegrationTest : FunSpec({
         ddl.render() shouldContain "CHECK ((`key` > 0))"
 
         active.borrow().asJdbc().use { c ->
-            c.createStatement().use { s -> s.execute("DROP TABLE IF EXISTS Reserved_Target") }
+            c.createStatement().use { s ->
+                s.execute("DROP TABLE IF EXISTS Reserved_Target")
+                // MySQL verlangt CHECK-Namen schemaweit eindeutig; die Quelle
+                // traegt denselben und hat ihren Zweck getan.
+                s.execute("DROP TABLE IF EXISTS Reserved_Source")
+            }
             c.apply(ddl.statements)
             withClue("der CHECK auf `key` greift nicht") {
                 val failure = runCatching {

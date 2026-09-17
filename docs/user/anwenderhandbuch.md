@@ -505,12 +505,19 @@ triggers:
 - **Namen von SQLite-Constraints:** SQLite führt sie nicht im Katalog, sondern
   nur im gespeicherten `CREATE TABLE`-Text — von dort liest d-migrate sie. Wo
   kein Name steht, bildet es einen aus Tabelle und Spalten
-  (`fk_bestellung_kunde_id`, `uq_kunde_code_region`), schemaweit eindeutig und
-  bei jedem Lauf gleich. Bis dahin hieß jeder Fremdschlüssel jeder Tabelle
-  `fk_0`: eine daraus erzeugte DDL lehnten PostgreSQL und SQL Server ab, weil
-  ein Constraint-Name dort schemaweit eindeutig sein muss. **Folge:** ein
-  Reverse derselben SQLite-Datenbank liefert jetzt andere Constraint-Namen als
-  früher; ein Vergleich gegen eine ältere Reverse-Datei kann sie melden.
+  (`fk_bestellung_kunde_id`, `uq_kunde_code_region`). **Ein gebildeter Name**
+  kommt im gelesenen Schema nur einmal vor: er weicht jedem anderen — echten
+  wie gebildeten — mit einem Zähler aus, und zwei Reverses **derselben**
+  Datenbank liefern dieselben Namen. Ändert sich das Schema (eine Tabelle
+  kommt dazu, eine andere Auswahl wird gelesen), kann sich ein solcher Zähler
+  verschieben. **Ein Name aus dem Text bleibt, wie er dasteht** — auch wenn
+  zwei Tabellen denselben tragen: SQLite erlaubt das, und d-migrate benennt
+  hier nicht um. Das Ziel kann ihn dann ablehnen (PostgreSQL und SQL Server
+  verlangen Constraint-Namen schemaweit eindeutig). Bis dahin hieß jeder
+  Fremdschlüssel jeder Tabelle `fk_0`, und genau daran scheiterte die erzeugte
+  DDL. **Folge:** ein Reverse derselben SQLite-Datenbank liefert jetzt andere
+  Constraint-Namen als früher; ein Vergleich gegen eine ältere Reverse-Datei
+  kann sie melden.
 - **SQLite-64-bit-Autowerte:** SQLites `AUTOINCREMENT`-Primärschlüssel ist 64-bit,
   wird aber standardmäßig als 32-bit-`identifier` zurückübersetzt (bei einem Transfer
   nach PostgreSQL/MySQL sonst `SERIAL`/`INT`). Brauchen Sie den vollen 64-bit-Bereich,
