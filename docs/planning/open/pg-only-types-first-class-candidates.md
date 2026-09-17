@@ -37,7 +37,7 @@ und **nicht** betroffen.
 | `hstore` | Key-Value (Extension) | `text` + R301 | Nähe zu `json`/`jsonb` (bereits gemappt) — Mapping-Entscheid abwägen. |
 | `money` | Währung | `text` + R301 | Locale-abhängige Formatierung; Abbildung auf `numeric`/`decimal` abzuwägen. |
 | `bit`, `bit varying` (`varbit`) | Bit-String | `text` + R301 | Nur prüfen, falls real auftretend. |
-| `interval` | Zeitdauer | `text` + R301 | Zeitraum-Typ ohne Pendant in MySQL/SQLite; in ADR 0015 nicht genannt. **Mechanik-Zeile, keine Bedarfsmeldung:** der Reader-Treue-Slice hat den Fall geprueft und den Fidelity-Bedarf **widerlegt** (`R301` meldet ihn, `spec/type-mapping.md`, Abschnitt „Reverse-Mapping else-Fallback", schreibt die Warnung fuer alle fuenf Reverse-Mapper fest) — siehe [`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md), Posten B4. |
+| `interval` | Zeitdauer | `text` + R301 | Zeitraum-Typ ohne Pendant in MySQL/SQLite; in ADR 0015 nicht genannt. **Mechanik-Zeile, keine Bedarfsmeldung:** der Reader-Treue-Slice hat den Fall geprueft und den Fidelity-Bedarf **widerlegt** (`R301` meldet ihn, `spec/type-mapping.md`, Abschnitt „Reverse-Mapping else-Fallback", schreibt die Warnung fuer alle fuenf Reverse-Mapper fest) — siehe [`../next/reader-treue.md`](../next/reader-treue.md), Posten B4. |
 
 ## Entscheidungs-Leitplanken (pro Typ)
 

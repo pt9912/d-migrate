@@ -129,7 +129,7 @@ der Graduation stehen.
 | Reverse-Umfang CLI (`--include-*`) gegen MCP (immer) | [`../open/reverse-umfang-cli-gegen-mcp.md`](../open/reverse-umfang-cli-gegen-mcp.md) |
 
 **Reader und Generator** (Reader-Slice
-[`reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md))
+[`reader-treue.md`](../next/reader-treue.md))
 
 | Punkt | Ort |
 | --- | --- |
@@ -425,7 +425,7 @@ wäre die erste Ungenauigkeit:
 
 **Posten 4 ist am 2026-09-16 aus diesem Slice heraus:** er ist ein Reader-Thema
 und steht als Posten C1 mit Paket P6 im
-[Reader-Slice](../next/reader-treue-spatial-array-json.md) — dieselbe Messung, dieselbe
+[Reader-Slice](../next/reader-treue-1-matrix-abnahme.md) — dieselbe Messung, dieselbe
 Woche. Die Postennummer hier bleibt frei, damit die Querverweise in beiden
 Dokumenten stabil bleiben.
 
@@ -632,7 +632,7 @@ Nachzug in P7 ist Teil des Paketabschlusses, keine Zutat.
 ### P4 — entfällt hier: der Posten steht im Reader-Slice
 
 Der MySQL-Introducer ist ein **Reader**-Thema (Abschnitt 4) und am 2026-09-16
-mit seinem Paket in den [Reader-Slice](../next/reader-treue-spatial-array-json.md)
+mit seinem Paket in den [Reader-Slice](../next/reader-treue-1-matrix-abnahme.md)
 gewandert — dort als Posten C1 mit Paket P6, samt DoD und Modulzeile. Die Nummer
 bleibt hier frei, damit die Querverweise stabil bleiben.
 
@@ -2545,14 +2545,14 @@ unberührt, kein Oracle-Opt-in.
   eine eigene Frage ohne Ort.
 - **Der Typ einer berechneten Spalte in SQL Server** — wandert laut
   Eigner-Entscheidung (2026-09-16) in den
-  [Reader-Slice](../next/reader-treue-spatial-array-json.md); SQL Server führt
+  [Reader-Slice](../next/reader-treue-4-mssql-berechneter-typ.md); SQL Server führt
   keinen deklarierten Typ, der Reverse liest den abgeleiteten
   (`decimal(23,2)` statt `decimal(14,2)`). Steht dort als Posten D1; hier
   nicht gebaut.
 - **`numeric` ohne Präzision liest der PostgreSQL-Reverse als `float`** — ein
   Reader-Verlust (s. P9, Grenze): zwei verschiedene Spaltentypen sehen im
   Modell gleich aus, der Spaltentyp-Vergleich ist dort blind. Steht im
-  [Reader-Slice](../next/reader-treue-spatial-array-json.md) als Posten D2.
+  [Reader-Slice](../next/reader-treue-2-meldungen.md) als Posten D2.
 - **`varchar` ohne Länge ist im Modell `text`.** Seit M1 bleibt PostgreSQLs
   `(spalte)::text` an einer solchen Spalte ein Fund; ebenso liest der Reverse
   `inet`/`interval` als `text` (`R301`). Dieselbe Reader-/Modell-Frage wie
@@ -2639,7 +2639,7 @@ unberührt, kein Oracle-Opt-in.
   `smoke-scope-matrix.sh` trägt zwei vorbestehende Befunde).
 - **Native Typ-Seeds und der Silent-Loss-Check der Compare-Matrix** — stehen
   seit dem sechsten Bauabschnitt im
-  [Reader-Slice](../next/reader-treue-spatial-array-json.md) unter
+  [Reader-Slice](../next/reader-treue-1-matrix-abnahme.md) unter
   „Verifikation" (Punkt 5) als Abnahme seiner Pakete (Klassen aus A5, B4,
   D3). Die Matrix wendet `fixtures/seeds/<dialekt>.sql` bereits an, wenn es
   die Datei gibt.
@@ -2657,7 +2657,7 @@ Reverse ohne Aussage setzte und das jetzt der Anwender am Reverse erklärt
 dabei eine ADR-Linie — das ist kein Nebeneffekt, sondern P7.
 
 **Nicht mehr hier:** Posten 4 (MySQL-Reader) ist am 2026-09-16 in den
-[Reader-Slice](../next/reader-treue-spatial-array-json.md) gewandert, als Posten C1 mit
+[Reader-Slice](../next/reader-treue-1-matrix-abnahme.md) gewandert, als Posten C1 mit
 Paket P6. **Nicht behoben** wird die Umschreibung `= ANY(…)` gegen `IN (…)`:
 sie ist in ADR 0055 entschieden.
 

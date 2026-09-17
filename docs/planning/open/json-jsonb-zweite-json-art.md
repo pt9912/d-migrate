@@ -9,11 +9,11 @@
 > verloren. Das folgt dem Ziel des Reader-Slices — kein Verlust bleibt still. Die
 > Spec begründet den Rückweg mit.
 > **Umsetzung (2026-09-17):** wird in **P8** des Reader-Slices gebaut
-> ([`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md),
+> ([`../next/reader-treue-2-meldungen.md`](../next/reader-treue-2-meldungen.md),
 > Aktivierungsschnitt; Code `R402`); dieser Eintrag schliesst mit dessen
 > Graduation, nicht vorher.
 > **Trigger:** Konsumentenmessung gegen 1.7.1, festgehalten in
-> [`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md)
+> [`../next/reader-treue-2-meldungen.md`](../next/reader-treue-2-meldungen.md)
 > (Posten B3): eine PostgreSQL-`json`-Spalte kommt nach Reverse und erneuter
 > Renderung als `jsonb` zurueck. Der Vorgang ist **spec-konform** (s. u.) — die
 > Frage ist, ob er es bleiben soll.
@@ -62,7 +62,7 @@ Unterscheidung gar nicht — es ist eine Modellfrage, keine Render-Luecke.
 ## Referenzen
 
 - Befund und Belege (im Slice als Posten B3 gefuehrt):
-  [`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md).
+  [`../next/reader-treue-2-meldungen.md`](../next/reader-treue-2-meldungen.md).
 - Soll-Tabelle des Modells: [`spec/neutral-model-spec.md`](../../../spec/neutral-model-spec.md).
 - Muster fuer eine solche Erweiterung:
   [`ADR 0015`](../../adr/0015-fulltext-tsvector-neutral-type.md) (`tsvector` → `fulltext`),

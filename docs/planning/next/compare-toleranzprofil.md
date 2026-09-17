@@ -464,7 +464,7 @@ verweist dabei **nicht** auf den ADR; Verweise von `spec` auf `adr` sind laut
   lassen. ADR 0056 lässt das offen, und es darf keine Nebenwirkung einer
   Toleranz sein.
 - **Reader-Slice**, Posten C1/P6 (MySQL-Introducer,
-  [`reader-treue-spatial-array-json.md`](reader-treue-spatial-array-json.md)).
+  [`reader-treue-1-matrix-abnahme.md`](reader-treue-1-matrix-abnahme.md)).
   Ohne ihn enden die MySQL-Paarungen mit Exit 3. K1 lässt sich an echten
   MySQL-Reverses erst nach diesem Posten abnehmen; der Repro hat den Fix nur
   simuliert.
@@ -718,7 +718,7 @@ Semantik-Aussagen von K2 und K4 werden dabei gegen PostgreSQL nachgemessen:
 - **Ob der Generator eine `always`-Spalte für MySQL und SQLite meldet.** Das ist
   beim Schnitt nicht geprüft worden. Es berührt K2 nur als Beleg. Für MySQL
   ist der stille Verlust im Konsumenten-Repro des Compare-Slices gemessen; der
-  Posten steht im [Reader-Slice](reader-treue-spatial-array-json.md) als D4
+  Posten steht im [Reader-Slice](reader-treue-2-meldungen.md) als D4
   (SQLite dort als offene Prüfung).
 - **Die veraltete KDoc und Spec-Zeile zu `RESTRICT`/`no_action`** (K4,
   Nebenbefunde). Sie werden mit T5 bzw. dem Spec-Schritt korrigiert, nicht

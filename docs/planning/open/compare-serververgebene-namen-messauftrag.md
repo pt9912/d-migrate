@@ -42,7 +42,7 @@ vom Server vergeben oder vom Reader erfunden ist, auf der anderen deklariert:
 Verwandt, aber nicht Teil der Familie: der SQLite-Reverse nennt die
 Fremdschlüssel jeder Tabelle `fk_0` … — ein vom Reader erfundener Name, für den
 es keine Fähigkeit gibt (Reader-Slice
-[`reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md),
+[`reader-treue-1-matrix-abnahme.md`](../next/reader-treue-1-matrix-abnahme.md),
 Posten D5). Zeigt die Messung dort einen Fehlalarm, ist zuerst zu klären, ob
 der Name in die Familie gehört.
 

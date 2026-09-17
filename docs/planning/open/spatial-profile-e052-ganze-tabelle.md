@@ -14,7 +14,7 @@
 > Auslöser. Einen ADR braucht es dafür nicht: ADR 0016 hat den Generate-Pfad
 > aufgeschoben, nicht festgelegt.
 > **Umsetzung (2026-09-17):** wird in **P7** des Reader-Slices gebaut
-> ([`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md),
+> ([`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md),
 > Aktivierungsschnitt); dieser Eintrag schliesst mit dessen Graduation, nicht
 > vorher. Beim Schneiden nachgemessen und dort festgehalten: die drei
 > Spec-Stellen unten haben `NOT NULL` **nie** als Auslöser genannt — die
@@ -23,7 +23,7 @@
 > Migrate-Pfad (`SqliteSpatialDiffOps`); und der SQLite-Reverse liest
 > SpatiaLites `DEFAULT ''` sonst als Anwender-Default zurück.
 > **Trigger:** Konsumentenmessung gegen 1.7.1, festgehalten in
-> [`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md)
+> [`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md)
 > (Posten A6): `schema generate --target sqlite --spatial-profile spatialite` auf
 > einer MySQL-Quelle mit **NOT NULL**-Geometrie erzeugt `E052` und laesst die
 > **komplette** Tabelle aus der Ausgabe fallen — die uebrigen, darstellbaren
@@ -73,6 +73,6 @@ ist — Tabellenblockade als Antwort auf eine Spalteneinschraenkung.
 ## Referenzen
 
 - Befund und Belege (Konsumentenmessung, im Slice als Posten A6 gefuehrt):
-  [`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md).
+  [`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md).
 - [`ADR 0016`](../../adr/0016-spatialite-metadata-bootstrap.md) — SpatiaLite-Metadaten-Bootstrap
   im Migrate-Diff-Pfad; der Generate-Pfad ist dort ausdruecklich aufgeschoben.

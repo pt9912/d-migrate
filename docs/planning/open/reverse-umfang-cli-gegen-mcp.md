@@ -28,7 +28,7 @@ Umfang stammen.
 PostGIS-Funktionen (im Repro gemessen, beim Konsumenten bekannt und durch ein
 eigenes Schema `postgis` umgangen). Dieser Teil ist ein Reader-Thema und steht
 im Reader-Slice
-([`reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md),
+([`reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md),
 Posten A3, Paket P2b); der Umfangs-Unterschied bleibt auch nach dessen Fix.
 
 ## Zu klären

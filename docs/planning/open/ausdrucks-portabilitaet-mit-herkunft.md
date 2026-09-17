@@ -2,7 +2,7 @@
 
 > **Status:** Vorabklärung / Spec-Regeländerung (2026-09-17)
 > **Trigger:** Posten D6 des Reader-Slices
-> ([`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md)),
+> ([`../next/reader-treue-1-matrix-abnahme.md`](../next/reader-treue-1-matrix-abnahme.md)),
 > zweite Hälfte. Die erste Hälfte (der SQL-Server-Reverse liefert den
 > Berechnungsausdruck ohne T-SQL-Quoting) wird dort gebaut; diese hier war im
 > Slice unter „Offen" geführt und ist beim Schnitt in vier Pläne hierher
@@ -54,13 +54,14 @@ den CHECK), erreicht der Fall nur noch:
 Die Grenze „`"…"` gilt immer als Bezeichner, MySQL liest es ohne
 `ANSI_QUOTES` als Zeichenkette"
 ([`spec/cli-spec.md`](../../../spec/cli-spec.md), Abschnitt
-`schema compare`, Grenze der Schreibweise-Faltung) ist dieselbe Familie. Sie kommt im Reader-Slice auf,
-sobald die Reverses Bezeichner zu `"…"` normalisieren, und ist dort als
-Eigner-Frage geführt. Fällt sie für eine herkunftsbewusste Prüfung aus,
+`schema compare`, Grenze der Schreibweise-Faltung) ist dieselbe Familie. Sie
+wird akut, sobald die Reverses Bezeichner zu `"…"` normalisieren, und ist im
+Umbrella des Reader-Slices als Eigner-Frage E1 geführt
+([`../next/reader-treue.md`](../next/reader-treue.md)). Fällt sie für eine herkunftsbewusste Prüfung aus,
 gehört sie hierher.
 
 ## Referenzen
 
-- Befund D6: [`../next/reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md).
+- Befund D6: [`../next/reader-treue-1-matrix-abnahme.md`](../next/reader-treue-1-matrix-abnahme.md).
 - Messung: [`../done/compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md),
   Abschnitt „Offen".

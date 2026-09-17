@@ -1,5 +1,18 @@
 # Reader-Treue: stille Typverluste bei Spatial, Array und JSON
 
+> **Archiviert (2026-09-17): durch Schnitt überholt.** Der Eigner hat den Plan
+> in vier Pläne unter einem Umbrella geschnitten; maßgeblich sind jetzt
+> [`reader-treue.md`](../planning/next/reader-treue.md) und die dort
+> aufgeführten Pläne 1 bis 4. Dort sind auch die Befunde aus Plan-Review und
+> Architektur-Prüfung eingearbeitet, die dieser Text noch nicht kennt (etwa
+> [ADR 0058](../adr/0058-verlorener-srid-beim-reverse-ist-warnung.md), die
+> Entscheidung F1 zu `geography` und die Korrekturen an P0, P5, P7 und P10).
+> Der Text bleibt als Vorgeschichte stehen: Review-Runden 1 und 2 und der
+> Aktivierungsschnitt. Seine relativen Links sind beim Umzug auf den neuen Ort
+> umgerechnet; Zeilenanker und Ordnerangaben sind Stand 2026-09-17.
+> Akzeptierte ADRs führen den alten Pfad unter `docs/planning/next/` im
+> Frontmatter (`consulted:`); der Verweis ist historisch gemeint und bleibt.
+
 > **Status:** Entwurf mit Scope, **aktivierungsbereit** (2026-09-17:
 > Aktivierungsschnitt — Pakete P0 und P7–P13, Reihenfolge, Anker nachgemessen;
 > davor Review-Runden 1 und 2, 2026-09-16).
@@ -25,11 +38,11 @@
 > Modellfrage hinter D2 sperrt nichts — P9 macht den Verlust in jedem Ausgang
 > laut. Der Spatial-Vertrag, den A1
 > beruehrt, steht in
-> [`spec/type-mapping.md`](../../../spec/type-mapping.md) (dort **zweimal**: beim
+> [`spec/type-mapping.md`](../../spec/type-mapping.md) (dort **zweimal**: beim
 > Oracle-Reverse und in den Render-Regeln je Dialekt) und im Geometrie-/
 > Spatial-Profil-Modell von
-> [`spec/neutral-model-spec.md`](../../../spec/neutral-model-spec.md) — **nicht**
-> in einem ADR. [`ADR 0016`](../../adr/0016-spatialite-metadata-bootstrap.md)
+> [`spec/neutral-model-spec.md`](../../spec/neutral-model-spec.md) — **nicht**
+> in einem ADR. [`ADR 0016`](../adr/0016-spatialite-metadata-bootstrap.md)
 > regelt den SpatiaLite-Bootstrap auf dem **Migrate**-Pfad und hat den
 > **Generate**-Pfad ausdruecklich als bewusste Scope-Grenze aufgeschoben
 > (Abschnitt „Verworfene/aufgeschobene Alternativen"); fuer A6, der auf dem
@@ -45,7 +58,7 @@
 > eingeordnet (Abschnitt D, je „Einordnung").
 > **Die beiden `open/`-Einträge** zu A6 und B3 verweisen auf P7 bzw. P8 und
 > schliessen mit der Graduation dieses Slices, nicht vorher.
-> **Aktivierung:** Move nach `../in-progress/` beim ersten Implementierungs-Commit.
+> **Aktivierung:** Move nach `../planning/in-progress/` beim ersten Implementierungs-Commit.
 
 ## Der gemeinsame Nenner
 
@@ -332,13 +345,13 @@ Aktivierungsschnitt auf den Oracle-Abschnitt).
 
 **Was bleibt, ist ein Nachtrag am Tracker, kein Slice-Posten:** die Familie hat
 einen offenen Ort,
-[`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md)
+[`../planning/open/pg-only-types-first-class-candidates.md`](../planning/open/pg-only-types-first-class-candidates.md)
 — und `interval` fehlte in dessen Kandidatenliste (Abschnitt „Kandidaten"). Der Nachtrag ist
 beim Aufnehmen dieses Befunds **erfolgt** (2026-09-16) und beruehrte **zwei**
 Dateien: die Liste dort (als **Mechanik**-Zeile, nicht als Bedarfsmeldung — der
 Tracker aktiviert sonst „sobald ein konkreter Fidelity-Bedarf auftritt", und
 genau den hat B4 widerlegt) **und** die Übersichtszeile in
-[`../open/README.md`](../open/README.md), die die Kandidaten namentlich aufzaehlt.
+[`../planning/open/README.md`](../planning/open/README.md), die die Kandidaten namentlich aufzaehlt.
 
 ### C — Modell-Reinheit (aus der Compare-Messung uebernommen)
 
@@ -384,7 +397,7 @@ die Begründung und die Messung stehen in den `open/`-Einträgen.
   `E052` zu verwerfen (gemessen an SpatiaLite 5.1.0); `E052` bleibt für PK,
   UNIQUE, Default und Fremdschlüssel. Die drei Spec-Stellen nennen `NOT NULL`
   nicht mehr als Auslöser. Quelle:
-  [`../open/spatial-profile-e052-ganze-tabelle.md`](../open/spatial-profile-e052-ganze-tabelle.md).
+  [`../planning/open/spatial-profile-e052-ganze-tabelle.md`](../planning/open/spatial-profile-e052-ganze-tabelle.md).
   **Einordnung: P7.** Beim Schneiden nachgemessen, und drei Dinge sind anders
   als der Satz davor annimmt: (1) Die drei Spec-Stellen haben `NOT NULL` nie
   genannt; die Auslöser stehen nirgends in `spec/` (s. A6, „Überholt"). (2) Die
@@ -401,14 +414,14 @@ die Begründung und die Messung stehen in den `open/`-Einträgen.
   der erste angelegt hat.
 - **B3 — `json` laut.** Ein JSON-Typ im Modell; der PostgreSQL-Reverse meldet
   eine `json`-Spalte mit eigenem Code (sie wird als `jsonb` gerendert). Quelle:
-  [`../open/json-jsonb-zweite-json-art.md`](../open/json-jsonb-zweite-json-art.md).
+  [`../planning/open/json-jsonb-zweite-json-art.md`](../planning/open/json-jsonb-zweite-json-art.md).
   **Einordnung: P8.** Nachgemessen: der Zweig `"json", "jsonb"` in
   `PostgresTypeMapping.mapSpecialTypes` steht unverändert; dieselbe
   Gleichsetzung trägt das Array-Element (`mapArrayElementType`, `json[]` →
   Element `json`).
 
 **Neue Posten aus dem Compare-Bau** (gemessen dort, Belegart: *nachgemessen*;
-Quelle: [`../done/compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md),
+Quelle: [`../planning/done/compare-projektion-und-normalisierung.md`](../planning/done/compare-projektion-und-normalisierung.md),
 Abschnitt „Offen"). Das Paket je Posten wird bei der Aktivierung geschnitten.
 
 - **D1 — Der Typ einer berechneten Spalte in SQL Server.** SQL Server führt für
@@ -451,7 +464,7 @@ Abschnitt „Offen"). Das Paket je Posten wird bei der Aktivierung geschnitten.
   von `text` zu unterscheiden (still); unbekannte PostgreSQL-Typen wie `inet` und
   `interval` landen als `text` mit `R301` (laut, s. B4). Zu klären: ob D3 ein
   Modellposten ist (Kandidatenfamilie
-  [`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md))
+  [`../planning/open/pg-only-types-first-class-candidates.md`](../planning/open/pg-only-types-first-class-candidates.md))
   oder nur der `varchar`-Teil hierher gehört.
   **Einordnung: kein Paket.** Der `varchar`-Teil ist **vertragsgleich**:
   PostgreSQL behandelt `varchar` ohne Länge und `text` gleich, und `text`
@@ -460,7 +473,7 @@ Abschnitt „Offen"). Das Paket je Posten wird bei der Aktivierung geschnitten.
   Vergleichsfolge (PostgreSQL schreibt `(spalte)::text` nur an eine
   `varchar`-Spalte); sie ist im Compare-Slice als bewusste Grenze festgehalten
   (dort „Restflächen", „Bewusst ohne eigenen Ort") und wäre, wenn überhaupt,
-  ein Kandidat des [Toleranzprofils](compare-toleranzprofil.md). `inet` und
+  ein Kandidat des [Toleranzprofils](../planning/next/compare-toleranzprofil.md). `inet` und
   `interval` sind laut (`R301`), die Modellfrage liegt beim Kandidaten-Tracker.
   **Folge für P0:** die Silent-Loss-Klasse „Nicht-Text-Quelltyp kommt als Text
   an" zählt `varchar` zur Text-Familie; die frühere Fassung von
@@ -478,7 +491,7 @@ in P9 mit (dieselbe Datei, dieselbe Art Note).
 **Nachtrag bei der Graduation des Compare-Slices (2026-09-17).** Drei weitere
 Posten aus dessen Repro und 5x5-Compare-Matrix (Belegart: *nachgemessen*, dort
 unter „Offen"; in der Matrix als Zustand `APPLY-FAIL` gepinnt,
-[`examples/mcp-e2e/expected/compare-matrix.env`](../../../examples/mcp-e2e/expected/compare-matrix.env)).
+[`examples/mcp-e2e/expected/compare-matrix.env`](../../examples/mcp-e2e/expected/compare-matrix.env)).
 Wie bei D1–D3 wird das Paket bei der Aktivierung geschnitten; ob ein Posten
 dann hier bleibt oder als Generator-Thema einen eigenen Plan bekommt, ist Teil
 des Schnitts.
@@ -492,9 +505,9 @@ des Schnitts.
   Zu klären: ein eigener Code oder `W140`-analog; ob SQLite (`AUTOINCREMENT`)
   denselben stillen Verlust hat — **nicht geprüft**. Im Vergleich bleibt der
   Modus ein Fund (Fähigkeitsunterschied,
-  [ADR 0057](../../adr/0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md));
+  [ADR 0057](../adr/0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md));
   eine Toleranz dafür ist Kandidat K2 im
-  [Toleranzprofil](compare-toleranzprofil.md), das den Generator-Befund nur als
+  [Toleranzprofil](../planning/next/compare-toleranzprofil.md), das den Generator-Befund nur als
   Beleg braucht.
   **Einordnung: P10, hier.** Es ist **derselbe Mechanismus** wie B1/P5, nicht
   nur dasselbe Muster: beide Verluste entstehen in
@@ -516,11 +529,11 @@ des Schnitts.
   Constraint-Namen und lehnt die erzeugte DDL ab (Matrix: SQLite → SQL Server,
   `Msg 2714`). MySQL verlangt Fremdschlüsselnamen ebenfalls datenbankweit
   eindeutig; die Zelle SQLite → MySQL scheitert heute schon vorher (`ERROR
-  1170`, s. [`pk-constraint-prefix-length.md`](pk-constraint-prefix-length.md)).
+  1170`, s. [`pk-constraint-prefix-length.md`](../planning/next/pk-constraint-prefix-length.md)).
   Zu klären: schemaweit eindeutige Namen im Reader (etwa mit Tabellenpräfix)
   oder eine Entschärfung im Generator je Zieldialekt. Verwandt, aber nicht
   dieselbe Familie: die server-vergebenen Namen, die `schema compare` ausnehmen
-  könnte ([`../open/compare-serververgebene-namen-messauftrag.md`](../open/compare-serververgebene-namen-messauftrag.md)).
+  könnte ([`../planning/open/compare-serververgebene-namen-messauftrag.md`](../planning/open/compare-serververgebene-namen-messauftrag.md)).
   **Einordnung: P11, im Reader.** Die Prämisse „SQLite führt keine Namen" ist
   zu grob: SQLite **bewahrt** den Namen im `CREATE TABLE`-Text, nur
   `PRAGMA foreign_key_list` gibt ihn nicht heraus — und d-migrates
@@ -541,7 +554,7 @@ des Schnitts.
   Muster 2 (Modell-Reinheit, wie C1): der SQL-Server-Reverse liest den
   Ausdruck einer berechneten Spalte als Server-Text mit Klammer-Quoting
   (`[quantity]*[unit_price]`). Die Portabilitätsprüfung (`E053`,
-  [`RawSqlExpressionPortability`](../../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/RawSqlExpressionPortability.kt))
+  [`RawSqlExpressionPortability`](../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/RawSqlExpressionPortability.kt))
   meldet T-SQL-Klammern **bewusst nicht** („ohne Herkunft wäre die
   Unterscheidung geraten"); der Generator übernimmt den Text, und PostgreSQL
   (`syntax error at or near "["`) und MySQL (`ERROR 1064`) lehnen die DDL ab
@@ -573,7 +586,7 @@ Kein Verlust bleibt still. Wo Information nicht erhalten werden kann, wird sie
 benutzen, statt mit einem je Dialekt neu gebauten.
 
 Das hat fuenf Ausgaenge, und sie in einen Satz zu zwingen waere die erste
-Ungenauigkeit (Muster: [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md),
+Ungenauigkeit (Muster: [`compare-projektion-und-normalisierung.md`](../planning/done/compare-projektion-und-normalisierung.md),
 das dieselbe Zerlegung braucht):
 
 1. **Der Verlust ist unvermeidbar und wird benannt** — A1 (der SRID einer
@@ -606,7 +619,7 @@ das dieselbe Zerlegung braucht):
 - **Ob ein fehlender SRID ein Fund oder ein Block ist, entscheidet der Eigner.**
   A1 kostet auf dem Ziel einen Index; das ist mehr als ein Fehlalarm und weniger
   als ein Datenverlust. Die Entscheidung gehoert in
-  [`spec/type-mapping.md`](../../../spec/type-mapping.md), nicht in diesen Slice.
+  [`spec/type-mapping.md`](../../spec/type-mapping.md), nicht in diesen Slice.
   **Was P1 dazu beitraegt und was offen bleibt:** P1 macht den Ausgang auf der
   **Leseseite** sichtbar — das ist die „Fund"-Seite der Frage, und P1 nimmt sie
   damit faktisch vor (ein Warning-Code *ist* die Antwort „Fund"; die Kopfzeile
@@ -616,7 +629,7 @@ das dieselbe Zerlegung braucht):
   (`E057`). Beide Seiten gehoeren derselben Entscheidung.
 - **Ein `interval`-neutraltyp** waere eine Modellerweiterung (wie `geometry`) —
   die Familie hat einen offenen Ort,
-  [`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md);
+  [`../planning/open/pg-only-types-first-class-candidates.md`](../planning/open/pg-only-types-first-class-candidates.md);
   `interval` fehlt in dessen Kandidatenliste und wird dort nachgetragen (beide
   Dateien, s. B4), nicht hier gebaut.
 - **Eine zweite JSON-Art** (`json` gegen `jsonb`) waere ebenfalls eine
@@ -634,7 +647,7 @@ das dieselbe Zerlegung braucht):
   nur die Reader-Hälfte.
 - **Der Identity-Modus bleibt im Vergleich ein Fund** (ADR 0057). P10 meldet
   den Verlust am Generator; eine Toleranz dafür ist Kandidat K2 im
-  [Toleranzprofil](compare-toleranzprofil.md), nicht dieses Slices.
+  [Toleranzprofil](../planning/next/compare-toleranzprofil.md), nicht dieses Slices.
 - **Die Oracle-Image-Frage ist geklaert** (s. o.) und braucht nichts.
 
 ## Arbeitspakete
@@ -683,13 +696,13 @@ nirgends (s. „Offen", Ledger):
 **Befund:** „Verifikation", Punkt 5 (Auftrag aus dem Compare-Slice, dort
 „Restflächen": „Native Typ-Seeds und Silent-Loss-Check der Compare-Matrix").
 **Ort:** `examples/mcp-e2e` —
-[`examples/mcp-e2e/scripts/smoke-compare-matrix.sh`](../../../examples/mcp-e2e/scripts/smoke-compare-matrix.sh),
+[`examples/mcp-e2e/scripts/smoke-compare-matrix.sh`](../../examples/mcp-e2e/scripts/smoke-compare-matrix.sh),
 eine neue Bibliothek neben
-[`examples/mcp-e2e/scripts/lib/compare-guards.sh`](../../../examples/mcp-e2e/scripts/lib/compare-guards.sh),
+[`examples/mcp-e2e/scripts/lib/compare-guards.sh`](../../examples/mcp-e2e/scripts/lib/compare-guards.sh),
 die Seeds unter `fixtures/seeds/` (je Dialekt eine Datei),
-[`examples/mcp-e2e/expected/compare-matrix.env`](../../../examples/mcp-e2e/expected/compare-matrix.env),
+[`examples/mcp-e2e/expected/compare-matrix.env`](../../examples/mcp-e2e/expected/compare-matrix.env),
 der README-Abschnitt „Compare-Matrix 5x5" und
-[`examples/mcp-e2e/docker-compose.yml`](../../../examples/mcp-e2e/docker-compose.yml)
+[`examples/mcp-e2e/docker-compose.yml`](../../examples/mcp-e2e/docker-compose.yml)
 (PostgreSQL-Image). Kein Produktionscode.
 
 **Was die Matrix heute kann und was fehlt.** Sie wendet
@@ -817,7 +830,7 @@ Compare-Slices):
 `:test:integration-oracle` (`ORACLE_FULL`). Ein `seeds/oracle.sql` ohne
 Spatial ist erlaubt, wird aber nur mit `make mcp-e2e-compare-matrix-oracle`
 gefahren — und das ist auf dem Messhost bis zur Klärung aus
-[`../open/mcp-e2e-oracle-nicht-gefahren.md`](../open/mcp-e2e-oracle-nicht-gefahren.md)
+[`../planning/open/mcp-e2e-oracle-nicht-gefahren.md`](../planning/open/mcp-e2e-oracle-nicht-gefahren.md)
 nicht zulässig (fremder Container).
 
 **DoD:**
@@ -876,7 +889,7 @@ Stelle, an der `R365` steht. Geht der Satz über Routinen hinaus, gehört die
 Wert, nicht an der Spalte (A1) — das Paket fuehrt ihn deshalb nicht ein.
 
 **Der Spec-Nachzug gehoert zum Paket — beide Stellen.** Die Regel steht
-**zweimal** — [`spec/type-mapping.md`](../../../spec/type-mapping.md) beim
+**zweimal** — [`spec/type-mapping.md`](../../spec/type-mapping.md) beim
 Oracle-Reverse und `spec/ddl-generation-rules.md:2615` in den Render-Regeln. Beide
 sagen heute nur „sofern eine Zeile mit exakt passendem Tabellen- und Spaltennamen
 existiert"; beide bekommen die **Begruendung** dazu, damit die Grenze nicht fuer
@@ -1049,8 +1062,8 @@ P5 baut diesen Kanal für MySQL; P10 benutzt ihn.
 
 **Der Nachzug gehoert zum Paket — vier Spec-Orte plus die Anwendersicht.** Ein
 neuer nutzersichtbarer Code ist erst vollstaendig, wenn er steht in: der W-Tabelle
-[`spec/cli-spec.md`](../../../spec/cli-spec.md) (dort zuletzt `W155`–`W161`), der
-Lesefassung [`spec/ledger.md`](../../../spec/ledger.md) (Einzelzeile **und**
+[`spec/cli-spec.md`](../../spec/cli-spec.md) (dort zuletzt `W155`–`W161`), der
+Lesefassung [`spec/ledger.md`](../../spec/ledger.md) (Einzelzeile **und**
 Bereichszeile — `spec/ledger.md` erklaert selbst, dass **jeder** nutzersichtbare
 W/E-Code dort registriert ist), dem maschinenlesbaren `warn-code-ledger-*.yaml`
 und der Render-Regel in `spec/ddl-generation-rules.md` beim MySQL-Ziel
@@ -1122,7 +1135,7 @@ Matrix zurück auf `INVALID`.
 ### P7 — SpatiaLite: `NOT NULL` nativ statt ganzer Tabelle (A6, entschieden)
 
 **Befund:** A6 und Abschnitt D (Einordnung);
-[`../open/spatial-profile-e052-ganze-tabelle.md`](../open/spatial-profile-e052-ganze-tabelle.md)
+[`../planning/open/spatial-profile-e052-ganze-tabelle.md`](../planning/open/spatial-profile-e052-ganze-tabelle.md)
 mit der Messung an SpatiaLite 5.1.0 (Tooling-Image):
 `AddGeometryColumn('t','geom',4326,'POINT','XY',1)` legt `"geom" POINT NOT NULL
 DEFAULT ''` an, eine Zeile ohne Geometrie wird abgewiesen.
@@ -1200,7 +1213,7 @@ Fall pinnt `required` → sechstes Argument `1`.
 ### P8 — PostgreSQL: `json` wird laut (B3, entschieden)
 
 **Befund:** B3 und Abschnitt D;
-[`../open/json-jsonb-zweite-json-art.md`](../open/json-jsonb-zweite-json-art.md)
+[`../planning/open/json-jsonb-zweite-json-art.md`](../planning/open/json-jsonb-zweite-json-art.md)
 (Eigner: „gleichsetzen, aber laut").
 **Ort:** `:adapters:driven:driver-postgresql`, `PostgresTypeMapping` — der
 gemeinsame Zweig `"json", "jsonb"` in `mapSpecialTypes` teilt sich: `jsonb`
@@ -1290,7 +1303,7 @@ Modus etwas meldet, prüft das Paket mit.
 **Anwendersicht:** Handbuch 3.12 („Sequenzen/Autowerte korrekt mitnehmen");
 der Compare-Abschnitt nennt den Modus schon als Fähigkeitsunterschied und
 bekommt den Verweis auf den Code.
-**Nachbar:** das [Toleranzprofil](compare-toleranzprofil.md) führt den Code als
+**Nachbar:** das [Toleranzprofil](../planning/next/compare-toleranzprofil.md) führt den Code als
 Beleg für Kandidat K2 — dort nur ein Verweis, keine Arbeit hier.
 
 **DoD:** MySQL (und nach Messung SQLite) melden `W163` auf Generate **und**
@@ -1340,7 +1353,7 @@ Kollision mit einem echten Namen; Konvergenz gemessen; Spec und CHANGELOG
 nachgezogen. Abnahme in der Matrix: SQLite → SQL Server verlässt
 `APPLY-FAIL`/`Msg 2714` und misst (bewusster Neu-Pin); SQLite → MySQL bleibt
 `ERROR 1170` (andere Ursache, s.
-[`pk-constraint-prefix-length.md`](pk-constraint-prefix-length.md)). Sabotage:
+[`pk-constraint-prefix-length.md`](../planning/next/pk-constraint-prefix-length.md)). Sabotage:
 wieder `fk_<id>` → Unit-Test rot, Matrixzelle zurück auf `Msg 2714`.
 
 ### P12 — SQL Server: der Berechnungsausdruck kommt ohne T-SQL-Quoting (D6, Reader-Hälfte)
@@ -1599,10 +1612,10 @@ Ziel SQL Server, deren Quelle die Berechnung behält.
 **Entschieden und seit dem Aktivierungsschnitt Pakete** (bis dahin standen sie
 hier): die Vertragsfrage aus A6 (**P7**, Eigner: „`NOT NULL` nativ") und die
 zweite JSON-Art aus B3 (**P8**, Eigner: „gleichsetzen, aber laut"). Ihre Orte
-[`../open/spatial-profile-e052-ganze-tabelle.md`](../open/spatial-profile-e052-ganze-tabelle.md)
-und [`../open/json-jsonb-zweite-json-art.md`](../open/json-jsonb-zweite-json-art.md)
+[`../planning/open/spatial-profile-e052-ganze-tabelle.md`](../planning/open/spatial-profile-e052-ganze-tabelle.md)
+und [`../planning/open/json-jsonb-zweite-json-art.md`](../planning/open/json-jsonb-zweite-json-art.md)
 verweisen auf die Pakete und schliessen mit der Graduation dieses Slices; ihre
-Zeilen in [`../open/README.md`](../open/README.md) sind nachgezogen.
+Zeilen in [`../planning/open/README.md`](../planning/open/README.md) sind nachgezogen.
 
 **Eigner-Fragen aus dem Schnitt — beide am 2026-09-17 entschieden, jeweils
 wie empfohlen:** (1) P13 wählt nach der Messung selbst nach der Regel unten;
@@ -1625,7 +1638,7 @@ damit nicht mehr gesperrt. Die Fragen im Wortlaut des Schnitts:
    `decimal(38,10)` dann nachzieht. **Empfehlung:** nicht in diesem Slice;
    ein eigener `open/`-Eintrag bei der Graduation (dann ist `open/README.md`
    wieder frei), mit dem Muster von
-   [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md) als Weg.
+   [ADR 0015](../adr/0015-fulltext-tsvector-neutral-type.md) als Weg.
    Solange niemand einen
    Fidelity-Bedarf meldet, reicht die Meldung aus P9 — dieselbe Schwelle, die
    der Kandidaten-Tracker für PostgreSQL-Typen ansetzt.
@@ -1649,7 +1662,7 @@ damit nicht mehr gesperrt. Die Fragen im Wortlaut des Schnitts:
   Code zwei verschiedene Notizen (MSSQL-`geography`, `MssqlTypeMapping.kt:55`,
   gegen Oracles Sequenz-`START WITH`, `OracleSchemaReader.kt:381-387`) und fehlt
   im Ledger ganz — wie `R401`. Ablageort ist
-  [`../open/warn-code-ledger-completeness.md`](../open/warn-code-ledger-completeness.md),
+  [`../planning/open/warn-code-ledger-completeness.md`](../planning/open/warn-code-ledger-completeness.md),
   aber **nicht als blosser Verweis**: der Eintrag fuehrt bis heute nur W-Codes
   („Backfill" plus ein Gate auf `Wxxx`), er muss um die Doppelbelegung und den
   R-Bereich **erweitert** werden — sonst faengt sein Akzeptanzkriterium genau das
