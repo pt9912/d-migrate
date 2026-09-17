@@ -46,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Kurzform eines Constraints, und die Art eines geaenderten
   benutzerdefinierten Typs steht klein (`kind: enum -> domain`).
 
+- **`schema_compare_start` vergleicht wie `schema_compare` und legt dieselben
+  Funde ab.** Der Job verglich wortgleich und veroeffentlichte den internen
+  Vergleichsbaum als JSON — mit Feldnamen und Typdarstellungen des Codes. Er
+  setzt jetzt dieselbe Dialekt-Schreibweise gleich wie `schema compare`, blendet
+  dieselbe Server-Buchhaltung aus, und sein Artefakt (Art `diff`) ist ein
+  Objekt mit `status`, `summary` und `findings` — dieselben Eintraege wie die
+  Antwort von `schema_compare`, ungekuerzt. **Fuer Abnehmer des Artefakts ein
+  Vertragswechsel**; das Format steht in `spec/mcp-server.md`.
+
 - **Ein unbenannter Index heisst im Fund-Pfad nach seinen Schluesseln ohne
   Punkt.** Ein Ausdrucks-Schluessel stand dort bisher roh und mit Praefix
   (`tables.t.indices.expr:lower(t.email) DESC`) — samt Punkt, der das
@@ -54,6 +63,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Sortierrichtung und Praefixlaenge.
 
 ### Fixed
+
+- **`schema_compare` meldet die Reverse-Markierung nicht mehr als Aenderung.**
+  Zwei Reverse-Artefakte aus verschiedenen Dialekten tragen verschiedene
+  `name`-Werte (`__dmigrate_reverse__:postgresql:…` gegen `…:mysql:…`); die
+  CLI entfernte sie vor dem Vergleich, das MCP-Werkzeug nicht und meldete
+  `SCHEMA_NAME_CHANGED`. Beide MCP-Oberflaechen entfernen sie jetzt wie die
+  CLI; eine unvollstaendige Markierung ist ein `VALIDATION_ERROR` am
+  `schemaRef` der Seite.
 
 - **`schema compare` setzt weitere Dialekt-Schreibweisen gleich.** Klammern um
   die Operanden einer `AND`-/`OR`-Komposition

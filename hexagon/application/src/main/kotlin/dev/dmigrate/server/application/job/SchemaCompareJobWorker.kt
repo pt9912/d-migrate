@@ -1,7 +1,6 @@
 package dev.dmigrate.server.application.job
 
 import dev.dmigrate.core.cancel.CancellationToken
-import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.server.core.job.JobRecord
 import dev.dmigrate.server.core.principal.TenantId
@@ -34,10 +33,12 @@ import dev.dmigrate.server.ports.JobWorkerOutcome
  * Token an seine internen Layer weiterreicht.
  *
  * [comparator] und [publisher]: pure Funktionen ueber [SchemaDefinition]
- * bzw. [SchemaDiff]. Compare ist CPU-bound aber im Regelfall schnell;
- * der Cancel-Checkpoint VOR Compare reicht.
+ * bzw. das Vergleichsergebnis [R]. Was das Ergebnis ist, entscheidet die
+ * Baustelle: der MCP-Job veroeffentlicht dieselben Funde wie das Werkzeug
+ * `schema_compare`, nicht den rohen `SchemaDiff`. Compare ist CPU-bound
+ * aber im Regelfall schnell; der Cancel-Checkpoint VOR Compare reicht.
  */
-class SchemaCompareJobWorker(
+class SchemaCompareJobWorker<R : Any>(
     private val sourceRef: String,
     private val targetRef: String,
     private val schemaLoader: (
@@ -45,7 +46,7 @@ class SchemaCompareJobWorker(
         tenant: TenantId,
         token: CancellationToken,
     ) -> SchemaDefinition,
-    private val comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff,
+    private val comparator: (SchemaDefinition, SchemaDefinition) -> R,
     private val publisher: JobArtifactPublisher,
 ) : JobWorker {
 
@@ -57,10 +58,10 @@ class SchemaCompareJobWorker(
         val target = schemaLoader(targetRef, job.tenantId, token)
 
         token.throwIfCancellationRequested()
-        val diff = comparator(source, target)
+        val result = comparator(source, target)
 
         token.throwIfCancellationRequested()
-        val artifactRef = publisher.publish(job, diff)
+        val artifactRef = publisher.publish(job, result)
 
         return JobWorkerOutcome.Succeeded(artifactRefs = listOf(artifactRef))
     }

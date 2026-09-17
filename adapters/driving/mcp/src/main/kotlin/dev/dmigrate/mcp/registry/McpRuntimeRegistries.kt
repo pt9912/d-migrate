@@ -1,7 +1,6 @@
 package dev.dmigrate.mcp.registry
 
-import dev.dmigrate.cli.commands.compareGenerationCanonicalizer
-import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.cli.commands.SchemaCompareSemantics
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.mcp.cursor.McpCursorCodec
 import dev.dmigrate.mcp.schema.SchemaContentLoader
@@ -284,11 +283,11 @@ object McpRuntimeRegistries {
     }
 
     /**
-     * Die MCP-Baustelle des `schema_compare`-Comparators — wie der CLI-Pfad
-     * (`SchemaCompareWiring`): der Vergleich kanonisiert die
-     * Dialekt-Schreibweise roher Ausdruecke (ADR 0056) und blendet den
-     * Sequenznamen einer Identity-Spalte aus, wo ein Reverse ihn als
-     * Server-Buchhaltung liest ([compareGenerationCanonicalizer]).
+     * Die MCP-Baustelle des `schema_compare`-Comparators — derselbe Vergleich
+     * wie im CLI-Pfad (`SchemaCompareWiring`) und im Job
+     * `schema_compare_start` ([SchemaCompareSemantics]): die
+     * Dialekt-Schreibweise roher Ausdruecke ist gleichgesetzt (ADR 0056), die
+     * Server-Buchhaltung einer Identity-Spalte ausgeblendet.
      */
     private fun schemaCompareHandler(
         resolver: SchemaSourceResolver,
@@ -298,12 +297,7 @@ object McpRuntimeRegistries {
     ): SchemaCompareHandler = SchemaCompareHandler(
         resolver = resolver,
         contentLoader = contentLoader,
-        comparator = { source, target ->
-            SchemaComparator(
-                canonicalizeRawExpressions = true,
-                comparisonGeneration = compareGenerationCanonicalizer(source, target),
-            ).compare(source.schema, target.schema)
-        },
+        comparator = SchemaCompareSemantics::compare,
         artifactSink = artifactSink,
         limits = wiring.limits,
     )

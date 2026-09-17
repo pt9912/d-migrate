@@ -227,13 +227,23 @@ Dieselbe Aussage trägt das Tool-Schema als `description` am
 
 ### `schema_compare` — Funde
 
-`schema_compare` vergleicht wie `schema compare` in der CLI: dieselbe
-Gleichsetzung der Dialekt-Schreibweise, derselbe Umgang mit dem Sequenznamen
-einer Identity-Spalte (beides unter „`schema compare`" in der
+`schema_compare` und der Job `schema_compare_start` vergleichen wie
+`schema compare` in der CLI: dieselbe Gleichsetzung der Dialekt-Schreibweise,
+derselbe Umgang mit dem Sequenznamen und mit `legacy_serial_syntax` einer
+Identity-Spalte (alles unter „`schema compare`" in der
 [CLI-Spezifikation](cli-spec.md)). Den Dialekt einer Seite liest der Server
-aus der Reverse-Markierung des referenzierten Schemas. Der Job
-`schema_compare_start` vergleicht wortgleich; ob er die Gleichsetzung
-uebernimmt, ist nicht festgelegt.
+aus der Reverse-Markierung des referenzierten Schemas; die Markierung selbst
+(`name`/`version`) zaehlt wie in der CLI nicht — zwei Reverses aus
+verschiedenen Dialekten ergeben keinen `SCHEMA_NAME_CHANGED`. Traegt ein Name
+das reservierte Praefix bei unvollstaendiger Markierung, antwortet
+`schema_compare` mit `VALIDATION_ERROR` am `schemaRef` der Seite
+(`left.schemaRef`/`right.schemaRef`); der Job endet als fehlgeschlagen.
+
+Der Job `schema_compare_start` veroeffentlicht **ein** Artefakt der Art `diff`
+(`application/json`): ein Objekt mit `status` (`identical`/`different`),
+`summary` und `findings` — dieselben Felder und Eintraege wie die Antwort von
+`schema_compare`, aber nie gekuerzt; `truncated` und `diffArtifactRef` gibt es
+dort nicht.
 
 Jeder Eintrag in `findings` traegt `severity`, `code`, `path` und `message`,
 optional `details` mit `before` und/oder `after`:

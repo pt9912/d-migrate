@@ -7,7 +7,6 @@ import dev.dmigrate.cli.audit.recordIf
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.diff.SchemaDiff
-import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.SchemaReadOptions
@@ -50,21 +49,13 @@ internal object DefaultSchemaCompareWiringFactory : SchemaCompareWiringFactory {
             fileLoader = { op -> loadFileOperand(op, validator) },
             dbLoader = { op, cfgPath -> loadDatabaseOperand(op, cfgPath, validator) },
             urlScrubber = LogScrubber::maskUrl,
-            // `schema compare` setzt die Kanonisierung roher Ausdruecke: zwei
-            // Reverses verschiedener Dialekte schreiben denselben CHECK
-            // verschieden (`(quantity > 0)` gegen `quantity>(0)`), und das ist
-            // keine Aenderung (ADR 0056). Dazu der Namens-Teil der
-            // Erzeugungs-Naht: der Sequenzname einer Identity-Spalte ist dort,
-            // wo ein Reverse ihn liest, Server-Buchhaltung. Welcher Dialekt
-            // uebergeben wird, entscheidet `compareProjectionDialect`.
-            // `schema migrate` setzt beides **nicht** so — dort kostet eine
-            // uebersehene Aenderung eine falsch stehende Datenbank.
-            comparator = { source, target ->
-                SchemaComparator(
-                    canonicalizeRawExpressions = true,
-                    comparisonGeneration = compareGenerationCanonicalizer(source, target),
-                ).compare(source.schema, target.schema)
-            },
+            // Der Vergleich von `schema compare` — derselbe wie in den beiden
+            // MCP-Oberflaechen: Dialekt-Schreibweise roher Ausdruecke
+            // gleichgesetzt (ADR 0056), Server-Buchhaltung einer
+            // Identity-Spalte ausgeblendet. `schema migrate` benutzt ihn
+            // **nicht** — dort kostet eine uebersehene Aenderung eine falsch
+            // stehende Datenbank.
+            comparator = SchemaCompareSemantics::compare,
             projectDiff = SchemaCompareHelpers::projectDiff,
             renderPlain = SchemaCompareHelpers::renderPlain,
             renderJson = SchemaCompareHelpers::renderJson,

@@ -137,10 +137,9 @@ class SchemaCompareRunner(
         // 8. Compare and project (Diff-Phase)
         // Der Dialekt kommt aus der Reverse-Markierung, die der Normalizer
         // gerade entfernt hat — also aus dem ungefalteten Operanden.
-        val diff = comparator(
-            CompareSide(sourceNormalized.schema, reverseSourceDialect(sourceResolved.schema)),
-            CompareSide(targetNormalized.schema, reverseSourceDialect(targetResolved.schema)),
-        )
+        val sourceSide = CompareSide(sourceNormalized.schema, reverseSourceDialect(sourceResolved.schema))
+        val targetSide = CompareSide(targetNormalized.schema, reverseSourceDialect(targetResolved.schema))
+        val diff = comparator(sourceSide, targetSide)
         val identical = diff.isEmpty()
         val diffView = if (identical) null else projectDiff(diff)
         // Ein unentscheidbarer Berechnungsausdruck faltet TableComparator auf
@@ -149,12 +148,7 @@ class SchemaCompareRunner(
         // `comparator`-Aufruf (source == left/current, target == right/desired,
         // siehe TableComparator.compareTables). "identical" bleibt unberuehrt:
         // die Meldung ist informativ, kein Diff-Fund.
-        val undecided = ComputedExpressionDecidability.diagnostics(
-            current = sourceNormalized.schema,
-            desired = targetNormalized.schema,
-            authorship = null,
-            serverForm = null,
-        )
+        val undecided = SchemaCompareSemantics.undecided(sourceSide, targetSide)
         if (request.outputFormat == "plain") {
             for (d in undecided) userFacingStderr("  ${d.severity.name} [${d.code}]: ${d.message}")
         }

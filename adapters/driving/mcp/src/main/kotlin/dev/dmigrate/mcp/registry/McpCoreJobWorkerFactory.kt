@@ -1,7 +1,8 @@
 package dev.dmigrate.mcp.registry
 
 import com.google.gson.GsonBuilder
-import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.cli.commands.CompareSide
+import dev.dmigrate.cli.commands.SchemaCompareSemantics
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
@@ -76,6 +77,9 @@ class McpCoreJobWorkerFactory(
     private val clock: Clock,
 ) : JobWorkerFactory {
 
+    /** Der Vergleich von `schema_compare_start` — derselbe wie in CLI und `schema_compare`. */
+    private val compareSchemas: (CompareSide, CompareSide) -> SchemaDiff = SchemaCompareSemantics::compare
+
     override fun create(record: JobRecord, request: JobStartRequest) = when (record.managedJob.operation) {
         SchemaReverseStartHandler.OPERATION -> reverseWorker(request)
         DataProfileStartHandler.OPERATION -> profileWorker(request)
@@ -139,7 +143,9 @@ class McpCoreJobWorkerFactory(
                     is ResourceUriParseResult.Invalid -> error("invalid schema_compare_start ref: ${uri.reason}")
                 }
             },
-            comparator = { left, right -> SchemaComparator().compare(left, right) },
+            // Dieselbe Semantik und dieselben Funde wie das Werkzeug
+            // `schema_compare` (SchemaCompareSemantics, SchemaCompareOutcome).
+            comparator = { left, right -> SchemaCompareOutcome.ofSchemas(left, right, compareSchemas) },
             publisher = publisher(
                 sourceRef = request.requiredString("sourceUri"),
                 targetRef = request.requiredString("targetUri"),
@@ -315,11 +321,13 @@ private class McpJobArtifactPublisher(
             contentType = "application/json",
             bytes = ProfileReportWriter().renderJson(payload).toByteArray(Charsets.UTF_8),
         )
-        is SchemaDiff -> RenderedArtifact(
+        // `schema_compare_start`: dieselben Felder wie die Antwort von
+        // `schema_compare` (`spec/mcp-server.md`), ungekuerzt.
+        is SchemaCompareOutcome -> RenderedArtifact(
             kind = ArtifactKind.DIFF,
             filename = "diff-${safeId()}.json",
             contentType = "application/json",
-            bytes = gson.toJson(payload).toByteArray(Charsets.UTF_8),
+            bytes = gson.toJson(payload.artifact()).toByteArray(Charsets.UTF_8),
         )
         else -> error("unsupported MCP job artifact payload type: ${payload::class.qualifiedName}")
     }
