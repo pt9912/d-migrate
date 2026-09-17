@@ -39,63 +39,9 @@ internal object SqliteForeignKeyConstraintScanner {
     )
 
     fun scan(createSql: String): List<ForeignKeyClause> =
-        tableBody(createSql)?.let { body -> topLevelItems(body).mapNotNull(::clauseOf) } ?: emptyList()
-
-    /** Der Rumpf zwischen der aeussersten Klammer, oder `null`. */
-    private fun tableBody(createSql: String): String? {
-        var index = 0
-        while (index < createSql.length) {
-            val afterComment = SqliteDdlScanning.skipComment(createSql, index)
-            if (afterComment > index) {
-                index = afterComment
-                continue
-            }
-            index = when (createSql[index]) {
-                '\'', '"', '`' -> SqliteDdlScanning.skipQuoted(createSql, index)
-                '[' -> SqliteDdlScanning.skipBracketIdentifier(createSql, index)
-                '(' -> {
-                    val end = SqliteDdlScanning.matchingParenEnd(createSql, index + 1) ?: return null
-                    return createSql.substring(index + 1, end)
-                }
-                else -> index + 1
-            }
-        }
-        return null
-    }
-
-    /** Die Glieder des Rumpfes auf oberster Ebene. */
-    private fun topLevelItems(body: String): List<String> {
-        val items = mutableListOf<String>()
-        var depth = 0
-        var start = 0
-        var index = 0
-        while (index <= body.length) {
-            if (index == body.length) {
-                body.substring(start).trim().takeIf { it.isNotEmpty() }?.let { items += it }
-                break
-            }
-            val afterComment = SqliteDdlScanning.skipComment(body, index)
-            if (afterComment > index) {
-                index = afterComment
-                continue
-            }
-            when (body[index]) {
-                ',' -> {
-                    if (depth == 0) {
-                        body.substring(start, index).trim().takeIf { it.isNotEmpty() }?.let { items += it }
-                        start = index + 1
-                    }
-                    index++
-                }
-                '(' -> { depth++; index++ }
-                ')' -> { depth--; index++ }
-                '\'', '"', '`' -> index = SqliteDdlScanning.skipQuoted(body, index)
-                '[' -> index = SqliteDdlScanning.skipBracketIdentifier(body, index)
-                else -> index++
-            }
-        }
-        return items
-    }
+        SqliteDdlScanning.tableBody(createSql)
+            ?.let { body -> SqliteDdlScanning.topLevelItems(body).mapNotNull(::clauseOf) }
+            ?: emptyList()
 
     /** Die Klausel eines Gliedes, oder `null`, wenn es keinen Fremdschluessel traegt. */
     private fun clauseOf(item: String): ForeignKeyClause? {
@@ -104,9 +50,13 @@ internal object SqliteForeignKeyConstraintScanner {
         val foreignKey = keywordIndex(item, FOREIGN_KEY)
         val referencedTable = identifierAfter(item, references + REFERENCES.length) ?: return null
         return if (foreignKey != null && foreignKey < references) {
-            // Tabellenebene: die Spalten stehen in der Klammer hinter FOREIGN KEY.
-            val end = SqliteDdlScanning.parenGroupEnd(item, foreignKey, FOREIGN_KEY.length) ?: return null
-            val open = item.indexOf('(', foreignKey)
+            // Tabellenebene: die Spalten stehen in der Klammer hinter FOREIGN
+            // KEY. Wie lang der Schluesselwort-Lauf im Text ist, sagt nur er
+            // selbst: zwischen den beiden Woertern steht beliebiger Leerraum,
+            // `FOREIGN_KEY.length` waere dort die falsche Stelle.
+            val keywordEnd = SqliteDdlScanning.keywordRunEnd(item, foreignKey, FOREIGN_KEY) ?: return null
+            val end = SqliteDdlScanning.parenGroupEnd(item, keywordEnd, 0) ?: return null
+            val open = item.indexOf('(', keywordEnd)
             val columns = parseColumnList(item.substring(open + 1, end))
             if (columns.isEmpty()) null else ForeignKeyClause(leadingName, columns, referencedTable)
         } else {
@@ -139,30 +89,12 @@ internal object SqliteForeignKeyConstraintScanner {
                 '\'', '"', '`' -> SqliteDdlScanning.skipQuoted(item, index)
                 '[' -> SqliteDdlScanning.skipBracketIdentifier(item, index)
                 else -> {
-                    if (isKeywordRunAt(item, index, keyword)) return index
+                    if (SqliteDdlScanning.keywordRunEnd(item, index, keyword) != null) return index
                     index + 1
                 }
             }
         }
         return null
-    }
-
-    /**
-     * `FOREIGN KEY` steht mit beliebigem Leerraum zwischen den Woertern; das
-     * Schluesselwort wird deshalb Wort fuer Wort geprueft.
-     */
-    private fun isKeywordRunAt(item: String, start: Int, keyword: String): Boolean {
-        var index = start
-        for ((position, word) in keyword.split(" ").withIndex()) {
-            if (position > 0) {
-                val before = index
-                while (index < item.length && item[index].isWhitespace()) index++
-                if (index == before) return false
-            }
-            if (!SqliteDdlScanning.isKeywordAt(item, index, word)) return false
-            index += word.length
-        }
-        return true
     }
 
     private fun identifierAfter(item: String, from: Int): String? {

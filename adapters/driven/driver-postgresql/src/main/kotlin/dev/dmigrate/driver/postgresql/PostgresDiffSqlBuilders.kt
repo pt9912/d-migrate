@@ -13,6 +13,7 @@ import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.PostgresServerVersion
+import dev.dmigrate.driver.ReferentialActions
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.metadata.ComputedColumnClause
 import dev.dmigrate.driver.metadata.EnumValueCheck
@@ -196,13 +197,7 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
     fun replaceViewSql(name: String, v: ViewDefinition): String =
         "CREATE OR REPLACE VIEW ${quote(name)} AS ${v.query?.trimEnd(';')};"
 
-    fun referentialActionSql(action: ReferentialAction): String = when (action) {
-        ReferentialAction.RESTRICT -> "RESTRICT"
-        ReferentialAction.CASCADE -> "CASCADE"
-        ReferentialAction.SET_NULL -> "SET NULL"
-        ReferentialAction.SET_DEFAULT -> "SET DEFAULT"
-        ReferentialAction.NO_ACTION -> "NO ACTION"
-    }
+    fun referentialActionSql(action: ReferentialAction): String = ReferentialActions.sql(action)
 
     fun anonIndexName(table: String, idx: IndexDefinition): String =
         "${table}_${idx.keyLabels.joinToString("_")}_idx"

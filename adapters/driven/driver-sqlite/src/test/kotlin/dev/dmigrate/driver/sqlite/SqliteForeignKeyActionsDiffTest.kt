@@ -15,6 +15,7 @@ import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.ReferentialActions
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.string.shouldContain
 
@@ -109,5 +110,48 @@ class SqliteForeignKeyActionsDiffTest : FunSpec({
         val rebuild = statements.single { it.contains("CREATE TABLE \"child__dmg_rebuild_") }
         rebuild shouldContain "FOREIGN KEY (\"parent_id\") REFERENCES \"parent\"(\"id\") " +
             "ON DELETE CASCADE ON UPDATE RESTRICT"
+    }
+
+    /**
+     * Beide Pfade schreiben dieselbe Zeichenkette — fuer **jede** Aktion, nicht
+     * nur fuer die beiden oben. Die Abbildung lag einmal in zwei Kopien
+     * (`AbstractDdlGenerator` und `SqliteDiffSqlBuilders`), waehrend ein
+     * Kommentar „dieselbe Quelle" behauptete; jetzt ist es
+     * [ReferentialActions], und dieser Fall faengt den Rueckfall.
+     */
+    ReferentialAction.entries.forEach { action ->
+        test("generate and migrate write the same text for $action") {
+            fun withAction(target: TableDefinition) = target.copy(
+                constraints = target.constraints.map {
+                    it.copy(references = it.references?.copy(onDelete = action, onUpdate = action))
+                },
+            )
+            val expected = "ON DELETE ${ReferentialActions.sql(action)} " +
+                "ON UPDATE ${ReferentialActions.sql(action)}"
+
+            val generated = SqliteDdlGenerator().generate(
+                SchemaDefinition(
+                    name = "App", version = "1",
+                    tables = mapOf("parent" to parent, "child" to withAction(child(noteRequired = false))),
+                ),
+            ).render()
+            generated shouldContain expected
+
+            val diff = SchemaDiff(
+                tablesAdded = listOf(NamedTable("child", withAction(child(noteRequired = false)))),
+            )
+            val migrated = gen.generateUp(
+                planner.plan(
+                    SchemaDefinition(name = "App", version = "1", tables = mapOf("parent" to parent)),
+                    SchemaDefinition(
+                        name = "App", version = "1",
+                        tables = mapOf("parent" to parent, "child" to withAction(child(noteRequired = false))),
+                    ),
+                    diff,
+                ),
+                DdlGenerationOptions(),
+            ).statements.first().sql
+            migrated shouldContain expected
+        }
     }
 })

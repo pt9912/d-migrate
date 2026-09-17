@@ -26,71 +26,14 @@ internal object SqliteGeneratedColumnScanner {
      * Klammerebene. Ein `AS (…)` tiefer drin gehoert zu etwas anderem.
      */
     fun expressionsOf(createSql: String): Map<String, String> {
-        val body = tableBody(createSql) ?: return emptyMap()
+        val body = SqliteDdlScanning.tableBody(createSql) ?: return emptyMap()
         val result = LinkedHashMap<String, String>()
-        for (item in topLevelItems(body)) {
+        for (item in SqliteDdlScanning.topLevelItems(body)) {
             val name = leadingIdentifier(item) ?: continue
             val expression = generatedExpression(item) ?: continue
             result[name] = expression
         }
         return result
-    }
-
-    /** Der Inhalt der Spaltenliste — zwischen der ersten Klammer und ihrem Partner. */
-    private fun tableBody(createSql: String): String? {
-        val open = firstCodeParen(createSql) ?: return null
-        // Der Helfer beginnt bei Tiefe 1 und will deshalb den Index NACH der
-        // oeffnenden Klammer; zurueck gibt er den Index DER schliessenden.
-        val close = SqliteDdlScanning.matchingParenEnd(createSql, open + 1) ?: return null
-        return createSql.substring(open + 1, close)
-    }
-
-    /** Die erste Klammer, die im Code steht — nicht in einem Kommentar oder Literal. */
-    private fun firstCodeParen(sql: String): Int? {
-        var i = 0
-        while (i < sql.length) {
-            val afterComment = SqliteDdlScanning.skipComment(sql, i)
-            if (afterComment > i) {
-                i = afterComment
-                continue
-            }
-            i = when (sql[i]) {
-                '\'', '"', '`' -> SqliteDdlScanning.skipQuoted(sql, i)
-                '[' -> SqliteDdlScanning.skipBracketIdentifier(sql, i)
-                '(' -> return i
-                else -> i + 1
-            }
-        }
-        return null
-    }
-
-    /** Die Glieder der obersten Ebene, an Kommas getrennt. */
-    private fun topLevelItems(body: String): List<String> {
-        val items = mutableListOf<String>()
-        var start = 0
-        var i = 0
-        while (i < body.length) {
-            val afterComment = SqliteDdlScanning.skipComment(body, i)
-            if (afterComment > i) {
-                i = afterComment
-                continue
-            }
-            when (body[i]) {
-                '\'', '"', '`' -> { i = SqliteDdlScanning.skipQuoted(body, i); continue }
-                '[' -> { i = SqliteDdlScanning.skipBracketIdentifier(body, i); continue }
-                '(' -> {
-                    i = SqliteDdlScanning.matchingParenEnd(body, i + 1)?.plus(1) ?: body.length
-                    continue
-                }
-                ',' -> {
-                    items += body.substring(start, i)
-                    start = i + 1
-                }
-            }
-            i++
-        }
-        items += body.substring(start)
-        return items.map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     /** Der Spaltenname am Anfang eines Glieds, oder `null` bei einem Tabellen-Constraint. */

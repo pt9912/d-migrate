@@ -262,13 +262,7 @@ abstract class AbstractDdlGenerator(
         seqDefault: DefaultValue.SequenceNextVal,
     ): String? = null
 
-    protected fun referentialActionSql(action: ReferentialAction): String = when (action) {
-        ReferentialAction.RESTRICT -> "RESTRICT"
-        ReferentialAction.CASCADE -> "CASCADE"
-        ReferentialAction.SET_NULL -> "SET NULL"
-        ReferentialAction.SET_DEFAULT -> "SET DEFAULT"
-        ReferentialAction.NO_ACTION -> "NO ACTION"
-    }
+    protected fun referentialActionSql(action: ReferentialAction): String = ReferentialActions.sql(action)
 
     private val inverter = StatementInverter()
 

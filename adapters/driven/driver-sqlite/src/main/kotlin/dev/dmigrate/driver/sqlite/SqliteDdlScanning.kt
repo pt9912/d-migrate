@@ -4,9 +4,15 @@ package dev.dmigrate.driver.sqlite
  * Shared quote-/paren-aware low-level scanning helpers for walking a SQLite
  * CREATE-TABLE statement (`sqlite_master.sql`). Used by
  * [SqliteCheckConstraintScanner], [SqliteUniqueConstraintScanner] und
- * [SqliteForeignKeyConstraintScanner] — the lexing rules (doubled-quote
- * escapes, `[...]` identifiers, balanced parens, comments) must stay identical
- * between the scanners, so they live once here.
+ * [SqliteForeignKeyConstraintScanner] und [SqliteGeneratedColumnScanner] —
+ * the lexing rules (doubled-quote escapes, `[...]` identifiers, balanced
+ * parens, comments) must stay identical between the scanners, so they live
+ * once here.
+ *
+ * **Das gilt auch fuer das Zerlegen selbst.** Der Rumpf einer
+ * `CREATE TABLE`-Anweisung ([tableBody]) und seine Glieder auf oberster Ebene
+ * ([topLevelItems]) standen einmal in zwei Scannern — und bereits
+ * verschieden; ein Defekt sass in der einen Kopie und nicht in der anderen.
  *
  * **Kommentare gehoeren dazu.** SQLite speichert den `CREATE TABLE`-Text
  * wortgetreu, samt Zeilen- und Blockkommentaren. Ein Scanner, der sie nicht
@@ -171,6 +177,84 @@ internal object SqliteDdlScanning {
             }
         }
         return null
+    }
+
+    /**
+     * Der Rumpf eines `CREATE TABLE`-Textes: der Inhalt zwischen der ersten
+     * Klammer, die im **Code** steht (nicht in einem Literal, einem quotierten
+     * Bezeichner oder einem Kommentar), und ihrem Partner. `null`, wenn es
+     * keine gibt oder sie nicht schliesst.
+     */
+    fun tableBody(createSql: String): String? {
+        var index = 0
+        while (index < createSql.length) {
+            val afterComment = skipComment(createSql, index)
+            if (afterComment > index) {
+                index = afterComment
+                continue
+            }
+            index = when (createSql[index]) {
+                '\'', '"', '`' -> skipQuoted(createSql, index)
+                '[' -> skipBracketIdentifier(createSql, index)
+                '(' -> {
+                    val end = matchingParenEnd(createSql, index + 1) ?: return null
+                    return createSql.substring(index + 1, end)
+                }
+                else -> index + 1
+            }
+        }
+        return null
+    }
+
+    /**
+     * Die Glieder eines Rumpfes auf **oberster** Ebene, an Kommas getrennt und
+     * getrimmt — je Glied entweder eine Spaltendefinition oder eine Klausel
+     * auf Tabellenebene. Klammergruppen, Literale, quotierte Bezeichner und
+     * Kommentare zaehlen nicht mit.
+     */
+    fun topLevelItems(body: String): List<String> {
+        val items = mutableListOf<String>()
+        var start = 0
+        var index = 0
+        while (index < body.length) {
+            val afterComment = skipComment(body, index)
+            if (afterComment > index) {
+                index = afterComment
+                continue
+            }
+            when (body[index]) {
+                '\'', '"', '`' -> { index = skipQuoted(body, index); continue }
+                '[' -> { index = skipBracketIdentifier(body, index); continue }
+                '(' -> { index = matchingParenEnd(body, index + 1)?.plus(1) ?: body.length; continue }
+                ',' -> {
+                    items += body.substring(start, index)
+                    start = index + 1
+                }
+            }
+            index++
+        }
+        items += body.substring(start)
+        return items.map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    /**
+     * Das Ende des Schluesselwort-Laufs [keyword] ab [start] — der Index hinter
+     * dem letzten Wort —, oder `null`, wenn dort keiner steht. Mehrwortige
+     * Schluesselwoerter (`FOREIGN KEY`) trennt **beliebiger** Leerraum; ihre
+     * Laenge im Text ist deshalb nicht `keyword.length`.
+     */
+    fun keywordRunEnd(sql: String, start: Int, keyword: String): Int? {
+        var index = start
+        for ((position, word) in keyword.split(" ").withIndex()) {
+            if (position > 0) {
+                val before = index
+                while (index < sql.length && sql[index].isWhitespace()) index++
+                if (index == before) return null
+            }
+            if (!isKeywordAt(sql, index, word)) return null
+            index += word.length
+        }
+        return index
     }
 
     /** For a keyword at [keywordStart] of length [keywordLength]: the index of

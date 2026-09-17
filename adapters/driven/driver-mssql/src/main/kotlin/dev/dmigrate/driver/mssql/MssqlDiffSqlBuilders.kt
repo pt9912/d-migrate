@@ -12,6 +12,7 @@ import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlStatement
+import dev.dmigrate.driver.ReferentialActions
 import dev.dmigrate.driver.SqlIdentifiers
 
 /**
@@ -326,9 +327,7 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
 
     /** T-SQL kennt kein `RESTRICT`; ohne aufschiebbare Constraints ist `NO ACTION` dasselbe. */
     private fun referentialActionSql(action: ReferentialAction): String = when (action) {
-        ReferentialAction.CASCADE -> "CASCADE"
-        ReferentialAction.SET_NULL -> "SET NULL"
-        ReferentialAction.SET_DEFAULT -> "SET DEFAULT"
         ReferentialAction.RESTRICT, ReferentialAction.NO_ACTION -> "NO ACTION"
+        else -> ReferentialActions.sql(action)
     }
 }

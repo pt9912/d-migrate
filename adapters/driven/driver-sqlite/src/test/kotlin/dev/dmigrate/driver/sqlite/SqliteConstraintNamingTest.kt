@@ -58,6 +58,34 @@ class SqliteConstraintNamingTest : FunSpec({
         }
     }
 
+    test("FOREIGN KEY with more than one space or a line break keeps its name") {
+        // Der Scanner duldet beliebigen Leerraum zwischen den beiden Woertern,
+        // sprang fuer die Spaltenliste aber um die feste Laenge `FOREIGN KEY`
+        // weiter — und landete dann neben der Klammer. Folge: die Klausel fiel
+        // weg und der Name mit ihr, still.
+        withDb(
+            "CREATE TABLE p (id INTEGER PRIMARY KEY)",
+            """CREATE TABLE c (
+                 id INTEGER PRIMARY KEY, pid INTEGER NOT NULL,
+                 CONSTRAINT fk_c_spaced FOREIGN  KEY (pid) REFERENCES p(id))""",
+        ) { pool ->
+            val fk = reader.read(pool).schema.tables.getValue("c")
+                .constraints.single { it.type == ConstraintType.FOREIGN_KEY }
+            fk.name shouldBe "fk_c_spaced"
+        }
+        withDb(
+            "CREATE TABLE p (id INTEGER PRIMARY KEY)",
+            """CREATE TABLE c (
+                 id INTEGER PRIMARY KEY, pid INTEGER NOT NULL,
+                 CONSTRAINT fk_c_broken FOREIGN
+                 KEY (pid) REFERENCES p(id))""",
+        ) { pool ->
+            val fk = reader.read(pool).schema.tables.getValue("c")
+                .constraints.single { it.type == ConstraintType.FOREIGN_KEY }
+            fk.name shouldBe "fk_c_broken"
+        }
+    }
+
     test("a named column-level foreign key keeps its name, an unnamed one is generated") {
         withDb(
             "CREATE TABLE p (id INTEGER PRIMARY KEY)",
