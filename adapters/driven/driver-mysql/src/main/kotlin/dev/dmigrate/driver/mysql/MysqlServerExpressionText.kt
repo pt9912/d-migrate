@@ -23,7 +23,7 @@ import dev.dmigrate.driver.NeutralExpressionIdentifier
  *   [NeutralExpressionIdentifier] eine eigene Schreibweise dafuer.
  *
  * Der Praezedenzfall ist der SQL-Server-Reader
- * (`MssqlTypeMapping.normalizeCheckExpression`): dieselbe Aufgabe, dieselbe
+ * (`MssqlTypeMapping.normalizeExpression`): dieselbe Aufgabe, dieselbe
  * Grenze — der Ausdruck wird **nicht** uebersetzt, nur seine
  * Dialekt-Anhaenge fallen weg. Die Regel steht in `spec/type-mapping.md`,
  * Abschnitt 4.

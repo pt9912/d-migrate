@@ -244,7 +244,7 @@ gefahren):
 | PostgreSQL | — | 11 | 11 | 22 |
 | MySQL | 4 | — | 8 | 11 |
 | SQL Server | 2 | 6 | — | 11 |
-| SQLite | `APPLY-FAIL` | `APPLY-FAIL` | `APPLY-FAIL` | — |
+| SQLite | 3 | `APPLY-FAIL` | 6 | — |
 
 | Zelle | Funde bzw. Zustand | Grund |
 | ----- | ------------------ | ----- |
@@ -258,9 +258,9 @@ gefahren):
 | MySQL → SQL Server | 8: dieselben zwei CHECKs, Identity-Modus `always`, abgeleiteter Typ **und** Nullbarkeit der beiden berechneten Spalten, zweimal `W137` | `W140`; SQL Server leitet Typ und `NOT NULL` einer berechneten Spalte aus dem Ausdruck ab |
 | MySQL → SQLite | 11: 10 Typen, Identity | SQLite-Typaffinitaet (Laenge, `decimal`, `datetime`), Identity als `identifier(auto)` |
 | SQL Server → SQLite | 11: 10 Typen, Identity | SQLite-Typaffinitaet (die zwei `decimal`-Spalten des Seeds kommen dazu) |
-| SQLite → PostgreSQL | `APPLY-FAIL` (`relation "uq_0" already exists`) | der SQLite-Reverse nennt jede unbenannte mehrspaltige UNIQUE-Klausel `uq_0`; der Seed hat zwei davon in zwei Tabellen. Bis P11 |
+| SQLite → PostgreSQL | 3: LIKE-CHECK (`~~`), Werteliste (`= ANY`), `W137` | Schluesselwort-Schreibweise, bewusst ein Fund, unentscheidbarer Berechnungsausdruck |
 | SQLite → MySQL | `APPLY-FAIL` (`ERROR 1170`) | der SQLite-Reverse kennt keine Laenge; MySQL indiziert `TEXT` nicht ohne Praefix |
-| SQLite → SQL Server | `APPLY-FAIL` (`Msg 2714`) | der SQLite-Reverse nennt die Fremdschluessel jeder Tabelle `fk_0` …; SQL Server verlangt eindeutige Namen |
+| SQLite → SQL Server | 6: zwei UNIQUE-Klauseln entfallen, zwei CHECKs in anderer Schreibweise, die berechnete Spalte wird `NOT NULL`, `W137` | SQL Server nimmt eine unbegrenzte Textspalte nicht als Schluessel (`E057`), leitet Typ und Nullbarkeit einer berechneten Spalte ab |
 
 ### Native Typ-Seeds und der Silent-Loss-Check
 
