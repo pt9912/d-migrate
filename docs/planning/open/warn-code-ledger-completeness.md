@@ -80,3 +80,76 @@ Damit fehlt der R-Serie, was die anderen beiden Serien haben: eine Stelle, an de
 Code, Bedeutung und Beleg zusammenstehen, und ein Test, der prüft, dass ein
 emittierter Code registriert ist. Ob die R-Serie einen eigenen Ledger bekommt oder
 in den bestehenden aufgeht, ist Teil dieses Tickets.
+
+## Nachtrag 2026-09-17: Fragen aus dem Reader-Schnitt (F4)
+
+Der Reader-Slice vergibt neue Kennungen
+([`../next/reader-treue.md`](../next/reader-treue.md), Abschnitt „Codes":
+`R370`, `R371`, `R402`–`R405`, `R221`, `W162`–`W164`). Beim Schnitt in vier
+Pläne sind dabei Fragen aufgefallen, die nicht in einen der Pläne gehören,
+sondern hierher. Der Eintrag wächst damit über „Backfill der W-Codes" hinaus.
+
+1. **Gehören R-Codes mit Severity `WARNING` unter „jeder nutzersichtbare
+   Warning-Code"?** `spec/ledger.md` verlangt, dass jeder nutzersichtbare
+   W- und E-Code registriert ist. Reverse-Notes mit `WARNING` sind ebenso
+   sichtbar: sie zählen im Reverse-Report unter `summary.warnings` und stehen
+   ohne `--verbose` auf stderr. Das trifft heute `R301`, nach
+   [ADR 0058](../../adr/0058-verlorener-srid-beim-reverse-ist-warnung.md) auch
+   `R365` und `R370`, und mit dem Reader-Slice `R371`, `R402`–`R405` und
+   `R221`. Der Nachtrag vom 2026-08-28 fragt schon, ob die R-Serie einen
+   eigenen Ledger bekommt; diese Frage schärft ihn.
+2. **Welche Ledger-Datei gilt?** `spec/ledger.md` sagt: je Minor-Version ein
+   eigener Satz, ältere Dateien bleiben unverändert. Gelebt wird die
+   Fortschreibung von
+   [`ledger/warn-code-ledger-1.1.0.yaml`](../../../ledger/warn-code-ledger-1.1.0.yaml):
+   `W155` bis `W161` sind nach 1.1.0 entstanden und stehen dort, und
+   `CodeLedgerValidationTest` liest diese Datei; eine Datei für die laufende
+   Minor-Version läse kein Test. Der Reader-Slice schreibt seine W-Codes
+   deshalb in die 1.1.0-Datei, bis das hier entschieden ist. Entweder die
+   Regel in `spec/ledger.md` oder die Praxis muss sich ändern.
+3. **`W137` — die Richtung ist vorentschieden.** Zwei akzeptierte ADRs führen
+   `W137` als Diagnose eines Berechnungsausdrucks, den der Vergleich nicht
+   entscheiden kann
+   ([ADR 0056](../../adr/0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md),
+   [ADR 0057](../../adr/0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md);
+   Code: `ComputedExpressionDecidability.UNDECIDED`). Das YAML-Ledger legt
+   `W137` dagegen auf die SQL-Server-Bedeutung „JSON/Array →
+   `NVARCHAR(MAX)`" (Eintrag mit Beleg `MssqlColumnConstraintHelper.kt`), und
+   `spec/ledger.md` nennt beide Bedeutungen in zwei Zeilen. Weil die ADRs
+   eingefroren sind, muss die **JSON/Array-Bedeutung umziehen**: ein neuer
+   Code für SQL Server. Kandidat für die Array-Hälfte ist `W162` aus dem
+   Reader-Slice („die Spalte verliert ihre Array-Eigenschaft"), die
+   JSON-Hälfte braucht einen eigenen.
+4. **`W160` fehlt in der Bereichszeile** von `spec/ledger.md` (dort folgt
+   `W161` auf `W159`) und im YAML-Ledger (dort steht an seiner Stelle ein
+   Kommentar, der auf diesen Eintrag verweist). In der W-Tabelle von
+   `spec/cli-spec.md` steht er.
+5. **Weitere Doppelbelegungen.** `R345` trägt im Code zwei Notizen:
+   SQL Servers `geography` mit angenommenem SRID 4326
+   (`MssqlTypeMapping.kt:55`) und Oracles fehlenden `START WITH`-Wert
+   (`OracleSchemaReader.kt:383`). `W120` trägt zwei: den SRID-Hinweis der
+   Generatoren (SQL Server, MySQL, Oracle) und den veränderten
+   Trigger-Rumpf des SQLite-Reverse
+   (`SqliteSequenceReverseSupport.kt:186`, dort als Reverse-Note).
+   `spec/ledger.md` weist `W120` als „Multi-Dialekt" mit beiden Bedeutungen
+   aus; die W-Tabelle von `spec/cli-spec.md` und die Code-Tabelle in
+   `spec/neutral-model-spec.md` nennen nur den SRID-Hinweis.
+6. **Die R-Vergabe hat keine Regel.** Belegt sind: R200–R220 SQLite,
+   R300/R301 allgemein, R310–R330 MySQL, R340–R369 gemischt (SQL Server,
+   Oracle, `driver-common`), R400/R401 PostgreSQL. Der Reader-Slice folgt
+   diesen Bereichen (`R370`/`R371` hinter dem gemischten Bereich), ohne dass
+   eine Entscheidung sie trägt.
+7. **Die Lesefassungen decken verschiedene Mengen.** Die W-Tabelle in
+   `spec/cli-spec.md` springt von `W120` auf `W155`; `spec/ledger.md` führt
+   Bereichszeilen; das YAML-Ledger ist die maschinenlesbare Menge. Welche
+   Fassung vollständig sein muss, gehört zu Punkt 2.
+
+**Erweiterte Akzeptanzkriterien:**
+
+- Keine Kennung trägt zwei Bedeutungen, oder jede Lesefassung weist die
+  Doppelbelegung gleich aus; `W137` hat nur noch die Bedeutung der ADRs.
+- Die gültige Ledger-Datei ist entschieden, und `spec/ledger.md` sagt
+  dasselbe wie die Praxis.
+- Für R-Codes mit `WARNING` ist entschieden, ob und wo sie registriert werden,
+  und ein Test prüft es.
+- `W160` steht in allen Lesefassungen.

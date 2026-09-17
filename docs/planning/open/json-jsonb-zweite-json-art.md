@@ -1,28 +1,29 @@
 # Modellfrage: zweite JSON-Art (`json` gegen `jsonb`)
 
-> **Status:** Entschieden (2026-09-16) — wandert bei der Aktivierung des
-> Reader-Slices als eigenes Paket dorthin (Posten B3).
+> **Status:** Entschieden (2026-09-16); wird als P8 in Plan 2 des
+> Reader-Slices gebaut
+> ([`../next/reader-treue-2-meldungen.md`](../next/reader-treue-2-meldungen.md),
+> Schnitt 2026-09-17). Dieser Eintrag schließt mit der Lieferung von P8.
 > **Eigner-Entscheidung: gleichsetzen, aber laut.** Das Modell behält **einen**
 > JSON-Typ (keine Modellerweiterung). Der PostgreSQL-Reverse meldet eine
 > `json`-Spalte mit eigenem Code: sie wird als `jsonb` gerendert, und was `json`
 > bewahrt (Schlüsselreihenfolge, doppelte Schlüssel, Leerraum), geht dabei
 > verloren. Das folgt dem Ziel des Reader-Slices — kein Verlust bleibt still. Die
 > Spec begründet den Rückweg mit.
-> **Umsetzung (2026-09-17):** wird in **P8** des Reader-Slices gebaut
-> ([`../next/reader-treue-2-meldungen.md`](../next/reader-treue-2-meldungen.md),
-> Aktivierungsschnitt; Code `R402`); dieser Eintrag schliesst mit dessen
-> Graduation, nicht vorher.
-> **Trigger:** Konsumentenmessung gegen 1.7.1, festgehalten in
-> [`../next/reader-treue-2-meldungen.md`](../next/reader-treue-2-meldungen.md)
-> (Posten B3): eine PostgreSQL-`json`-Spalte kommt nach Reverse und erneuter
+> **Umsetzung (2026-09-17):** wird in **P8** gebaut, Code `R402`, Severity
+> `WARNING` (beim Übertragen ändern sich die Daten). Beim Schnitt in vier
+> Pläne kam dazu: `json[]` liest mit Element `json`, rendert heute aber gar
+> nicht als `jsonb[]`, sondern als `TEXT[]` — der PostgreSQL-Generator kennt
+> nur vier Element-Typen (Posten S3 desselben Plans). Die Note für `json[]`
+> kommt deshalb erst nach S3; vorher wäre ihre Aussage falsch.
+> **Trigger:** Konsumentenmessung gegen 1.7.1 (Posten B3 des Reader-Slices,
+> jetzt in [`../next/reader-treue-2-meldungen.md`](../next/reader-treue-2-meldungen.md)): eine PostgreSQL-`json`-Spalte kommt nach Reverse und erneuter
 > Renderung als `jsonb` zurueck. Der Vorgang ist **spec-konform** (s. u.) — die
 > Frage ist, ob er es bleiben soll.
-> **Aktivierungsbedingung:** Eigner-Entscheidung ueber eine Modellerweiterung,
-> kein Termin. Faellt sie fuer „trennen", entsteht ein `next/`-Plan nach dem
-> `geometry`-/`fulltext`-Muster (zweiter neutraler Typ oder ein Attribut am
-> vorhandenen) samt der Frage, was MySQL und SQLite tragen; faellt sie fuer
-> „gleichsetzen", ist nur die Begruendung in der Spec zu schaerfen und dieser
-> Eintrag schliesst.
+> **Aktivierungsbedingung:** erfüllt — der Eigner hat „gleichsetzen, aber
+> laut" entschieden. Eine spätere Trennung (zweiter neutraler Typ oder ein
+> Attribut) wäre eine neue Modellfrage mit eigenem Eintrag. Der Text unten ist
+> die Entscheidungsgrundlage vom 2026-09-16.
 
 ## Worum es geht
 
@@ -56,7 +57,7 @@ Arten (kein Index, keine Gleichheit, keine Ordnung).
 
 Nicht zu verwechseln mit dem **Array**-Verlust (Slice-Posten B1/B2): dort geht
 eine Modelleigenschaft verloren, die das Modell **kennt** (`NeutralType.Array`),
-und der Verlust entsteht erst am MySQL-Renderer. Hier kennt das Modell die
+und der Verlust entsteht erst am MySQL- und am SQLite-Renderer. Hier kennt das Modell die
 Unterscheidung gar nicht — es ist eine Modellfrage, keine Render-Luecke.
 
 ## Referenzen
@@ -65,5 +66,6 @@ Unterscheidung gar nicht — es ist eine Modellfrage, keine Render-Luecke.
   [`../next/reader-treue-2-meldungen.md`](../next/reader-treue-2-meldungen.md).
 - Soll-Tabelle des Modells: [`spec/neutral-model-spec.md`](../../../spec/neutral-model-spec.md).
 - Muster fuer eine solche Erweiterung:
-  [`ADR 0015`](../../adr/0015-fulltext-tsvector-neutral-type.md) (`tsvector` → `fulltext`),
-  [`ADR 0016`](../../adr/0016-spatialite-metadata-bootstrap.md) (SpatiaLite).
+  [`ADR 0015`](../../adr/0015-fulltext-tsvector-neutral-type.md) (`tsvector` → `fulltext`).
+  (Die frühere Fassung nannte hier auch ADR 0016; der regelt den
+  SpatiaLite-Bootstrap, keine Modellerweiterung.)

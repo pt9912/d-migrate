@@ -1,7 +1,9 @@
 # Vertragsfrage: E052 verwirft die ganze Tabelle (SpatiaLite-Profil)
 
-> **Status:** Entschieden (2026-09-16) — wandert bei der Aktivierung des
-> Reader-Slices als eigenes Paket dorthin (Posten A6).
+> **Status:** Entschieden (2026-09-16); wird als P7 in Plan 3 des
+> Reader-Slices gebaut
+> ([`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md),
+> Schnitt 2026-09-17). Dieser Eintrag schließt mit der Lieferung von P7.
 > **Eigner-Entscheidung: NOT NULL nativ.** Gemessen im Tooling-Image
 > (SpatiaLite 5.1.0): `AddGeometryColumn('t','geom',4326,'POINT','XY',1)` legt die
 > Spalte als `"geom" POINT NOT NULL DEFAULT ''` an, eine Zeile ohne Geometrie wird
@@ -11,27 +13,35 @@
 > `SqliteTableDdlSupport`). Gebaut wird: `required` über das `not_null`-Argument,
 > `E052` bleibt nur für PK, UNIQUE, Default und Fremdschlüssel. Die Regel „keine
 > partielle DDL" bleibt; die Spec-Stellen unten nennen `NOT NULL` nicht mehr als
-> Auslöser. Einen ADR braucht es dafür nicht: ADR 0016 hat den Generate-Pfad
-> aufgeschoben, nicht festgelegt.
-> **Umsetzung (2026-09-17):** wird in **P7** des Reader-Slices gebaut
-> ([`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md),
-> Aktivierungsschnitt); dieser Eintrag schliesst mit dessen Graduation, nicht
-> vorher. Beim Schneiden nachgemessen und dort festgehalten: die drei
+> Auslöser. **Einen ADR braucht es dafür nicht:** die Auslöser von `E052` sind
+> nicht ADR-gebunden; der Gegenstand von ADR 0016 (Ort und Form des Bootstrap)
+> bleibt unberührt.
+> **Korrektur (2026-09-17, Architektur-Prüfung):** Die frühere Begründung
+> „ADR 0016 hat den Generate-Pfad aufgeschoben, nicht festgelegt" stimmte
+> nicht. ADR 0016 hat im Generate-Pfad nur den **Bootstrap** aufgeschoben
+> (Kandidat 2 unter „Verworfene/aufgeschobene Alternativen"); die Auslöser von
+> `E052` waren nie Gegenstand eines ADR.
+> **Umsetzung (2026-09-17):** wird in **P7** gebaut
+> ([`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md));
+> dieser Eintrag schließt mit dessen Lieferung, nicht vorher. Beim
+> Aktivierungsschnitt nachgemessen und dort festgehalten: die drei
 > Spec-Stellen unten haben `NOT NULL` **nie** als Auslöser genannt — die
 > Auslöser stehen nirgends in `spec/`, P7 trägt sie erstmals in den
 > Profilabschnitt 16.5 ein; dieselbe Regel steht ein zweites Mal im
 > Migrate-Pfad (`SqliteSpatialDiffOps`); und der SQLite-Reverse liest
-> SpatiaLites `DEFAULT ''` sonst als Anwender-Default zurück.
-> **Trigger:** Konsumentenmessung gegen 1.7.1, festgehalten in
-> [`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md)
-> (Posten A6): `schema generate --target sqlite --spatial-profile spatialite` auf
-> einer MySQL-Quelle mit **NOT NULL**-Geometrie erzeugt `E052` und laesst die
+> SpatiaLites `DEFAULT ''` sonst als Anwender-Default zurück. Beim Schnitt in
+> vier Pläne kamen dazu: der Rebuild des Migrate-Pfads legt eine
+> Geometriespalte inline an, ohne `AddGeometryColumn`, und die Spec
+> widerspricht sich darin, ob `E052` auch aus `schema migrate` kommt.
+> **Trigger:** Konsumentenmessung gegen 1.7.1 (Posten A6 des Reader-Slices,
+> jetzt in [`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md)):
+> `schema generate --target sqlite --spatial-profile spatialite` auf einer
+> MySQL-Quelle mit **NOT NULL**-Geometrie erzeugt `E052` und laesst die
 > **komplette** Tabelle aus der Ausgabe fallen — die uebrigen, darstellbaren
 > Spalten gehen mit.
-> **Aktivierungsbedingung:** Eigner-Entscheidung, kein Termin. Faellt sie fuer
-> einen der beiden Aenderungswege, entsteht daraus ein eigener `next/`-Plan (drei
-> Spec-Stellen plus ADR-Nachtrag); faellt sie fuer „so lassen", ist nur ein
-> Doku-Nachtrag zu machen und dieser Eintrag schliesst.
+> **Aktivierungsbedingung:** erfüllt — die Eigner-Entscheidung ist gefallen,
+> der Scope steht in P7. Der Text unten ist die Entscheidungsgrundlage vom
+> 2026-09-16 und bleibt als solche stehen.
 
 ## Worum es geht
 
@@ -45,7 +55,9 @@ Stellen fest, jeweils mit Begruendung:
 
 Ausgeloest wird der Fall vom Profil **`spatialite`**, nicht von `none`: eine
 Geometriespalte, die `NOT NULL` traegt (oder PK/UNIQUE/Default/Referenz), fuehrt
-Metadaten, die SpatiaLite nicht halten kann (`SqliteTableDdlSupport.kt:315-333`).
+Metadaten, die SpatiaLite nicht halten kann (`SqliteTableDdlSupport`,
+`checkSpatialMetadataBlocks` mit `hasSpatialMetadataConflict`; dieselbe Regel
+im Migrate-Pfad in `SqliteSpatialDiffOps`).
 Die Profilabschnitte 16.5 (`spec/ddl-generation-rules.md:2479`, `spatialite`) und
 16.6 (`:2507`, `none`) sagen zu diesem Fall nichts.
 
@@ -64,15 +76,20 @@ ist — Tabellenblockade als Antwort auf eine Spalteneinschraenkung.
 ## Beruehrt
 
 - [`ADR 0016`](../../adr/0016-spatialite-metadata-bootstrap.md) traegt
-  `status: accepted` und ist im Kern eingefroren (`make doc-immutable`). Die dort
-  als bewusste Scope-Grenze aufgeschobene **Generate**-Frage laesst sich deshalb
-  nicht im Vorbeigehen nachziehen, sondern nur ueber einen neuen ADR oder eine
-  Statusaenderung.
+  `status: accepted` und ist im Kern eingefroren (`make doc-immutable`). Er
+  regelt Ort und Form des SpatiaLite-Bootstrap; im Generate-Pfad hat er nur
+  den **Bootstrap** als bewusste Scope-Grenze aufgeschoben. Die Auslöser von
+  `E052` berührt er nicht — P7 braucht deshalb weder einen neuen ADR noch eine
+  Statusänderung. (Die frühere Fassung dieses Punkts verlangte beides; das
+  widersprach dem Kopf und beruhte auf der korrigierten Begründung.) Wer den
+  Bootstrap in den Generate-Pfad holt, bewegt sich dagegen in ADR 0016.
 - Die drei Spec-Stellen oben, sobald eine Aenderung beschlossen ist.
 
 ## Referenzen
 
-- Befund und Belege (Konsumentenmessung, im Slice als Posten A6 gefuehrt):
-  [`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md).
+- Befund, Belege und Paket (Posten A6, Paket P7):
+  [`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md);
+  Umbrella [`../next/reader-treue.md`](../next/reader-treue.md).
 - [`ADR 0016`](../../adr/0016-spatialite-metadata-bootstrap.md) — SpatiaLite-Metadaten-Bootstrap
-  im Migrate-Diff-Pfad; der Generate-Pfad ist dort ausdruecklich aufgeschoben.
+  im Migrate-Diff-Pfad; im Generate-Pfad ist dort nur der Bootstrap
+  aufgeschoben.

@@ -24,6 +24,15 @@ für Cross-Dialect oft korrekt (es gibt dort kein Pendant), aber für den
 ADR 0015 für `tsvector` geschlossen hat. `uuid`/`json`/`jsonb`/`xml` sind bereits gemappt
 und **nicht** betroffen.
 
+**Zwei Stellen weichen heute ab** (im Code geprüft beim Schnitt des
+Reader-Slices, 2026-09-17): ein Array-Element unbekannten Typs (`inet[]`,
+`interval[]`) und ein unbekannter Feldtyp eines zusammengesetzten Typs kommen
+als `text` **ohne** `R301` an (`mapArrayElementType`,
+`mapCompositeFieldType`). Die Meldung zieht Paket P9 in
+[`../next/reader-treue-2-meldungen.md`](../next/reader-treue-2-meldungen.md)
+nach; für die Kandidaten hier ändert das nichts, außer dass auch diese Wege
+danach laut sind.
+
 ## Kandidaten (nicht abschließend)
 
 | Typ(en) | Kategorie | Heute | Notiz |
