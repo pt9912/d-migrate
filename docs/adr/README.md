@@ -110,3 +110,4 @@ argumentiert werden.
 | 0054 | [Routinen-Rümpfe werden nicht übersetzt — die Herkunft entscheidet, nicht der Inhalt](0054-routinen-ruempfe-werden-nicht-uebersetzt.md) | accepted |
 | 0055 | [Der Wertevorrat eines Enums zählt auch im zielbewussten Vergleich, nicht nur im Fingerprint](0055-enum-wertevorrat-im-zielbewussten-vergleich.md) | accepted |
 | 0056 | [Dialekt-Schreibweise roher SQL-Texte — `schema compare` setzt sie gleich, `schema migrate` und der Fingerabdruck nicht](0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md) | accepted |
+| 0057 | [Eine Semantik für `schema compare` in CLI, `schema_compare` und `schema_compare_start` — die Herkunft einer Seite ist kein Unterschied](0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md) | accepted |
