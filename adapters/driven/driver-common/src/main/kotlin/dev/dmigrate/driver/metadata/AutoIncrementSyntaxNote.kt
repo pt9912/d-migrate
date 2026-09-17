@@ -41,7 +41,10 @@ object AutoIncrementSyntaxNote {
  * Flag und ein Konfigurationsschluessel. Eine bestaetigende Note nennt die
  * Stelle, an der die Praeferenz **tatsaechlich** erklaert wurde
  * ([PreferenceSource]) — wer das Flag gesetzt hat, sucht den Wert nicht in
- * seiner Konfigurationsdatei.
+ * seiner Konfigurationsdatei. Ein Hinweis, der zu einem anderen Wert raet
+ * ([advise]), nennt dieselbe Stelle: ohne gesetztes Flag den
+ * Konfigurationsschluessel, den jede Oberflaeche liest — auch der
+ * MCP-Server, der kein Flag kennt.
  */
 class DeclaredPreference(
     private val flag: String,
@@ -52,5 +55,11 @@ class DeclaredPreference(
     fun render(value: String): String = when (source) {
         PreferenceSource.FLAG -> "$flag $value"
         PreferenceSource.CONFIG -> "$configKey: $value"
+    }
+
+    /** Der Rat, [value] zu erklaeren — an der Stelle, die [render] nennt. */
+    fun advise(value: String): String = when (source) {
+        PreferenceSource.FLAG -> "pass ${render(value)}"
+        PreferenceSource.CONFIG -> "declare ${render(value)} in the configuration"
     }
 }

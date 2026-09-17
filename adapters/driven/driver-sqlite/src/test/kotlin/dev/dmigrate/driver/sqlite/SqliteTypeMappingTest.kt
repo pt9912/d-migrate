@@ -3,12 +3,14 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.AutoIncrementSyntaxReverse
+import dev.dmigrate.driver.PreferenceSource
 import dev.dmigrate.driver.SqliteAutoincrementReverse
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 
 class SqliteTypeMappingTest : FunSpec({
 
@@ -118,11 +120,24 @@ class SqliteTypeMappingTest : FunSpec({
         r.note?.code shouldBe "R202"
     }
 
-    test("R202 hint names the width flag/config-key (discoverability F1)") {
+    test("R202 hint names the config key without a flag (discoverability F1, every surface reads it)") {
+        // Ohne gesetztes Flag — auch ueber MCP, das kein Flag kennt — raet
+        // der Hinweis zum Konfigurationsschluessel, nicht zu einem CLI-Flag.
         val hint = map("INTEGER", isAI = true).note?.hint
         hint.shouldNotBeNull()
-        hint shouldContain "--sqlite-autoincrement-width 64"
-        hint shouldContain "reverse.sqlite.autoincrement_width"
+        hint shouldContain "declare reverse.sqlite.autoincrement_width: 64 in the configuration"
+        hint shouldNotContain "--sqlite-autoincrement-width"
+    }
+
+    test("R202 hint names the flag when the width was declared by the flag (like R204/R205)") {
+        val hint = SqliteTypeMapping.mapColumn(
+            "INTEGER", isAutoIncrement = true, "t", "c",
+            SqliteAutoincrementReverse.IDENTIFIER,
+            sources = SqliteTypeMapping.Sources(width = PreferenceSource.FLAG),
+        ).note?.hint
+        hint.shouldNotBeNull()
+        hint shouldContain "pass --sqlite-autoincrement-width 64"
+        hint shouldNotContain "reverse.sqlite.autoincrement_width"
     }
 
     // ── Geometry ────────────────────────────────

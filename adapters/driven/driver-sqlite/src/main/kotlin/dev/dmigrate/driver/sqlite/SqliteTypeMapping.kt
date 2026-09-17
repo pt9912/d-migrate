@@ -57,7 +57,7 @@ internal object SqliteTypeMapping {
             return when (autoincrementReverse) {
                 SqliteAutoincrementReverse.BIGINTEGER_IDENTITY ->
                     bigintegerIdentity(objectName, autoIncrementSyntax, sources)
-                SqliteAutoincrementReverse.IDENTIFIER -> identifier(objectName)
+                SqliteAutoincrementReverse.IDENTIFIER -> identifier(objectName, widthDeclaration(sources.width))
             }
         }
 
@@ -87,7 +87,7 @@ internal object SqliteTypeMapping {
         syntax: AutoIncrementSyntaxReverse,
         sources: Sources,
     ): MappingResult {
-        val width = DeclaredPreference("--sqlite-autoincrement-width", "reverse.sqlite.autoincrement_width", sources.width)
+        val width = widthDeclaration(sources.width)
         return MappingResult(
             type = NeutralType.BigInteger,
             note = SchemaReadNote(
@@ -121,7 +121,14 @@ internal object SqliteTypeMapping {
         )
     }
 
-    private fun identifier(objectName: String) = MappingResult(
+    private fun widthDeclaration(source: PreferenceSource) =
+        DeclaredPreference("--sqlite-autoincrement-width", "reverse.sqlite.autoincrement_width", source)
+
+    // R202 raet zur Breite 64 an der Stelle, an der die Breite erklaert wird
+    // (wie R204/R205): ein gesetztes Flag nennt das Flag, sonst den
+    // Konfigurationsschluessel — den liest auch der MCP-Server, der kein Flag
+    // kennt.
+    private fun identifier(objectName: String, width: DeclaredPreference) = MappingResult(
         type = NeutralType.Identifier(autoIncrement = true),
         note = SchemaReadNote(
             severity = SchemaReadSeverity.INFO, code = "R202",
@@ -130,8 +137,7 @@ internal object SqliteTypeMapping {
                 "32-bit auto-increment contract (PostgreSQL SERIAL, MySQL INT AUTO_INCREMENT) — " +
                 "a cross-dialect transfer narrows the value range",
             hint = "Model the column as biginteger plus generation: identity when the 64-bit " +
-                "range is required — pass --sqlite-autoincrement-width 64 (or config " +
-                "reverse.sqlite.autoincrement_width: 64) so the reverse reconstructs it",
+                "range is required — ${width.advise("64")} so the reverse reconstructs it",
         ),
     )
 

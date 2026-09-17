@@ -35,4 +35,10 @@ class AutoIncrementSyntaxNoteTest : FunSpec({
         mysql(PreferenceSource.FLAG).render("serial") shouldBe "--mysql-autoincrement-syntax serial"
         mysql(PreferenceSource.CONFIG).render("serial") shouldBe "reverse.mysql.autoincrement_syntax: serial"
     }
+
+    test("advice names the same place: the flag once it was set, otherwise the config key") {
+        mysql(PreferenceSource.FLAG).advise("identity") shouldBe "pass --mysql-autoincrement-syntax identity"
+        mysql(PreferenceSource.CONFIG).advise("identity") shouldBe
+            "declare reverse.mysql.autoincrement_syntax: identity in the configuration"
+    }
 })
