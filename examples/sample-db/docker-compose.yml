@@ -68,7 +68,9 @@ services:
     ports:
       - "127.0.0.1:${SAMPLE_DB_POSTGIS_PORT}:5432"
     volumes:
-      - sample-db-postgis-data:/var/lib/postgresql/data
+      # Dasselbe wie beim postgres-Service: das 18er-Image bricht mit einem
+      # Mount auf /var/lib/postgresql/data ab.
+      - sample-db-postgis-data:/var/lib/postgresql
       - ./sql-postgis:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
