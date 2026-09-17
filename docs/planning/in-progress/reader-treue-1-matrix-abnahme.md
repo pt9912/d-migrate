@@ -914,6 +914,48 @@ Zwei aufeinanderfolgende Läufe auf dem Endstand sind identisch (Zellen, Codes
 und die Liste der bekannten Befunde).
 
 
+### S4 — SQLite-Migrate behält die Aktionen eines Fremdschlüssels (2026-09-17)
+
+**Zuerst gemessen** (SQLite 3.45, `schema migrate --execute`, Post-Compare
+eingeschlossen):
+
+| Fall | `PRAGMA foreign_key_list` danach | Ausgang |
+| --- | --- | --- |
+| (a) neue Tabelle mit `ON DELETE CASCADE ON UPDATE RESTRICT` | `NO ACTION` / `NO ACTION` | Exit **5**, „Post-execute compare detected drift" |
+| (b) Nullbarkeits-Änderung an einer bestehenden Tabelle mit denselben Aktionen (Rebuild) | vorher `RESTRICT`/`CASCADE`, danach `NO ACTION`/`NO ACTION` | Exit **5**, dieselbe Meldung |
+
+Der Posten ist also **laut** — aber ein Defekt: der Post-Compare meldet die
+Drift erst, nachdem das Löschverhalten der Datenbank schon ein anderes ist.
+Der Generate-Pfad war nie betroffen.
+
+**Gebaut:** `SqliteDiffSqlBuilders.constraintLine` schreibt `ON DELETE` und
+`ON UPDATE` über dieselbe `referentialActionSql` wie der Generate-Pfad. Beide
+Emitter, die eine `CREATE TABLE` schreiben, gehen darüber
+(`SqliteDiffSimpleOps`, `SqliteRebuildRenderer`).
+
+**Doku:** `spec/ddl-generation-rules.md` sagt zu Fremdschlüsseln im
+Migrate-Pfad nichts, was nachzuziehen wäre (3.5 nennt nur „Foreign Keys inline
+oder als `CONSTRAINT`", 3.7 den Rebuild als Mechanik) — die Aktionen sind Teil
+des Modells, ihr Erhalt ist keine neue Regel. Die Spec bleibt, wie sie ist;
+CHANGELOG „Fixed".
+
+**Sabotage S-S4** (Aktionen wieder weggelassen): `SqliteForeignKeyActionsDiffTest`
+rot (2 von 757 Tests in `driver-sqlite`) **und** beide Integrationsfälle rot,
+mit dem Drift-Exit 5 im Bericht. Rücknahme per Prüfsumme belegt, danach grün
+(`make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`).
+
+**`make sample-db-types-smoke` war rot — aus einem anderen Grund.** Sein
+Rollback-Schritt T5 verlangte wörtlich `schema-fingerprint-v7`, während der
+Algorithmus längst bei `v16` steht (`MigrationFingerprint.ALGORITHM`;
+festgeschrieben am 2026-07-03, angehoben zuletzt am 2026-09-10). Die Zusicherung
+prüft jetzt, **dass** das Artefakt einen `schema-fingerprint-v<N>` nennt, nicht
+welche Nummer — sonst rostet sie bei jeder Anhebung wieder fest. Danach ist der
+Smoke grün (eigener Commit).
+
+**Matrix:** unverändert, wie der Plan es erwartet — die Matrix generiert, sie
+migriert nicht.
+
+
 ## Akzeptanzkriterien
 
 1. Ein MySQL-Reverse mit Introducer, Backslash-Escape und Backtick-Quoting

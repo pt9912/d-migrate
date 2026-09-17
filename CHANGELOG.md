@@ -157,6 +157,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`schema migrate` gegen SQLite behaelt die Aktionen eines
+  Fremdschluessels.** Ein Fremdschluessel der Tabellenebene (`constraints`)
+  wurde ohne `ON DELETE`/`ON UPDATE` gerendert: eine neu angelegte Tabelle
+  bekam sie nie, und ein Tabellen-Neubau — den SQLite fuer fast jede
+  Spaltenaenderung braucht — nahm sie einer bestehenden Tabelle weg (gemessen
+  an SQLite 3.45: `PRAGMA foreign_key_list` zeigte danach `NO ACTION`, wo
+  vorher `CASCADE` stand). Der Post-Compare meldete das als Drift (Exit 5), das
+  Loeschverhalten der Datenbank war aber bereits ein anderes. Der Generate-Pfad
+  war nicht betroffen.
+
+
 - **Ein MySQL-Reverse ist wieder gueltig: CHECK und Berechnungsausdruck kommen
   in neutraler Schreibweise.** MySQL gibt sie aus seinem Parsebaum zurueck, mit
   dem Zeichensatz-Introducer der anlegenden Sitzung (`_utf8mb4'%@%'`),

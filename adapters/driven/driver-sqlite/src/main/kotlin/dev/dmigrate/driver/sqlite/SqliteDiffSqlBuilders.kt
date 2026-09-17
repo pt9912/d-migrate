@@ -112,7 +112,16 @@ internal class SqliteDiffSqlBuilders {
             val cols = c.columns?.joinToString(", ") { quote(it) } ?: return null
             val ref = c.references ?: return null
             val refCols = ref.columns.joinToString(", ") { quote(it) }
-            "CONSTRAINT ${quote(c.name)} FOREIGN KEY ($cols) REFERENCES ${quote(ref.table)}($refCols)"
+            // Die Aktionen gehoeren zur Zusage des Fremdschluessels, nicht zu
+            // seiner Schreibweise: ohne sie legte `schema migrate` die Tabelle
+            // ohne `ON DELETE`/`ON UPDATE` an, und ein Rebuild naehme sie einer
+            // bestehenden weg (gemessen an SQLite 3.45: `RESTRICT|CASCADE` ->
+            // `NO ACTION|NO ACTION`, Post-Compare Exit 5). Dieselbe Quelle wie
+            // im Generate-Pfad ([referentialActionSql]).
+            val onDelete = ref.onDelete?.let { " ON DELETE ${referentialActionSql(it)}" } ?: ""
+            val onUpdate = ref.onUpdate?.let { " ON UPDATE ${referentialActionSql(it)}" } ?: ""
+            "CONSTRAINT ${quote(c.name)} FOREIGN KEY ($cols) " +
+                "REFERENCES ${quote(ref.table)}($refCols)$onDelete$onUpdate"
         }
         // F.5 Sub-Slice D (2026-05-19): SQLite has no in-place
         // `ALTER TABLE ADD CONSTRAINT`, but a CHECK clause embedded in
