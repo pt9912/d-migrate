@@ -2,12 +2,14 @@ package dev.dmigrate.mcp.registry
 
 import dev.dmigrate.cli.commands.CompareSide
 import dev.dmigrate.cli.commands.SchemaCompareSemantics
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.ReversePreferences
 import dev.dmigrate.driver.SchemaReadOptions
+import dev.dmigrate.driver.SchemaReadResult
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
@@ -22,6 +24,7 @@ import dev.dmigrate.server.application.fingerprint.JsonValue
 import dev.dmigrate.server.application.job.DataProfileJobWorker
 import dev.dmigrate.server.application.job.JobStartRequest
 import dev.dmigrate.server.application.job.JobWorkerFactory
+import dev.dmigrate.server.application.job.LoadedCompareSide
 import dev.dmigrate.server.application.job.SchemaCompareJobWorker
 import dev.dmigrate.server.application.job.SchemaReverseJobWorker
 import dev.dmigrate.server.core.job.JobRecord
@@ -85,15 +88,21 @@ class McpCoreJobWorkerFactory(
         SchemaReverseJobWorker(
             connectionRef = request.requiredString("connectionId"),
             materializer = materializer(request),
-            readSchema = { config, token ->
-                HikariConnectionPoolFactory.create(config).use { pool ->
-                    token.throwIfCancellationRequested()
-                    DatabaseDriverRegistry.get(config.dialect).schemaReader()
-                        .read(pool, readOptions(config.dialect)).schema
-                }
-            },
+            readSchema = ::readConnection,
             publisher = artifacts.schemas(),
+            reportPublisher = artifacts.readReports(),
         )
+
+    /**
+     * Liest eine Verbindung mit den Praeferenzen des Servers — das ganze
+     * Ergebnis: die Notes und uebersprungenen Objekte gehen in den
+     * Reverse-Report des Jobs, nicht verloren.
+     */
+    private fun readConnection(config: ConnectionConfig, token: CancellationToken): SchemaReadResult =
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            token.throwIfCancellationRequested()
+            DatabaseDriverRegistry.get(config.dialect).schemaReader().read(pool, readOptions(config.dialect))
+        }
 
     private fun profileWorker(request: JobStartRequest) =
         DataProfileJobWorker(
@@ -123,15 +132,10 @@ class McpCoreJobWorkerFactory(
                 token.throwIfCancellationRequested()
                 when (val uri = parseResourceUri(ref)) {
                     is ResourceUriParseResult.Valid -> when (uri.uri.kind) {
-                        ResourceKind.SCHEMAS -> loadSchemaRef(ref, request.principal(), token)
-                        ResourceKind.CONNECTIONS -> {
-                            val config = materializer(request).materialize(ref, tenant)
-                            HikariConnectionPoolFactory.create(config).use { pool ->
-                                token.throwIfCancellationRequested()
-                                DatabaseDriverRegistry.get(config.dialect).schemaReader()
-                                    .read(pool, readOptions(config.dialect)).schema
-                            }
-                        }
+                        ResourceKind.SCHEMAS -> LoadedCompareSide(loadSchemaRef(ref, request.principal(), token))
+                        ResourceKind.CONNECTIONS -> LoadedCompareSide.read(
+                            readConnection(materializer(request).materialize(ref, tenant), token),
+                        )
                         else -> error("schema_compare_start does not support ${uri.uri.kind.pathSegment} refs")
                     }
                     is ResourceUriParseResult.Invalid -> error("invalid schema_compare_start ref: ${uri.reason}")
@@ -144,6 +148,7 @@ class McpCoreJobWorkerFactory(
                 sourceRef = request.requiredString("sourceUri"),
                 targetRef = request.requiredString("targetUri"),
             ),
+            reportPublisher = artifacts.readReports(),
         )
 
     private fun readOptions(dialect: DatabaseDialect): SchemaReadOptions =
@@ -180,7 +185,7 @@ class McpCoreJobWorkerFactory(
         ref: String,
         @Suppress("UNUSED_PARAMETER")
         principal: PrincipalContext,
-        token: dev.dmigrate.core.cancel.CancellationToken,
+        token: CancellationToken,
     ): SchemaDefinition {
         val parsed = parseResourceUri(ref) as? ResourceUriParseResult.Valid
             ?: error("invalid schemaRef: $ref")

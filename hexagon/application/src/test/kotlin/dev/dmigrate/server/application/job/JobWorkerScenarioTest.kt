@@ -150,17 +150,23 @@ class JobWorkerScenarioTest : FunSpec({
         val worker = SchemaReverseJobWorker(
             connectionRef = "dmigrate://tenants/acme/connections/c1",
             materializer = stubMaterializer(),
-            readSchema = { _, _ -> SchemaDefinition(name = "reversed", version = "1") },
+            readSchema = { _, _ ->
+                dev.dmigrate.driver.SchemaReadResult(SchemaDefinition(name = "reversed", version = "1"))
+            },
             publisher = stubPublisher(),
+            reportPublisher = stubPublisher("dmigrate://tenants/acme/artifacts/report-"),
         )
 
         val outcome = fx.dispatcher.dispatch(started.record, worker, started.cancellationSource.token).get()
         outcome.shouldBeInstanceOf<JobWorkerOutcome.Succeeded>()
-        outcome.artifactRefs shouldHaveSize 1
+        outcome.artifactRefs shouldHaveSize 2
 
         val final = fx.jobStore.findById(tenant, started.jobId)!!
         final.managedJob.status shouldBe JobStatus.SUCCEEDED
-        final.managedJob.artifacts shouldBe listOf("dmigrate://tenants/acme/artifacts/${started.jobId}")
+        final.managedJob.artifacts shouldBe listOf(
+            "dmigrate://tenants/acme/artifacts/${started.jobId}",
+            "dmigrate://tenants/acme/artifacts/report-${started.jobId}",
+        )
     }
 
     test("End-to-End mit JOB_CANCEL: Worker propagiert Cancel mit Default-Source → CANCELLED") {
@@ -242,7 +248,7 @@ class JobWorkerScenarioTest : FunSpec({
             schemaLoader = { _, _, _ ->
                 loadCount++
                 if (loadCount == 1) cancelSource.cancel("mid-materialisierung")
-                SchemaDefinition(name = "x", version = "1")
+                LoadedCompareSide(SchemaDefinition(name = "x", version = "1"))
             },
             comparator = { _, _ ->
                 error("must not reach compare after cancel")
@@ -251,6 +257,7 @@ class JobWorkerScenarioTest : FunSpec({
                 publishCalled = true
                 "dmigrate://x"
             },
+            reportPublisher = stubPublisher(),
         )
 
         val outcome = fx.dispatcher.dispatch(started.record, worker, cancelSource.token).get()

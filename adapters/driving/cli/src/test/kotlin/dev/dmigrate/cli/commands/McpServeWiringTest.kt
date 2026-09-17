@@ -192,7 +192,8 @@ class McpServeWiringTest : FunSpec({
                 val worker = wiring.mcpCoreJobWorkerFactory(phaseC, resolver, wiring.resolveReversePreferencesOrExit())
                     .create(record, request)!!
                 val outcome = worker.execute(record, CancellationTokenSource.create().token)
-                val artifactId = (outcome as JobWorkerOutcome.Succeeded).artifactRefs.single().substringAfterLast('/')
+                // Erst das Schema, dann der Reverse-Report.
+                val artifactId = (outcome as JobWorkerOutcome.Succeeded).artifactRefs.first().substringAfterLast('/')
                 val size = artifactStore.findById(record.tenantId, artifactId)!!.managedArtifact.sizeBytes
                 return contentStore.openRangeRead(artifactId, 0, size).readAllBytes().toString(Charsets.UTF_8)
             }

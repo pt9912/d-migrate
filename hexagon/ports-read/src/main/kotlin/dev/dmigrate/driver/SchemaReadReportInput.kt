@@ -18,10 +18,13 @@ data class SchemaReadReportInput(
  * - [ReverseSourceKind.ALIAS]: a named connection alias — rendered as-is
  * - [ReverseSourceKind.URL]: a connection URL — must be scrubbed before
  *   rendering to prevent credential leaks
+ * - [ReverseSourceKind.CONNECTION]: a server connection reference
+ *   (`dmigrate://tenants/<t>/connections/<id>`) — secret-free by
+ *   construction, rendered as-is
  */
 data class ReverseSourceRef(
     val kind: ReverseSourceKind,
     val value: String,
 )
 
-enum class ReverseSourceKind { ALIAS, URL }
+enum class ReverseSourceKind { ALIAS, URL, CONNECTION }

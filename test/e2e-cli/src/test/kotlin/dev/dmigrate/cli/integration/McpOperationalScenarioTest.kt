@@ -134,17 +134,40 @@ class McpOperationalScenarioTest : FunSpec({
                     statusJson.get("status").asString shouldBe "SUCCEEDED"
                     statusJson.get("terminal").asBoolean shouldBe true
                 }
-                withClue("job_status_get must surface the reverse schema artefact ref; body=$statusText") {
-                    // Reverse worker publishes one artefact carrying
-                    // the serialised schema; the job projection
-                    // backfills it onto a canonical `artifacts/<id>`
-                    // URI. The corresponding `schemas/<id>` entry is
-                    // accessible via resources/read against the
-                    // schema URI but isn't reflected in the job
-                    // record's `artifacts` array.
+                withClue("job_status_get must surface the schema and the reverse report; body=$statusText") {
+                    // Reverse worker publishes the serialised schema first
+                    // and the reverse report second (spec/mcp-server.md);
+                    // the job projection backfills both onto canonical
+                    // `artifacts/<id>` URIs. The corresponding
+                    // `schemas/<id>` entry is accessible via
+                    // resources/read against the schema URI but isn't
+                    // reflected in the job record's `artifacts` array.
                     val artifacts = statusJson.getAsJsonArray("artifacts")
-                    artifacts.size() shouldBe 1
+                    artifacts.size() shouldBe 2
                     artifacts.get(0).asString shouldContain "/artifacts/"
+                    artifacts.get(1).asString shouldContain "/artifacts/"
+                }
+                // Der Reverse-Report: die Notes des Readers, ueber den Client
+                // lesbar — sonst blieben sie ueber MCP stumm.
+                val reportUri = statusJson.getAsJsonArray("artifacts").get(1).asString
+                val reportMeta = readJsonContent(harness, reportUri)
+                withClue("the reverse report is a YAML artefact of kind OTHER; body=$reportMeta") {
+                    reportMeta.get("kind").asString shouldBe "OTHER"
+                    reportMeta.get("contentType").asString shouldBe "application/x-yaml"
+                }
+                val reportText = JsonParser.parseString(
+                    harness.toolsCall(
+                        "artifact_chunk_get",
+                        JsonObject().apply {
+                            addProperty("artifactId", reportUri.substringAfterLast('/'))
+                            addProperty("chunkId", "0")
+                        },
+                    ).content.firstOrNull()?.text ?: error("artifact_chunk_get had no text content"),
+                ).asJsonObject.get("text").asString
+                withClue("the reverse report names the connection and carries the summary; body=$reportText") {
+                    reportText shouldContain "kind: connection"
+                    reportText shouldContain "value: \"${resourceUri.render()}\""
+                    reportText shouldContain "summary:"
                 }
                 // Plan-Doc §5.3 requires that the operational scenario
                 // reads schema content through the MCP client surface

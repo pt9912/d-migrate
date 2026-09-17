@@ -2,8 +2,10 @@ package dev.dmigrate.mcp.registry
 
 import com.google.gson.GsonBuilder
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.SchemaReadReportInput
 import dev.dmigrate.format.SchemaFileResolver
 import dev.dmigrate.format.report.ProfileReportWriter
+import dev.dmigrate.format.report.ReverseReportWriter
 import dev.dmigrate.profiling.model.DatabaseProfile
 import dev.dmigrate.server.application.job.JobArtifactPublisher
 import dev.dmigrate.server.core.artifact.ArtifactKind
@@ -38,7 +40,8 @@ import java.util.UUID
  *
  * Jedes Artefakt wird geschrieben, im [ArtifactStore] registriert und in
  * seinem Index eingetragen: Schema → `schemas`, Profil → `profiles`,
- * Vergleich (Art [ArtifactKind.COMPARE]) → `diffs`.
+ * Vergleich (Art [ArtifactKind.COMPARE]) → `diffs`. Der Reverse-Report einer
+ * gelesenen Verbindung ([readReports]) hat keinen Index.
  */
 internal class McpJobArtifacts(
     private val artifactStore: ArtifactStore,
@@ -51,6 +54,7 @@ internal class McpJobArtifacts(
 ) {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
+    private val reportWriter = ReverseReportWriter()
 
     /** `schema_reverse_start`: das Schema als YAML, Index `schemas`. */
     fun schemas(): JobArtifactPublisher<SchemaDefinition> = JobArtifactPublisher { job, schema ->
@@ -122,6 +126,18 @@ internal class McpJobArtifacts(
                 )
             }
         }
+
+    /**
+     * Der Reverse-Report einer aus einer Verbindung gelesenen Seite
+     * (`schema_reverse_start`, `schema_compare_start` mit Verbindungen): die
+     * Notes und uebersprungenen Objekte des Readers in derselben Form wie der
+     * Reverse-Report von `schema reverse` (`spec/mcp-server.md`), Art
+     * [ArtifactKind.OTHER], ohne Index.
+     */
+    fun readReports(): JobArtifactPublisher<SchemaReadReportInput> = JobArtifactPublisher { job, report ->
+        val bytes = reportWriter.render(report).toByteArray(Charsets.UTF_8)
+        publish(job, Rendered(ArtifactKind.OTHER, "reverse-report-${safeId()}.yaml", "application/x-yaml", bytes)) { }
+    }
 
     /** Schreibt die Bytes, registriert das Artefakt und traegt es in seinen Index ein. */
     private fun publish(job: JobRecord, rendered: Rendered, index: (Stored) -> Unit): String {

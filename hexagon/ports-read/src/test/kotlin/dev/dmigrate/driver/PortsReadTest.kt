@@ -292,8 +292,8 @@ class PortsReadTest : FunSpec({
 
     // ── ReverseSourceKind enum ────────────────────────────────────────
 
-    test("ReverseSourceKind has two values") {
-        ReverseSourceKind.entries.map { it.name } shouldBe listOf("ALIAS", "URL")
+    test("ReverseSourceKind has three values") {
+        ReverseSourceKind.entries.map { it.name } shouldBe listOf("ALIAS", "URL", "CONNECTION")
     }
 
     test("ReverseSourceKind valueOf round-trips") {

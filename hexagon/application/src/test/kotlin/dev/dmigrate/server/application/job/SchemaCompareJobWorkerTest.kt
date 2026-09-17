@@ -7,6 +7,12 @@ import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.ReverseSourceKind
+import dev.dmigrate.driver.ReverseSourceRef
+import dev.dmigrate.driver.SchemaReadNote
+import dev.dmigrate.driver.SchemaReadReportInput
+import dev.dmigrate.driver.SchemaReadResult
+import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.JobWorkerOutcome
 import dev.dmigrate.server.ports.contract.Fixtures
@@ -26,6 +32,9 @@ class SchemaCompareJobWorkerTest : FunSpec({
     fun publisher(prefix: String = "dmigrate://tenants/acme/artifacts/") =
         JobArtifactPublisher<Any> { job, _ -> prefix + job.managedJob.jobId }
 
+    // Zwei gespeicherte Schemata haben keinen Reverse-Report.
+    val unusedReports = JobArtifactPublisher<SchemaReadReportInput> { _, _ -> error("no read report expected") }
+
     test("Happy path: load source + load target → compare → publish → Succeeded") {
         val refsSeen = mutableListOf<String>()
         val worker = SchemaCompareJobWorker(
@@ -33,10 +42,11 @@ class SchemaCompareJobWorkerTest : FunSpec({
             targetRef = targetRef,
             schemaLoader = { ref, _, _ ->
                 refsSeen += ref
-                emptySchema
+                LoadedCompareSide(emptySchema)
             },
             comparator = { _, _ -> identicalDiff },
             publisher = publisher(),
+            reportPublisher = unusedReports,
         )
         val outcome = worker.execute(Fixtures.jobRecord("j-1"), CancellationToken.none())
         outcome.shouldBeInstanceOf<JobWorkerOutcome.Succeeded>()
@@ -55,10 +65,11 @@ class SchemaCompareJobWorkerTest : FunSpec({
             targetRef = targetRef,
             schemaLoader = { _, _, _ ->
                 loaderCalled = true
-                emptySchema
+                LoadedCompareSide(emptySchema)
             },
             comparator = { _, _ -> identicalDiff },
             publisher = publisher(),
+            reportPublisher = unusedReports,
         )
         val ex = shouldThrow<OperationCancelledException> {
             worker.execute(Fixtures.jobRecord("j-2"), source.token)
@@ -77,10 +88,11 @@ class SchemaCompareJobWorkerTest : FunSpec({
             schemaLoader = { _, _, _ ->
                 loadCount++
                 if (loadCount == 1) source.cancel("after-source")
-                emptySchema
+                LoadedCompareSide(emptySchema)
             },
             comparator = { _, _ -> identicalDiff },
             publisher = publisher(),
+            reportPublisher = unusedReports,
         )
         shouldThrow<OperationCancelledException> {
             worker.execute(Fixtures.jobRecord("j-3"), source.token)
@@ -98,13 +110,14 @@ class SchemaCompareJobWorkerTest : FunSpec({
             schemaLoader = { _, _, _ ->
                 loadCount++
                 if (loadCount == 2) source.cancel("after-target")
-                emptySchema
+                LoadedCompareSide(emptySchema)
             },
             comparator = { _, _ ->
                 compareCalled = true
                 identicalDiff
             },
             publisher = publisher(),
+            reportPublisher = unusedReports,
         )
         shouldThrow<OperationCancelledException> {
             worker.execute(Fixtures.jobRecord("j-4"), source.token)
@@ -119,7 +132,7 @@ class SchemaCompareJobWorkerTest : FunSpec({
         val worker = SchemaCompareJobWorker(
             sourceRef = sourceRef,
             targetRef = targetRef,
-            schemaLoader = { _, _, _ -> emptySchema },
+            schemaLoader = { _, _, _ -> LoadedCompareSide(emptySchema) },
             comparator = { _, _ ->
                 source.cancel("after-compare")
                 identicalDiff
@@ -128,6 +141,7 @@ class SchemaCompareJobWorkerTest : FunSpec({
                 publishCalled = true
                 "dmigrate://x"
             },
+            reportPublisher = unusedReports,
         )
         shouldThrow<OperationCancelledException> {
             worker.execute(Fixtures.jobRecord("j-5"), source.token)
@@ -147,6 +161,7 @@ class SchemaCompareJobWorkerTest : FunSpec({
             },
             comparator = { _, _ -> identicalDiff },
             publisher = publisher(),
+            reportPublisher = unusedReports,
         )
         val ex = shouldThrow<OperationCancelledException> {
             worker.execute(Fixtures.jobRecord("j-6"), CancellationToken.none())
@@ -164,10 +179,11 @@ class SchemaCompareJobWorkerTest : FunSpec({
             schemaLoader = { _, t, tok ->
                 seenTenant = t
                 seenToken = tok
-                emptySchema
+                LoadedCompareSide(emptySchema)
             },
             comparator = { _, _ -> identicalDiff },
             publisher = publisher(),
+            reportPublisher = unusedReports,
         )
         worker.execute(
             Fixtures.jobRecord("j-7").copy(tenantId = Fixtures.tenant("beta")),
@@ -186,6 +202,7 @@ class SchemaCompareJobWorkerTest : FunSpec({
                 schemaLoader = { _, _, _ -> error("loader-down") },
                 comparator = { _, _ -> identicalDiff },
                 publisher = publisher(),
+                reportPublisher = unusedReports,
             ).execute(Fixtures.jobRecord("j-8"), CancellationToken.none())
         }
 
@@ -194,9 +211,10 @@ class SchemaCompareJobWorkerTest : FunSpec({
             SchemaCompareJobWorker(
                 sourceRef = sourceRef,
                 targetRef = targetRef,
-                schemaLoader = { _, _, _ -> emptySchema },
+                schemaLoader = { _, _, _ -> LoadedCompareSide(emptySchema) },
                 comparator = { _, _ -> error("comparator-bug") },
                 publisher = publisher(),
+                reportPublisher = unusedReports,
             ).execute(Fixtures.jobRecord("j-9"), CancellationToken.none())
         }
 
@@ -205,9 +223,10 @@ class SchemaCompareJobWorkerTest : FunSpec({
             SchemaCompareJobWorker(
                 sourceRef = sourceRef,
                 targetRef = targetRef,
-                schemaLoader = { _, _, _ -> emptySchema },
+                schemaLoader = { _, _, _ -> LoadedCompareSide(emptySchema) },
                 comparator = { _, _ -> identicalDiff },
                 publisher = JobArtifactPublisher<Any> { _, _ -> error("artifact-store-down") },
+                reportPublisher = unusedReports,
             ).execute(Fixtures.jobRecord("j-10"), CancellationToken.none())
         }
     }
@@ -219,15 +238,64 @@ class SchemaCompareJobWorkerTest : FunSpec({
         val worker = SchemaCompareJobWorker(
             sourceRef = sourceRef,
             targetRef = targetRef,
-            schemaLoader = { ref, _, _ -> if (ref == sourceRef) schemaA else schemaB },
+            schemaLoader = { ref, _, _ -> LoadedCompareSide(if (ref == sourceRef) schemaA else schemaB) },
             comparator = SchemaComparator()::compare,
             publisher = JobArtifactPublisher<Any> { job, payload ->
                 publisherPayload = payload
                 "dmigrate://tenants/acme/artifacts/${job.managedJob.jobId}"
             },
+            reportPublisher = unusedReports,
         )
         worker.execute(Fixtures.jobRecord("j-11"), CancellationToken.none())
         // Publisher bekommt EINEN SchemaDiff, nicht null oder String.
         publisherPayload.shouldBeInstanceOf<SchemaDiff>()
+    }
+
+    test("a side read from a connection publishes its read report after the result, source before target") {
+        // Ueber MCP gibt es sonst keinen Ort fuer die Notes des Readers —
+        // auch nicht fuer die Bestaetigung einer deklarierten Praeferenz.
+        val note = SchemaReadNote(SchemaReadSeverity.INFO, "R205", "t.id", "read as identity")
+        val connA = "dmigrate://tenants/acme/connections/a"
+        val connB = "dmigrate://tenants/acme/connections/b"
+        val reports = mutableListOf<SchemaReadReportInput>()
+        fun run(source: String, target: String): List<String> {
+            reports.clear()
+            val worker = SchemaCompareJobWorker(
+                sourceRef = source,
+                targetRef = target,
+                schemaLoader = { ref, _, _ ->
+                    if (ref.contains("/connections/")) {
+                        LoadedCompareSide.read(SchemaReadResult(emptySchema, notes = listOf(note.copy(objectName = ref))))
+                    } else {
+                        LoadedCompareSide(emptySchema)
+                    }
+                },
+                comparator = { _, _ -> identicalDiff },
+                publisher = publisher(),
+                reportPublisher = JobArtifactPublisher { _, input ->
+                    reports += input
+                    "dmigrate://tenants/acme/artifacts/report-${reports.size}"
+                },
+            )
+            val outcome = worker.execute(Fixtures.jobRecord("j-12"), CancellationToken.none())
+            return outcome.shouldBeInstanceOf<JobWorkerOutcome.Succeeded>().artifactRefs
+        }
+
+        run(connA, connB) shouldBe listOf(
+            "dmigrate://tenants/acme/artifacts/j-12",
+            "dmigrate://tenants/acme/artifacts/report-1",
+            "dmigrate://tenants/acme/artifacts/report-2",
+        )
+        reports.map { it.source } shouldBe listOf(
+            ReverseSourceRef(ReverseSourceKind.CONNECTION, connA),
+            ReverseSourceRef(ReverseSourceKind.CONNECTION, connB),
+        )
+        reports.map { it.result.notes.single().objectName } shouldBe listOf(connA, connB)
+
+        run(sourceRef, connB) shouldBe listOf(
+            "dmigrate://tenants/acme/artifacts/j-12",
+            "dmigrate://tenants/acme/artifacts/report-1",
+        )
+        reports.single().source.value shouldBe connB
     }
 })

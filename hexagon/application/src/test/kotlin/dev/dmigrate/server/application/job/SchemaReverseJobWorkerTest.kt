@@ -6,6 +6,12 @@ import dev.dmigrate.core.cancel.OperationCancelSource
 import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.ReverseSourceKind
+import dev.dmigrate.driver.ReverseSourceRef
+import dev.dmigrate.driver.SchemaReadNote
+import dev.dmigrate.driver.SchemaReadReportInput
+import dev.dmigrate.driver.SchemaReadResult
+import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.server.application.connection.ConnectionMaterializer
 import dev.dmigrate.server.core.principal.TenantId
@@ -15,6 +21,8 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+
+private const val REPORTS = "dmigrate://tenants/acme/artifacts/report-"
 
 class SchemaReverseJobWorkerTest : FunSpec({
 
@@ -48,14 +56,18 @@ class SchemaReverseJobWorkerTest : FunSpec({
             materializer = materializer(),
             readSchema = { _, _ ->
                 readWasCalled = true
-                emptySchema
+                SchemaReadResult(emptySchema)
             },
             publisher = publisher(),
+            reportPublisher = publisher(REPORTS),
         )
         val record = Fixtures.jobRecord("j-1")
         val outcome = worker.execute(record, CancellationToken.none())
         outcome.shouldBeInstanceOf<JobWorkerOutcome.Succeeded>()
-        outcome.artifactRefs shouldBe listOf("dmigrate://tenants/acme/artifacts/j-1")
+        outcome.artifactRefs shouldBe listOf(
+            "dmigrate://tenants/acme/artifacts/j-1",
+            "dmigrate://tenants/acme/artifacts/report-j-1",
+        )
         readWasCalled shouldBe true
     }
 
@@ -69,8 +81,9 @@ class SchemaReverseJobWorkerTest : FunSpec({
                 matCalled = true
                 error("should not be called")
             },
-            readSchema = { _, _ -> emptySchema },
+            readSchema = { _, _ -> SchemaReadResult(emptySchema) },
             publisher = publisher(),
+            reportPublisher = publisher(REPORTS),
         )
         val record = Fixtures.jobRecord("j-2")
         val ex = shouldThrow<OperationCancelledException> {
@@ -96,9 +109,10 @@ class SchemaReverseJobWorkerTest : FunSpec({
             },
             readSchema = { _, _ ->
                 readCalled = true
-                emptySchema
+                SchemaReadResult(emptySchema)
             },
             publisher = publisher(),
+            reportPublisher = publisher(REPORTS),
         )
         val ex = shouldThrow<OperationCancelledException> {
             worker.execute(Fixtures.jobRecord("j-3"), source.token)
@@ -115,11 +129,15 @@ class SchemaReverseJobWorkerTest : FunSpec({
             materializer = materializer(),
             readSchema = { _, _ ->
                 source.cancel("after-read")
-                emptySchema
+                SchemaReadResult(emptySchema)
             },
             publisher = JobArtifactPublisher<Any> { _, _ ->
                 publishCalled = true
                 "dmigrate://x"
+            },
+            reportPublisher = JobArtifactPublisher<Any> { _, _ ->
+                publishCalled = true
+                "dmigrate://y"
             },
         )
         shouldThrow<OperationCancelledException> {
@@ -132,8 +150,9 @@ class SchemaReverseJobWorkerTest : FunSpec({
         val worker = SchemaReverseJobWorker(
             connectionRef = connectionRef,
             materializer = ConnectionMaterializer { _, _ -> error("not-found") },
-            readSchema = { _, _ -> emptySchema },
+            readSchema = { _, _ -> SchemaReadResult(emptySchema) },
             publisher = publisher(),
+            reportPublisher = publisher(REPORTS),
         )
         // Worker faengt nicht selbst — Dispatcher klassifiziert als
         // RUNNER_ERROR. Hier verifizieren wir nur die Propagation.
@@ -157,6 +176,7 @@ class SchemaReverseJobWorkerTest : FunSpec({
                 )
             },
             publisher = publisher(),
+            reportPublisher = publisher(REPORTS),
         )
         val ex = shouldThrow<OperationCancelledException> {
             worker.execute(Fixtures.jobRecord("j-6"), CancellationToken.none())
@@ -169,8 +189,9 @@ class SchemaReverseJobWorkerTest : FunSpec({
         val worker = SchemaReverseJobWorker(
             connectionRef = connectionRef,
             materializer = materializer(),
-            readSchema = { _, _ -> emptySchema },
+            readSchema = { _, _ -> SchemaReadResult(emptySchema) },
             publisher = JobArtifactPublisher<Any> { _, _ -> error("artifact-store-unavailable") },
+            reportPublisher = publisher(REPORTS),
         )
         shouldThrow<IllegalStateException> {
             worker.execute(Fixtures.jobRecord("j-7"), CancellationToken.none())
@@ -185,9 +206,10 @@ class SchemaReverseJobWorkerTest : FunSpec({
             materializer = materializer(),
             readSchema = { _, t ->
                 receivedToken = t
-                emptySchema
+                SchemaReadResult(emptySchema)
             },
             publisher = publisher(),
+            reportPublisher = publisher(REPORTS),
         )
         worker.execute(Fixtures.jobRecord("j-8"), source.token)
         // Identitaets-Vergleich: Reader sieht denselben Token den der
@@ -210,10 +232,41 @@ class SchemaReverseJobWorkerTest : FunSpec({
                     user = null, password = null,
                 )
             },
-            readSchema = { _, _ -> emptySchema },
+            readSchema = { _, _ -> SchemaReadResult(emptySchema) },
             publisher = publisher(),
+            reportPublisher = publisher(REPORTS),
         )
         worker.execute(Fixtures.jobRecord("j-9").copy(tenantId = Fixtures.tenant("beta")), CancellationToken.none())
         seenTenant shouldBe Fixtures.tenant("beta")
+    }
+
+    test("the read report carries the reader's notes and names the connection, after the schema") {
+        // Das Schema-Dokument traegt keine Notes (wie `schema reverse`);
+        // ohne den Report blieben sie ueber MCP stumm.
+        val note = SchemaReadNote(SchemaReadSeverity.INFO, "R205", "t.id", "read as identity")
+        val published = mutableListOf<Any>()
+        val worker = SchemaReverseJobWorker(
+            connectionRef = connectionRef,
+            materializer = materializer(),
+            readSchema = { _, _ -> SchemaReadResult(emptySchema, notes = listOf(note)) },
+            publisher = JobArtifactPublisher { _, schema ->
+                published += schema
+                "dmigrate://tenants/acme/artifacts/schema"
+            },
+            reportPublisher = JobArtifactPublisher { _, report ->
+                published += report
+                "dmigrate://tenants/acme/artifacts/report"
+            },
+        )
+        val outcome = worker.execute(Fixtures.jobRecord("j-10"), CancellationToken.none())
+        outcome.shouldBeInstanceOf<JobWorkerOutcome.Succeeded>().artifactRefs shouldBe listOf(
+            "dmigrate://tenants/acme/artifacts/schema",
+            "dmigrate://tenants/acme/artifacts/report",
+        )
+        published[0] shouldBe emptySchema
+        published[1] shouldBe SchemaReadReportInput(
+            ReverseSourceRef(ReverseSourceKind.CONNECTION, connectionRef),
+            SchemaReadResult(emptySchema, notes = listOf(note)),
+        )
     }
 })
