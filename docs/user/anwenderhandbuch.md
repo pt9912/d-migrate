@@ -518,7 +518,11 @@ triggers:
   nur zusammen mit `--sqlite-autoincrement-width 64`. Damit auch `schema compare`
   mit `db:`-Operanden und der MCP-Server so lesen, tragen Sie es in die
   Konfiguration ein (`reverse.mysql.autoincrement_syntax: identity` bzw.
-  `reverse.sqlite.autoincrement_syntax: identity`).
+  `reverse.sqlite.autoincrement_syntax: identity`). **Wollen Sie die Datei als
+  Soll für `schema migrate` gegen dieselbe MySQL-Datenbank verwenden, lesen Sie
+  ohne `identity`:** `schema migrate` liest die Datenbank ohne die Präferenz
+  und plant sonst für jede solche Spalte ein wirkungsloses
+  `ALTER TABLE … MODIFY COLUMN … AUTO_INCREMENT`.
 
 #### Ihre Partitionsnamen gehen beim Auslesen verloren
 
