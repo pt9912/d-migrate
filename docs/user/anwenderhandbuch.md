@@ -635,10 +635,16 @@ nützlich in Skripten.
   Modus (`always` gegen `by_default`), bleibt der gemeldet (siehe unten).
 - **Was trotzdem gemeldet wird:** eine anders formulierte Bedingung
   (`status IN ('A','B')` gegen `status = ANY (ARRAY['A','B'])`), die Groß-
-  und Kleinschreibung von Schlüsselwörtern (`like` gegen `LIKE`) und der
-  Identity-Modus gegen SQL Server — SQL Server kennt kein `BY DEFAULT` und
-  liest solche Spalten als `always`. Enthält ein Ausdruck einen Kommentar,
-  Dollar-Quoting oder einen Backslash, vergleicht d-migrate ihn wortgleich.
+  und Kleinschreibung von Schlüsselwörtern (`like` gegen `LIKE`), ein Cast an
+  einer Textspalte ohne Länge (`(name)::text` bei `varchar` ohne Länge — der
+  Reverse kann sie nicht von `text` unterscheiden) und der Cast einer
+  Dezimalzahl an einer Gleitkommaspalte (`x > (0.5)::double precision`, auch
+  bei `real`). Der Identity-Modus bleibt ein Unterschied, wo ein System nur
+  eine Form kennt: SQL Server kennt kein `BY DEFAULT` und liest solche
+  Spalten als `always`; MySQL und SQLite lesen ihre Autowert-Spalten als
+  `by_default`, auch wenn das Gegenstück `always` sagt. Enthält ein Ausdruck
+  einen Kommentar, Dollar-Quoting oder einen Backslash, vergleicht d-migrate
+  ihn wortgleich.
 - **Über MCP gilt dasselbe:** `schema_compare` und der Job
   `schema_compare_start` vergleichen wie die CLI. Der Job legt sein Ergebnis
   als Artefakt der Art `COMPARE` ab (`status`, `summary`, alle `findings`);

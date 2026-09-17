@@ -696,10 +696,13 @@ Kanonisiert wird ausschliesslich die **Schreibweise**, nicht die Bedeutung:
   und `level`) oder als Syntax (`and`, `or`, `not`, `in`, `like`, `between`,
   `case`, die Argument-Woerter `both`, `leading`, `trailing`, `for`, `placing`
   …): `"user"` bleibt verschieden von `user`; seine drei Quotierungen gelten
-  untereinander als gleich. Ebenso bleiben die Typnamen `char` und `bit`
-  quotiert — `"char"` und `"bit"` sind in PostgreSQL andere Typen als `char`
-  und `bit` —, und direkt hinter `::` bleibt jede Quotierung wortgleich stehen
-  (`' '::"char"` bleibt verschieden von `' '::char`);
+  untereinander als gleich. Die Typnamen `char` und `bit` bleiben dagegen
+  **wortgleich** in ihrer Quotierung stehen — `"char"` und `"bit"` sind in
+  PostgreSQL andere Typen als `char` und `bit` —, und anders als bei `user`
+  gelten ihre drei Quotierungen auch untereinander als verschieden
+  (`"char"`, `[char]` und `` `char` ``). Direkt hinter `::` bleibt jede
+  Quotierung wortgleich stehen (`' '::"char"` bleibt verschieden von
+  `' '::char`);
 - Klammern, die nur ein Zahl-Literal oder einen Namen umschliessen — nicht die
   Klammern eines Funktionsaufrufs, auch mit Leerraum vor der Klammer (`f(x)`
   und `f (x)` bleiben verschieden von `fx`; Namen duerfen Zeichen ausserhalb
@@ -843,8 +846,10 @@ beim Ausdruck; Casts werden im Rumpf einer Sicht nicht gefaltet.
 Die **abgeleiteten Spalten** einer Sicht werden nicht roh verglichen: sie
 sind eine optionale Signatur, die die Reader unterschiedlich gut fuellen.
 Verglichen wird nur, was **beide** Seiten tragen, und nur der **Name** — der
-Typ ist Dialekt-Schreibweise (`text` gegen `nvarchar`). Traegt eine Seite
-keine Spalten, ist das eine Leseluecke und keine Schemaaenderung.
+Typ ist Dialekt-Schreibweise (`text` gegen `nvarchar`). Fehlt das Feld auf
+einer Seite (`columns` nicht gesetzt), ist das eine Leseluecke und keine
+Schemaaenderung; eine leere Liste (`columns: []`) ist dagegen ein Wert und
+gegen eine gefuellte Liste ein Unterschied.
 
 **Reverse-Markierung**: `schema reverse` schreibt in `name` und `version`
 eine Markierung (Dialekt und Herkunft), nicht den Namen und die Version des

@@ -295,8 +295,9 @@ optional `details` mit `before` und/oder `after`:
   (`parameters`, `returns`), die Felder eines zusammengesetzten Typs
   (`fields`) sowie die Funde „hinzugefuegt"/„entfernt" ganzer Objekte und
   Spalten. Die Spalten einer Sicht (`columns`) erscheinen nur, wenn beide
-  Seiten welche tragen — als Liste ihrer Namen (`[order_id, total]`, eine
-  leere Seite als `[]`).
+  Seiten das Feld tragen — fehlt es auf einer Seite, ist das eine Leseluecke
+  und kein Fund; eine leere Liste ist dagegen ein Wert. Sie stehen als Liste
+  ihrer Namen (`[order_id, total]`, eine leere Liste als `[]`).
 
 ### `resources/list` und `resources/templates/list`
 

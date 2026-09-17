@@ -59,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `[insert, update]`, `enum`, `definer`, `text(254)`,
   `identity(mode=by_default)` — dieselben Kurzformen wie im Bericht von
   `schema compare`; auch die Meldungstexte. Die Spalten einer Sicht stehen
-  als Liste ihrer Namen (`[order_id, total]`, vorher `order_id`), eine leere
+  als Liste ihrer Namen (`[order_id, total]`, vorher `order_id, total`), eine leere
   Seite als `[]` (vorher ohne `details`). **Fuer MCP-Abnehmer ein
   Vertragswechsel**; das Format steht in `spec/mcp-server.md`. Im Bericht von
   `schema compare` steht die Art eines geaenderten benutzerdefinierten Typs

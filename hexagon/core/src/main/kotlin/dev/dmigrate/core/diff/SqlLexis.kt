@@ -126,6 +126,15 @@ internal object SqlKeywords {
      * Index der Spalte `level`, `select from [1]` ist ein Syntaxfehler
      * (gemessen fuer jedes Wort dieser Liste und fuer die uebrigen aus
      * [isKeyword]).
+     *
+     * **Versionsgrenze:** die Liste entspricht PostgreSQL 16 und 18.
+     * `system_user` ist erst ab 16 reserviert; in 14 (der zugesagten
+     * Untergrenze) und 15 ist es ein gewoehnlicher Name, und
+     * `system_user [1]` waere dort ein Index. Die Liste behandelt ein `[`
+     * dahinter trotzdem als Quoting-Beleg. Ein falsches Paar ist damit nicht
+     * gefunden (es braeuchte eine Spalte dieses Namens mit Index in einem
+     * Text, der zugleich zweideutiges `[` traegt); die Grenze ist festgehalten,
+     * nicht gebaut.
      */
     fun isPostgresReserved(word: String): Boolean = word.lowercase() in POSTGRES_RESERVED
 
