@@ -22,6 +22,10 @@
 > (`:73-80`); fuer A6, der auf dem Generate-Pfad sitzt, ist sie damit **keine**
 > Quelle, und ihr Befund ist ein anderer als dieser. Ob ein fehlender SRID ein
 > **Fund** oder ein **Block** sein soll, ist eine Eigner-Frage (s. Abgrenzung).
+> **Nachtrag 2026-09-17:** A6 und B3 sind vom Eigner entschieden und werden bei
+> der Aktivierung zu Paketen; dazu drei Reader-Posten aus dem Compare-Bau (D1–D3,
+> s. Abschnitt D). Beides ist hier festgehalten, damit es nicht mit dem
+> Compare-Slice nach `done/` wandert.
 > **Aktivierung:** Move nach `../in-progress/` beim ersten Implementierungs-Commit.
 
 ## Der gemeinsame Nenner
@@ -326,6 +330,45 @@ der sich dagegen entschieden hat.
 
 **Und der Posten bringt eine Anwenderstelle mit:** die Grenze von `E012` steht im
 Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2125`) — dort zieht P6 mit.
+
+### D — Nachträge vor der Aktivierung (2026-09-17)
+
+**Entschiedene „Offen"-Posten.** Beide werden bei der Aktivierung eigene Pakete;
+die Begründung und die Messung stehen in den `open/`-Einträgen.
+
+- **A6 — NOT NULL nativ.** Eine Geometriespalte mit `NOT NULL` wird über das
+  `not_null`-Argument von `AddGeometryColumn` angelegt statt die Tabelle mit
+  `E052` zu verwerfen (gemessen an SpatiaLite 5.1.0); `E052` bleibt für PK,
+  UNIQUE, Default und Fremdschlüssel. Die drei Spec-Stellen nennen `NOT NULL`
+  nicht mehr als Auslöser. Quelle:
+  [`../open/spatial-profile-e052-ganze-tabelle.md`](../open/spatial-profile-e052-ganze-tabelle.md).
+- **B3 — `json` laut.** Ein JSON-Typ im Modell; der PostgreSQL-Reverse meldet
+  eine `json`-Spalte mit eigenem Code (sie wird als `jsonb` gerendert). Quelle:
+  [`../open/json-jsonb-zweite-json-art.md`](../open/json-jsonb-zweite-json-art.md).
+
+**Neue Posten aus dem Compare-Bau** (gemessen dort, Belegart: *nachgemessen*;
+Quelle: [`../in-progress/compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
+Abschnitt „Offen"). Das Paket je Posten wird bei der Aktivierung geschnitten.
+
+- **D1 — Der Typ einer berechneten Spalte in SQL Server.** SQL Server führt für
+  berechnete Spalten keinen deklarierten Typ; der Reverse liest den aus dem
+  Ausdruck abgeleiteten (`decimal(23,2)` für `quantity * unit_price` bei
+  `decimal(12,2)`), das Soll sagt `decimal(14,2)`. Ein Fund in PG↔MSSQL und
+  MSSQL↔MySQL, schon in 1.7.1. Zu messen: ob der Generator den Ausdruck in
+  `CAST(… AS <Solltyp>)` hüllen soll, damit der Reverse den Solltyp zurückliest —
+  und was das für den Ausdrucksvergleich (`W137`) bedeutet. Eigner-Entscheidung
+  vom 2026-09-16: der Posten gehört hierher.
+- **D2 — `numeric` ohne Präzision wird als `float` gelesen**
+  (`PostgresTypeMapping.kt:115-119`). Das ist ein stiller Typverlust: eine exakte
+  Zahl wird zur Gleitkommazahl. Im Compare-Slice war er Ursache einer
+  Falsch-Gleichsetzung, die dort an der Cast-Regel abgefangen wurde; der Verlust
+  selbst besteht weiter.
+- **D3 — Was als `text` ankommt.** Ein `varchar` ohne Länge ist im Modell nicht
+  von `text` zu unterscheiden (still); unbekannte PostgreSQL-Typen wie `inet` und
+  `interval` landen als `text` mit `R301` (laut, s. B4). Zu klären: ob D3 ein
+  Modellposten ist (Kandidatenfamilie
+  [`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md))
+  oder nur der `varchar`-Teil hierher gehört.
 
 ## Ziel
 
