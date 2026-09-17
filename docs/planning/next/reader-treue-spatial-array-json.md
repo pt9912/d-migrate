@@ -329,7 +329,7 @@ die Alternative („die Analyse kennt den Introducer") hat damit einen Vorläufe
 der sich dagegen entschieden hat.
 
 **Und der Posten bringt eine Anwenderstelle mit:** die Grenze von `E012` steht im
-Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2196`) — dort zieht P6 mit.
+Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2198`) — dort zieht P6 mit.
 
 ### D — Nachträge vor der Aktivierung (2026-09-17)
 
@@ -630,7 +630,7 @@ mehr; die Messung steht im Compare-Slice unter „Konsumenten-Repro".
 **DoD:** PG↔MySQL meldet `ck_customer_email_shape` nicht mehr **und** ein
 MySQL-Reverse mit einem solchen CHECK ist validierbar (`schema validate` ohne
 `E012`). PG↔MSSQL war vorher sauber und bleibt es. Dazu der `docs/user/`-Nachtrag:
-die Grenze von `E012` steht im Anwenderhandbuch (`:2125`) und zieht mit.
+die Grenze von `E012` steht im Anwenderhandbuch (`:2198`) und zieht mit.
 
 ## Akzeptanzkriterien
 
@@ -707,7 +707,26 @@ die Grenze von `E012` steht im Anwenderhandbuch (`:2125`) und zieht mit.
    „exakt passend"-Stellen, P4 beide Mapping-Seiten, P5 vier Registrierungsorte);
    die uebrigen Pakete nicht. P3, P5 und P6 fassen zusaetzlich `docs/user/` an —
    das Gate prueft es mit, aber nur auf Verweise, nicht auf Inhalt.
-5. **Was nachgemessen ist und was nicht.** Die Posten A2, A3, A4, B1, B2 stammen
+5. **Die 5x5-Compare-Matrix wird die Abnahme der Reader-Pakete.**
+   `examples/mcp-e2e/scripts/smoke-compare-matrix.sh` (aus dem
+   Compare-Slice) faehrt jeden Dialekt einmal als Quelle gegen die Reverses
+   der anderen, ueber MCP. Dieser Slice erweitert sie um
+   - **native Typ-Seeds je Dialekt** (unter `examples/mcp-e2e/fixtures/` je
+     Dialekt eine Datei `seeds/<dialekt>.sql`; der Lauf wendet sie schon an,
+     wenn es sie gibt — heute gibt es keine) mit den Typen der Posten dieses
+     Slices, und
+   - einen **Silent-Loss-Check** je Reverse mit drei Klassen: ein
+     Nicht-Text-Quelltyp kommt als Text an (D3: `varchar` ohne Laenge; B4:
+     `interval`, dort mit `R301` benannt); ein `ref_type` ohne Eintrag in
+     `custom_types` (A5: `geography` als Enum gelesen); eine Spalte fehlt im
+     Reverse. Jeder Fall ist ein Fehlschlag des Laufs, sofern der Reverse ihn
+     nicht mit einer Note benennt.
+
+   Vorbild ist die Typ-Matrix des Konsumenten, deren Klassen dieser Slice in
+   A5, B4 und D3 bereits fuehrt. Die Erweiterung ist die Abnahme der Pakete:
+   ein Paket gilt erst als geliefert, wenn die Matrix seinen Fall faehrt und
+   ohne den Fix rot wird.
+6. **Was nachgemessen ist und was nicht.** Die Posten A2, A3, A4, B1, B2 stammen
    aus der Konsumentenmessung; geprueft ist im Repo jeweils die **Vorbedingung**
    (der Filter fehlt an genau dieser Stelle; der Zweig fehlt; die Note nennt
    Grund und Ausweg nicht), **nicht** die Zahl oder der Objektname. Wer die Pakete

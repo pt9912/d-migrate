@@ -34,6 +34,12 @@
 > (M-2; `f345e00f7`), Spec, Handbuch, Ticket und CHANGELOG (M-1, L-1, L-2,
 > INFO; `a1a02b919`), Roundtrip-Wächter und 5x5-Compare-Matrix über MCP
 > samt Workflow (`c7bfe88dd`). ADR 0057 ist seit `f6bab1514` `accepted`.
+> **Geliefert — sechster Bauabschnitt** (Korrekturabschnitt 6, Review und
+> Verifikation Runde 5, s. dort): eigene Artefakt-Art `REVERSE_REPORT`
+> (`df098292c`), Ergebnis zuletzt abgelegt (`c803dda52`), `R202` an der
+> Stelle der Deklaration (`453722a34`), Harness-Blocker, Pin-Schutz,
+> Selbstprobe und sehender Sequenz-Wächter samt rot sichtbarem Workflow
+> (`328479ba4`, `61ab4aaae`), Spec, Handbücher und CHANGELOG (`d5e0c5f9b`).
 > **Offen in diesem Slice:** nichts mehr zu bauen. Offen bleiben die zwei
 > Eigner-Fragen (Schlüsselwort-Case, `RESTRICT`) und die Punkte unter „Offen"
 > — die Liste „braucht nach der Graduation einen Ort" ist dort vollständig.
@@ -1872,7 +1878,8 @@ CHANGELOG), `c7bfe88dd` (Harnesses).
   trägt laut CLI-Spec keine Notes. Die CLI trennt Schema-Dokument und
   Reverse-Report — also bekommen die Lese-Jobs **den Reverse-Report als
   zweites Artefakt**: dieselbe Form wie `schema reverse` (`source` mit
-  `kind: connection`, `summary`, `notes`, `skipped_objects`), Art `OTHER`,
+  `kind: connection`, `summary`, `notes`, `skipped_objects`), Art `OTHER`
+  (seit dem sechsten Bauabschnitt die eigene Art `REVERSE_REPORT`),
   `application/x-yaml`, ohne Index. `schema_reverse_start`: Schema, dann
   Report. `schema_compare_start`: Compare-Artefakt, dann je aus einer
   Verbindung gelesene Seite ihr Report, Quelle vor Ziel (das Compare-Artefakt
@@ -1957,11 +1964,11 @@ Prüfsumme (alle Dateien „OK").
 | S3 | SRCe: MySQL-Reader ohne Herkunft | `MysqlSchemaReaderTest` |
 | INT (`make integration`, e2e-cli) | M2a durch den MCP-Client | `McpOperationalScenarioTest` „expected:<2> but was:<1>" (2 Tests, 1 rot) |
 | H1 (Harness) | Roundtrip gegen das Image `1.7.1` | Wächter `metadata` (Platzhalter), `notation` (CHECKs ohne Ausdruck, Index-Prädikat), `sequence` (Identity) |
-| H2 (Harness) | Compare-Matrix gegen das Image `1.7.1` | 31 Abweichungen: Markierung als `SCHEMA_NAME_CHANGED`, Werkzeug ≠ Job, Art nicht `COMPARE`, Form, kein Reverse-Report, Version, Zellen; die Erwartungsdatei blieb unverändert |
+| H2 (Harness) | Compare-Matrix gegen das Image `1.7.1` | 31 Abweichungen: Markierung als `SCHEMA_NAME_CHANGED`, Werkzeug ≠ Job, Art nicht `COMPARE`, Form, Version, Zellen; die Erwartungsdatei blieb unverändert. **Korrigiert (Verifikation Runde 5):** „kein Reverse-Report" war **nicht** unter den 31 — die Meldung ging in einer Subshell verloren (Blocker des sechsten Bauabschnitts); die Neumessung steht dort |
 
 **Gates fünfter Bauabschnitt:** `make docker-check` für ports-read (224
 Tests), driver-common (543), driver-mysql (846), driver-sqlite (754),
-application (1907), mcp (1252) und cli (1080), einmal **ohne** `MODULES`
+application (1908 — hier stand zuerst 1907, der volle Lauf zählt 1908), mcp (1252) und cli (1080), einmal **ohne** `MODULES`
 (12 209 Tests, 0 Fehler, `integration-mysql` und `e2e-cli` kompiliert),
 `make integration` für `:test:e2e-cli`, `:test:integration-mysql` und
 `:test:integration-sqlite` (mit `-PintegrationTests`, 97 Tasks ausgeführt,
@@ -1995,7 +2002,9 @@ erkennt genau diesen Grund und weist den Dialekt als „ungültig" aus. Stand
 2026-09-17 (zwei vollständige Läufe gleich): PostgreSQL 1 Fund, MySQL ungültig,
 SQL Server 5, SQLite 6, Oracle nicht gefahren (README-Tabelle).
 
-**Compare-Matrix** (`smoke-compare-matrix.sh`, `make mcp-e2e-compare-matrix`,
+**Compare-Matrix** (Stand dieses Abschnitts; der sechste Bauabschnitt setzt
+die Präferenz `identity` am Server und pinnt PostgreSQL → MySQL neu)
+(`smoke-compare-matrix.sh`, `make mcp-e2e-compare-matrix`,
 Oracle mit `…-oracle`): eigene Fixture `fixtures/compare-matrix.yaml`, jeder
 Dialekt einmal Quelle; die Ziel-DDL erzeugt die CLI aus dem Schema, das der
 MCP-Reverse abgelegt hat, angewendet mit dem Client des Dialekts; verglichen
@@ -2034,9 +2043,180 @@ Index-Prädikat und der Sequenzname melden nirgends etwas. Die
 Compare-Matrix (Best-Effort)") — `workflow_dispatch`, wöchentlich montags
 03:17 UTC, Push auf `main` in `examples/mcp-e2e/**`, `make/mcp-e2e.mk` und
 die Workflow-Datei; `continue-on-error`, Checkout per SHA gepinnt wie die
-Sample-DB-Cross-Smokes, ohne Oracle; kein PR-Gate. **Oracle** ist in beiden
-Harnesses nicht gefahren (s. „Offen"). Nach den Läufen `make mcp-e2e-down`;
+Sample-DB-Cross-Smokes, ohne Oracle; kein PR-Gate (seit dem sechsten
+Bauabschnitt rot sichtbar, mit Artefakt-Upload und weiteren Pfaden, s. dort).
+**Oracle** ist in beiden Harnesses nicht gefahren (s. „Offen"). Nach den Läufen `make mcp-e2e-down`;
 der fremde `mcp-e2e-oracle-1` blieb unberührt.
+
+### Sechster Bauabschnitt — Korrekturabschnitt 6: Review und Verifikation Runde 5 (2026-09-17)
+
+Grundlage: das fünfte Review und die fünfte Verifikation (gegen `2299f0cf5`)
+und zwei Eigner-Entscheidungen vom 2026-09-17. ADR 0053, 0056 und 0057 bleiben
+unberührt. Commits `df098292c` (Artefakt-Art), `c803dda52`
+(Ablagereihenfolge), `453722a34` (`R202`), `328479ba4` und `61ab4aaae`
+(Harnesses, Workflow), `d5e0c5f9b` (Spec, Handbücher, CHANGELOG).
+
+**Eigner-Entscheidungen.**
+- **Der Reverse-Report hat die eigene Art `REVERSE_REPORT`** statt `OTHER` —
+  Begründung wie bei `COMPARE`: Abnehmer filtern per Art. Gebaut: das Enum
+  (`hexagon:core`), der Publisher, `artifact_list` (Filter `kind` und Feld
+  `artifactKind` leiten ihre Werte jetzt aus dem Enum ab; Golden per
+  `make golden-update`), der Upload ist wie bei `COMPARE` ausgeschlossen.
+  Spec (`spec/mcp-server.md`), CHANGELOG (Added nennt die Art; unter
+  „Changed" die geänderte Artefaktzahl der Lese-Jobs und der zusätzliche
+  Wert der Art-Liste), Anwenderhandbuch, API-Referenz (die `artifacts` der
+  Lese-Jobs je Job). `:test:e2e-cli` prüft Art und Filter durch den
+  MCP-Client, die Matrix die Art je Artefakt. Geteiltes Enum, deshalb einmal
+  ohne `MODULES` gebaut.
+- **Der Workflow der Matrix wird rot sichtbar:** kein job-weites
+  `continue-on-error`, kein Pflicht-Check; Upload von `out/compare-matrix`
+  mit `if: always()` (`actions/upload-artifact` per SHA, übernommen aus
+  `build.yml`); Pfadfilter um `Makefile`, `make/**` und `Dockerfile`; der Name
+  trägt kein „(Best-Effort)" mehr. Die Geschwister (Sample-DB-Cross-Smokes)
+  sind unverändert (s. „Offen").
+
+**Blocker (AK 11) — der Report-Wächter der Matrix schlug nie an.**
+`note_failure` lief in `mcp_reverse`, und `mcp_reverse` läuft in einer
+Kommandosubstitution: der Eintrag ins Array ging mit der Subshell verloren.
+Behoben über Dateien (`.failures` nie pinnbar, `.deviations` pinnbar);
+mehrzeilige Meldungen werden zu einer Zeile gefaltet (`61ab4aaae`, gefunden
+an der jq-Sabotage, die 30 statt 10 Abweichungen zählte). Der Roundtrip und
+`lib/*.sh` tragen das Muster nicht — dort hält keine Subshell Zustand. HC
+wiederholt: rot; mit zurückgenommenem Fix grün (Sabotage BF).
+
+**Harness-Härtung (Review M-2, LOW-1; Verifier).**
+- `--update-expectations` pinnt keine Rückschritte: ein Generate-Exit weder
+  `0` noch `8` (oder eine fehlende DDL-Datei) ist `GEN-FAIL`, auch für die
+  Fixture der Quelle; `apply:unbekannt` ist nie pinnbar; die
+  Erwartungsdatei wird nur ohne nicht pinnbare Abweichung geschrieben;
+  sqlite3-Fehler („Parse error near line N: …", sqlite3 3.45.1) sind eine
+  Fehlerklasse, ohne Zeilennummer.
+- Ein jq-Fehler in den Wächtern ist in beiden Skripten ein Fehlschlag.
+- Formänderungen scheitern laut: der Roundtrip nimmt die Fundzahl aus dem
+  JSON-Dokument (Summe von `summary`); die Vereinheitlichung prüft sich
+  selbst (CLI: jede Zahl in `summary` ist die Länge der Liste in `diff`,
+  geänderte Tabellen und Spalten tragen nur bekannte Schlüssel; MCP:
+  `different` hat Funde, `identical` keine, Änderungsfunde tragen
+  `details`); `sequence` prüft die Struktur `identity(k=v,…)`, ein
+  unbekannter Schlüssel ist der neue Verstoß `form`; der bekannte
+  Introducer-Befund zählt nur für MySQL-Zeichensätze. Gegen die Proben der
+  Verifikation: umbenannte Tabellenschlüssel, `sequence_name=` und eine
+  Zählabweichung scheitern laut, `_tmp` zählt nicht mehr. **Grenze:** die
+  `notation`-Heuristik erkennt kein Paar, dessen Seiten verschiedene
+  Signaturformate tragen — beide Seiten kommen aus demselben Renderer.
+- Die Wächter laufen in der Matrix auf Werkzeug **und** Job; ein
+  Compare-Job zweier Schemata nennt genau ein Artefakt, ein Reverse-Job
+  genau `SCHEMA` und `REVERSE_REPORT`; der MySQL-Report bestätigt `R205`.
+- `lib/*.sh` tragen `# shellcheck shell=bash` (SC2148).
+
+**Sequenz-Wächter der Matrix (Verifier HB) — sehend gemacht.** Der Befund
+stimmte: mit den Defaults unterschied sich jede PostgreSQL-Identity-Spalte
+gegen MySQL zusätzlich in `legacy_serial_syntax`, gegen SQL Server im Modus
+(`W140`), gegen SQLite fehlte die Erzeugung — der Wächter konnte nirgends
+anschlagen. Der Matrix-Server liest jetzt
+`reverse.mysql.autoincrement_syntax: identity` (der Lauf schreibt die
+Konfiguration nach `out/compare-matrix/`); die Fixture trägt `cm_order.id`
+bereits mit `BY DEFAULT`. PostgreSQL → MySQL ist damit die Zelle, in der die
+Spalte sich nur im Sequenznamen unterscheiden kann. Neu gepinnt:
+PostgreSQL → MySQL 7 → 6 (der Identity-Fund entfällt). HB wiederholt: die
+Matrix wird rot (`sequence` an `tables.cm_order.columns.id.generation`,
+Werkzeug und Job, dazu die Zelle 6 → 7). Eine zweite, **strukturelle**
+Blindheit bleibt: zwei Reverses tragen nach dem Entfernen der Markierung
+denselben Platzhalter, `metadata` kann in der Matrix nie anschlagen — das
+sichert der Roundtrip (HB dort rot, `metadata` in drei Dialekten). README und
+Harness-Kopf benennen beides.
+
+**Review-Befunde (Runde 5).**
+- **M-3 — ungültige Flag-Werte:** gemessen am neuen Image:
+  `schema reverse --mysql-autoincrement-syntax identiy` und
+  `--sqlite-autoincrement-width 16` enden mit **Exit 1** (Clikt-Usage-Fehler
+  über `Main.kt`), `spec/cli-spec.md` und der Troubleshooting-Leitfaden sagen
+  2. Vorbestehend und global, **nicht hier gebaut** (s. „Offen"). Korrigiert
+  ist der neue Satz in `spec/dialect-preference-mechanism.md` (Lese-Flags: der
+  Usage-Fehler der Exit-Code-Tabelle; das Schreib-Flag: Exit 7, wie
+  `cli-spec.md` es für `--oracle-empty-string` sagt) und die KDoc von
+  `ReverseAutoIncrementSyntaxResolver` (verweist auf die Tabelle, statt einen
+  Code zu nennen).
+- **LOW-2:** CHANGELOG — `data transfer` liest `autoincrement_syntax` nicht
+  (ein Tippfehler dort bleibt ohne Wirkung); nur die Breite führt dort zu
+  Exit 7.
+- **LOW-3:** Administrationshandbuch — `reverse:` liest `mcp serve` einmal
+  beim Start (Änderung erst nach Neustart); ein unbekannter Wert verhindert
+  den Start (Exit 2, auch in der Liste der Boot-Validierung), mit Hinweis für
+  Betreiber, deren Konfiguration bisher einen stillen Tippfehler trug.
+- **LOW-4:** `spec/mcp-server.md` beschreibt den Vertrag des Index `diffs`
+  (führt das Compare-Artefakt mit beiden Verweisen); die Lücke in
+  `mcp serve` steht unter „Offen".
+- **INFO:** `R202` rät über `DeclaredPreference.advise` an der Stelle der
+  Deklaration, ohne gesetztes Flag zum Konfigurationsschlüssel (im Harness
+  gemessen: der SQLite-Report über MCP nennt kein Flag mehr). Die Lese-Jobs
+  legen die Reports **vor** dem Ergebnis ab, das Ergebnis trägt sich als
+  Letztes in seinen Index ein; der Vertrag für einen gescheiterten Job (keine
+  `artifacts`, kein Index-Eintrag, Abgelegtes bis `expiresAt`) steht in
+  `spec/mcp-server.md`. Die Felder des Reverse-Reports sind in
+  `spec/cli-spec.md` definiert, auf das `mcp-server.md` mit „dieselbe Form"
+  verweist.
+
+**Verifikation Runde 5 — Korrekturen.** H2 ist oben korrigiert und neu
+gemessen (Tabelle unten); „application (1907)" heißt 1908; der Satz, der
+Koordinator ziehe die Reader-Posten nach, ist ersetzt — sie stehen als D1–D3
+im Reader-Slice. Der Reader-Slice nennt die aktuelle `E012`-Stelle des
+Handbuchs und unter „Verifikation" (Punkt 5) die Erweiterung der Matrix um
+native Typ-Seeds und einen Silent-Loss-Check als Abnahme seiner Pakete.
+
+**Abweichungen vom Auftrag.**
+- `R202` nennt ohne gesetztes Flag nur den Konfigurationsschlüssel — auch in
+  `schema reverse`, das ein Flag hätte. Die Quelle (`PreferenceSource`) kennt
+  nur „Flag" oder „Konfiguration", wie bei `R204`/`R205`; wer die
+  CLI-Oberfläche dort wieder nennen will, braucht eine Oberflächenangabe im
+  Port.
+- Die Wrapper-Images der Harness-Sabotage (W7, WK, WF) sind per
+  `docker build` auf `d-migrate:dev` gebaut (Sandkasten, kein Repo-Bau); die
+  Image-Sabotagen HC und HB per `make docker-build` im Klon.
+
+**Sabotage-Protokoll sechster Bauabschnitt.** Unit-Läufe im frischen Klon
+(`make docker-test` mit `--continue`), Rücknahme per `git checkout` und
+Prüfsumme (alle „restore OK"); Harness-Läufe gegen `d-migrate:dev`
+(= Code-Stand von HEAD) bzw. die genannten Images, die Erwartungsdatei blieb
+in jedem Lauf unverändert.
+
+| Lauf | Sabotage | rot |
+| ---- | -------- | --- |
+| SAB1 (application 1910/3, driver-sqlite 755/1; mcp dort am Detekt der Sabotage G1 gescheitert, s. SAB1b) | O1: Reverse-Worker legt das Schema vor dem Report ab | `SchemaReverseJobWorkerTest` (2) |
+| SAB1 | O2: Compare-Worker legt das Ergebnis vor den Reports ab | `SchemaCompareJobWorkerTest` „published last" |
+| SAB1 | R1: `R202` nennt immer das Flag | `SqliteTypeMappingTest` „config key without a flag" |
+| SAB1b (mcp 1252/4) | K1: Report-Art zurück auf `OTHER` | `McpCoreJobWorkerFactoryTest` (2) |
+| SAB1b | U1: Upload nimmt `REVERSE_REPORT` an | `ArtifactUploadInitHandlerPolicyPathTest` |
+| SAB1b | G1: Tool-Schema ohne `REVERSE_REPORT` | `McpToolSchemasGoldenTest` |
+| SAB2 (driver-common 544/1, driver-sqlite 755/1) | A1: `advise` rät ohne Flag zum Flag | `AutoIncrementSyntaxNoteTest`, `SqliteTypeMappingTest` |
+| INT (`make integration`, e2e-cli 140/1) | K1 durch den MCP-Client | `McpOperationalScenarioTest` „expected:<REVERSE_REPORT> but was:<OTHER>" |
+| HC (Harness, Image ohne Report) | der Reverse-Job legt keinen Report ab | Matrix rot, 18 Abweichungen (9 Reverse-Jobs × Artefaktzahl und Report) |
+| BF (Harness) | Blocker-Fix zurück (Array statt Datei), Image wie HC | Matrix **grün** (Exit 0, „OK") trotz 18 `FAIL`-Zeilen — der Blocker, reproduziert |
+| HB (Harness, Image ohne P6 und ohne die Markierungsregel) | der Vergleich wertet Sequenzname, Name und Version | Matrix rot (`sequence` PostgreSQL → MySQL an Werkzeug und Job, Zelle 6 → 7); Roundtrip rot (`metadata` in drei Dialekten, `sequence` bei PostgreSQL) |
+| W7 (Harness, Wrapper) | `schema generate` SQLite → PostgreSQL endet mit Exit 7, Lauf mit `--update-expectations` | Zelle `GEN-FAIL`, „Erwartungen NICHT geschrieben", rot; die Erwartungsdatei (Kopie) unverändert |
+| WK (Harness, Wrapper) | der Server meldet den Report unter `OTHER` | Matrix rot, 9× „hat nicht die Art REVERSE_REPORT" |
+| WF (Harness, Wrapper) | Schlüssel umbenannt (CLI `constraints_changed`, MCP `details`) | Roundtrip rot (Selbstprobe: „geänderte Tabelle ohne bekannte Änderung"); Matrix rot (Selbstprobe, Werkzeug ≠ Job) |
+| JQ (Harness) | das jq-Programm der Wächter ist kaputt | Matrix rot, 10 Abweichungen (5 Zellen × Werkzeug und Job „nicht auswertbar"); Roundtrip rot |
+| H2′ (Harness, Image `1.7.1`) | Neumessung von H2 nach dem Blocker-Fix | 43 nicht pinnbare und 11 Erwartungs-Abweichungen: Reverse ohne Report 18 (9 × 2), Art nicht `COMPARE` 5, Form 5, Werkzeug ≠ Job 5, Wächter am Werkzeug 5 (Selbstprobe 3 — `1.7.1` trug keine `details` —, `metadata` 2), am Job 5 (keine Fundliste); Version 1, fünf Zellen × 2. Mit `--update-expectations` nichts geschrieben |
+
+**Gates sechster Bauabschnitt:** `make docker-check` für core (1483 Tests),
+application (1910), driver-common (544), driver-sqlite (755) und mcp (1252),
+einmal **ohne** `MODULES` (12 213 Tests, 0 Fehler, alle Integrationsmodule
+kompiliert); `make golden-update`; `make integration` für `:test:e2e-cli`
+(Task ausgeführt, grün; Kontroll-Lauf INT); `make docs-check` (331 Dateien,
+0 Befunde); `make solid-suppression-gate` vor jedem Commit; `bash -n` und
+shellcheck (Container) für die vier Harness-Dateien — `smoke-scope-matrix.sh`
+trägt zwei vorbestehende Befunde (SC1091, SC2155) und ist nicht angefasst;
+`make doc-immutable` im frischen `--no-local`-Klon (`f6bab1514..HEAD`).
+
+**Harness-Stand** (HEAD `61ab4aaae`, `d-migrate:dev` 1.8.0-SNAPSHOT, je Harness
+zwei Läufe, identisch und gleich den Läufen auf `d5e0c5f9b`): Roundtrip
+PostgreSQL 1, MySQL ungültig (`E012`), SQL Server 5, SQLite 6 — unverändert,
+jetzt aus dem JSON gezählt; Matrix wie in der README, PostgreSQL → MySQL 6
+(`TABLE_COLUMN_GENERATION_CHANGED:1 TABLE_CONSTRAINT_CHANGED:1
+TABLE_CONSTRAINT_REMOVED:3 TABLE_INDEX_REMOVED:1`), alle übrigen Zellen wie im
+fünften Abschnitt. Danach `make mcp-e2e-down`; `mcp-e2e-oracle-1` blieb
+unberührt, kein Oracle-Opt-in.
 
 ## Akzeptanzkriterien
 
@@ -2106,9 +2286,12 @@ der fremde `mcp-e2e-oracle-1` blieb unberührt.
     von `schema_compare` (F1, L1) — gepinnt an den echten Verdrahtungen.
 11. Über MCP ist die Präferenz nicht stumm: jeder Lese-Job, der eine
     Verbindung liest, legt neben seinem Ergebnis den Reverse-Report dieser
-    Verbindung ab (Notes samt `R204`/`R205`, übersprungene Objekte), in fester
-    Reihenfolge — gepinnt an der echten Fabrik, durch den MCP-Client
-    (`:test:e2e-cli`) und im Harness gegen das gebaute Image.
+    Verbindung ab (Notes samt `R204`/`R205`, übersprungene Objekte), unter
+    der eigenen Art `REVERSE_REPORT` und in fester Reihenfolge der Verweise;
+    das Ergebnis trägt sich zuletzt in seinen Index ein — gepinnt an der
+    echten Fabrik und den Workern, durch den MCP-Client (`:test:e2e-cli`, samt
+    Filter per Art) und im Harness gegen das gebaute Image, dessen Wächter
+    nachweislich anschlägt (Sabotage HC; ohne den Blocker-Fix grün).
 
 ## Verifikation
 
@@ -2131,6 +2314,7 @@ der fremde `mcp-e2e-oracle-1` blieb unberührt.
    | L-3, INFO (fünfter Bauabschnitt) | `:hexagon:ports-read` (Herkunft), `:adapters:driven:driver-common` (Note), MySQL- und SQLite-Treiber, `:hexagon:application`, `:adapters:driving:cli` (Resolver, Wiring, `mcp serve`) | `make docker-check` |
    | M-2 | `:hexagon:ports-read`, `:hexagon:application` (Worker, geteilte Signatur → einmal ohne `MODULES`), `:adapters:driving:mcp`; Report durch den MCP-Client in `:test:e2e-cli` | `make docker-check`, `make integration` |
    | E2E-Harnesses | `examples/mcp-e2e` (Skripte, Fixture, Erwartungen), `make/mcp-e2e.mk`, Workflow | `make mcp-e2e-roundtrip`, `make mcp-e2e-compare-matrix`, `bash -n`, shellcheck |
+   | Korrekturabschnitt 6 | `:hexagon:core` (Art, geteilt → einmal ohne `MODULES`), `:hexagon:application` (Ablagereihenfolge), `:adapters:driving:mcp` (Publisher, Upload, Golden), `:adapters:driven:driver-common` und `-sqlite` (`R202`); Art durch den MCP-Client in `:test:e2e-cli`; Harness-Wächter gegen sabotierte Images | `make docker-check`, `make golden-update`, `make integration`, beide Harnesses |
 
    **Integrationsmodule:** Posten 4 (MySQL-Reader) ist in den Reader-Slice
    gewandert. Seit P11 läuft `:test:e2e-cli` mit (der Job
@@ -2187,6 +2371,12 @@ der fremde `mcp-e2e-oracle-1` blieb unberührt.
   Reverse-Report der Lese-Jobs (fünfter Bauabschnitt).
 - **Ein Tippfehler in einer Lese-Präferenz fiel still auf den Default** (L-3)
   — gebaut: Konfigurationsfehler, wie bei der Schreib-Präferenz.
+- **Die Art des Reverse-Reports** — entschieden (Eigner, 2026-09-17): die
+  eigene Art `REVERSE_REPORT`, gebaut im sechsten Bauabschnitt.
+- **Der Workflow der Matrix war best-effort** — entschieden (Eigner,
+  2026-09-17): rot sichtbar, kein Pflicht-Check, mit Artefakt-Upload.
+- **Der Sequenz-Wächter der Matrix war blind** (Verifier HB) — gebaut: der
+  Matrix-Server liest `identity` für MySQL; HB macht die Matrix rot.
 - **Der Identity-Modus zwischen SQL Server und den anderen** — entschieden
   (Eigner, 2026-09-16): bleibt ein Fund, ein Fähigkeitsunterschied
   (`W140`); als Grenze in `spec/cli-spec.md`.
@@ -2258,17 +2448,16 @@ der fremde `mcp-e2e-oracle-1` blieb unberührt.
   Eigner-Entscheidung (2026-09-16) in den
   [Reader-Slice](../next/reader-treue-spatial-array-json.md); SQL Server führt
   keinen deklarierten Typ, der Reverse liest den abgeleiteten
-  (`decimal(23,2)` statt `decimal(14,2)`). Den Reader-Slice zieht der
-  Koordinator bei dessen Aktivierung nach; hier nicht gebaut.
+  (`decimal(23,2)` statt `decimal(14,2)`). Steht dort als Posten D1; hier
+  nicht gebaut.
 - **`numeric` ohne Präzision liest der PostgreSQL-Reverse als `float`** — ein
   Reader-Verlust (s. P9, Grenze): zwei verschiedene Spaltentypen sehen im
-  Modell gleich aus, der Spaltentyp-Vergleich ist dort blind. Gehört zum
-  [Reader-Slice](../next/reader-treue-spatial-array-json.md) (Notiz für dessen
-  Aktivierung).
+  Modell gleich aus, der Spaltentyp-Vergleich ist dort blind. Steht im
+  [Reader-Slice](../next/reader-treue-spatial-array-json.md) als Posten D2.
 - **`varchar` ohne Länge ist im Modell `text`.** Seit M1 bleibt PostgreSQLs
   `(spalte)::text` an einer solchen Spalte ein Fund; ebenso liest der Reverse
   `inet`/`interval` als `text` (`R301`). Dieselbe Reader-/Modell-Frage wie
-  der vorige Punkt.
+  der vorige Punkt; im Reader-Slice Posten D3.
 - **Unbenannte Indizes und die Schreibweise.** Der Zuordnungsschlüssel eines
   unbenannten Index trägt das rohe Prädikat (P5, „Grenze"); ob `schema compare`
   ihn über die kanonische Form bilden soll, ist nicht entschieden. Heute ist
@@ -2307,8 +2496,10 @@ der fremde `mcp-e2e-oracle-1` blieb unberührt.
 - **Der Index `diffs` ist in `mcp serve` leer.** `McpRuntimeWiring` verdrahtet
   `EmptyDiffStore`; `diff_list` findet das Artefakt von
   `schema_compare_start` nicht (Review Runde 4 gemessen, vorbestehend). Die
-  Spec beschreibt jetzt den Ist-Zustand; für `profile_list` gilt dieselbe
-  Verdrahtung (`EmptyProfileStore`, nicht gemessen).
+  Spec beschreibt seit dem sechsten Bauabschnitt den **Vertrag** (der Index
+  führt das Compare-Artefakt mit beiden Verweisen, Review Runde 5, LOW-4);
+  `mcp serve` erfüllt ihn nicht. Für `profile_list` gilt dieselbe Verdrahtung
+  (`EmptyProfileStore`, nicht gemessen).
 - **Der `job_input`-Upload ist über die Leitung nicht erreichbar:**
   `artifact_upload_init` kennt `approvalKey` und `artifactKind` in seinem
   Eingabeschema nicht (Review Runde 4).
@@ -2329,10 +2520,29 @@ der fremde `mcp-e2e-oracle-1` blieb unberührt.
   `schema_reverse_start` findet nichts; die Spec nennt nur „`jobId`". Das
   Handbuch-Beispiel ist auf den Ist-Zustand korrigiert, die Vertragsfrage
   (Kennung oder URI) ist offen.
-- **Native Typ-Seeds und der Silent-Loss-Check der Compare-Matrix** —
-  gehören in den Reader-Slice (der Koordinator trägt sie dort bei dessen
-  Aktivierung ein). Die Matrix wendet `fixtures/seeds/<dialekt>.sql` bereits
-  an, wenn es die Datei gibt.
+- **Usage-Fehler enden mit Exit 1 statt 2** (Review Runde 5, M-3).
+  Ungültige Flag-Werte und andere Clikt-Usage-Fehler laufen über
+  `buildRootCommand().main(args)` (`Main.kt`) und enden mit Clikts Exit 1;
+  `spec/cli-spec.md` (Exit-Code-Tabelle) und der Troubleshooting-Leitfaden
+  sagen 2. Gemessen an `--mysql-autoincrement-syntax identiy` und
+  `--sqlite-autoincrement-width 16`. Vorbestehend und global, ein Ticket.
+- **Die Geschwister-Workflows laufen mit job-weitem `continue-on-error`:**
+  die sechs Sample-DB-Cross-Smokes (`sample-db-cross-smoke*.yml`), dazu
+  `sample-db-smoke`, `-sqlite-smoke`, `-spatial-smoke`, `-scale`,
+  `bi-demo-smoke`, `mcp-e2e-smoke` und `perf-acceptance` — ein Fehlschlag
+  bleibt dort ein grüner Haken. Die Compare-Matrix ist seit dem sechsten
+  Bauabschnitt rot sichtbar; die Geschwister sind auf Eigner-Anweisung nicht
+  angefasst — ein `open/`-Ticket bei der Graduation.
+- **Shell, Kotlin und YAML haben kein statisches Sicherheits-Gate.**
+  `make semgrep` fährt zwei Regeln auf fünf Dateien (Verifikation Runde 5);
+  shellcheck ist kein Repo-Gate (hier per Container gefahren;
+  `smoke-scope-matrix.sh` trägt zwei vorbestehende Befunde).
+- **Native Typ-Seeds und der Silent-Loss-Check der Compare-Matrix** — stehen
+  seit dem sechsten Bauabschnitt im
+  [Reader-Slice](../next/reader-treue-spatial-array-json.md) unter
+  „Verifikation" (Punkt 5) als Abnahme seiner Pakete (Klassen aus A5, B4,
+  D3). Die Matrix wendet `fixtures/seeds/<dialekt>.sql` bereits an, wenn es
+  die Datei gibt.
 
 ## Was der Slice bewusst nicht tut
 
