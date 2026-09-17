@@ -776,6 +776,32 @@ erklärt keine Präferenz). README nachgezogen, dort und in der Erwartungsdatei
 steht jetzt, dass `INVALID` ein Wächter gegen einen Rückfall ist.
 
 
+### P0 Teil 1 — PostGIS im eigenen Schema (M12, 2026-09-17)
+
+Eigener Commit **ohne** Neu-Pin. Der `postgres`-Dienst fährt auf
+`postgis/postgis:18-3.6` (derselbe Digest wie in `examples/sample-db`), und
+`initdb-postgres/` ersetzt das Init-Verzeichnis des Images: die Extension geht
+ins Schema `postgis`, der `search_path` der Datenbank lautet `public, postgis`.
+
+**Gemessen, nicht angenommen** (frisches Volume):
+
+- `pg_extension` führt `postgis` im Schema `postgis`; `public` trägt **0**
+  Routinen (der A3-Fall bleibt damit aus der Matrix);
+- nach `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` — dem, was
+  `dialect_clean` tut — steht die Extension unverändert da, und `geometry`
+  löst weiter auf.
+
+Weil das Init-Verzeichnis nur beim **ersten** Volume-Init läuft, prüft der
+Matrix-Lauf die Lage der Extension jetzt selbst (`mcp_e2e_assert_postgis` in
+`lib/dialects.sh`) und scheitert laut mit dem Hinweis auf `make
+mcp-e2e-purge`. Ohne die Prüfung liefe ein Host mit altem Volume still ohne
+PostGIS.
+
+**DoD 1 erfüllt:** `make mcp-e2e-compare-matrix` (unverändert grün, die
+Erwartungsdatei bewegt sich nicht), `make mcp-e2e-roundtrip` und
+`make mcp-e2e-smoke` grün.
+
+
 ## Akzeptanzkriterien
 
 1. Ein MySQL-Reverse mit Introducer, Backslash-Escape und Backtick-Quoting

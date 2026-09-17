@@ -378,6 +378,8 @@ fi
 mcp_e2e_env
 log "Image $IMAGE ($IMAGE_VERSION), Dialekte: $(dialect_list)"
 mcp_e2e_stack_up
+# Die Vorbedingung des PostgreSQL-Dienstes, laut statt still (lib/dialects.sh).
+mcp_e2e_assert_postgis
 log "Stack bereit"
 
 declare -A CELL CODES

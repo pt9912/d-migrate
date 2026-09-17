@@ -14,7 +14,7 @@ Der Stack traegt **alle fuenf Dialekte**, die d-migrate unterstuetzt:
 
 | Dienst | Dialekt | Start |
 | ------ | ------- | ----- |
-| `postgres` | PostgreSQL | schnell |
+| `postgres` | PostgreSQL (PostGIS-Image) | schnell |
 | `mysql` | MySQL | schnell |
 | `mssql` | SQL Server | ~30 s |
 | `oracle` | Oracle | 2-3 Minuten, nur unter `--profile oracle` |
@@ -23,6 +23,17 @@ Der Stack traegt **alle fuenf Dialekte**, die d-migrate unterstuetzt:
 `make mcp-e2e-up` startet die drei schnellen; Oracle kommt nur mit
 `mcp-e2e-roundtrip-oracle` dazu, weil sein Kaltstart die uebrigen Pfade
 aufhalten wuerde.
+
+**PostgreSQL faehrt auf dem PostGIS-Image**, damit Geometrie-Faelle ueberhaupt
+messbar sind — aber mit **eigenem Init-Verzeichnis** (`initdb-postgres/`): die
+Extension liegt im Schema `postgis`, nicht in `public`, und der `search_path`
+der Datenbank nennt beide. Zwei Gruende: in `public` kaemen die rund tausend
+PostGIS-Routinen als Anwenderobjekte in jeden Reverse, und das `DROP SCHEMA
+public CASCADE` des Leerens naehme die Extension mit (gemessen: mit eigenem
+Schema ueberlebt sie es, `geometry` bleibt aufloesbar). Der Matrix-Lauf prueft
+die Lage der Extension und **scheitert laut**, wenn sie woanders steht — ein
+Volume von vor dem Image-Wechsel ist schon initialisiert, das Init-Verzeichnis
+liefe dort nicht mehr (`make mcp-e2e-purge` legt es neu an).
 
 ## Warum es diesen Harness gibt
 

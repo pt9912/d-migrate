@@ -76,6 +76,21 @@ _container() {  # $1=Dienst
     mcp_e2e_compose ps -q "$1"
 }
 
+# Der PostgreSQL-Dienst faehrt auf dem PostGIS-Image, und die Extension gehoert
+# ins Schema `postgis` (initdb-postgres/): in `public` kaemen ihre rund tausend
+# Routinen als Anwenderobjekte in jeden Reverse, und `dialect_clean` naehme sie
+# mit. Das Init-Verzeichnis laeuft nur beim **ersten** Volume-Init — ein Volume
+# von vor dem Image-Wechsel traegt sie nicht. Deshalb geprueft, nicht
+# angenommen; ohne die Pruefung maesse der Lauf still etwas anderes.
+mcp_e2e_assert_postgis() {
+    local schema
+    schema="$(docker exec -i "$(_container postgres)" \
+        psql -U "$MCP_E2E_PG_USER" -d "$MCP_E2E_PG_DB" -tAc \
+        "SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'postgis'" \
+        2> /dev/null | tr -d '\r')"
+    [ "$schema" = "postgis" ] || fail "PostGIS steht nicht im Schema postgis (gefunden: '${schema:-keine Extension}') - ein Volume von vor dem Image-Wechsel? 'make mcp-e2e-purge' und neu starten"
+}
+
 # Die Datenbank des Dialekts leeren. Wiederholbar: ein zweiter Lauf faende
 # sonst das Schema des ersten, und die DDL scheiterte an „already exists".
 dialect_clean() {  # $1=Dialekt
