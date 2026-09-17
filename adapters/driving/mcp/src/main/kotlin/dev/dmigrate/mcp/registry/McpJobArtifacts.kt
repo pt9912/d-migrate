@@ -41,7 +41,8 @@ import java.util.UUID
  * Jedes Artefakt wird geschrieben, im [ArtifactStore] registriert und in
  * seinem Index eingetragen: Schema → `schemas`, Profil → `profiles`,
  * Vergleich (Art [ArtifactKind.COMPARE]) → `diffs`. Der Reverse-Report einer
- * gelesenen Verbindung ([readReports]) hat keinen Index.
+ * gelesenen Verbindung ([readReports], Art [ArtifactKind.REVERSE_REPORT]) hat
+ * keinen Index.
  */
 internal class McpJobArtifacts(
     private val artifactStore: ArtifactStore,
@@ -132,11 +133,12 @@ internal class McpJobArtifacts(
      * (`schema_reverse_start`, `schema_compare_start` mit Verbindungen): die
      * Notes und uebersprungenen Objekte des Readers in derselben Form wie der
      * Reverse-Report von `schema reverse` (`spec/mcp-server.md`), Art
-     * [ArtifactKind.OTHER], ohne Index.
+     * [ArtifactKind.REVERSE_REPORT], ohne Index.
      */
     fun readReports(): JobArtifactPublisher<SchemaReadReportInput> = JobArtifactPublisher { job, report ->
         val bytes = reportWriter.render(report).toByteArray(Charsets.UTF_8)
-        publish(job, Rendered(ArtifactKind.OTHER, "reverse-report-${safeId()}.yaml", "application/x-yaml", bytes)) { }
+        val rendered = Rendered(ArtifactKind.REVERSE_REPORT, "reverse-report-${safeId()}.yaml", "application/x-yaml", bytes)
+        publish(job, rendered) { }
     }
 
     /** Schreibt die Bytes, registriert das Artefakt und traegt es in seinen Index ein. */

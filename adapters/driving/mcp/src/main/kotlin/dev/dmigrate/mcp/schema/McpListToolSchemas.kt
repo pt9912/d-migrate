@@ -1,5 +1,7 @@
 package dev.dmigrate.mcp.schema
 
+import dev.dmigrate.server.core.artifact.ArtifactKind
+
 /**
  * LF-012 / LN-038 typed list-tool schemas.
  *
@@ -16,6 +18,9 @@ package dev.dmigrate.mcp.schema
  * has a single, focused home.
  */
 internal object McpListToolSchemas {
+
+    /** Die Arten des Filters `kind` und des Felds `artifactKind` — eine Quelle, das Enum. */
+    private val ARTIFACT_KINDS: Array<String> = ArtifactKind.entries.map { it.name }.toTypedArray()
 
     /**
      * Returns the five `*_list` schema pairs keyed by tool name.
@@ -76,7 +81,7 @@ internal object McpListToolSchemas {
         input = obj(
             *(
                 listInputCommon() + mapOf(
-                    "kind" to enumField("SCHEMA", "PROFILE", "DIFF", "COMPARE", "DATA_EXPORT", "UPLOAD_INPUT", "OTHER"),
+                    "kind" to enumField(*ARTIFACT_KINDS),
                     "jobId" to stringField(),
                 )
                 ).entries.map { it.key to it.value }.toTypedArray(),
@@ -150,7 +155,7 @@ internal object McpListToolSchemas {
         "properties" to mapOf(
             "artifactId" to stringField(),
             "tenantId" to stringField(),
-            "artifactKind" to enumField("SCHEMA", "PROFILE", "DIFF", "COMPARE", "DATA_EXPORT", "UPLOAD_INPUT", "OTHER"),
+            "artifactKind" to enumField(*ARTIFACT_KINDS),
             "jobId" to stringField(),
             "filename" to stringField(),
             "sizeBytes" to integerField(),

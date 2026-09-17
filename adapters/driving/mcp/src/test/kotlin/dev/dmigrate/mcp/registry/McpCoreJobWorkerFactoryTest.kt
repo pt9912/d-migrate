@@ -254,7 +254,7 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
         val sqlite = SqliteJobFixture()
         try {
             val plain = sqlite.reverse(ReversePreferences())
-            plain.kinds shouldBe listOf(ArtifactKind.SCHEMA, ArtifactKind.OTHER)
+            plain.kinds shouldBe listOf(ArtifactKind.SCHEMA, ArtifactKind.REVERSE_REPORT)
             plain.report shouldContain "kind: connection"
             plain.report shouldContain "value: \"dmigrate://tenants/acme/connections/c1\""
             plain.report shouldContain "code: R202"
@@ -278,7 +278,7 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
                 sourceUri = "dmigrate://tenants/acme/connections/c1",
                 targetUri = "dmigrate://tenants/acme/connections/c1",
             )
-            run.kinds shouldBe listOf(ArtifactKind.COMPARE, ArtifactKind.OTHER, ArtifactKind.OTHER)
+            run.kinds shouldBe listOf(ArtifactKind.COMPARE, ArtifactKind.REVERSE_REPORT, ArtifactKind.REVERSE_REPORT)
             run.contents.drop(1).forEach { report ->
                 withClue(report) {
                     report shouldContain "value: \"dmigrate://tenants/acme/connections/c1\""
@@ -292,7 +292,7 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
                 sourceUri = "dmigrate://tenants/acme/schemas/s1",
                 targetUri = "dmigrate://tenants/acme/connections/c1",
             )
-            mixed.kinds shouldBe listOf(ArtifactKind.COMPARE, ArtifactKind.OTHER)
+            mixed.kinds shouldBe listOf(ArtifactKind.COMPARE, ArtifactKind.REVERSE_REPORT)
             mixed.contents[1] shouldContain "code: R202"
         } finally {
             sqlite.close()

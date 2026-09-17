@@ -151,9 +151,20 @@ class McpOperationalScenarioTest : FunSpec({
                 // lesbar — sonst blieben sie ueber MCP stumm.
                 val reportUri = statusJson.getAsJsonArray("artifacts").get(1).asString
                 val reportMeta = readJsonContent(harness, reportUri)
-                withClue("the reverse report is a YAML artefact of kind OTHER; body=$reportMeta") {
-                    reportMeta.get("kind").asString shouldBe "OTHER"
+                withClue("the reverse report is a YAML artefact of kind REVERSE_REPORT; body=$reportMeta") {
+                    reportMeta.get("kind").asString shouldBe "REVERSE_REPORT"
                     reportMeta.get("contentType").asString shouldBe "application/x-yaml"
+                }
+                // Ein Abnehmer findet ihn per Art — und nur ihn.
+                val reportListText = harness.toolsCall(
+                    "artifact_list",
+                    JsonObject().apply { addProperty("kind", "REVERSE_REPORT") },
+                ).content.firstOrNull()?.text ?: error("artifact_list had no text content")
+                val reportList = JsonParser.parseString(reportListText).asJsonObject.getAsJsonArray("artifacts")
+                withClue("artifact_list(kind=REVERSE_REPORT) finds exactly the report; body=$reportListText") {
+                    reportList.size() shouldBe 1
+                    reportList.get(0).asJsonObject.get("artifactId").asString shouldBe reportUri.substringAfterLast('/')
+                    reportList.get(0).asJsonObject.get("artifactKind").asString shouldBe "REVERSE_REPORT"
                 }
                 val reportText = JsonParser.parseString(
                     harness.toolsCall(

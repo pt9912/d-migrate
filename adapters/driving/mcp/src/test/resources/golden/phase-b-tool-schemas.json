@@ -121,6 +121,7 @@
             "PROFILE",
             "DIFF",
             "COMPARE",
+            "REVERSE_REPORT",
             "DATA_EXPORT",
             "UPLOAD_INPUT",
             "OTHER"
@@ -155,6 +156,7 @@
                   "PROFILE",
                   "DIFF",
                   "COMPARE",
+                  "REVERSE_REPORT",
                   "DATA_EXPORT",
                   "UPLOAD_INPUT",
                   "OTHER"

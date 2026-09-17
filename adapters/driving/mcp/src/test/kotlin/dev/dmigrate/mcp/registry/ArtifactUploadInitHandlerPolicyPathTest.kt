@@ -40,6 +40,7 @@ import dev.dmigrate.server.ports.memory.InMemoryUploadInitClaimStore
 import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
 import dev.dmigrate.server.ports.quota.QuotaDimension
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
@@ -543,15 +544,18 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         ex.violations.map { it.field } shouldContain "artifactKind"
     }
 
-    test("artifactKind COMPARE erzeugt nur der Server -> VALIDATION_ERROR(artifactKind), ohne Session") {
-        for (kind in listOf("COMPARE", "compare")) {
+    test("artifactKind COMPARE und REVERSE_REPORT erzeugt nur der Server -> VALIDATION_ERROR(artifactKind), ohne Session") {
+        for (kind in listOf("COMPARE", "compare", "REVERSE_REPORT", "reverse_report")) {
             val fx = Fixture()
             val ex = shouldThrow<ValidationErrorException> {
                 fx.handler.handle(ToolCallContext("artifact_upload_init", jobInputArgs(artifactKind = kind), principal))
             }
-            ex.violations.single().field shouldBe "artifactKind"
-            ex.violations.single().reason shouldNotContain "COMPARE"
-            fx.sessionStore.findById(tenant, "ups-1") shouldBe null
+            withClue(kind) {
+                ex.violations.single().field shouldBe "artifactKind"
+                ex.violations.single().reason shouldNotContain "COMPARE"
+                ex.violations.single().reason shouldNotContain "REVERSE_REPORT"
+                fx.sessionStore.findById(tenant, "ups-1") shouldBe null
+            }
         }
     }
 

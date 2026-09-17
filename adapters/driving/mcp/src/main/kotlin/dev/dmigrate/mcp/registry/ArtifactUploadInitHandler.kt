@@ -709,9 +709,11 @@ internal class ArtifactUploadInitHandler(
         /**
          * Arten, die nur der Server erzeugt: ein hochgeladenes Artefakt unter
          * [ArtifactKind.COMPARE] saehe fuer einen Abnehmer aus wie ein
-         * Vergleichsergebnis (`spec/mcp-server.md`).
+         * Vergleichsergebnis, eines unter [ArtifactKind.REVERSE_REPORT] wie
+         * der Report eines Lese-Jobs (`spec/mcp-server.md`).
          */
-        private val SERVER_ONLY_KINDS: Set<ArtifactKind> = setOf(ArtifactKind.COMPARE)
+        private val SERVER_ONLY_KINDS: Set<ArtifactKind> =
+            setOf(ArtifactKind.COMPARE, ArtifactKind.REVERSE_REPORT)
 
         /**
          * AP 6.13 stale-lease guard: a replay returning a TTL below

@@ -28,6 +28,17 @@ enum class ArtifactKind {
      * lesen. Nur der Server erzeugt sie; ein Upload kann sie nicht tragen.
      */
     COMPARE,
+
+    /**
+     * Der Reverse-Report einer gelesenen Verbindung (`spec/mcp-server.md`,
+     * „Artefakte der Lese-Jobs"): Notes und uebersprungene Objekte des
+     * Readers in der Form des Reverse-Reports von `schema reverse`
+     * (`spec/cli-spec.md`). Eine eigene Art, damit ein Abnehmer ihn per Art
+     * findet, statt ihn unter [OTHER] zwischen anderen Artefakten zu suchen.
+     * Wie [COMPARE] erzeugt ihn nur der Server; ein Upload kann ihn nicht
+     * tragen.
+     */
+    REVERSE_REPORT,
     DATA_EXPORT,
     UPLOAD_INPUT,
     OTHER,
