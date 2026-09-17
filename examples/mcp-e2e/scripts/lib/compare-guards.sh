@@ -149,8 +149,14 @@ compare_guard_items_from_mcp() {  # $1=JSON-Datei mit `status` und `findings`
           error("Selbstprobe: unbekannter `status` \(.status)")
         elif .status == "different" and (.findings | length) == 0 then
           error("Selbstprobe: `status` different ohne Funde")
-        elif .status == "identical" and (.findings | length) > 0 then
-          error("Selbstprobe: `status` identical mit Funden")
+        # `identical` **darf** Funde tragen, solange alle nur Diagnosen sind:
+        # `W137` meldet einen Berechnungsausdruck, den der Vergleich nicht
+        # entscheiden konnte, und ist kein Unterschied. Ein Aenderungsfund
+        # traegt eine Kennung mit Unterstrich (`TABLE_COLUMN_TYPE_CHANGED`),
+        # eine Diagnose eine Ledger-Kennung (`W137`).
+        elif .status == "identical"
+             and ([.findings[] | select(.code | test("_"))] | length) > 0 then
+          error("Selbstprobe: `status` identical mit Aenderungsfunden")
         elif ([.findings[] | select((.code | type) != "string" or (.path | type) != "string")] | length) > 0 then
           error("Selbstprobe: ein Fund ohne `code` oder `path`")
         elif ([.findings[] | select(kind_of != null and kind_of != "metadata")

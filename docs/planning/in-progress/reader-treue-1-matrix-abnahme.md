@@ -956,6 +956,92 @@ Smoke grün (eigener Commit).
 migriert nicht.
 
 
+### P12 — SQL Server: der Berechnungsausdruck kommt ohne T-SQL-Quoting (2026-09-17)
+
+**Zuerst gemessen** (SQL Server 2025, eine Tabelle mit zwei berechneten Spalten
+— eine über kleingeschriebene, eine über PascalCase-Spalten; Reverse einmal mit
+dem Image von `a77fc9bb7`, einmal mit dem neuen):
+
+| Messung | Ergebnis |
+| --- | --- |
+| 1. alter Reverse (`([quantity]*[unit_price])`) gegen neuen (`quantity*unit_price`), `schema compare` | **IDENTICAL**, Exit 0 — je Spalte ein `W137`. Die eigene Regel des Berechnungsausdrucks trägt: kein Fund |
+| 2. neuer Reverse als Soll gegen die Datenbank, `schema migrate --plan-only` | `no_op`, 0 Operationen, keine Diagnose |
+| 3. (F5) **alter** Reverse als Soll gegen den neuen Reader | `no_op`, **0 Operationen**, je Spalte `W137`. **Keine `AlterColumnGeneration`** — die Stopp-Regel greift nicht |
+| 4. (M9) PascalCase-Berechnung SQL Server → MySQL | in der Matrix: die Zelle misst, und das erzeugte DDL lautet `` `Summe` DECIMAL(21,2) GENERATED ALWAYS AS (`Menge`*`Preis`) STORED `` — E1 (b) trägt bis ans Ziel |
+
+Messung 3 ist die Antwort auf die offene Frage des Plans: der Ausdruck bleibt
+ohne Herkunft **unentscheidbar**, und unentscheidbar heißt „nichts planen"
+(`ComputedExpressionDecidability`). Ein Anwender mit einer älteren
+Reverse-Datei steht nach dem Update also nicht vor einer blockierten
+Migration.
+
+**Gebaut:** der Computed-Zweig in `MssqlSchemaReader` führt
+`computedDefinition` durch dieselbe Normalisierung wie ein CHECK. Sie heißt
+jetzt `MssqlTypeMapping.normalizeExpression` (umbenannt über `make ast-grep`,
+17 Aufrufstellen). `MssqlHashPartitionRecognition` liest den Katalogtext
+unverändert weiter — sie hängt an der Abfrage, nicht am Modell.
+
+**Über den Wortlaut von P12 hinaus, gemeldet: das Index-Prädikat.** Die Zelle
+SQL Server → PostgreSQL blieb nach dem Fix `APPLY-FAIL`, mit demselben Fehler
+wie zuvor — der gefilterte Index der Fixture trug
+`WHERE ([shipped_at] IS NULL)`. `sys.indexes.filter_definition` ist derselbe
+rohe Ausdruckstext aus demselben Katalog; ohne ihn mitzunehmen wäre DoD 3 nicht
+erfüllt gewesen (die Zelle hätte weiter nicht gemessen). Er läuft jetzt durch
+dieselbe Normalisierung.
+
+**Doku:** `spec/type-mapping.md` 6.2 gilt jetzt ausdrücklich für CHECK **und**
+Berechnungsausdruck (samt der äußeren Klammer, die der Server setzt) und nennt
+die Ausnahme der Hash-Erkennung; 6.3 zieht nach. `spec/ddl-generation-rules.md`
+8.3 hat der E1-Bauteil erledigt. Anwenderhandbuch 3.23: was aus einem Reverse
+kommt. CHANGELOG „Changed".
+
+**Sabotage S-P12** (Normalisierung weg): 4 von 490 Tests in `driver-mssql` rot
+(`MssqlComputedExpressionNeutralTest` und der Reader-Test). Rücknahme per
+Prüfsumme belegt; danach `:test:integration-mssql` vollständig grün.
+
+**Zwei Zusicherungen mussten nachziehen**, weil sie den alten Zustand pinnten:
+der Reverse-Integrationsfall (`persisted.expression shouldContain "[qty]"`) und
+zwei Unit-Tests am Index-Prädikat. Sie prüfen jetzt die neutrale Form — und der
+Integrationsfall zusätzlich die PascalCase-Spalte (`"Menge"*"Preis"`).
+
+### Neu-Pin P12 — die SQL-Server-Zeile misst (2026-09-17)
+
+**Sieben Schlüssel**, alle mit Quelle SQL Server; keine Zelle mit **Ziel** SQL
+Server hat sich bewegt (PostgreSQL → SQL Server und MySQL → SQL Server
+geprüft, unverändert):
+
+| Schlüssel | vorher | nachher |
+| --- | --- | --- |
+| `CELL_MSSQL_POSTGRESQL` / `CODES_…` | `APPLY-FAIL` / `apply:syntax error at or near "["` | `2` / `W137:2` |
+| `CELL_MSSQL_MYSQL` / `CODES_…` | `APPLY-FAIL` / `apply:ERROR 1064` | `6` / `TABLE_COLUMN_GENERATION_CHANGED:1 TABLE_CONSTRAINT_CHANGED:2 TABLE_INDEX_REMOVED:1 W137:2` |
+| `CELL_MSSQL_SQLITE` / `CODES_…` / `GEN_CODES_…` | `9` / 8 Typen + Identity / `W200:1` | `11` / 10 Typen + Identity / `W200:2` |
+
+Erklärt: → PostgreSQL bleibt nur der unentscheidbare Berechnungsausdruck
+(zweimal `W137`); → MySQL kommen die Schlüsselwort-Schreibweise, die
+Darstellung der Werteliste, der Identity-Modus und das fehlende Index-Prädikat
+(`E057`) dazu; → SQLite die beiden `decimal`-Spalten des Seeds (Typaffinität).
+
+**Der Seed** (`fixtures/seeds/mssql.sql`) trägt E1s Gegenprobe: eine berechnete
+Spalte über zwei PascalCase-Spalten. Sein `SET QUOTED_IDENTIFIER ON` ist Pflicht
+— ohne es legt SQL Server eine Tabelle mit berechneter Spalte gar nicht erst an
+(`Msg 1934`, gemessen).
+
+**Zwei Befunde aus diesem Lauf**, beide im Harness festgehalten:
+
+1. **Die Selbstprobe der Wächter war zu streng.** `schema_compare` liefert
+   `status: identical` **mit** Funden, wenn alle Funde Diagnosen sind — genau
+   der Fall SQL Server → PostgreSQL (`W137:2`). Die Probe verlangte „identical
+   ⇒ keine Funde" und machte den Lauf rot. Sie unterscheidet jetzt: ein
+   Änderungsfund trägt eine Kennung mit Unterstrich, eine Diagnose eine
+   Ledger-Kennung.
+2. **`W200` trifft eine berechnete Spalte nicht.** Der Silent-Loss-Check prüft
+   den Code seit diesem Paket **objektgenau** (der Plan verlangt das: „für
+   dieses Objekt"), und damit fiel auf: SQL Server → SQLite meldet den
+   Präzisionsverlust für `sl_ms_calc.Preis`, für die daneben stehende
+   berechnete `sl_ms_calc.Summe` mit demselben Verlust nicht. Bekannter Befund
+   mit Ort im `open/`-Eintrag zu SQLite.
+
+
 ## Akzeptanzkriterien
 
 1. Ein MySQL-Reverse mit Introducer, Backslash-Escape und Backtick-Quoting

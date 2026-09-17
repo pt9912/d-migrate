@@ -236,27 +236,29 @@ Zustand gepinnt — verschwindet der Zustand, ist die Erwartung neu zu pinnen:
   der Quelle erzeugte DDL ab — ein Befund ueber Reader oder Generator.
 
 Gemessener Stand (2026-09-17, `d-migrate:dev` 1.8.0-SNAPSHOT mit der
-Server-Praeferenz `identity` fuer MySQL und dem MySQL-Seed; Oracle nicht
+Server-Praeferenz `identity` fuer MySQL und den vier Seeds; Oracle nicht
 gefahren):
 
 | Quelle \ Ziel | PostgreSQL | MySQL | SQL Server | SQLite |
 | ------------- | ---------- | ----- | ---------- | ------ |
-| PostgreSQL | — | 6 | 5 | 13 |
+| PostgreSQL | — | 11 | 11 | 22 |
 | MySQL | 4 | — | 8 | 11 |
-| SQL Server | `APPLY-FAIL` | `APPLY-FAIL` | — | 9 |
-| SQLite | 3 | `APPLY-FAIL` | `APPLY-FAIL` | — |
+| SQL Server | 2 | 6 | — | 11 |
+| SQLite | `APPLY-FAIL` | `APPLY-FAIL` | `APPLY-FAIL` | — |
 
 | Zelle | Funde bzw. Zustand | Grund |
 | ----- | ------------------ | ----- |
-| PostgreSQL → MySQL | 6: 3 CHECKs und die Berechnung entfallen, Index-Praedikat entfaellt, CHECK mit `OR`/`IS NULL` in Kleinschreibung; die Identity-Spalte meldet nichts (sie unterschiede sich nur im Sequenznamen) | Generator rendert PostgreSQL-Casts nicht (`E053`), MySQL kennt kein Index-Praedikat (`E057`), Schluesselwort-Schreibweise; ohne die Server-Praeferenz kaeme `legacy_serial_syntax` als siebter Fund dazu |
-| PostgreSQL → SQL Server | 5: 3 CHECKs und die Berechnung entfallen, Identity-Modus `always` | Casts wie oben, `W140` |
-| PostgreSQL → SQLite | 13: 8 Typen, 3 CHECKs, Berechnung, Identity | SQLite-Typaffinitaet, Casts wie oben |
+| PostgreSQL → MySQL | 11: die 6 aus der Fixture (3 CHECKs und die Berechnung entfallen, Index-Praedikat entfaellt, CHECK mit `OR`/`IS NULL` in Kleinschreibung) und 5 aus dem Seed (vier Array-Spalten als `json`, der Identity-Modus `always`) | Generator rendert PostgreSQL-Casts nicht (`E053`), MySQL kennt kein Index-Praedikat (`E057`), kein Array und kein `ALWAYS`; Schluesselwort-Schreibweise |
+| PostgreSQL → SQL Server | 11: die 5 aus der Fixture, dazu vier Arrays und zwei `json`-Spalten als `text` (je `W137`) | Casts wie oben, `W140`, `W137` |
+| PostgreSQL → SQLite | 22: die 13 aus der Fixture, dazu vier Arrays, zwei `json`, `decimal` → `float` (`W200`) und die Identity | SQLite-Typaffinitaet, Casts wie oben |
+| MySQL → SQL Server / SQLite / PostgreSQL | 8 / 11 / 4 | s. oben, Zeile „MySQL" |
+| SQL Server → PostgreSQL | 2: zweimal `W137` | der Berechnungsausdruck ist ohne Herkunft nicht entscheidbar; sonst nichts — seit der Reverse ihn ohne T-SQL-Quoting liefert |
+| SQL Server → MySQL | 6: zwei CHECKs in MySQLs Schreibweise, Identity-Modus, Index-Praedikat entfaellt, zweimal `W137` | `E057`, Schluesselwort-Schreibweise, Darstellung der Werteliste; die PascalCase-Berechnung des Seeds rechnet dort richtig (der Generator setzt `"Menge"` in Backticks) |
 | MySQL → PostgreSQL | 4: Werteliste (`in (…)` gegen `= ANY (ARRAY[…])`), CHECK mit `OR`/`IS NULL` in Kleinschreibung, zweimal `W137` | bewusst ein Fund (Darstellung eines Enums), Schluesselwort-Schreibweise, zwei unentscheidbare Berechnungsausdruecke (Fixture und Seed) |
 | MySQL → SQL Server | 8: dieselben zwei CHECKs, Identity-Modus `always`, abgeleiteter Typ **und** Nullbarkeit der beiden berechneten Spalten, zweimal `W137` | `W140`; SQL Server leitet Typ und `NOT NULL` einer berechneten Spalte aus dem Ausdruck ab |
 | MySQL → SQLite | 11: 10 Typen, Identity | SQLite-Typaffinitaet (Laenge, `decimal`, `datetime`), Identity als `identifier(auto)` |
-| SQL Server → SQLite | 9: 8 Typen, Identity | SQLite-Typaffinitaet |
-| SQLite → PostgreSQL | 3: LIKE-CHECK (`~~`), Werteliste (`= ANY`), `W137` | Schluesselwort-Schreibweise, bewusst ein Fund, unentscheidbarer Berechnungsausdruck |
-| SQL Server → PostgreSQL / MySQL | `APPLY-FAIL` (`syntax error at or near "["`, `ERROR 1064`) | der Reverse liest die berechnete Spalte mit T-SQL-Quoting (`[quantity]*[unit_price]`); die Portabilitaetspruefung (`E053`) erkennt das nicht, und der Generator uebernimmt es |
+| SQL Server → SQLite | 11: 10 Typen, Identity | SQLite-Typaffinitaet (die zwei `decimal`-Spalten des Seeds kommen dazu) |
+| SQLite → PostgreSQL | `APPLY-FAIL` (`relation "uq_0" already exists`) | der SQLite-Reverse nennt jede unbenannte mehrspaltige UNIQUE-Klausel `uq_0`; der Seed hat zwei davon in zwei Tabellen. Bis P11 |
 | SQLite → MySQL | `APPLY-FAIL` (`ERROR 1170`) | der SQLite-Reverse kennt keine Laenge; MySQL indiziert `TEXT` nicht ohne Praefix |
 | SQLite → SQL Server | `APPLY-FAIL` (`Msg 2714`) | der SQLite-Reverse nennt die Fremdschluessel jeder Tabelle `fk_0` …; SQL Server verlangt eindeutige Namen |
 

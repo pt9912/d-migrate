@@ -380,7 +380,11 @@ silent_loss_target() {
                     | if $degraded | not then empty
                       elif $want.code == "keinen" then
                         "ziel \($s)->\($t): \($key): Degradierung \($a.form)/\($a.generation) -> \($want.form)/\($want.generation) ohne Code (Anmerkung sagt keinen)"
-                      elif ([$report.notes[] | select(.code == $want.code)] | length) == 0 then
+                      elif ([$report.notes[]
+                             | select(.code == $want.code
+                                      and (.object == $key or .object == $a.column))] | length) == 0 then
+                        # Der Code muss **diesem Objekt** gelten: ein Code
+                        # irgendwo im Report sagt ueber diese Spalte nichts.
                         "ziel \($s)->\($t): \($key): Degradierung ohne \($want.code) im Generate-Report"
                       else empty end) ]
                end ] | flatten)
@@ -420,6 +424,7 @@ SILENT_LOSS_KNOWN=(
     "ziel mysql->sqlite: sl_my_expr.note: Degradierung text(40)/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
     "ziel mysql->sqlite: sl_my_expr.stufe: Degradierung text(10)/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
     "ziel mysql->mssql: sl_my_expr.stufe: Degradierung text(10)/- -> text(5)/- ohne Code (Anmerkung sagt keinen)|D1 (Plan 4) — SQL Server leitet den Typ einer berechneten Spalte ab"
+    "ziel mssql->sqlite: sl_ms_calc.Summe: Degradierung ohne W200 im Generate-Report|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md — W200 trifft die berechnete Spalte nicht"
 )
 
 # Das Paket zu einem bekannten Befund — oder Rueckgabe 1, wenn er keiner ist.

@@ -20,6 +20,7 @@
 | `text(40)` | `TEXT` | `text` | **keiner** |
 | `json` | `TEXT` | `text` | **keiner** |
 | `decimal(12,2)` | `REAL` | `float` | `W200` |
+| `decimal(21,2)` **einer berechneten Spalte** | `REAL` | `float` | **keiner** |
 | `array(text)` | `TEXT` | `text` | **keiner** (Posten P5, Plan 2 des Reader-Umbrellas) |
 
 Die Zahl daneben: der Vergleich **zeigt** den Unterschied (die Zelle meldet
@@ -36,6 +37,11 @@ Ziel wird sie durchgesetzt. Die Typmarke `json` unterscheidet einen JSON-Wert
 von einem beliebigen Text; SQLite prüft ihn nicht, und der Reverse führt ihn
 danach als `text`.
 
+**Die dritte Zeile ist eine eigene Lücke:** `W200` gibt es, es trifft nur die
+berechnete Spalte nicht. Gemessen in der Compare-Matrix (SQL Server → SQLite):
+`sl_ms_calc.Preis` bekommt `W200`, die daneben stehende berechnete Spalte
+`sl_ms_calc.Summe` mit demselben Präzisionsverlust nicht.
+
 ## Zu klären
 
 1. **Bekommt der Längenverlust einen Code?** SQLite kennt keine Länge (die
@@ -45,5 +51,8 @@ danach als `text`.
 2. **Bekommt der Verlust der JSON-Typmarke einen Code?** Dieselbe Frage; die
    Nachbardialekte sind hier verschieden (MySQL hat `JSON`, SQL Server meldet
    `W137`, Oracle `W149`).
-3. Danach ziehen die Anmerkungen der Seeds und die Liste bekannter Befunde im
+3. **Warum trifft `W200` eine berechnete Spalte nicht?** Der Verlust ist
+   derselbe; vermutlich läuft die Typabbildung dort an der Stelle vorbei, die
+   die Note hängt. Das ist eher ein Defekt als eine offene Frage.
+4. Danach ziehen die Anmerkungen der Seeds und die Liste bekannter Befunde im
    Harness nach (`examples/mcp-e2e/scripts/lib/silent-loss.sh`).
