@@ -9,9 +9,10 @@
 > ihre Liste bekannter Befunde trägt die Einträge dieses Plans. F2 ist
 > entschieden
 > ([ADR 0058](../../adr/0058-verlorener-srid-beim-reverse-ist-warnung.md)); P1
-> ist damit frei. Die Eigner-Fragen **E2** (S1) und **E3** (S2) sperren nur
-> ihren Posten; S3 wartet auf die Bestätigung der Fingerabdruck-Anhebung
-> (Umbrella, „Offen", Punkt 4).
+> ist damit frei. Die Eigner-Fragen sind am 2026-09-17 entschieden, alle wie
+> empfohlen: **E2** — S1 wird behoben; **E3** — S2 übernimmt Ursache 1, Ursache
+> 2 wird nur gemessen; **S3** — mit Anhebung des Fingerabdrucks (v16 → v17).
+> Keine Sperre mehr (Umbrella, „Offen").
 > **Aktivierung:** Move nach `../in-progress/` beim ersten
 > Implementierungs-Commit dieses Plans.
 > **Abhängigkeit:** Plan 1. Innerhalb: P10 nach P5 (dieselben Stellen); der

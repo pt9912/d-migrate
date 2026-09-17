@@ -311,7 +311,14 @@ Volltext-Verlust für mehrere Dialekte meldet. `W149` bleibt Oracles Code.
 - **A6** (2026-09-16): `NOT NULL` nativ über `AddGeometryColumn`.
 - **B3** (2026-09-16): `json` und `jsonb` gleichsetzen, aber laut.
 
-### Neue Eigner-Fragen aus dem Schnitt
+### Eigner-Fragen aus dem Schnitt — am 2026-09-17 entschieden
+
+Alle vier wie empfohlen: **E1 = (b)** (der MySQL-Generator setzt `"…"`-Bezeichner
+in rohen Ausdrücken in Backticks um), **E2 = beheben**, **E3 = Ursache 1 in
+Plan 2 beheben, Ursache 2 nur messen**, **S3 mit Anhebung des Fingerabdrucks
+bestätigt**. Damit ist keine der Sperren mehr aktiv. Die Fragen im Wortlaut des
+Schnitts:
+
 
 1. **E1 — Bezeichner in `"…"` gegen MySQL** (Plan 1, P6 und P12). Beide
    Reader normalisieren Server-Quoting zum neutralen Bezeichner: ein

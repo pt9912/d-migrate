@@ -6,9 +6,12 @@
 > Teil des Umbrellas [`reader-treue.md`](reader-treue.md). Dort stehen der
 > gemeinsame Nenner, die Belegart, die Regeln der Abnahme (Neu-Pins,
 > betroffene Zellen, Nulllinie, Sabotage), die Doku-Pflichten und die Codes.
-> **Vorbedingung / Gate:** keins, das die Aktivierung sperrt. Die
-> Eigner-Frage **E1** (Bezeichner in `"…"` gegen MySQL, s. Umbrella) sperrt
-> den **Neu-Pin** von P6 und P12, nicht deren Bau.
+> **Vorbedingung / Gate:** keins. Die Eigner-Frage **E1** (Bezeichner in
+> `"…"` gegen MySQL, s. Umbrella) ist am 2026-09-17 als **(b)** entschieden:
+> der MySQL-Generator setzt `"…"`-Bezeichner in rohen Ausdrücken (CHECK,
+> berechnete Spalte, Index-Prädikat) in Backticks um, wie es 8.3 für
+> Sichten-Rümpfe schon vorsieht. Das ist ein eigener Bauteil vor den Neu-Pins
+> von P6 und P12 (Spec 8.3 zieht mit); die Neu-Pins sind damit frei.
 > **Aktivierung:** Move nach `../in-progress/` beim ersten
 > Implementierungs-Commit, zusammen mit dem Umbrella.
 > **Abhängigkeit:** kein Vorgänger. Plan 2 und Plan 3 setzen die Matrix aus P0
