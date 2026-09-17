@@ -85,8 +85,17 @@ fail()  { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 # ginge mit der Subshell verloren — der Lauf endete gruen.
 #   note_failure    nie pinnbar (Waechter, Form, gescheiterte Schritte)
 #   note_deviation  eine Erwartung weicht ab — pinnbar mit --update-expectations
-note_failure() { printf 'FAIL: %s\n' "$*" >&2; printf '%s\n' "$*" >> "$FAILURES_FILE"; }
-note_deviation() { printf 'FAIL: %s\n' "$*" >&2; printf '%s\n' "$*" >> "$DEVIATIONS_FILE"; }
+# Eine Abweichung ist eine Zeile: mehrzeilige Meldungen (jq) werden gefaltet.
+note_to() {  # $1=Datei $2...=Meldung
+    local file="$1" msg
+    shift
+    msg="$*"
+    msg="${msg//$'\n'/ }"
+    printf 'FAIL: %s\n' "$msg" >&2
+    printf '%s\n' "$msg" >> "$file"
+}
+note_failure() { note_to "$FAILURES_FILE" "$@"; }
+note_deviation() { note_to "$DEVIATIONS_FILE" "$@"; }
 
 # shellcheck source=lib/dialects.sh
 . "$SCRIPT_DIR/lib/dialects.sh"
