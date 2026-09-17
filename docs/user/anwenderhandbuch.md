@@ -603,6 +603,28 @@ nützlich in Skripten.
 
 - Für eine maschinenlesbare Differenz: `d-migrate --output-format json schema
   compare … --output diff.json`.
+- **Sie vergleichen zwei zurückgelesene Schemata aus verschiedenen
+  Datenbanksystemen?** Dann meldet der Vergleich nicht, was nur die
+  Schreibweise des jeweiligen Systems ist: bei CHECK-Ausdrücken und
+  Index-Bedingungen Anführungszeichen um Namen, Leerraum, überflüssige
+  Klammern und Casts, die an einem Vergleich nur den Typ der Spalte
+  wiederholen (`(status)::text = 'x'::text` gegen `status = 'x'`); beim Rumpf
+  einer Sicht Anführungszeichen, Leerraum und abschließende Semikola. Was die
+  Datenbank selbst vergibt, zählt ebenfalls nicht: der Name der Sequenz hinter
+  einer Identity-Spalte, sobald eine Seite aus PostgreSQL oder Oracle stammt,
+  und die Kennzeichnung als `serial` (`legacy_serial_syntax`), sobald eine
+  Seite aus MySQL, SQLite, SQL Server oder Oracle stammt. Woher eine Seite
+  stammt, liest d-migrate aus der Markierung, die `schema reverse` in `name`
+  und `version` schreibt — lassen Sie beide Felder deshalb unverändert.
+- **Was trotzdem gemeldet wird:** eine anders formulierte Bedingung
+  (`status IN ('A','B')` gegen `status = ANY (ARRAY['A','B'])`), die Groß-
+  und Kleinschreibung von Schlüsselwörtern (`like` gegen `LIKE`) und der
+  Identity-Modus gegen SQL Server — SQL Server kennt kein `BY DEFAULT` und
+  liest solche Spalten als `always`. Enthält ein Ausdruck einen Kommentar,
+  Dollar-Quoting oder einen Backslash, vergleicht d-migrate ihn wortgleich.
+- **Über MCP gilt dasselbe:** `schema_compare` und der Job
+  `schema_compare_start` vergleichen wie die CLI; der Job legt seine Funde als
+  Artefakt ab (Art `diff`).
 - **Eine Änderung am Berechnungsausdruck einer `computed`-Spalte kann der
   Vergleich nicht immer sehen.** Ohne Herkunfts-Overlay oder Server-Sandkasten
   ist die Frage unentscheidbar — der Vergleich meldet dann bewusst **keinen**
@@ -2793,7 +2815,8 @@ Benutzer.
 die **Dialekt-Schreibweise** gleich: bei einem CHECK-Ausdruck und einem
 Index-Prädikat Quoting, Leerraum, überflüssige Klammern und Casts, die an
 einem Vergleich nur den Typ der Spalte wiederholen (`(status)::text = 'x'::text`
-gegen `status = 'x'`); beim Rumpf einer Sicht nur Quoting und Leerraum. Was
+gegen `status = 'x'`); beim Rumpf einer Sicht nur Quoting, Leerraum und
+abschließende Semikola. Was
 eine andere Aussage sein könnte — eine umgeschriebene Bedingung, andere
 Literale, die Schreibweise von Schlüsselwörtern —, bleibt ein Unterschied.
 Findet `schema compare` nichts, heißt das deshalb nicht, dass
