@@ -9,7 +9,7 @@
 # docs/planning/next/mcp-real-e2e-scope-matrix.md (Teil B). Voraussetzung:
 # einmaliger `make docker-build IMAGE_TAG=dev`.
 
-.PHONY: mcp-e2e-up mcp-e2e-down mcp-e2e-purge mcp-e2e-smoke mcp-e2e-roundtrip mcp-e2e-roundtrip-oracle
+.PHONY: mcp-e2e-up mcp-e2e-down mcp-e2e-purge mcp-e2e-smoke mcp-e2e-roundtrip mcp-e2e-roundtrip-oracle mcp-e2e-compare-matrix mcp-e2e-compare-matrix-oracle
 
 MCP_E2E_COMPOSE := docker compose -f examples/mcp-e2e/docker-compose.yml
 
@@ -36,3 +36,17 @@ mcp-e2e-roundtrip:
 # Dasselbe mit Oracle (Kaltstart 2-3 Minuten zusaetzlich).
 mcp-e2e-roundtrip-oracle:
 	MCP_E2E_WITH_ORACLE=1 ./examples/mcp-e2e/scripts/smoke-cross-dialect-roundtrip.sh
+
+# 5x5-Vergleich ueber MCP: jeder Dialekt einmal Quelle, jedes andere Ziel
+# generiert, angewendet, zurueckgelesen und mit `schema_compare` und
+# `schema_compare_start` verglichen — gegen die versionsgebundenen Erwartungen
+# in examples/mcp-e2e/expected/compare-matrix.env. Neu pinnen (nach Pruefung):
+#   make mcp-e2e-compare-matrix MCP_E2E_MATRIX_ARGS=--update-expectations
+MCP_E2E_MATRIX_ARGS ?=
+
+mcp-e2e-compare-matrix:
+	./examples/mcp-e2e/scripts/smoke-compare-matrix.sh $(MCP_E2E_MATRIX_ARGS)
+
+# Dasselbe mit Oracle als fuenftem Dialekt (Kaltstart 2-3 Minuten zusaetzlich).
+mcp-e2e-compare-matrix-oracle:
+	MCP_E2E_WITH_ORACLE=1 ./examples/mcp-e2e/scripts/smoke-compare-matrix.sh $(MCP_E2E_MATRIX_ARGS)

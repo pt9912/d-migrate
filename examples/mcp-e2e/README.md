@@ -85,36 +85,132 @@ und der Server, nicht das Transportmittel. Der MCP-Weg bleibt beim
 Scope-Smoke.
 
 **Was es prueft.** Nicht nur „laeuft durch", sondern dass der Vergleich
-nichts meldet, was keine Aenderung ist: das Skript faellt, sobald ein
-**unveraenderter Fremdschluessel** als geaendert erscheint. Genau den hatte
-ein Konsumentenprojekt gemeldet — SQL Server liest `ON DELETE NO ACTION`
-explizit aus dem Katalog, PostgreSQL laesst die Aktion weg.
+nichts meldet, was keine Aenderung ist. Die Waechter
+(`scripts/lib/compare-guards.sh`) arbeiten auf der JSON-Ausgabe von
+`schema compare` und zielen auf **Klassen**, nicht auf eine Zeilenform:
 
-Die Quellfixture traegt zwei Konstrukte, an denen zwei offene
-Konsumentenbefunde haengen: ein benanntes UNIQUE auf einer **ungebundenen**
-`text`-Spalte (`uq_customer_external_ref`) und die Sicht `order_summary`.
-Ohne sie sieht der Vergleich sie nicht — und der Reverse liest Sichten nur mit
+| Waechter | schlaegt an bei |
+| -------- | --------------- |
+| `notation` | einem CHECK-, Index- oder Fremdschluessel-Fund, dessen beide Seiten ohne Leerraum, Anfuehrungszeichen, Klammern und eine ausdrueckliche `no_action` gleich sind — also nur Schreibweise (auch der unveraenderte Fremdschluessel, den ein Konsumentenprojekt gemeldet hatte) |
+| `metadata` | einem Name- oder Versionsfund — die Quelle ist eine Datei, die andere Seite ein Reverse, und dessen Markierung ist keine Eigenschaft des Schemas |
+| `sequence` | einem Erzeugungs-Fund, dessen Seiten sich nur im Sequenznamen unterscheiden (den vergibt der Server) |
+
+Gross-/Kleinschreibung und Casts rechnet die Heuristik bewusst nicht zur
+Schreibweise: die Schreibweise von Schluesselwoertern ist eine offene
+Eigner-Frage, und ein Cast kann Bedeutung tragen. Gegen das Image `1.7.1`
+gefahren, schlagen alle drei Waechter an (Platzhalter als Name und Version,
+Constraint-Funde ohne Ausdruck, das Index-Praedikat, der Sequenzname).
+
+Die Quellfixture traegt die Konstrukte, an denen Konsumentenbefunde hingen:
+ein benanntes UNIQUE auf einer **ungebundenen** `text`-Spalte
+(`uq_customer_external_ref`), die Sicht `order_summary`, einen CHECK mit `OR`
+und `IS NULL`, einen CHECK mit Werteliste an einer `varchar`-Spalte, einen
+`numeric`-CHECK `> 0`, einen LIKE-CHECK, einen Index mit Praedikat, eine
+Identity-Spalte und eine berechnete Spalte. Der Reverse liest Sichten nur mit
 `--include-views`, das der Lauf deshalb setzt.
 
-Gemessener Stand (2026-09-15, `d-migrate:dev` aus `main`, 1.8.0-SNAPSHOT):
+**Ein bekannter Zustand statt eines Vergleichs: MySQL.** MySQL legt die
+String-Literale eines CHECK mit Zeichensatz-Introducer ab (`_latin1'…'`), der
+Reverse uebernimmt ihn, und die Validierung liest ihn als Spalte (`E012`,
+`schema compare` Exit 3). Der Lauf erkennt genau diesen Grund und weist den
+Dialekt als „ungueltig" aus; jeder andere Grund fuer Exit 3 laesst ihn
+scheitern. Behoben wird das im Reader, nicht hier.
+
+Gemessener Stand (2026-09-17, `d-migrate:dev` aus dem Arbeitsstand des
+fuenften Compare-Bauabschnitts, 1.8.0-SNAPSHOT; Oracle nicht gefahren):
 
 | Dialekt | Funde | Zusammensetzung |
 | ------- | ----- | --------------- |
-| PostgreSQL | 0 | perfekter Round-Trip |
-| MySQL | 4 | 3 Tabellen, 1 Typ |
-| SQL Server | 4 | 3 Tabellen, 1 Typ |
-| SQLite | 5 | 3 Tabellen (Typdynamik), 1 Typ, 1 Sicht |
-| Oracle | 4 | 3 Tabellen (Identity-Metadaten, Enum inline), 1 Typ |
+| PostgreSQL | 1 | 1 Tabelle: LIKE-CHECK (`~~`, Schluesselwort-Schreibweise) und Werteliste (`= ANY (ARRAY[…])`, bewusst ein Fund) |
+| MySQL | — | Reverse ungueltig (`E012`, Introducer) |
+| SQL Server | 5 | 4 Tabellen (UNIQUE auf ungebundenem `text`, LIKE-Schreibweise, Werteliste als `OR`-Kette, abgeleiteter Typ der berechneten Spalte, Enum als Text mit CHECK, Identity-Modus `always`), 1 Typ |
+| SQLite | 6 | 4 Tabellen (Typdynamik, Identity als `identifier(auto)`), 1 Typ, 1 Sicht |
+| Oracle | — | nicht gefahren |
 
-Die Funde sind **erwartet und erklaert**, nicht unterdrueckt — der Harness
-pinnt sie nicht, er zeigt sie. Was er **verbietet**, ist der FK-Fehlalarm.
+Gegenueber 2026-09-15 kamen die neuen Konstrukte hinzu; `OR`/`IS NULL`, der
+`numeric`-CHECK, das Index-Praedikat und der Sequenzname der Identity-Spalte
+melden in keinem Dialekt etwas.
 
 **Jeder Dialekt wird angewandt.** Der Lauf faehrt die erzeugte DDL gegen den
 echten Server, bevor er zurueckliest — PostgreSQL, MySQL und SQL Server ueber
 ihren Client im Container, **SQLite** ueber `sqlite3` auf dem Host (die Datei
-liegt im gemounteten `out/`) und **Oracle** ueber `sqlplus` im Oracle-Image.
-Ohne diesen Schritt laese der Reverse eine leere Datenbank zurueck, und jede
-Fundzeile waere eine Aussage ueber den fehlenden Apply statt ueber das Schema.
+liegt im gemounteten `out/`) und **Oracle** ueber `sqlplus` im Oracle-Image
+(`scripts/lib/dialects.sh`). Ohne diesen Schritt laese der Reverse eine leere
+Datenbank zurueck.
+
+## Compare-Matrix 5x5 (`smoke-compare-matrix.sh`)
+
+Der Roundtrip vergleicht eine Datei mit je einem Reverse. Ein Konsument
+vergleicht dagegen **Reverses untereinander**, und das ueber MCP. Die Matrix
+faehrt genau das: jeder Dialekt ist einmal Quelle.
+
+    fixtures/compare-matrix.yaml --generate--> Quelle Q --schema_reverse_start--> R(Q)
+    je Ziel Z != Q:  R(Q) --generate--> Z --schema_reverse_start--> R(Z)
+                     schema_compare(R(Q), R(Z))  und  schema_compare_start(R(Q), R(Z))
+
+Generiert wird mit der CLI aus genau dem Schema, das der MCP-Reverse abgelegt
+hat; angewendet mit dem Client des Dialekts (MCP kennt kein „anwenden").
+Die Fixture ist dialektneutral und traegt die Compare-relevanten Konstrukte
+(CHECK mit `OR`/`IS NULL`, Werteliste an `varchar`, `numeric > 0`, LIKE,
+Index mit Praedikat, Autowert und Identity, berechnete Spalte,
+Fremdschluessel ohne Aktion).
+
+**Ausgabe:** je Zelle die Zahl der Funde und ihre Codes. **Gepinnt** in
+`expected/compare-matrix.env`, versionsgebunden (`EXPECT_VERSION`): weicht
+eine Zelle ab, scheitert der Lauf. Nach bewusster Pruefung pinnt
+
+```sh
+make mcp-e2e-compare-matrix MCP_E2E_MATRIX_ARGS=--update-expectations
+```
+
+neu — den Diff der Datei vor dem Commit lesen. **Nie gepinnt**, und in jeder
+Version verbindlich:
+
+- `schema_compare` und `schema_compare_start` liefern dieselben Funde; das
+  Job-Artefakt hat die Art `COMPARE` und genau `status`, `summary`,
+  `findings`;
+- die Waechter aus dem Roundtrip (`metadata`, `notation`, `sequence`), hier auf
+  den MCP-Funden;
+- jeder `schema_reverse_start`-Job legt neben dem Schema seinen
+  Reverse-Report ab (`kind: connection`).
+
+**Zustaende statt Zahlen.** Zwei Arten von Zellen messen nichts und sind als
+Zustand gepinnt — verschwindet der Zustand, ist die Erwartung neu zu pinnen:
+
+- `INVALID` / `E012-introducer`: das Reverse der Quelle ist ungueltig (MySQL,
+  siehe oben); die CLI erzeugt daraus keine DDL.
+- `APPLY-FAIL` / `apply:<Fehlerklasse>`: das Ziel lehnt die aus dem Reverse
+  der Quelle erzeugte DDL ab — ein Befund ueber Reader oder Generator.
+
+Gemessener Stand (2026-09-17, `d-migrate:dev` 1.8.0-SNAPSHOT, zwei Laeufe
+identisch; Oracle nicht gefahren):
+
+| Quelle \ Ziel | PostgreSQL | MySQL | SQL Server | SQLite |
+| ------------- | ---------- | ----- | ---------- | ------ |
+| PostgreSQL | — | 7 | 5 | 13 |
+| MySQL | `INVALID` | — | `INVALID` | `INVALID` |
+| SQL Server | `APPLY-FAIL` | `APPLY-FAIL` | — | 9 |
+| SQLite | 3 | `APPLY-FAIL` | `APPLY-FAIL` | — |
+
+| Zelle | Funde bzw. Zustand | Grund |
+| ----- | ------------------ | ----- |
+| PostgreSQL → MySQL | 7: 3 CHECKs und die Berechnung entfallen, Index-Praedikat entfaellt, Identity mit `legacy_serial_syntax`, CHECK mit `OR`/`IS NULL` in Kleinschreibung | Generator rendert PostgreSQL-Casts nicht (`E053`), MySQL kennt kein Index-Praedikat (`E057`), keine Reverse-Praeferenz deklariert, Schluesselwort-Schreibweise |
+| PostgreSQL → SQL Server | 5: 3 CHECKs und die Berechnung entfallen, Identity-Modus `always` | Casts wie oben, `W140` |
+| PostgreSQL → SQLite | 13: 8 Typen, 3 CHECKs, Berechnung, Identity | SQLite-Typaffinitaet, Casts wie oben |
+| SQL Server → SQLite | 9: 8 Typen, Identity | SQLite-Typaffinitaet |
+| SQLite → PostgreSQL | 3: LIKE-CHECK (`~~`), Werteliste (`= ANY`), `W137` | Schluesselwort-Schreibweise, bewusst ein Fund, unentscheidbarer Berechnungsausdruck |
+| SQL Server → PostgreSQL / MySQL | `APPLY-FAIL` (`syntax error at or near "["`, `ERROR 1064`) | der Reverse liest die berechnete Spalte mit T-SQL-Quoting (`[quantity]*[unit_price]`); die Portabilitaetspruefung (`E053`) erkennt das nicht, und der Generator uebernimmt es |
+| SQLite → MySQL | `APPLY-FAIL` (`ERROR 1170`) | der SQLite-Reverse kennt keine Laenge; MySQL indiziert `TEXT` nicht ohne Praefix |
+| SQLite → SQL Server | `APPLY-FAIL` (`Msg 2714`) | der SQLite-Reverse nennt die Fremdschluessel jeder Tabelle `fk_0` …; SQL Server verlangt eindeutige Namen |
+
+**Native Typ-Seeds** je Dialekt sind vorgesehen: liegt
+`fixtures/seeds/<dialekt>.sql`, wendet der Lauf sie nach der Fixture an, und
+sie gehen in den Reverse der Quelle ein. Heute gibt es keine.
+
+**Oracle** faehrt nur mit `make mcp-e2e-compare-matrix-oracle`; ohne diesen
+Aufruf werden seine Zellen weder gemessen noch geprueft. Der Workflow
+`MCP-E2E Compare-Matrix (Best-Effort)` faehrt die Matrix ohne Oracle
+(manuell, woechentlich und bei Aenderungen am Harness) und ist kein PR-Gate.
 
 ## Benutzung
 
@@ -123,12 +219,14 @@ make docker-build IMAGE_TAG=dev   # einmalig: d-migrate:dev-Runtime-Image
 make mcp-e2e-smoke                # up + voller Scope-Matrix-Lauf
 make mcp-e2e-roundtrip            # Hin-und-Her-Migrationen, alle schnellen Dialekte
 make mcp-e2e-roundtrip-oracle     # dasselbe mit Oracle (2-3 Min Kaltstart extra)
+make mcp-e2e-compare-matrix       # 5x5-Vergleich ueber MCP gegen die gepinnten Erwartungen
+make mcp-e2e-compare-matrix-oracle  # dasselbe mit Oracle
 make mcp-e2e-down                 # Container stoppen (Volume bleibt)
 make mcp-e2e-purge                # Container + Volume entfernen
 ```
 
-Voraussetzungen am Host: `docker`, `docker compose`, `jq` sowie **`sqlite3`**
-(fuer den SQLite-Leg des Roundtrips — die Datenbank ist eine Datei, es gibt
+Voraussetzungen am Host: `docker`, `docker compose`, `jq`, `bash` ab 4 sowie
+**`sqlite3`** (fuer die SQLite-Legs — die Datenbank ist eine Datei, es gibt
 keinen Dienst). Der Stack bleibt
 nach dem Lauf stehen (Cleanup über `mcp-e2e-down`/`-purge`).
 

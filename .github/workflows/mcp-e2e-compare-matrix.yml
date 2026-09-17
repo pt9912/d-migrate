@@ -1,0 +1,58 @@
+name: MCP-E2E Compare-Matrix (Best-Effort)
+
+# 5x5-Vergleich ueber MCP gegen das echte, gebaute d-migrate:dev-Image und
+# echte Server (examples/mcp-e2e, scripts/smoke-compare-matrix.sh): jeder
+# Dialekt einmal Quelle, jedes andere Ziel per CLI generiert und mit dem
+# Client des Dialekts angewendet, beide Seiten ueber `schema_reverse_start`
+# zurueckgelesen und mit `schema_compare` und `schema_compare_start`
+# verglichen. Die Funde je Zelle sind in
+# examples/mcp-e2e/expected/compare-matrix.env gepinnt (versionsgebunden);
+# versionsunabhaengige Waechter pruefen daneben, dass Werkzeug und Job
+# dieselben Funde liefern und kein Fund nur Schreibweise, Reverse-Markierung
+# oder Sequenzname ist.
+#
+# Oracle faehrt hier nicht mit (Kaltstart 2-3 Minuten, ~2 GB Image); lokal:
+# `make mcp-e2e-compare-matrix-oracle`.
+#
+# Kein PR-Gate. Best-Effort: continue-on-error, analog zu den
+# Sample-DB-Cross-Smokes — transiente Registry-/Netz-Instabilitaeten und die
+# schweren Server-Images sollen den Hauptbuild nicht rot machen. Der
+# Zeitplan faengt Abweichungen, die kein Push in diese Pfade ausloest.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+  push:
+    branches: [main]
+    paths:
+      - 'examples/mcp-e2e/**'
+      - 'make/mcp-e2e.mk'
+      - '.github/workflows/mcp-e2e-compare-matrix.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compare-matrix:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify docker compose, jq and sqlite3 available
+        run: |
+          docker compose version
+          jq --version
+          sqlite3 --version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run MCP-E2E compare matrix (PostgreSQL, MySQL, SQL Server, SQLite)
+        run: make mcp-e2e-compare-matrix
+
+      - name: Cleanup (best-effort)
+        if: always()
+        run: make mcp-e2e-purge || true

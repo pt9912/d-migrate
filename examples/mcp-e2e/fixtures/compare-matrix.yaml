@@ -1,0 +1,87 @@
+# Fixture der Compare-Matrix (scripts/smoke-compare-matrix.sh).
+#
+# Dialektneutral: jeder Dialekt erzeugt daraus sein DDL, legt es an und ist
+# dann **Quelle** der Matrix. Die Konstrukte sind die, an denen
+# `schema compare` zwei Reverses verschiedener Dialekte auseinanderhaelt —
+# oder faelschlich auseinanderhielt:
+#
+# - CHECK mit `OR` und `IS NULL` (gruppierende Klammern je Dialekt),
+# - CHECK mit Werteliste an einer `varchar`-Spalte (PostgreSQL liest ihn als
+#   `= ANY (ARRAY[…])` mit Cast zurueck),
+# - `numeric`-CHECK `> 0` (PostgreSQL: `(0)::numeric`),
+# - LIKE-CHECK (PostgreSQL: `~~`),
+# - Index mit Praedikat (MySQL und Oracle kennen keinen),
+# - Autowert- und Identity-Spalte (Sequenzname, `legacy_serial_syntax`, Modus),
+# - berechnete Spalte (`stored`, abgeleiteter Typ),
+# - Fremdschluessel ohne Aktion (darf nie ein Fund sein).
+#
+# Native Typen je Dialekt kommen spaeter ueber fixtures/seeds/<dialekt>.sql
+# dazu (siehe README); diese Datei bleibt die gemeinsame Grundlage.
+schema_format: "1.0"
+name: compare_matrix
+version: 1.0.0
+tables:
+  cm_customer:
+    columns:
+      id: { type: identifier, auto_increment: true }
+      email: { type: text, max_length: 254, required: true, unique: true, unique_constraint: uq_cm_customer_email }
+      segment: { type: text, max_length: 20, required: true }
+    primary_key: [id]
+    constraints:
+      - name: ck_cm_customer_email
+        type: check
+        expression: "email LIKE '%@%'"
+      - name: ck_cm_customer_segment
+        type: check
+        expression: "segment IN ('retail', 'business')"
+  cm_order:
+    columns:
+      id:
+        type: biginteger
+        required: true
+        generation: { type: identity, mode: by_default }
+      customer_id: { type: integer, required: true }
+      placed_at: { type: datetime, required: true }
+      shipped_at: { type: datetime }
+    primary_key: [id]
+    indices:
+      - name: ix_cm_order_open
+        columns: [customer_id]
+        where: "shipped_at IS NULL"
+    constraints:
+      - name: fk_cm_order_customer
+        type: foreign_key
+        columns: [customer_id]
+        references: { table: cm_customer, columns: [id] }
+      - name: ck_cm_order_shipped
+        type: check
+        expression: "shipped_at IS NULL OR shipped_at >= placed_at"
+  cm_line:
+    columns:
+      id: { type: identifier, auto_increment: true }
+      order_id: { type: biginteger, required: true }
+      quantity: { type: integer, required: true }
+      unit_price: { type: decimal, precision: 12, scale: 2, required: true }
+      line_total:
+        type: decimal
+        precision: 14
+        scale: 2
+        generation:
+          type: computed
+          expression: "quantity * unit_price"
+          stored: true
+    primary_key: [id]
+    indices:
+      - name: ix_cm_line_order
+        columns: [order_id]
+    constraints:
+      - name: fk_cm_line_order
+        type: foreign_key
+        columns: [order_id]
+        references: { table: cm_order, columns: [id] }
+      - name: ck_cm_line_quantity
+        type: check
+        expression: "quantity > 0"
+      - name: ck_cm_line_price
+        type: check
+        expression: "unit_price > 0"
