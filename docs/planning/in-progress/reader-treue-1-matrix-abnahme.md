@@ -889,6 +889,31 @@ ging in `erzeuger | bewerter` unter — die Auswertung läuft jetzt über eine
 Variable und meldet den Fehler.
 
 
+### Neu-Pin P0 — die Seeds und die zwei neuen Schlüsselfamilien (2026-09-17)
+
+Ein eigener Commit, nur die Wirkung von P0. **24 Schlüssel**: 16 neue
+(4 × `REPORT_CODES_*`, 12 × `GEN_CODES_*`) und 8 geänderte in den Zellen mit
+Quelle PostgreSQL oder SQLite — genau die, die der Umbrella als betroffen
+nennt. Vor dem Pin geprüft, jede Änderung erklärt:
+
+| Zelle | vorher | nachher | Grund |
+| --- | --- | --- | --- |
+| PostgreSQL → MySQL | 6 | 11 | vier Array-Spalten (`array(…)` → `json`) und der Modus der `ALWAYS`-Identity |
+| PostgreSQL → SQL Server | 5 | 11 | vier Arrays und zwei `json`-Spalten (→ `text`, je mit `W137`) |
+| PostgreSQL → SQLite | 13 | 22 | dieselben acht Spalten, dazu `decimal(12,2)` → `float` (`W200`) und die Identity |
+| SQLite → PostgreSQL | 3 | `APPLY-FAIL` (`relation "uq_0" already exists`) | **L5, vom Plan vorhergesagt**: zwei unbenannte mehrspaltige UNIQUE-Klauseln in zwei Tabellen ergeben zweimal `uq_0`. P11 öffnet die Zelle wieder |
+
+Die neuen Codes je Reverse und je Generate sind erklärt: `R202:5` (SQLite rät
+zur 64-Bit-Breite, jetzt an fünf Tabellen), `R301:1 R400:1` (PostgreSQL:
+`interval` und die installierte PostGIS-Extension), `R205:1 R330:1` (MySQL),
+`E053:4` (PostgreSQL-Casts in CHECK und Berechnung), `E057` (Partial-Index auf
+MySQL; UNIQUE auf ungebundenem `text` in SQL Server), `W125:2` (MySQL verlangt
+eine Präfixlänge für UNIQUE auf `TEXT`), `W137:6`, `W140`, `W200`.
+
+Zwei aufeinanderfolgende Läufe auf dem Endstand sind identisch (Zellen, Codes
+und die Liste der bekannten Befunde).
+
+
 ## Akzeptanzkriterien
 
 1. Ein MySQL-Reverse mit Introducer, Backslash-Escape und Backtick-Quoting
