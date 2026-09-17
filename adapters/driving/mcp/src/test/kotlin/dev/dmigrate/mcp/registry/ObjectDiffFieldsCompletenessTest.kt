@@ -10,6 +10,13 @@ import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.TriggerDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.ViewDiff
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.TableMetadata
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
@@ -111,16 +118,28 @@ class ObjectDiffFieldsCompletenessTest : FunSpec({
 
     context("Tabellen und Spalten") {
 
-        test("every ValueChange field of a column yields one finding") {
-            val column = instance(ColumnDiff::class.java) { field, fieldType ->
-                when {
-                    fieldType == String::class.java -> "c"
-                    field == "required" || field == "unique" -> ValueChange(false, true)
-                    else -> marker(field)
+        /** Der Dokument-Schluessel, auf dem der Fund je `ColumnDiff`-Feld endet. */
+        val columnKeys = mapOf(
+            "type" to "type", "required" to "required", "default" to "default",
+            "unique" to "unique", "references" to "references", "generation" to "generation",
+        )
+
+        test("every ValueChange field of a column yields exactly one finding at its own key") {
+            valueChangeFields(ColumnDiff::class.java).toSet() shouldBe columnKeys.keys
+            for (field in valueChangeFields(ColumnDiff::class.java)) {
+                withClue(field) {
+                    val column = instance(ColumnDiff::class.java) { name, fieldType ->
+                        when {
+                            fieldType == String::class.java -> "c"
+                            name != field -> null
+                            name == "required" || name == "unique" -> ValueChange(false, true)
+                            else -> marker(name)
+                        }
+                    }
+                    val findings = TableCompareFindings.of(TableDiff(name = "t", columnsChanged = listOf(column)))
+                    findings.map { it["path"] } shouldBe listOf("tables.t.columns.c.${columnKeys.getValue(field)}")
                 }
             }
-            val findings = TableCompareFindings.of(TableDiff(name = "t", columnsChanged = listOf(column)))
-            findings.size shouldBe valueChangeFields(ColumnDiff::class.java).size
         }
 
         /**
@@ -130,18 +149,56 @@ class ObjectDiffFieldsCompletenessTest : FunSpec({
          */
         val tableFieldsWithoutFinding = setOf("partitioning")
 
-        test("every other ValueChange field of a table yields one finding") {
-            val table = instance(TableDiff::class.java) { field, fieldType ->
-                when (fieldType) {
-                    String::class.java -> "t"
-                    ValueChange::class.java -> marker(field)
-                    List::class.java -> emptyList<Any>()
-                    Map::class.java -> emptyMap<String, Any>()
-                    else -> error("unexpected field $field: $fieldType")
+        val column = ColumnDefinition(NeutralType.Integer)
+        val index = IndexDefinition(name = "ix", columns = listOf(IndexColumn("c")))
+        val check = ConstraintDefinition(name = "ck", type = ConstraintType.CHECK, expression = "c > 0")
+
+        /**
+         * Je Feld von [TableDiff] — auch die listen- und map-wertigen — ein
+         * Wert mit **einem** Eintrag und der Pfad, den sein Fund traegt.
+         */
+        val tableFields: Map<String, Pair<Any, String>> = mapOf(
+            "columnsAdded" to (mapOf("c" to column) to "tables.t.columns.c"),
+            "columnsRemoved" to (mapOf("c" to column) to "tables.t.columns.c"),
+            "columnsChanged" to (
+                listOf(ColumnDiff("c", type = ValueChange(NeutralType.Integer, NeutralType.BigInteger))) to
+                    "tables.t.columns.c.type"
+                ),
+            "primaryKey" to (ValueChange(listOf("a"), listOf("b")) to "tables.t.primary_key"),
+            "indicesAdded" to (listOf(index) to "tables.t.indices.ix"),
+            "indicesRemoved" to (listOf(index) to "tables.t.indices.ix"),
+            "indicesChanged" to (listOf(ValueChange(index, index.copy(unique = true))) to "tables.t.indices.ix"),
+            "constraintsAdded" to (listOf(check) to "tables.t.constraints.ck"),
+            "constraintsRemoved" to (listOf(check) to "tables.t.constraints.ck"),
+            "constraintsChanged" to (
+                listOf(ValueChange(check, check.copy(expression = "c > 1"))) to "tables.t.constraints.ck"
+                ),
+            "metadata" to (
+                ValueChange(TableMetadata(engine = "InnoDB"), TableMetadata(engine = "MyISAM")) to "tables.t.metadata"
+                ),
+        )
+
+        test("every field of a table is listed here or a known gap") {
+            (fieldsOf(TableDiff::class.java).map { it.name } - "name").toSet() shouldBe
+                tableFields.keys + tableFieldsWithoutFinding
+        }
+
+        test("every other field of a table yields exactly one finding at its own path") {
+            for ((field, entry) in tableFields) {
+                withClue(field) {
+                    val table = instance(TableDiff::class.java) { name, fieldType ->
+                        when {
+                            name == "name" -> "t"
+                            name == field -> entry.first
+                            fieldType == List::class.java -> emptyList<Any>()
+                            fieldType == Map::class.java -> emptyMap<String, Any>()
+                            else -> null
+                        }
+                    }
+                    table.hasChanges() shouldBe true
+                    TableCompareFindings.of(table).map { it["path"] } shouldBe listOf(entry.second)
                 }
             }
-            val expected = valueChangeFields(TableDiff::class.java) - tableFieldsWithoutFinding
-            TableCompareFindings.of(table).size shouldBe expected.size
         }
 
         test("the known gap is still a gap") {

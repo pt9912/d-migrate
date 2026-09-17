@@ -5,7 +5,6 @@ import dev.dmigrate.cli.commands.SchemaFindingPath
 import dev.dmigrate.cli.commands.SchemaFindingPath.Section
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.ValueChange
-import dev.dmigrate.core.diff.ViewDiff
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.mcp.registry.CompareFinding.added
 import dev.dmigrate.mcp.registry.CompareFinding.beforeAfter
@@ -60,7 +59,9 @@ internal object SchemaCompareFindings {
         diff.tablesChanged.forEach { addAll(TableCompareFindings.of(it)) }
         addAll(diff.viewsAdded.map { added("VIEW_ADDED", SchemaFindingPath.of(Section.VIEWS, it.name)) })
         addAll(diff.viewsRemoved.map { removed("VIEW_REMOVED", SchemaFindingPath.of(Section.VIEWS, it.name)) })
-        diff.viewsChanged.forEach { addAll(viewChanges(it)) }
+        diff.viewsChanged.forEach {
+            addAll(fieldChanges("VIEW_CHANGED", SchemaFindingPath.of(Section.VIEWS, it.name), ObjectDiffFields.of(it)))
+        }
         addAll(diff.sequencesAdded.map { added("SEQUENCE_ADDED", SchemaFindingPath.of(Section.SEQUENCES, it.name)) })
         addAll(diff.sequencesRemoved.map { removed("SEQUENCE_REMOVED", SchemaFindingPath.of(Section.SEQUENCES, it.name)) })
         diff.sequencesChanged.forEach {
@@ -123,9 +124,11 @@ internal object SchemaCompareFindings {
      * einer Tabelle (`tables.t.columns.c.type`).
      *
      * Die Werte stehen als `before`/`after` darin; fehlt eine Seite, war das
-     * Feld dort nicht gesetzt. Ausgenommen sind die Felder in
-     * [WITHOUT_VALUES]: lange Rumpf-Texte und strukturierte Werte — der
-     * Aufrufer hat beide Seiten selbst in der Hand.
+     * Feld dort nicht gesetzt. Listen stehen als `[a, b]` — auch die Spalten
+     * einer Sicht (nur die Namen; sie werden nur verglichen, wenn beide Seiten
+     * sie tragen, siehe `SchemaComparator.compareView`). Ausgenommen sind die
+     * Felder in [WITHOUT_VALUES]: lange Rumpf-Texte und strukturierte Werte —
+     * der Aufrufer hat beide Seiten selbst in der Hand.
      */
     private fun fieldChanges(
         code: String,
@@ -139,32 +142,4 @@ internal object SchemaCompareFindings {
     }
 
     private val WITHOUT_VALUES = setOf("query", "body", "parameters", "returns", "fields")
-
-    /**
-     * Eine geaenderte Sicht — ein Fund je Feld, wie bei den uebrigen Objekten.
-     *
-     * Die Spalten tragen ihre Werte als `before`/`after` (Namen, keine Typen);
-     * `compareDetailsSchema()` verlangt je Wert ein Nicht-Whitespace-Zeichen
-     * (`pattern: "\\S"`), eine Seite ohne Spaltennamen bleibt deshalb ohne
-     * Werte. Fuer die Query bleibt es beim benannten Feld ohne Text: sie kann
-     * lang sein, und der Aufrufer hat beide Seiten selbst in der Hand.
-     *
-     * Traegt nur eine Seite Spalten, gibt es dazu gar nichts zu melden — das
-     * ist die Regel aus `SchemaComparator.compareView`.
-     */
-    private fun viewChanges(v: ViewDiff): List<Map<String, Any?>> {
-        val viewPath = SchemaFindingPath.of(Section.VIEWS, v.name)
-        val columns = v.columns?.let { change ->
-            val path = SchemaFindingPath.field(viewPath, "columns")
-            val before = change.before.joinToString(", ")
-            val after = change.after.joinToString(", ")
-            val named = before.isNotBlank() && after.isNotBlank()
-            finding(
-                SchemaFindingSeverity.WARNING, "VIEW_CHANGED", path, "$path changed",
-                details = if (named) mapOf("before" to before, "after" to after) else null,
-            )
-        }
-        val others = fieldChanges("VIEW_CHANGED", viewPath, ObjectDiffFields.of(v).filter { it.first != "columns" })
-        return listOfNotNull(columns) + others
-    }
 }

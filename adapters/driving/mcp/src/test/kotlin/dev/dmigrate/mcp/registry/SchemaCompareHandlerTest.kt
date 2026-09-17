@@ -762,8 +762,9 @@ class SchemaCompareHandlerTest : FunSpec({
         view.get("path").asString shouldBe "views.v1.columns"
         view.get("message").asString shouldContain "columns changed"
         val details = view.getAsJsonObject("details")
-        details.get("before").asString shouldBe "order_id"
-        details.get("after").asString shouldBe "total"
+        // Listen in der Schreibweise des Dokuments (`spec/mcp-server.md`).
+        details.get("before").asString shouldBe "[order_id]"
+        details.get("after").asString shouldBe "[total]"
     }
 
     test("dieselben Spaltennamen mit anderen Typen sind keine Aenderung") {
@@ -791,18 +792,20 @@ class SchemaCompareHandlerTest : FunSpec({
         compareFindings(setup) shouldBe emptyList()
     }
 
-    test("ohne Spaltennamen bleibt es beim benannten Feld, ohne Werte") {
-        // `compareDetailsSchema()` verlangt je Wert ein Nicht-Whitespace-Zeichen;
-        // eine leere Seite darf deshalb keine `details` erzeugen.
+    test("eine leere Spaltenliste steht als leere Liste") {
+        // `[]` ist eine Liste in der Schreibweise des Dokuments und kein
+        // leerer Wert — `compareDetailsSchema()` (`pattern: "\\S"`) nimmt sie an.
         val setup = setup()
         stageSchema(setup, "left", schemaJsonWithView("orders", "SELECT id FROM t", "[]"))
         stageSchema(
             setup, "right",
-            schemaJsonWithView("orders", "SELECT id FROM t", """[{"name":"id","type":"integer"}]"""),
+            schemaJsonWithView("orders", "SELECT id FROM t", """[{"name":"a","type":"integer"},{"name":"b","type":"integer"}]"""),
         )
         val view = compareFindings(setup).single { it.get("code").asString == "VIEW_CHANGED" }
         view.get("message").asString shouldContain "columns changed"
-        view.has("details") shouldBe false
+        val details = view.getAsJsonObject("details")
+        details.get("before").asString shouldBe "[]"
+        details.get("after").asString shouldBe "[a, b]"
     }
 
     test("ein geaenderter Sicht-Rumpf nennt die Query") {

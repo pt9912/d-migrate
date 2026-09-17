@@ -17,7 +17,14 @@ import dev.dmigrate.core.model.canonicalOrder
  * `instead_of`), Listen als `[a, b]` — Trigger-Ereignisse in der Reihenfolge
  * des Dokuments. Strukturierte Werte einer Spalte stehen in der Kurzform des
  * Vergleichs (`text(254)`, `identity(mode=by_default)`,
- * `orders.id (on_delete=cascade)`). Nie die Kotlin-Darstellung eines Objekts.
+ * `orders.id (on_delete=cascade)`).
+ *
+ * **Grenze:** fuer Werte ohne eigene Form — eine Map (die Felder eines
+ * zusammengesetzten Typs), eine Parameter- oder Rueckgabe-Definition — bleibt
+ * es bei `toString()`, also der Kotlin-Darstellung. `schema_compare` gibt die
+ * Felder, die solche Werte tragen (`fields`, `parameters`, `returns`), deshalb
+ * ohne `details` aus; wer hier einen neuen Werttyp durchreicht, braucht einen
+ * eigenen Zweig.
  */
 object CompareValueText {
 

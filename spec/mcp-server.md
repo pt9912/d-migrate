@@ -279,8 +279,9 @@ optional `details` mit `before` und/oder `after`:
   Routine oder eines Triggers (`body`), Parameter- und Rueckgabelisten
   (`parameters`, `returns`), die Felder eines zusammengesetzten Typs
   (`fields`) sowie die Funde „hinzugefuegt"/„entfernt" ganzer Objekte und
-  Spalten. Die Spalten einer Sicht (`columns`, als Namen) erscheinen nur, wenn
-  beide Seiten welche tragen.
+  Spalten. Die Spalten einer Sicht (`columns`) erscheinen nur, wenn beide
+  Seiten welche tragen — als Liste ihrer Namen (`[order_id, total]`, eine
+  leere Seite als `[]`).
 
 ### `resources/list` und `resources/templates/list`
 

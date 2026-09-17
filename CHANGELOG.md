@@ -39,12 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Text(maxLength=254)`, `Identity(mode=BY_DEFAULT, …)`). Jetzt: `after`,
   `[insert, update]`, `enum`, `definer`, `text(254)`,
   `identity(mode=by_default)` — dieselben Kurzformen wie im Bericht von
-  `schema compare`; auch die Meldungstexte. **Fuer MCP-Abnehmer ein
+  `schema compare`; auch die Meldungstexte. Die Spalten einer Sicht stehen
+  als Liste ihrer Namen (`[order_id, total]`, vorher `order_id`), eine leere
+  Seite als `[]` (vorher ohne `details`). **Fuer MCP-Abnehmer ein
   Vertragswechsel**; das Format steht in `spec/mcp-server.md`. Im Bericht von
-  `schema compare` heissen die Aktionen eines Spalten-Fremdschluessels jetzt
-  `on_delete=`/`on_update=` (vorher `onDelete=`/`onUpdate=`) wie in der
-  Kurzform eines Constraints, und die Art eines geaenderten
-  benutzerdefinierten Typs steht klein (`kind: enum -> domain`).
+  `schema compare` steht die Art eines geaenderten benutzerdefinierten Typs
+  klein (`kind: enum -> domain`).
 
 - **`schema_compare_start` vergleicht wie `schema_compare` und legt dieselben
   Funde ab.** Der Job verglich wortgleich und veroeffentlichte den internen
