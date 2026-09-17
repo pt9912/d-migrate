@@ -88,8 +88,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `name`-Werte (`__dmigrate_reverse__:postgresql:…` gegen `…:mysql:…`); die
   CLI entfernte sie vor dem Vergleich, das MCP-Werkzeug nicht und meldete
   `SCHEMA_NAME_CHANGED`. Beide MCP-Oberflaechen entfernen sie jetzt wie die
-  CLI; eine unvollstaendige Markierung ist ein `VALIDATION_ERROR` am
-  `schemaRef` der Seite.
+  CLI. Eine unvollstaendige Markierung ist bei `schema_compare` ein
+  `VALIDATION_ERROR` am `schemaRef` der Seite; der Job
+  `schema_compare_start` endet mit `FAILED` (`RUNNER_ERROR`).
+
+- **`schema compare` vergleicht Name und Version nicht, sobald eine Seite ein
+  Reverse ist** — in der CLI und in beiden MCP-Oberflaechen. Gegen ein
+  handgeschriebenes Schema meldete die CLI bisher
+  `name: __compare_normalized__ -> shop` und `version: 0.0.0 -> 1.0.0`, die
+  MCP-Oberflaechen `SCHEMA_NAME_CHANGED`/`SCHEMA_VERSION_CHANGED` mit denselben
+  Platzhaltern: Werte, die in keinem der beiden Schemata stehen. Die
+  Markierung ist keine Eigenschaft des Schemas; zwei handgeschriebene Schemata
+  vergleichen `name` und `version` weiter.
 
 - **`schema compare` setzt weitere Dialekt-Schreibweisen gleich.** Klammern um
   die Operanden einer `AND`-/`OR`-Komposition

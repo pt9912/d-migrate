@@ -846,6 +846,15 @@ Verglichen wird nur, was **beide** Seiten tragen, und nur der **Name** — der
 Typ ist Dialekt-Schreibweise (`text` gegen `nvarchar`). Traegt eine Seite
 keine Spalten, ist das eine Leseluecke und keine Schemaaenderung.
 
+**Reverse-Markierung**: `schema reverse` schreibt in `name` und `version`
+eine Markierung (Dialekt und Herkunft), nicht den Namen und die Version des
+Schemas. Traegt eine der beiden Seiten sie, sind `name` und `version` kein
+Vergleichsgegenstand — auch gegen ein handgeschriebenes Schema entsteht dort
+kein Unterschied, und kein Bericht nennt die Markierung oder einen Platzhalter
+fuer sie. Zwei handgeschriebene Schemata vergleichen beide Felder. Traegt ein
+Name das reservierte Praefix bei unvollstaendiger Markierung, endet der Lauf
+mit Exit 7.
+
 **Sequenzname einer Identity-Spalte**: den Namen der Sequenz hinter einer
 Identity-Spalte vergibt bei PostgreSQL und Oracle der Server; er beschreibt,
 wie die Erzeugung organisiert ist, nicht, was die Spalte ist. `schema compare`

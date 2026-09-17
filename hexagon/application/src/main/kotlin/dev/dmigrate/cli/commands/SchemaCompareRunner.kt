@@ -135,10 +135,12 @@ class SchemaCompareRunner(
 
         cancellationToken.throwIfCancellationRequested()
         // 8. Compare and project (Diff-Phase)
-        // Der Dialekt kommt aus der Reverse-Markierung, die der Normalizer
-        // gerade entfernt hat — also aus dem ungefalteten Operanden.
-        val sourceSide = CompareSide(sourceNormalized.schema, reverseSourceDialect(sourceResolved.schema))
-        val targetSide = CompareSide(targetNormalized.schema, reverseSourceDialect(targetResolved.schema))
+        // Die Seiten entstehen wie in beiden MCP-Oberflaechen aus dem
+        // ungefalteten Operanden: Markierung entfernt, Dialekt und die
+        // Tatsache, dass es eine gab, behalten. Eine kaputte Markierung hat
+        // der Normalizer oben schon mit Exit 7 abgewiesen.
+        val sourceSide = SchemaCompareSemantics.side(sourceResolved.schema)
+        val targetSide = SchemaCompareSemantics.side(targetResolved.schema)
         val diff = comparator(sourceSide, targetSide)
         val identical = diff.isEmpty()
         val diffView = if (identical) null else projectDiff(diff)

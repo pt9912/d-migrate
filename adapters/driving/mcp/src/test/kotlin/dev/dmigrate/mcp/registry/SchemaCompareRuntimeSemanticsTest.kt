@@ -1,8 +1,10 @@
 package dev.dmigrate.mcp.registry
 
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.dmigrate.core.cancel.CancellationTokenSource
+import dev.dmigrate.core.diff.migration.ReverseMarkerNormalizer
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.error.ValidationErrorException
@@ -42,6 +44,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayInputStream
 import java.time.Clock
@@ -52,8 +55,8 @@ private val TENANT = TenantId("acme")
 private val OWNER = PrincipalId("alice")
 private val EPOCH = Instant.parse("2026-01-01T00:00:00Z")
 
-/** Status und Fund-Codes einer Oberflaeche. */
-private data class Result(val status: String, val codes: List<String>)
+/** Status, Fund-Codes, die vollen Funde und die rohe Antwort einer Oberflaeche. */
+private data class Result(val status: String, val codes: List<String>, val findings: JsonArray, val raw: String)
 
 /**
  * **Eine** Semantik fuer `schema compare` in beiden MCP-Oberflaechen — das
@@ -141,6 +144,8 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
     fun parse(payload: JsonObject) = Result(
         status = payload.get("status").asString,
         codes = payload.getAsJsonArray("findings").map { (it as JsonObject).get("code").asString },
+        findings = payload.getAsJsonArray("findings"),
+        raw = payload.toString(),
     )
 
     fun viaTool(left: String, right: String): Result {
@@ -223,6 +228,7 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
     stage("pg-authored", schema("shop", "1", pgCheck, pgPredicate, pgIdentity))
     stage("my-authored", schema("shop", "1", pgCheck, pgPredicate, myIdentity))
     stage("broken-marker", schema(myName, "1", pgCheck, pgPredicate, mySerial))
+    stage("renamed", schema("shop2", "2", pgCheck, pgPredicate, pgIdentity))
 
     context("die Faltung roher Ausdruecke ist verdrahtet") {
 
@@ -263,9 +269,27 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
             }
         }
 
-        test("a reverse against a hand-written schema still reports the name") {
+        test("a reverse against a hand-written schema: name and version are no subject, no placeholder leaks") {
             bothSurfaces("pg-reverse", "pg-authored") { result ->
-                result.codes shouldContain "SCHEMA_NAME_CHANGED"
+                result.codes.shouldBeEmpty()
+                result.status shouldBe "identical"
+                result.raw shouldNotContain ReverseMarkerNormalizer.NORMALIZED_NAME
+                result.raw shouldNotContain ReverseMarkerNormalizer.NORMALIZED_VERSION
+            }
+        }
+
+        test("two hand-written schemas: name and version carry the values of both sides") {
+            bothSurfaces("pg-authored", "renamed") { result ->
+                val byCode = result.findings.map { it.asJsonObject }.associateBy { it.get("code").asString }
+                result.codes shouldBe listOf("SCHEMA_NAME_CHANGED", "SCHEMA_VERSION_CHANGED")
+                byCode.getValue("SCHEMA_NAME_CHANGED").getAsJsonObject("details").run {
+                    get("before").asString shouldBe "shop"
+                    get("after").asString shouldBe "shop2"
+                }
+                byCode.getValue("SCHEMA_VERSION_CHANGED").getAsJsonObject("details").run {
+                    get("before").asString shouldBe "1"
+                    get("after").asString shouldBe "2"
+                }
             }
         }
 

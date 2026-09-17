@@ -12,10 +12,17 @@ import dev.dmigrate.driver.DialectCapabilities
  *
  * [sourceDialect] ist `null` fuer ein handgeschriebenes Schema: es hat keinen
  * Server, dessen Buchhaltung man ausblenden muesste.
+ *
+ * [reverseGenerated] sagt, ob die Seite eine Reverse-Markierung trug. Dann
+ * stehen in `name` und `version` Platzhalter statt Werten, und beide sind
+ * kein Vergleichsgegenstand ([SchemaCompareSemantics.compare]). Ohne Angabe
+ * gilt eine Seite mit Dialekt als Reverse; eine Markierung mit einem
+ * unbekannten Dialekt setzt [SchemaCompareSemantics.side] ausdruecklich.
  */
 data class CompareSide(
     val schema: SchemaDefinition,
     val sourceDialect: DatabaseDialect? = null,
+    val reverseGenerated: Boolean = sourceDialect != null,
 )
 
 /**

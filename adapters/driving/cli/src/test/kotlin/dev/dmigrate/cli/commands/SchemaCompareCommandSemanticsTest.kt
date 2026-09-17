@@ -140,6 +140,38 @@ class SchemaCompareCommandSemanticsTest : FunSpec({
         }
     }
 
+    context("Reverse-Markierung gegen ein handgeschriebenes Schema (Review Runde 3, M1)") {
+
+        val reverse = ReverseScopeCodec.REVERSE_VERSION
+        val pgName = ReverseScopeCodec.postgresName("shop", "public")
+
+        test("one reversed side: name and version are no change, and no placeholder leaks") {
+            val (exit, report) = compare(
+                schema(pgName, reverse, pgCheck, pgPredicate, identity),
+                schema("shop", "1.0.0", pgCheck, pgPredicate, identity),
+            )
+            withClue(report) {
+                exit shouldBe 0
+                report shouldContain "IDENTICAL"
+                report shouldNotContain "__compare_normalized__"
+                report shouldNotContain "0.0.0"
+                report shouldNotContain "name:"
+            }
+        }
+
+        test("two hand-written schemas: the values of both sides") {
+            val (exit, report) = compare(
+                schema("shop", "1.0.0", pgCheck, pgPredicate, identity),
+                schema("shop2", "2.0.0", pgCheck, pgPredicate, identity),
+            )
+            withClue(report) {
+                exit shouldBe 1
+                report shouldContain "name: shop -> shop2"
+                report shouldContain "version: 1.0.0 -> 2.0.0"
+            }
+        }
+    }
+
     test("the kind of a changed custom type stands lowercase, as in the document") {
         fun withType(type: String) = """
             schema_format: "1.0"

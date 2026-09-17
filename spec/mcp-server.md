@@ -234,12 +234,16 @@ Identity-Spalte (alles unter „`schema compare`" in der
 [CLI-Spezifikation](cli-spec.md)). Ob ein MySQL- oder SQLite-Reverse das
 Flag traegt, entscheidet die Reverse-Praeferenz des Servers (siehe
 „Async-Jobs"), nicht der Vergleich. Den Dialekt einer Seite liest der Server
-aus der Reverse-Markierung des referenzierten Schemas; die Markierung selbst
-(`name`/`version`) zaehlt wie in der CLI nicht — zwei Reverses aus
-verschiedenen Dialekten ergeben keinen `SCHEMA_NAME_CHANGED`. Traegt ein Name
-das reservierte Praefix bei unvollstaendiger Markierung, antwortet
-`schema_compare` mit `VALIDATION_ERROR` am `schemaRef` der Seite
-(`left.schemaRef`/`right.schemaRef`); der Job endet als fehlgeschlagen.
+aus der Reverse-Markierung des referenzierten Schemas. Die Markierung selbst
+zaehlt wie in der CLI nicht: traegt eine Seite sie, sind `name` und `version`
+kein Vergleichsgegenstand — weder zwei Reverses aus verschiedenen Dialekten
+noch ein Reverse gegen ein handgeschriebenes Schema ergeben
+`SCHEMA_NAME_CHANGED` oder `SCHEMA_VERSION_CHANGED`, und kein Fund nennt die
+Markierung oder einen Platzhalter fuer sie. Traegt ein Name das reservierte
+Praefix bei unvollstaendiger Markierung, antwortet `schema_compare` mit
+`VALIDATION_ERROR` am `schemaRef` der Seite (`left.schemaRef`/
+`right.schemaRef`); der Job `schema_compare_start` endet mit Status `FAILED`
+und dem Fehlercode `RUNNER_ERROR`, ohne Artefakt.
 
 Der Job `schema_compare_start` veroeffentlicht **ein** Artefakt der Art `diff`
 (`application/json`): ein Objekt mit `status` (`identical`/`different`),

@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.ReverseMarkerNormalizer
+import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.SchemaDefinition
 
 /**
@@ -14,7 +15,8 @@ import dev.dmigrate.core.model.SchemaDefinition
  *
  * - Jede Seite verliert ihre Reverse-Markierung; der Dialekt, aus dem sie
  *   zurueckgelesen wurde, bleibt als [CompareSide.sourceDialect] erhalten
- *   ([side]).
+ *   ([side]). Traegt eine Seite die Markierung, sind `name` und `version`
+ *   kein Vergleichsgegenstand ([compare]).
  * - Der Comparator setzt die Dialekt-Schreibweise roher Ausdruecke gleich
  *   (ADR 0056) und blendet die Server-Buchhaltung einer Identity-Spalte aus,
  *   wo ein Reverse sie so liest ([compareGenerationCanonicalizer]).
@@ -34,15 +36,29 @@ object SchemaCompareSemantics {
      *   traegt, die Markierung aber unvollstaendig ist
      *   ([ReverseMarkerNormalizer]).
      */
-    fun side(schema: SchemaDefinition): CompareSide =
-        CompareSide(ReverseMarkerNormalizer.normalize(schema), reverseSourceDialect(schema))
+    fun side(schema: SchemaDefinition): CompareSide = CompareSide(
+        schema = ReverseMarkerNormalizer.normalize(schema),
+        sourceDialect = reverseSourceDialect(schema),
+        reverseGenerated = ReverseScopeCodec.isReverseGenerated(schema.name, schema.version),
+    )
 
-    /** Der Vergleich zweier Seiten — [source] ist das Ist, [target] das Soll. */
-    fun compare(source: CompareSide, target: CompareSide): SchemaDiff =
-        SchemaComparator(
+    /**
+     * Der Vergleich zweier Seiten — [source] ist das Ist, [target] das Soll.
+     *
+     * Traegt eine Seite die Reverse-Markierung, stehen in ihrem `name` und
+     * ihrer `version` Platzhalter ([ReverseMarkerNormalizer]); verglichen mit
+     * einem handgeschriebenen Schema ergaeben sie einen Fund mit Werten, die in
+     * keinem der beiden Schemata stehen. Name und Version sind dann kein
+     * Vergleichsgegenstand — die Markierung beschreibt die Herkunft, nicht das
+     * Schema.
+     */
+    fun compare(source: CompareSide, target: CompareSide): SchemaDiff {
+        val diff = SchemaComparator(
             canonicalizeRawExpressions = true,
             comparisonGeneration = compareGenerationCanonicalizer(source, target),
         ).compare(source.schema, target.schema)
+        return if (source.reverseGenerated || target.reverseGenerated) diff.copy(schemaMetadata = null) else diff
+    }
 
     /**
      * Die Berechnungsausdruecke, deren Aenderung der Vergleich nicht
