@@ -19,18 +19,33 @@
 # MCP-Reverse abgelegt hat (Inhalt ueber `artifact_chunk_get`), angewendet
 # mit dem Client des Dialekts (lib/dialects.sh).
 #
+# **Server-Konfiguration:** die Verbindungen aus .d-migrate.yaml plus die
+# Lese-Praeferenz `reverse.mysql.autoincrement_syntax: identity`. Ohne sie
+# unterschiede sich eine PostgreSQL-Identity-Spalte gegen MySQL immer auch in
+# `legacy_serial_syntax`, und der Waechter `sequence` saehe den Sequenznamen
+# nie allein — er waere blind. Mit ihr ist PostgreSQL -> MySQL die Zelle, in
+# der eine Identity-Spalte (`BY DEFAULT`, Fixture) sich nur im Sequenznamen
+# unterscheiden koennte.
+#
 # **Ausgabe:** je Zelle die Zahl der Funde und ihre Codes. **Erwartungen**
 # stehen in expected/compare-matrix.env und sind an die d-migrate-Version
 # gebunden: weicht eine Zelle ab, scheitert der Lauf; nach bewusster Pruefung
 # des Unterschieds pinnt `--update-expectations` neu (den Diff der Datei vor
-# dem Commit lesen). **Versionsunabhaengig** und nie zu pinnen
-# (lib/compare-guards.sh und unten):
+# dem Commit lesen). Gepinnt wird nur ein gemessener Zustand: eine Zelle,
+# deren Erzeugung scheitert (Exit weder 0 noch 8), deren Fehlerklasse
+# unbekannt ist oder deren Reverse, Vergleich oder Job scheitert, ist nie
+# pinnbar — gibt es eine solche, schreibt der Lauf die Datei **nicht**.
+# **Versionsunabhaengig** und nie zu pinnen (lib/compare-guards.sh und unten):
 #
 #   - Werkzeug und Job liefern dieselben Funde; das Job-Artefakt hat die Art
-#     `COMPARE` und genau `status`, `summary`, `findings`;
+#     `COMPARE` und genau `status`, `summary`, `findings`, und der Job nennt
+#     nur dieses Artefakt (beide Seiten sind gespeicherte Schemata);
 #   - kein Name- oder Versionsfund (zwei Reverses), kein Fund, der nur
-#     Schreibweise ist, kein Fund, der nur am Sequenznamen haengt;
-#   - jeder Reverse-Job legt neben dem Schema seinen Reverse-Report ab.
+#     Schreibweise ist, kein Fund, der nur am Sequenznamen haengt; die
+#     Ausgabe hat eine Form, die die Waechter lesen koennen (Selbstprobe);
+#   - jeder Reverse-Job legt neben dem Schema (Art `SCHEMA`) seinen
+#     Reverse-Report ab (Art `REVERSE_REPORT`, `kind: connection`); der
+#     MySQL-Report bestaetigt die Praeferenz (`R205`).
 #
 # Oracle nur mit MCP_E2E_WITH_ORACLE=1 (Kaltstart 2-3 Minuten); seine
 # Zellen werden sonst weder gemessen noch geprueft.
@@ -64,9 +79,14 @@ case "${1:-}" in
 esac
 
 log()  { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
-FAILURES=()
 fail()  { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-note_failure() { printf 'FAIL: %s\n' "$*" >&2; FAILURES+=("$*"); }
+# Abweichungen landen in **Dateien**, nicht in einer Variablen: viele Pruefungen
+# laufen in Kommandosubstitutionen (mcp_reverse), und eine Zuweisung dort
+# ginge mit der Subshell verloren — der Lauf endete gruen.
+#   note_failure    nie pinnbar (Waechter, Form, gescheiterte Schritte)
+#   note_deviation  eine Erwartung weicht ab — pinnbar mit --update-expectations
+note_failure() { printf 'FAIL: %s\n' "$*" >&2; printf '%s\n' "$*" >> "$FAILURES_FILE"; }
+note_deviation() { printf 'FAIL: %s\n' "$*" >&2; printf '%s\n' "$*" >> "$DEVIATIONS_FILE"; }
 
 # shellcheck source=lib/dialects.sh
 . "$SCRIPT_DIR/lib/dialects.sh"
@@ -81,6 +101,17 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 SERVER_LOG="$OUT/server.log"
 : > "$SERVER_LOG"
+FAILURES_FILE="$OUT/.failures"
+DEVIATIONS_FILE="$OUT/.deviations"
+: > "$FAILURES_FILE"
+: > "$DEVIATIONS_FILE"
+
+# Die Server-Konfiguration (s. Kopf): die Verbindungen plus die Praeferenz.
+SERVER_CONFIG="$OUT/server.d-migrate.yaml"
+{
+    cat "$EXAMPLES_DIR/.d-migrate.yaml"
+    printf '\nreverse:\n  mysql:\n    autoincrement_syntax: identity\n'
+} > "$SERVER_CONFIG"
 
 # --- MCP-Sitzung (stdio, als Koprozess) -------------------------------
 # Der Server haelt seine Stores im Speicher; alle Aufrufe einer Quelle laufen
@@ -102,7 +133,7 @@ mcp_open() {
             -e "DMIGRATE_MCP_STDIO_TOKEN=$ADMIN_TOKEN" \
             dmigrate mcp serve --transport stdio \
             --stdio-token-file /work/stdio-tokens.yaml \
-            --connection-config /work/.d-migrate.yaml \
+            --connection-config "$(in_container "$SERVER_CONFIG")" \
             --policy-file /work/policy-rules.yaml 2>> "$SERVER_LOG"
     }
     mcp_rpc initialize \
@@ -194,6 +225,13 @@ mcp_await() {
 
 artifact_id() { printf '%s\n' "${1##*/artifacts/}"; }
 
+# $1=Artefakt-URI -> stdout: die Art laut resources/read (leer, wenn unlesbar)
+mcp_artifact_kind() {
+    local meta
+    meta="$(mcp_resource "$1")" || return 0
+    jq -r '.kind // empty' <<< "$meta" 2> /dev/null || true
+}
+
 # Die erste Fehlermeldung des Servers als stabile Klasse (Code statt Text,
 # wo der Server einen fuehrt). $1=Dialekt $2=Protokoll
 apply_error_class() {
@@ -202,7 +240,11 @@ apply_error_class() {
         postgresql) line="$(grep -m1 -E '^ERROR:' "$2" | sed -E 's/^ERROR: +//')" ;;
         mysql) line="$(grep -m1 -oE '^ERROR [0-9]+' "$2")" ;;
         mssql) line="$(grep -m1 -oE '^Msg [0-9]+' "$2")" ;;
-        sqlite) line="$(grep -m1 -E 'Error' "$2" | sed -E 's/^.*Error[^:]*: *//')" ;;
+        # sqlite3 schreibt „Parse error near line 5: …", „Runtime error …" oder
+        # „Error: …" — Gross-/Kleinschreibung wechselt, die Zeilennummer haengt
+        # am DDL und gehoert nicht in die Klasse.
+        sqlite) line="$(grep -m1 -iE '(^|[[:space:]])error' "$2" \
+            | sed -E 's/^.*[Ee]rror( near line [0-9]+)?[^:]*: *//; s/^near line [0-9]+: *//')" ;;
         oracle) line="$(grep -m1 -oE 'ORA-[0-9]+' "$2")" ;;
     esac
     printf 'apply:%s\n' "${line:-unbekannt}"
@@ -211,7 +253,8 @@ apply_error_class() {
 # $1=Dialekt $2=Zielverzeichnis -> stdout: der schemaRef des Reverse;
 # schreibt reversed.yaml und reverse-report.yaml nach $2
 mcp_reverse() {
-    local dialect="$1" dir="$2" conn start job job_uri status schema_art report_art schema_id listing
+    local dialect="$1" dir="$2" conn start job job_uri status schema_uri report_uri schema_art report_art
+    local schema_id listing
     conn="dmigrate://tenants/$TENANT/connections/$(dialect_connection "$dialect")"
     start="$(mcp_tool schema_reverse_start "$(jq -nc --arg c "$conn" --arg k "cm-$dialect-$RANDOM$RANDOM" \
         '{connectionId:$c,idempotencyKey:$k}')")" || { echo "$start" > "$dir/reverse-start.json"; return 1; }
@@ -219,13 +262,23 @@ mcp_reverse() {
     job_uri="$(jq -r .resourceUri <<< "$start")"
     status="$(mcp_await "$job" 2> "$dir/reverse-job-failed.json")" || return 1
     printf '%s\n' "$status" > "$dir/reverse-job.json"
-    schema_art="$(artifact_id "$(jq -r '.artifacts[0] // empty' <<< "$status")")"
-    report_art="$(artifact_id "$(jq -r '.artifacts[1] // empty' <<< "$status")")"
+    schema_uri="$(jq -r '.artifacts[0] // empty' <<< "$status")"
+    report_uri="$(jq -r '.artifacts[1] // empty' <<< "$status")"
+    schema_art="$(artifact_id "$schema_uri")"
+    report_art="$(artifact_id "$report_uri")"
     [ -n "$schema_art" ] || return 1
     mcp_artifact_text "$schema_art" > "$dir/reversed.yaml" || return 1
+    [ "$(mcp_artifact_kind "$schema_uri")" = "SCHEMA" ] \
+        || note_failure "$dialect: das erste Artefakt des Reverse-Jobs hat nicht die Art SCHEMA (${dir#"$EXAMPLES_DIR"/})"
+    [ "$(jq -r '.artifacts | length' <<< "$status")" = 2 ] \
+        || note_failure "$dialect: der Reverse-Job nennt nicht genau Schema und Report (${dir#"$EXAMPLES_DIR"/})"
     if [ -z "$report_art" ] || ! mcp_artifact_text "$report_art" > "$dir/reverse-report.yaml" \
         || ! grep -q '^  kind: connection' "$dir/reverse-report.yaml"; then
         note_failure "$dialect: der Reverse-Job legt keinen Reverse-Report ab (${dir#"$EXAMPLES_DIR"/})"
+    elif [ "$(mcp_artifact_kind "$report_uri")" != "REVERSE_REPORT" ]; then
+        note_failure "$dialect: der Reverse-Report hat nicht die Art REVERSE_REPORT (${dir#"$EXAMPLES_DIR"/})"
+    elif [ "$dialect" = mysql ] && ! grep -q '^    code: R205$' "$dir/reverse-report.yaml"; then
+        note_failure "$dialect: der Reverse-Report bestaetigt die Praeferenz identity nicht (R205, ${dir#"$EXAMPLES_DIR"/})"
     fi
     # `jobId` filtert auf den Job-Verweis, unter dem der Index das Schema
     # fuehrt — die Ressourcen-URI des Jobs.
@@ -243,10 +296,19 @@ dmi() {
 in_container() { printf '/work/%s\n' "${1#"$EXAMPLES_DIR"/}"; }
 
 # $1=Schema-Datei (Host) $2=Dialekt $3=Ausgabe-DDL (Host) $4=Protokoll
-# Rueckgabe: der Exit-Code der CLI (0 und 8 heissen „DDL geschrieben").
+# Rueckgabe: der Exit-Code der CLI. Nur 0 und 8 heissen „DDL geschrieben"
+# (8: Objekte uebersprungen); jeder andere ist ein Fehlschlag.
 generate_ddl() {
     dmi schema generate --source "$(in_container "$1")" --target "$2" \
         --output "$(in_container "$3")" --deterministic > "$4" 2>&1
+}
+
+# $1=Exit von generate_ddl $2=erwartete DDL-Datei -> 0, wenn DDL geschrieben ist
+generated_ok() {
+    case "$1" in
+        0|8) [ -s "$2" ] ;;
+        *) return 1 ;;
+    esac
 }
 
 # --- Erwartungen ------------------------------------------------------
@@ -265,17 +327,34 @@ if [ -f "$EXPECT_FILE" ]; then
     done < "$EXPECT_FILE"
 fi
 
+# Ein Zustand ist nur pinnbar, wenn er etwas sagt: eine unbekannte
+# Fehlerklasse ist keine Messung. (Eine leere Code-Liste ist es: die Zelle
+# hat keine Funde.)
+pinnable() {  # $1=gemessener Wert
+    case "$1" in
+        apply:unbekannt) return 1 ;;
+    esac
+    return 0
+}
+
 check_expect() {  # $1=Schluessel $2=gemessener Wert
-    MEASURED["$1"]="$2"
     local exp="${EXPECT[$1]-}"
+    if ! pinnable "$2"; then
+        note_failure "$1: gemessen '$2' — kein pinnbarer Zustand (erwartet '${exp:-?}')"
+        return 0
+    fi
+    MEASURED["$1"]="$2"
     if [ -z "${EXPECT[$1]+x}" ]; then
-        log "   (keine Erwartung fuer $1, gemessen: $2)"
-        $UPDATE || note_failure "keine Erwartung fuer $1 (gemessen: $2) — nach Pruefung --update-expectations"
+        if $UPDATE; then
+            log "   PIN $1: (neu) -> $2"
+        else
+            note_deviation "keine Erwartung fuer $1 (gemessen: $2) — nach Pruefung --update-expectations"
+        fi
     elif [ "$exp" != "$2" ]; then
         if $UPDATE; then
             log "   PIN $1: $exp -> $2"
         else
-            note_failure "$1: erwartet '$exp', gemessen '$2'"
+            note_deviation "$1: erwartet '$exp', gemessen '$2'"
         fi
     fi
 }
@@ -283,7 +362,7 @@ check_expect() {  # $1=Schluessel $2=gemessener Wert
 IMAGE_VERSION="$(docker run --rm "$IMAGE" --version 2> /dev/null | awk '{print $NF}')"
 [ -n "$IMAGE_VERSION" ] || fail "Image $IMAGE nicht lauffaehig (make docker-build IMAGE_TAG=dev)"
 if ! $UPDATE && [ "${EXPECT[EXPECT_VERSION]-}" != "$IMAGE_VERSION" ]; then
-    note_failure "Erwartungen gelten fuer d-migrate '${EXPECT[EXPECT_VERSION]-?}', das Image ist '$IMAGE_VERSION' — messen, pruefen, bewusst neu pinnen"
+    note_deviation "Erwartungen gelten fuer d-migrate '${EXPECT[EXPECT_VERSION]-?}', das Image ist '$IMAGE_VERSION' — messen, pruefen, bewusst neu pinnen"
 fi
 
 # --- Stack ------------------------------------------------------------
@@ -300,7 +379,9 @@ for source in $DIALECTS; do
     mkdir -p "$sdir"
     log "=== Quelle $source ==="
     generate_ddl "$EXAMPLES_DIR/$FIXTURE_REL" "$source" "$sdir/seed.sql" "$sdir/seed-generate.log"
-    [ $? -le 8 ] || { note_failure "$source: generate der Fixture scheiterte ($sdir/seed-generate.log)"; continue; }
+    seed_rc=$?
+    generated_ok "$seed_rc" "$sdir/seed.sql" \
+        || { note_failure "$source: generate der Fixture scheiterte ($seed_rc, $sdir/seed-generate.log)"; continue; }
     dialect_clean "$source"
     if ! dialect_apply "$source" "$sdir/seed.sql" "$sdir/seed-apply.log"; then
         note_failure "$source: Fixture-DDL abgelehnt ($sdir/seed-apply.log)"
@@ -338,8 +419,10 @@ for source in $DIALECTS; do
             check_expect "CODES_$key" "E012-introducer"
             continue
         fi
-        if [ "$gen_rc" -gt 8 ]; then
-            CELL[$cell]="GEN-FAIL"; note_failure "$cell: generate scheiterte ($gen_rc, $cdir/generate.log)"; continue
+        if ! generated_ok "$gen_rc" "$cdir/generated.sql"; then
+            CELL[$cell]="GEN-FAIL"; CODES[$cell]="generate:$gen_rc"
+            note_failure "$cell: generate scheiterte ($gen_rc, $cdir/generate.log)"
+            continue
         fi
         dialect_clean "$target"
         if ! dialect_apply "$target" "$cdir/generated.sql" "$cdir/apply.log"; then
@@ -364,13 +447,18 @@ for source in $DIALECTS; do
         if ! mcp_tool schema_compare "$args" > "$cdir/tool.json"; then
             CELL[$cell]="CMP-FAIL"; note_failure "$cell: schema_compare scheiterte ($cdir/tool.json)"; continue
         fi
+        # Das vollstaendige Ergebnis des Werkzeugs: die Antwort oder, wenn sie
+        # gekuerzt ist, das Ueberlauf-Artefakt (beide mit status und findings).
+        tool_result="$cdir/tool.json"
         if [ "$(jq -r '.truncated // false' "$cdir/tool.json")" = "true" ]; then
             overflow="$(artifact_id "$(jq -r '.diffArtifactRef' "$cdir/tool.json")")"
             mcp_artifact_text "$overflow" > "$cdir/tool-overflow.json"
-            jq '.findings' "$cdir/tool-overflow.json" > "$cdir/tool-findings.json"
-        else
-            jq '.findings' "$cdir/tool.json" > "$cdir/tool-findings.json"
+            tool_result="$cdir/tool-overflow.json"
         fi
+        if ! jq -e '.findings | type == "array"' "$tool_result" > /dev/null 2>&1; then
+            CELL[$cell]="CMP-FAIL"; note_failure "$cell: schema_compare ohne lesbare Fundliste ($tool_result)"; continue
+        fi
+        jq '.findings' "$tool_result" > "$cdir/tool-findings.json"
 
         # Job
         args="$(jq -nc --arg s "$source_ref" --arg t "$target_ref" --arg k "cm-$cell-$RANDOM$RANDOM" \
@@ -379,24 +467,35 @@ for source in $DIALECTS; do
             || ! status="$(mcp_await "$(jq -r .jobId <<< "$start")" 2> "$cdir/job-failed.json")"; then
             CELL[$cell]="JOB-FAIL"; note_failure "$cell: schema_compare_start scheiterte ($cdir)"; continue
         fi
+        printf '%s\n' "$status" > "$cdir/job-status.json"
         job_uri="$(jq -r '.artifacts[0]' <<< "$status")"
+        [ "$(jq -r '.artifacts | length' <<< "$status")" = 1 ] \
+            || note_failure "$cell: der Job zweier gespeicherter Schemata nennt mehr als das Compare-Artefakt"
         mcp_resource "$job_uri" > "$cdir/job-artifact-meta.json"
         mcp_artifact_text "$(artifact_id "$job_uri")" > "$cdir/job.json"
         [ "$(jq -r '.kind // empty' "$cdir/job-artifact-meta.json")" = "COMPARE" ] \
             || note_failure "$cell: das Job-Artefakt hat nicht die Art COMPARE"
-        [ "$(jq -c 'keys' "$cdir/job.json")" = '["findings","status","summary"]' ] \
+        [ "$(jq -c 'keys' "$cdir/job.json" 2> /dev/null)" = '["findings","status","summary"]' ] \
             || note_failure "$cell: das Job-Artefakt ist nicht {status, summary, findings}"
-        jq -S '.findings' "$cdir/job.json" > "$cdir/job-findings.json"
+        jq -S '.findings' "$cdir/job.json" > "$cdir/job-findings.json" 2> /dev/null
         if [ "$(jq -S . "$cdir/tool-findings.json")" != "$(cat "$cdir/job-findings.json")" ]; then
             note_failure "$cell: Werkzeug und Job melden verschiedene Funde ($cdir)"
         fi
 
-        # Waechter
-        compare_guard_items_from_mcp "$cdir/tool-findings.json" > "$cdir/guard-items.json"
-        found="$(compare_guard_violations "$cdir/guard-items.json")"
-        if [ -n "$found" ]; then
-            while IFS= read -r v; do note_failure "$cell: $v"; done <<< "$found"
-        fi
+        # Waechter — beide Oberflaechen, und ein jq-Fehler ist ein Fehlschlag,
+        # kein „nichts gefunden".
+        for surface in tool job; do
+            result_file="$tool_result"
+            [ "$surface" = job ] && result_file="$cdir/job.json"
+            if ! compare_guard_items_from_mcp "$result_file" > "$cdir/guard-items-$surface.json" 2> "$cdir/guard-$surface.err" \
+                || ! found="$(compare_guard_violations "$cdir/guard-items-$surface.json" 2>> "$cdir/guard-$surface.err")"; then
+                note_failure "$cell: Waechter ($surface) nicht auswertbar: $(head -c 300 "$cdir/guard-$surface.err")"
+                continue
+            fi
+            if [ -n "$found" ]; then
+                while IFS= read -r v; do note_failure "$cell ($surface): $v"; done <<< "$found"
+            fi
+        done
 
         n="$(jq 'length' "$cdir/tool-findings.json")"
         codes="$(jq -r 'map(.code) | group_by(.) | map("\(.[0]):\(length)") | join(" ")' "$cdir/tool-findings.json")"
@@ -431,7 +530,27 @@ for s in $DIALECTS; do
     done
 done
 
+mapfile -t FAILURES < "$FAILURES_FILE"
+mapfile -t DEVIATIONS < "$DEVIATIONS_FILE"
+
+if [ "${#FAILURES[@]}" -gt 0 ]; then
+    echo
+    echo "== ${#FAILURES[@]} nicht pinnbare Abweichung(en):"
+    printf '  - %s\n' "${FAILURES[@]}"
+fi
+if [ "${#DEVIATIONS[@]}" -gt 0 ]; then
+    echo
+    echo "== ${#DEVIATIONS[@]} Abweichung(en) von den Erwartungen:"
+    printf '  - %s\n' "${DEVIATIONS[@]}"
+fi
+
 if $UPDATE; then
+    # Nur ein Lauf ohne nicht pinnbare Abweichung darf Erwartungen schreiben —
+    # sonst pinnte er einen Rueckschritt.
+    if [ "${#FAILURES[@]}" -gt 0 ]; then
+        log "Erwartungen NICHT geschrieben: ${#FAILURES[@]} nicht pinnbare Abweichung(en)"
+        exit 1
+    fi
     MEASURED[EXPECT_VERSION]="$IMAGE_VERSION"
     {
         printf '%s' "${EXPECT_HEADER:-# Erwartungen fuer scripts/smoke-compare-matrix.sh$'\n'}"
@@ -441,21 +560,7 @@ if $UPDATE; then
         done
     } > "$EXPECT_FILE.tmp" && mv "$EXPECT_FILE.tmp" "$EXPECT_FILE"
     log "Erwartungen geschrieben: $EXPECT_FILE — den Diff vor dem Commit lesen"
-fi
-
-if [ "${#FAILURES[@]}" -gt 0 ]; then
-    echo
-    echo "== ${#FAILURES[@]} Abweichung(en):"
-    printf '  - %s\n' "${FAILURES[@]}"
-    if $UPDATE; then
-        # Erwartungen sind neu gepinnt; alles andere bleibt ein Fehler.
-        rest=0
-        for f in "${FAILURES[@]}"; do
-            case "$f" in *"erwartet '"*|"keine Erwartung"*|"Erwartungen gelten"*) ;; *) rest=$((rest + 1)) ;; esac
-        done
-        [ "$rest" -eq 0 ] || exit 1
-    else
-        exit 1
-    fi
+elif [ "${#FAILURES[@]}" -gt 0 ] || [ "${#DEVIATIONS[@]}" -gt 0 ]; then
+    exit 1
 fi
 log "OK — Artefakte in ${OUT#"$EXAMPLES_DIR"/}"

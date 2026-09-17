@@ -19,8 +19,10 @@
 # **Was es verbietet** (versionsunabhaengig, `lib/compare-guards.sh`): einen
 # Fund, der nur Schreibweise ist (CHECK, Index-Praedikat, Fremdschluessel),
 # einen Name- oder Versionsfund (die Quelle ist eine Datei, die andere Seite
-# ein Reverse) und einen Erzeugungs-Fund, der nur am Sequenznamen haengt.
-# Die Zahl der Funde je Dialekt zeigt es, pinnt sie aber nicht.
+# ein Reverse), einen Erzeugungs-Fund, der nur am Sequenznamen haengt, und
+# eine Ausgabe, deren Form die Waechter nicht lesen koennen (Selbstprobe).
+# Die Zahl der Funde je Dialekt zeigt es, pinnt sie aber nicht; sie kommt aus
+# dem JSON-Dokument, nicht aus der Textausgabe.
 #
 # Ausgabe: out/roundtrip/<dialekt>/ mit den erzeugten Schemata, Skripten,
 # Reports und dem Vergleich als Text und als JSON. Exit 0, wenn alle Pfade
@@ -183,7 +185,10 @@ for dialect in $(dialect_list); do
         > "$dir/generate.log" 2>&1
     gen_exit=$?
     log "generate exit=$gen_exit (erwartet: 0 oder 8 bei uebersprungenen Objekten)"
-    [ "$gen_exit" -le 8 ] || fail "$dialect: generate scheiterte ($gen_exit), siehe $dir/generate.log"
+    case "$gen_exit" in
+        0|8) [ -s "$dir/generated.sql" ] || fail "$dialect: generate schrieb keine DDL, siehe $dir/generate.log" ;;
+        *) fail "$dialect: generate scheiterte ($gen_exit), siehe $dir/generate.log" ;;
+    esac
 
     # 2b. Aufraeumen und anwenden — ueber den Dialekt-Client, nicht ueber
     # d-migrate (lib/dialects.sh).
@@ -218,17 +223,22 @@ for dialect in $(dialect_list); do
         > "$dir/compare.json" 2> "$dir/compare-json.log"
     jq -e . "$dir/compare.json" > /dev/null || fail "$dialect: kein JSON-Vergleich, siehe $dir/compare-json.log"
 
-    # Die Zahl kommt aus dem Vergleich selbst, nicht aus einer
-    # Einrueckungs-Heuristik.
-    changes=$(sed -n 's/^Summary: \([0-9]*\) change(s).*/\1/p' "$dir/compare.txt" | head -1)
-    changes="${changes:-0}"
+    # 2d. Die Fehlalarme, die **nicht** auftauchen duerfen — als Klasse, auf
+    # der strukturierten Ausgabe (lib/compare-guards.sh). Die Vereinheitlichung
+    # prueft zuerst, dass sie das Dokument ganz versteht; ein jq-Fehler ist ein
+    # Fehlschlag, kein „nichts gefunden".
+    compare_guard_items_from_cli "$dir/compare.json" > "$dir/compare-guard-items.json" 2> "$dir/compare-guard.err" \
+        || fail "$dialect: Vergleich nicht auswertbar: $(cat "$dir/compare-guard.err")"
+    found="$(compare_guard_violations "$dir/compare-guard-items.json" 2>> "$dir/compare-guard.err")" \
+        || fail "$dialect: Waechter nicht auswertbar: $(cat "$dir/compare-guard.err")"
+
+    # Die Zahl kommt aus dem Dokument selbst (die Summe von `summary`, die die
+    # Selbstprobe eben gegen `diff` gehalten hat), nicht aus der Textausgabe.
+    changes="$(jq '[.summary[]] | add // 0' "$dir/compare.json")" \
+        || fail "$dialect: keine Fundzahl im Vergleich, siehe $dir/compare.json"
     log "$dialect: $changes Fund(e)"
     summary="${summary}${dialect}|${changes}"$'\n'
 
-    # 2d. Die Fehlalarme, die **nicht** auftauchen duerfen — als Klasse, auf
-    # der strukturierten Ausgabe (lib/compare-guards.sh).
-    compare_guard_items_from_cli "$dir/compare.json" > "$dir/compare-guard-items.json"
-    found="$(compare_guard_violations "$dir/compare-guard-items.json")"
     if [ -n "$found" ]; then
         violations="${violations}${dialect}: ${found//$'\n'/$'\n'"$dialect: "}"$'\n'
         printf '\nFAIL: %s meldet Fehlalarme:\n%s\n' "$dialect" "$found" >&2

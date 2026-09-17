@@ -1,4 +1,4 @@
-name: MCP-E2E Compare-Matrix (Best-Effort)
+name: MCP-E2E Compare-Matrix
 
 # 5x5-Vergleich ueber MCP gegen das echte, gebaute d-migrate:dev-Image und
 # echte Server (examples/mcp-e2e, scripts/smoke-compare-matrix.sh): jeder
@@ -14,10 +14,13 @@ name: MCP-E2E Compare-Matrix (Best-Effort)
 # Oracle faehrt hier nicht mit (Kaltstart 2-3 Minuten, ~2 GB Image); lokal:
 # `make mcp-e2e-compare-matrix-oracle`.
 #
-# Kein PR-Gate. Best-Effort: continue-on-error, analog zu den
-# Sample-DB-Cross-Smokes — transiente Registry-/Netz-Instabilitaeten und die
-# schweren Server-Images sollen den Hauptbuild nicht rot machen. Der
-# Zeitplan faengt Abweichungen, die kein Push in diese Pfade ausloest.
+# Kein PR-Gate und kein Pflicht-Check — aber **sichtbar rot**: ein Lauf mit
+# Abweichung scheitert (kein job-weites continue-on-error), damit eine
+# gebrochene Zelle oder ein angeschlagener Waechter nicht als gruener Haken
+# durchgeht. Die Artefakte des Laufs (examples/mcp-e2e/out/compare-matrix)
+# werden in jedem Fall hochgeladen. Der Zeitplan faengt Abweichungen, die kein
+# Push in diese Pfade ausloest; die Pfade schliessen Makefile, make/ und
+# Dockerfile ein, weil das Image aus ihnen entsteht.
 
 on:
   workflow_dispatch:
@@ -27,7 +30,9 @@ on:
     branches: [main]
     paths:
       - 'examples/mcp-e2e/**'
-      - 'make/mcp-e2e.mk'
+      - 'Makefile'
+      - 'make/**'
+      - 'Dockerfile'
       - '.github/workflows/mcp-e2e-compare-matrix.yml'
 
 permissions:
@@ -36,7 +41,6 @@ permissions:
 jobs:
   compare-matrix:
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,6 +56,17 @@ jobs:
 
       - name: Run MCP-E2E compare matrix (PostgreSQL, MySQL, SQL Server, SQLite)
         run: make mcp-e2e-compare-matrix
+
+      - name: Upload compare-matrix artefacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          # run_attempt im Namen: github.run_id bleibt bei Re-runs gleich.
+          name: mcp-e2e-compare-matrix-${{ github.run_id }}-${{ github.run_attempt }}
+          path: examples/mcp-e2e/out/compare-matrix
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Cleanup (best-effort)
         if: always()

@@ -93,7 +93,18 @@ nichts meldet, was keine Aenderung ist. Die Waechter
 | -------- | --------------- |
 | `notation` | einem CHECK-, Index- oder Fremdschluessel-Fund, dessen beide Seiten ohne Leerraum, Anfuehrungszeichen, Klammern und eine ausdrueckliche `no_action` gleich sind — also nur Schreibweise (auch der unveraenderte Fremdschluessel, den ein Konsumentenprojekt gemeldet hatte) |
 | `metadata` | einem Name- oder Versionsfund — die Quelle ist eine Datei, die andere Seite ein Reverse, und dessen Markierung ist keine Eigenschaft des Schemas |
-| `sequence` | einem Erzeugungs-Fund, dessen Seiten sich nur im Sequenznamen unterscheiden (den vergibt der Server) |
+| `sequence` | einem Erzeugungs-Fund zweier Identity-Spalten, die sich nur im Sequenznamen unterscheiden (den vergibt der Server) — geprueft an der Struktur `identity(schluessel=wert,…)`, nicht an einem einzelnen Token |
+| `form` | einer Ausgabe, deren Form die Waechter nicht lesen koennen (ein unbekannter Schluessel eines Identity-Werts) |
+
+**Selbstprobe.** Bevor die Waechter laufen, prueft die Vereinheitlichung, dass
+sie die Ausgabe ganz versteht: in der CLI entspricht jede Zahl in `summary` der
+Laenge der gleichnamigen Liste in `diff`, und eine geaenderte Tabelle oder
+Spalte traegt nur bekannte Schluessel; ueber MCP hat `different` Funde,
+`identical` keine, und jeder Aenderungsfund der Waechter-Arten traegt
+`details`. Benennt ein Release einen Schluessel um, scheitert der Lauf **laut**
+— ohne die Probe liefen die Waechter still leer. Ein jq-Fehler ist nie
+„nichts gefunden". Die Fundzahl je Dialekt kommt aus dem JSON-Dokument, nicht
+aus der Textausgabe.
 
 Gross-/Kleinschreibung und Casts rechnet die Heuristik bewusst nicht zur
 Schreibweise: die Schreibweise von Schluesselwoertern ist eine offene
@@ -112,9 +123,11 @@ Identity-Spalte und eine berechnete Spalte. Der Reverse liest Sichten nur mit
 **Ein bekannter Zustand statt eines Vergleichs: MySQL.** MySQL legt die
 String-Literale eines CHECK mit Zeichensatz-Introducer ab (`_latin1'…'`), der
 Reverse uebernimmt ihn, und die Validierung liest ihn als Spalte (`E012`,
-`schema compare` Exit 3). Der Lauf erkennt genau diesen Grund und weist den
-Dialekt als „ungueltig" aus; jeder andere Grund fuer Exit 3 laesst ihn
-scheitern. Behoben wird das im Reader, nicht hier.
+`schema compare` Exit 3). Der Lauf erkennt genau diesen Grund — `E012` an
+einer „Spalte", die ein MySQL-Zeichensatz mit Unterstrich ist (`_latin1`,
+`_utf8mb4`, …) — und weist den Dialekt als „ungueltig" aus; jeder andere Grund
+fuer Exit 3, auch eine andere unbekannte Spalte mit Unterstrich (`_tmp`),
+laesst ihn scheitern. Behoben wird das im Reader, nicht hier.
 
 Gemessener Stand (2026-09-17, `d-migrate:dev` aus dem Arbeitsstand des
 fuenften Compare-Bauabschnitts, 1.8.0-SNAPSHOT; Oracle nicht gefahren):
@@ -155,6 +168,18 @@ Die Fixture ist dialektneutral und traegt die Compare-relevanten Konstrukte
 Index mit Praedikat, Autowert und Identity, berechnete Spalte,
 Fremdschluessel ohne Aktion).
 
+**Server-Konfiguration.** Der MCP-Server der Matrix liest die Verbindungen aus
+`.d-migrate.yaml` und zusaetzlich `reverse.mysql.autoincrement_syntax:
+identity` (der Lauf schreibt beides nach
+`out/compare-matrix/server.d-migrate.yaml`). Ohne diese Praeferenz
+unterschiede sich die Identity-Spalte der Fixture (`BY DEFAULT`) zwischen
+PostgreSQL und MySQL immer auch in `legacy_serial_syntax` — der Waechter
+`sequence` saehe den Sequenznamen dort nie allein und waere blind. Mit ihr ist
+PostgreSQL → MySQL die Zelle, in der er anschlaegt, sobald der Vergleich den
+Sequenznamen wieder wertet. Zwischen PostgreSQL und SQL Server bzw. SQLite
+unterscheidet sich die Spalte ohnehin im Modus bzw. in der Erzeugung; dort
+kann er nicht anschlagen.
+
 **Ausgabe:** je Zelle die Zahl der Funde und ihre Codes. **Gepinnt** in
 `expected/compare-matrix.env`, versionsgebunden (`EXPECT_VERSION`): weicht
 eine Zelle ab, scheitert der Lauf. Nach bewusster Pruefung pinnt
@@ -163,16 +188,28 @@ eine Zelle ab, scheitert der Lauf. Nach bewusster Pruefung pinnt
 make mcp-e2e-compare-matrix MCP_E2E_MATRIX_ARGS=--update-expectations
 ```
 
-neu — den Diff der Datei vor dem Commit lesen. **Nie gepinnt**, und in jeder
-Version verbindlich:
+neu — den Diff der Datei vor dem Commit lesen. Gepinnt wird nur ein
+gemessener Zustand: scheitert eine Erzeugung (Exit weder `0` noch `8`), ist
+eine Fehlerklasse unbekannt (`apply:unbekannt`) oder schlaegt ein Waechter
+an, schreibt auch `--update-expectations` die Datei **nicht** und endet rot.
+
+**Nie gepinnt**, und in jeder Version verbindlich:
 
 - `schema_compare` und `schema_compare_start` liefern dieselben Funde; das
   Job-Artefakt hat die Art `COMPARE` und genau `status`, `summary`,
-  `findings`;
-- die Waechter aus dem Roundtrip (`metadata`, `notation`, `sequence`), hier auf
-  den MCP-Funden;
-- jeder `schema_reverse_start`-Job legt neben dem Schema seinen
-  Reverse-Report ab (`kind: connection`).
+  `findings`, und der Job zweier gespeicherter Schemata nennt nur dieses
+  Artefakt;
+- die Waechter aus dem Roundtrip (`metadata`, `notation`, `sequence`, `form`)
+  samt Selbstprobe, hier auf den MCP-Funden von Werkzeug **und** Job;
+- jeder `schema_reverse_start`-Job nennt genau zwei Artefakte: das Schema (Art
+  `SCHEMA`) und den Reverse-Report (Art `REVERSE_REPORT`, `kind:
+  connection`); der Report eines MySQL-Reverse bestaetigt die Praeferenz mit
+  `R205`.
+
+Ein Waechter kann nur anschlagen, wo die Matrix den Fall erzeugt: zwei
+Reverses tragen nach dem Entfernen der Reverse-Markierung denselben
+Platzhalter-Namen, `metadata` bleibt hier also stumm — ein Namens- oder
+Versionsfund zwischen Datei und Reverse faellt im Roundtrip auf.
 
 **Zustaende statt Zahlen.** Zwei Arten von Zellen messen nichts und sind als
 Zustand gepinnt — verschwindet der Zustand, ist die Erwartung neu zu pinnen:
@@ -182,19 +219,20 @@ Zustand gepinnt — verschwindet der Zustand, ist die Erwartung neu zu pinnen:
 - `APPLY-FAIL` / `apply:<Fehlerklasse>`: das Ziel lehnt die aus dem Reverse
   der Quelle erzeugte DDL ab — ein Befund ueber Reader oder Generator.
 
-Gemessener Stand (2026-09-17, `d-migrate:dev` 1.8.0-SNAPSHOT, zwei Laeufe
-identisch; Oracle nicht gefahren):
+Gemessener Stand (2026-09-17, `d-migrate:dev` 1.8.0-SNAPSHOT mit der
+Server-Praeferenz `identity` fuer MySQL, zwei Laeufe identisch; Oracle nicht
+gefahren):
 
 | Quelle \ Ziel | PostgreSQL | MySQL | SQL Server | SQLite |
 | ------------- | ---------- | ----- | ---------- | ------ |
-| PostgreSQL | — | 7 | 5 | 13 |
+| PostgreSQL | — | 6 | 5 | 13 |
 | MySQL | `INVALID` | — | `INVALID` | `INVALID` |
 | SQL Server | `APPLY-FAIL` | `APPLY-FAIL` | — | 9 |
 | SQLite | 3 | `APPLY-FAIL` | `APPLY-FAIL` | — |
 
 | Zelle | Funde bzw. Zustand | Grund |
 | ----- | ------------------ | ----- |
-| PostgreSQL → MySQL | 7: 3 CHECKs und die Berechnung entfallen, Index-Praedikat entfaellt, Identity mit `legacy_serial_syntax`, CHECK mit `OR`/`IS NULL` in Kleinschreibung | Generator rendert PostgreSQL-Casts nicht (`E053`), MySQL kennt kein Index-Praedikat (`E057`), keine Reverse-Praeferenz deklariert, Schluesselwort-Schreibweise |
+| PostgreSQL → MySQL | 6: 3 CHECKs und die Berechnung entfallen, Index-Praedikat entfaellt, CHECK mit `OR`/`IS NULL` in Kleinschreibung; die Identity-Spalte meldet nichts (sie unterschiede sich nur im Sequenznamen) | Generator rendert PostgreSQL-Casts nicht (`E053`), MySQL kennt kein Index-Praedikat (`E057`), Schluesselwort-Schreibweise; ohne die Server-Praeferenz kaeme `legacy_serial_syntax` als siebter Fund dazu |
 | PostgreSQL → SQL Server | 5: 3 CHECKs und die Berechnung entfallen, Identity-Modus `always` | Casts wie oben, `W140` |
 | PostgreSQL → SQLite | 13: 8 Typen, 3 CHECKs, Berechnung, Identity | SQLite-Typaffinitaet, Casts wie oben |
 | SQL Server → SQLite | 9: 8 Typen, Identity | SQLite-Typaffinitaet |
@@ -209,8 +247,11 @@ sie gehen in den Reverse der Quelle ein. Heute gibt es keine.
 
 **Oracle** faehrt nur mit `make mcp-e2e-compare-matrix-oracle`; ohne diesen
 Aufruf werden seine Zellen weder gemessen noch geprueft. Der Workflow
-`MCP-E2E Compare-Matrix (Best-Effort)` faehrt die Matrix ohne Oracle
-(manuell, woechentlich und bei Aenderungen am Harness) und ist kein PR-Gate.
+`MCP-E2E Compare-Matrix` faehrt die Matrix ohne Oracle (manuell, woechentlich
+und bei Aenderungen am Harness, am `Makefile`, unter `make/` oder am
+`Dockerfile`). Er ist kein PR-Gate und kein Pflicht-Check, wird bei einer
+Abweichung aber **rot**; die Artefakte unter `out/compare-matrix/` haengen in
+jedem Fall am Lauf.
 
 ## Benutzung
 

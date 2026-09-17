@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Dialekt-Operationen fuer die Harnesses in scripts/: Stack starten,
 # Datenbank leeren, DDL mit dem Client des Dialekts anwenden.
 #
