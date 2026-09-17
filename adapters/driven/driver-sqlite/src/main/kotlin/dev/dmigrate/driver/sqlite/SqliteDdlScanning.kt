@@ -3,9 +3,16 @@ package dev.dmigrate.driver.sqlite
 /**
  * Shared quote-/paren-aware low-level scanning helpers for walking a SQLite
  * CREATE-TABLE statement (`sqlite_master.sql`). Used by
- * [SqliteCheckConstraintScanner] and [SqliteUniqueConstraintScanner] — the
- * lexing rules (doubled-quote escapes, `[...]` identifiers, balanced parens)
- * must stay identical between the scanners, so they live once here.
+ * [SqliteCheckConstraintScanner], [SqliteUniqueConstraintScanner] und
+ * [SqliteForeignKeyConstraintScanner] — the lexing rules (doubled-quote
+ * escapes, `[...]` identifiers, balanced parens, comments) must stay identical
+ * between the scanners, so they live once here.
+ *
+ * **Kommentare gehoeren dazu.** SQLite speichert den `CREATE TABLE`-Text
+ * wortgetreu, samt Zeilen- und Blockkommentaren. Ein Scanner, der sie nicht
+ * kennt, liest ein `CHECK` oder ein `AUTOINCREMENT` aus einem Kommentar — und
+ * ein Apostroph darin verschiebt ihm das Ueberspringen von Literalen, sodass
+ * er den Rest der Anweisung falsch liest.
  */
 internal object SqliteDdlScanning {
 
@@ -25,6 +32,48 @@ internal object SqliteDdlScanning {
     }
 
     fun Char.isIdentifierChar(): Boolean = isLetterOrDigit() || this == '_'
+
+    /**
+     * Ob [keyword] als ganzes Wort im **Code** steht — nicht in einem Literal,
+     * einem quotierten Bezeichner oder einem Kommentar. Ein `contains` traf
+     * sonst ein `AUTOINCREMENT` in einem Kommentar oder in einem Spaltennamen.
+     * Mehrwortige Schluesselwoerter (`WITHOUT ROWID`) trennt beliebiger
+     * Leerraum.
+     */
+    fun containsKeyword(sql: String, keyword: String): Boolean {
+        val words = keyword.split(" ")
+        var index = 0
+        while (index < sql.length) {
+            val afterComment = skipComment(sql, index)
+            if (afterComment > index) {
+                index = afterComment
+                continue
+            }
+            index = when (sql[index]) {
+                '\'', '"', '`' -> skipQuoted(sql, index)
+                '[' -> skipBracketIdentifier(sql, index)
+                else -> {
+                    if (wordsAt(sql, index, words)) return true
+                    index + 1
+                }
+            }
+        }
+        return false
+    }
+
+    private fun wordsAt(sql: String, start: Int, words: List<String>): Boolean {
+        var index = start
+        for ((position, word) in words.withIndex()) {
+            if (position > 0) {
+                val before = index
+                while (index < sql.length && sql[index].isWhitespace()) index++
+                if (index == before) return false
+            }
+            if (!isKeywordAt(sql, index, word)) return false
+            index += word.length
+        }
+        return true
+    }
 
     /** The (unquoted) name when the text before [keywordStart] ends in
      *  `CONSTRAINT <name>`, else null (unnamed clause). */
@@ -63,6 +112,33 @@ internal object SqliteDdlScanning {
         return sql.length
     }
 
+    /**
+     * Index hinter einem Kommentar, der bei [start] beginnt — oder [start],
+     * wenn dort keiner beginnt. Ein Zeilenkommentar reicht bis zum
+     * Zeilenende (oder bis zum Ende des Textes), ein Blockkommentar bis zu
+     * seinem Schlusszeichen; ein nicht geschlossener bis zum Ende.
+     */
+    fun skipComment(sql: String, start: Int): Int = when {
+        sql.startsWith("--", start) ->
+            sql.indexOf('\n', start).let { if (it < 0) sql.length else it + 1 }
+        sql.startsWith("/*", start) ->
+            sql.indexOf("*/", start + 2).let { if (it < 0) sql.length else it + 2 }
+        else -> start
+    }
+
+    /**
+     * Der naechste Index, an dem **Code** steht: ueberspringt Kommentare ab
+     * [start], auch mehrere hintereinander.
+     */
+    fun skipComments(sql: String, start: Int): Int {
+        var index = start
+        while (true) {
+            val next = skipComment(sql, index)
+            if (next == index) return index
+            index = next
+        }
+    }
+
     fun skipBracketIdentifier(sql: String, start: Int): Int {
         val close = sql.indexOf(']', start + 1)
         return if (close < 0) sql.length else close + 1
@@ -74,6 +150,11 @@ internal object SqliteDdlScanning {
         var depth = 1
         var i = start
         while (i < sql.length) {
+            val afterComment = skipComment(sql, i)
+            if (afterComment > i) {
+                i = afterComment
+                continue
+            }
             when (sql[i]) {
                 '(' -> {
                     depth++
@@ -97,7 +178,15 @@ internal object SqliteDdlScanning {
      *  or null when no `(` follows or the parens never balance. */
     fun parenGroupEnd(sql: String, keywordStart: Int, keywordLength: Int): Int? {
         var j = keywordStart + keywordLength
-        while (j < sql.length && sql[j].isWhitespace()) j++
+        while (j < sql.length) {
+            val afterComment = skipComments(sql, j)
+            if (afterComment > j) {
+                j = afterComment
+                continue
+            }
+            if (!sql[j].isWhitespace()) break
+            j++
+        }
         if (j >= sql.length || sql[j] != '(') return null
         return matchingParenEnd(sql, j + 1)
     }

@@ -129,16 +129,47 @@ object SqliteMetadataQueries {
             .map { it["name"] as String }
     }
 
-    fun listForeignKeys(session: JdbcMetadataSession, table: String): List<ForeignKeyProjection> {
+    /**
+     * Die Fremdschluessel einer Tabelle.
+     *
+     * **Der Name kommt von aussen** ([nameFor]): der Katalog fuehrt keinen, er
+     * nummeriert nur durch (`id`). Wer den Namen bildet, muss das ganze Schema
+     * kennen — zwei Tabellen ergaeben sonst zweimal `fk_0`
+     * ([SqliteConstraintNames], [SqliteForeignKeyConstraintScanner]).
+     *
+     * **Ohne Spaltenliste meint die Klausel den Primaerschluessel der
+     * Zieltabelle** (`REFERENCES t` statt `REFERENCES t(id)`). `PRAGMA
+     * foreign_key_list` fuehrt `to` dann als `NULL`; gelesen wird er deshalb
+     * von dort. Hat die Zieltabelle keinen Primaerschluessel, ist die Klausel
+     * in SQLite selbst ungueltig (`foreign key mismatch`) — dann scheitert der
+     * Lauf mit einer Meldung, die beide Tabellen nennt, statt mit einem
+     * Typfehler.
+     */
+    fun listForeignKeys(
+        session: JdbcMetadataSession,
+        table: String,
+        nameFor: (columns: List<String>, referencedTable: String) -> String,
+    ): List<ForeignKeyProjection> {
         val rows = session.queryList("PRAGMA foreign_key_list(${SqlIdentifiers.quoteStringLiteral(table, DatabaseDialect.SQLITE)})")
         return rows.groupBy { it["id"] as Number }.map { (_, fkRows) ->
             val sorted = fkRows.sortedBy { (it["seq"] as Number).toInt() }
             val first = sorted.first()
+            val referencedTable = first["table"] as String
+            val columns = sorted.map { it["from"] as String }
+            val referencedColumns = sorted.map { it["to"] as? String }
+                .takeIf { tos -> tos.all { it != null } }
+                ?.filterNotNull()
+                ?: listPrimaryKeyColumns(session, referencedTable).ifEmpty {
+                    error(
+                        "Foreign key of '$table' references '$referencedTable' without a column list, " +
+                            "and '$referencedTable' has no primary key to resolve it against.",
+                    )
+                }
             ForeignKeyProjection(
-                name = "fk_${first["id"]}",
-                columns = sorted.map { it["from"] as String },
-                referencedTable = first["table"] as String,
-                referencedColumns = sorted.map { it["to"] as String },
+                name = nameFor(columns, referencedTable),
+                columns = columns,
+                referencedTable = referencedTable,
+                referencedColumns = referencedColumns,
                 onDelete = (first["on_delete"] as? String)?.takeIf { it != "NO ACTION" },
                 onUpdate = (first["on_update"] as? String)?.takeIf { it != "NO ACTION" },
             )

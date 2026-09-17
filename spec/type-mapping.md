@@ -219,6 +219,44 @@ Länge/Precision. Unbekannte Typen fallen auf `Text()`.
 | `BLOB` | `Binary` ✅ | — |
 | `NUMERIC` ohne Precision | `Float()` | Akzeptabel |
 
+### 5.2a Constraint-Namen: aus dem DDL-Text, sonst gebildet
+
+SQLite führt Constraint-Namen **nicht im Katalog**: `PRAGMA foreign_key_list`
+nummeriert die Fremdschlüssel einer Tabelle nur durch, und der Autoindex einer
+UNIQUE-Klausel heißt `sqlite_autoindex_<tabelle>_<n>`. Der Name steht
+ausschließlich im abgelegten `CREATE TABLE`-Text (`sqlite_master.sql`), und von
+dort liest ihn der Reverse — für beide Formen, die SQLite kennt: die Klausel
+auf Tabellenebene (`CONSTRAINT <name> FOREIGN KEY (…) REFERENCES …`) und die
+an der Spalte (`<spalte> … CONSTRAINT <name> REFERENCES …`).
+
+Wo kein Name steht, bildet der Reverse einen — nach dem Muster, das der
+Generator für aufgeschobene Constraints benutzt:
+
+| Constraint | Gebildeter Name |
+| --- | --- |
+| Fremdschlüssel | `fk_<tabelle>_<spalte>[_<spalte>…]` |
+| mehrspaltige UNIQUE-Klausel | `uq_<tabelle>_<spalte>[_<spalte>…]` |
+
+Der gebildete Name gilt **schemaweit**, nicht je Tabelle: PostgreSQL und
+SQL Server verlangen Constraint-Namen schemaweit eindeutig, und zwei Tabellen
+mit je einer unbenannten Klausel ergäben sonst zweimal denselben. Ein Name aus
+dem DDL-Text gewinnt immer; ein gebildeter weicht ihm mit einem Zähler aus
+(`fk_t_a_2`), auch wenn der echte Name erst in einer später gelesenen Tabelle
+steht. Gekürzt wird auf **63 Zeichen** — die kleinste Bezeichnergrenze der
+fünf Ziele (PostgreSQL); so kommt der Name überall unverändert an. Die Vergabe
+ist deterministisch: zwei Reverses derselben Datenbank liefern dieselben Namen.
+
+**Ein Fremdschlüssel ohne Spaltenliste** (`REFERENCES t` statt
+`REFERENCES t(id)`) meint den Primärschlüssel der Zieltabelle; der Reverse
+liest ihn von dort. Hat die Zieltabelle keinen, ist die Klausel in SQLite selbst
+unbrauchbar (`foreign key mismatch`), und der Lauf endet mit einer Meldung, die
+beide Tabellen nennt.
+
+**Kommentare im Tabellentext** gehören zum Text: SQLite speichert ihn
+wortgetreu. Die Scanner des Reverse überspringen Zeilen- und Blockkommentare —
+sonst läse ein `CHECK` oder ein `AUTOINCREMENT` aus einem Kommentar mit, und
+ein Apostroph darin verschöbe die Abgrenzung der Literale.
+
 ### 5.3 AUTOINCREMENT-Breite (inhärente Reverse-Mehrdeutigkeit)
 
 `INTEGER PRIMARY KEY AUTOINCREMENT` ist ein 64-bit-Rowid und **speicher-

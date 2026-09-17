@@ -502,6 +502,15 @@ triggers:
   überschreiben.
 - Sequenz-Hilfsobjekte, die d-migrate selbst angelegt hat, werden automatisch
   erkannt und zurückübersetzt (siehe [3.12](#312-sequenzenautowerte-korrekt-mitnehmen)).
+- **Namen von SQLite-Constraints:** SQLite führt sie nicht im Katalog, sondern
+  nur im gespeicherten `CREATE TABLE`-Text — von dort liest d-migrate sie. Wo
+  kein Name steht, bildet es einen aus Tabelle und Spalten
+  (`fk_bestellung_kunde_id`, `uq_kunde_code_region`), schemaweit eindeutig und
+  bei jedem Lauf gleich. Bis dahin hieß jeder Fremdschlüssel jeder Tabelle
+  `fk_0`: eine daraus erzeugte DDL lehnten PostgreSQL und SQL Server ab, weil
+  ein Constraint-Name dort schemaweit eindeutig sein muss. **Folge:** ein
+  Reverse derselben SQLite-Datenbank liefert jetzt andere Constraint-Namen als
+  früher; ein Vergleich gegen eine ältere Reverse-Datei kann sie melden.
 - **SQLite-64-bit-Autowerte:** SQLites `AUTOINCREMENT`-Primärschlüssel ist 64-bit,
   wird aber standardmäßig als 32-bit-`identifier` zurückübersetzt (bei einem Transfer
   nach PostgreSQL/MySQL sonst `SERIAL`/`INT`). Brauchen Sie den vollen 64-bit-Bereich,

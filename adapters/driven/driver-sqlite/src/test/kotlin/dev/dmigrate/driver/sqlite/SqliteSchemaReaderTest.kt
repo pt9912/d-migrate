@@ -393,22 +393,25 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
-    test("unnamed multi-column UNIQUE gets a synthetic name (fk_N precedent)") {
+    test("unnamed multi-column UNIQUE gets a name from table and columns (P11)") {
         withDb("CREATE TABLE t (a TEXT, b TEXT, UNIQUE (a, b))") { pool ->
             val t = reader.read(pool).schema.tables.getValue("t")
             val uq = t.constraints.single { it.type == ConstraintType.UNIQUE }
-            uq.name shouldBe "uq_0"
+            // Frueher `uq_0` — je Tabelle derselbe Name, und damit schemaweit
+            // doppelt (PostgreSQL: `relation "uq_0" already exists`).
+            uq.name shouldBe "uq_t_a_b"
             uq.columns shouldBe listOf("a", "b")
         }
     }
 
-    test("synthetic unique name skips names taken by recovered constraints") {
+    test("a generated unique name avoids a name that really exists") {
         withDb("""
-            CREATE TABLE t (a TEXT, b TEXT, c TEXT, CONSTRAINT "uq_0" UNIQUE (a, b), UNIQUE (b, c))
+            CREATE TABLE t (a TEXT, b TEXT, c TEXT, CONSTRAINT "uq_t_b_c" UNIQUE (a, b), UNIQUE (b, c))
         """) { pool ->
             val t = reader.read(pool).schema.tables.getValue("t")
             val names = t.constraints.filter { it.type == ConstraintType.UNIQUE }.map { it.name }.toSet()
-            names shouldBe setOf("uq_0", "uq_1")
+            // Der echte Name gilt; der gebildete weicht ihm mit einem Zaehler aus.
+            names shouldBe setOf("uq_t_b_c", "uq_t_b_c_2")
         }
     }
 

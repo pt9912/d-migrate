@@ -239,11 +239,16 @@ internal object SqliteTypeMapping {
     fun isVirtualTable(createSql: String): Boolean =
         createSql.trimStart().startsWith("CREATE VIRTUAL TABLE", ignoreCase = true)
 
+    /**
+     * Beide Fragen gelten dem **Code** des abgelegten `CREATE TABLE`-Textes:
+     * ein `contains` traf auch ein `AUTOINCREMENT` in einem Kommentar oder in
+     * einem Spaltennamen ([SqliteDdlScanning.containsKeyword]).
+     */
     fun hasAutoincrement(createSql: String): Boolean =
-        createSql.contains("AUTOINCREMENT", ignoreCase = true)
+        SqliteDdlScanning.containsKeyword(createSql, "AUTOINCREMENT")
 
     fun hasWithoutRowid(createSql: String): Boolean =
-        createSql.contains("WITHOUT ROWID", ignoreCase = true)
+        SqliteDdlScanning.containsKeyword(createSql, "WITHOUT ROWID")
 
     // VA4/5d Befund 3a: vollständige, EXAKTE Liste der von `InitSpatialMetaData()`
     // angelegten SpatiaLite-Metatabellen (Stand mod_spatialite 5.x, live verifiziert).

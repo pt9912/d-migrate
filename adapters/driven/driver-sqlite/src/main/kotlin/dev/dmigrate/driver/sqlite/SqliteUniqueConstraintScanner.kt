@@ -25,6 +25,11 @@ internal object SqliteUniqueConstraintScanner {
         val clauses = mutableListOf<UniqueClause>()
         var i = 0
         while (i < createSql.length) {
+            val afterComment = SqliteDdlScanning.skipComment(createSql, i)
+            if (afterComment > i) {
+                i = afterComment
+                continue
+            }
             when (createSql[i]) {
                 '\'', '"', '`' -> i = SqliteDdlScanning.skipQuoted(createSql, i)
                 '[' -> i = SqliteDdlScanning.skipBracketIdentifier(createSql, i)

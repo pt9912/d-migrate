@@ -34,37 +34,23 @@ class SqliteSchemaReader : SchemaReader {
 
             // Tables
             val tableEntries = SqliteMetadataQueries.listAllTableEntries(session)
-            // VA4/5d Befund 3: SpatiaLite-Registry lesen (leer ohne SpatiaLite) —
-            // liefert SRID (sonst via PRAGMA table_info verloren) + Spatial-Index-Flag.
-            val geometryColumns = SqliteMetadataQueries.listGeometryColumns(session)
-            val geometryByTable = geometryColumns.groupBy { it.table.lowercase() }
-            // Befund 3a: die R*Tree-Schattentabellen `idx_<t>_<col>_{node,parent,rowid}`
-            // sind reguläre Tabellen (kein VIRTUAL TABLE, keine Metatabellen-Familie) →
-            // explizit ausschließen. Die Haupt-VirtualTable `idx_<t>_<col>` fängt
-            // bereits [SqliteTypeMapping.isVirtualTable] (S100).
-            val rtreeShadowTables = geometryColumns.filter { it.spatialIndexEnabled }.flatMap {
-                val base = "idx_${it.table}_${it.column}".lowercase()
-                listOf("${base}_node", "${base}_parent", "${base}_rowid")
-            }.toSet()
-            // ADR 0025 (Slice P5): scan the FTS5 virtual tables so the FULLTEXT expansion
-            // (SqliteFullTextExpansion) folds back on reverse — the virtual table itself is a
-            // FULLTEXT index on its content table, its `_data/_idx/_docsize/_config` shadow tables
-            // are FTS5-internal, and its `_ai/_ad/_au` sync triggers are FTS5-internal. Without this
-            // they would surface as user tables/triggers and drive a false migrate post-compare drift.
-            val fts5Defs = tableEntries
-                .filter { (_, createSql) -> SqliteFts5Reverse.isFts5VirtualTable(createSql) }
-                .map { (name, createSql) -> SqliteFts5Reverse.parseFts5(name, createSql) }
-            // `_content` is only a real shadow for regular/contentless FTS5 (external-content, the
-            // form P4 emits, has none) → external tables must not filter it (avoid dropping a real
-            // user table named `<fts>_content`).
-            val fts5ShadowTables = fts5Defs
-                .flatMap { SqliteFts5Reverse.fts5ShadowTables(it.name, externalContent = it.contentTable != null) }
-                .toSet()
-            val fts5SyncTriggerNames = fts5Defs.flatMap { SqliteFts5Reverse.fts5SyncTriggerNames(it.name) }.toSet()
-            val fts5TableNames = fts5Defs.map { it.name.lowercase() }.toSet()
-            val fts5ByContentTable = fts5Defs.filter { it.contentTable != null }
-                .groupBy { it.contentTable!!.lowercase() }
+            val scope = readScope(session, tableEntries)
+            val geometryByTable = scope.geometryColumns.groupBy { it.table.lowercase() }
+            val rtreeShadowTables = scope.rtreeShadowTables
+            val fts5Defs = scope.fts5Defs
+            val fts5ShadowTables = scope.fts5ShadowTables
+            val fts5SyncTriggerNames = scope.fts5SyncTriggerNames
+            val fts5TableNames = scope.fts5TableNames
+            val fts5ByContentTable = scope.fts5ByContentTable
             val tables = LinkedHashMap<String, TableDefinition>()
+            // Constraint-Namen werden **schemaweit** vergeben, nicht je
+            // Tabelle: echte Namen aus allen `CREATE TABLE`-Texten zuerst
+            // reservieren, damit ein gebildeter Name auch einem Namen
+            // ausweicht, der erst in einer spaeteren Tabelle steht
+            // ([SqliteConstraintNames]).
+            val constraintNames = SqliteConstraintNames(
+                tableEntries.flatMap { (_, createSql) -> realConstraintNames(createSql) },
+            )
 
             for ((tableName, createSql) in tableEntries) {
                 if (SqliteTypeMapping.isVirtualTable(createSql)) {
@@ -96,10 +82,16 @@ class SqliteSchemaReader : SchemaReader {
                     continue
                 }
                 tables[tableName] = readTable(
-                    session, tableName, createSql,
-                    geometryByTable[tableName.lowercase()].orEmpty(),
-                    fts5ByContentTable[tableName.lowercase()].orEmpty(), notes,
-                    options,
+                    TableRead(
+                        session = session,
+                        tableName = tableName,
+                        createSql = createSql,
+                        geometryColumns = geometryByTable[tableName.lowercase()].orEmpty(),
+                        fts5Defs = fts5ByContentTable[tableName.lowercase()].orEmpty(),
+                        options = options,
+                        constraintNames = constraintNames,
+                    ),
+                    notes,
                 )
             }
 
@@ -157,15 +149,90 @@ class SqliteSchemaReader : SchemaReader {
         }
     }
 
-    private fun readTable(
+    /**
+     * Was vor der ersten Tabelle feststehen muss: die SpatiaLite-Registry und
+     * die FTS5-Landschaft. Beides entscheidet, welche Tabellen und Trigger
+     * **nicht** Anwenderobjekte sind — und beides braucht den ganzen Katalog,
+     * nicht die einzelne Tabelle.
+     */
+    private data class ReverseScopeData(
+        val geometryColumns: List<SqliteGeometryColumn>,
+        val rtreeShadowTables: Set<String>,
+        val fts5Defs: List<SqliteFts5Reverse.Fts5Definition>,
+        val fts5ShadowTables: Set<String>,
+        val fts5SyncTriggerNames: Set<String>,
+        val fts5TableNames: Set<String>,
+        val fts5ByContentTable: Map<String, List<SqliteFts5Reverse.Fts5Definition>>,
+    )
+
+    private fun readScope(
         session: JdbcMetadataSession,
-        tableName: String,
-        createSql: String,
-        geometryColumns: List<SqliteGeometryColumn>,
-        fts5Defs: List<SqliteFts5Reverse.Fts5Definition>,
-        notes: MutableList<SchemaReadNote>,
-        options: SchemaReadOptions,
-    ): TableDefinition {
+        tableEntries: List<Pair<String, String>>,
+    ): ReverseScopeData {
+        // VA4/5d Befund 3: SpatiaLite-Registry lesen (leer ohne SpatiaLite) —
+        // liefert SRID (sonst via PRAGMA table_info verloren) + Spatial-Index-Flag.
+        val geometryColumns = SqliteMetadataQueries.listGeometryColumns(session)
+        // Befund 3a: die R*Tree-Schattentabellen `idx_<t>_<col>_{node,parent,rowid}`
+        // sind reguläre Tabellen (kein VIRTUAL TABLE, keine Metatabellen-Familie) →
+        // explizit ausschließen. Die Haupt-VirtualTable `idx_<t>_<col>` fängt
+        // bereits [SqliteTypeMapping.isVirtualTable] (S100).
+        val rtreeShadowTables = geometryColumns.filter { it.spatialIndexEnabled }.flatMap {
+            val base = "idx_${it.table}_${it.column}".lowercase()
+            listOf("${base}_node", "${base}_parent", "${base}_rowid")
+        }.toSet()
+        // ADR 0025 (Slice P5): scan the FTS5 virtual tables so the FULLTEXT expansion
+        // (SqliteFullTextExpansion) folds back on reverse — the virtual table itself is a
+        // FULLTEXT index on its content table, its `_data/_idx/_docsize/_config` shadow tables
+        // are FTS5-internal, and its `_ai/_ad/_au` sync triggers are FTS5-internal. Without this
+        // they would surface as user tables/triggers and drive a false migrate post-compare drift.
+        val fts5Defs = tableEntries
+            .filter { (_, createSql) -> SqliteFts5Reverse.isFts5VirtualTable(createSql) }
+            .map { (name, createSql) -> SqliteFts5Reverse.parseFts5(name, createSql) }
+        // `_content` is only a real shadow for regular/contentless FTS5 (external-content, the
+        // form P4 emits, has none) → external tables must not filter it (avoid dropping a real
+        // user table named `<fts>_content`).
+        return ReverseScopeData(
+            geometryColumns = geometryColumns,
+            rtreeShadowTables = rtreeShadowTables,
+            fts5Defs = fts5Defs,
+            fts5ShadowTables = fts5Defs
+                .flatMap { SqliteFts5Reverse.fts5ShadowTables(it.name, externalContent = it.contentTable != null) }
+                .toSet(),
+            fts5SyncTriggerNames = fts5Defs.flatMap { SqliteFts5Reverse.fts5SyncTriggerNames(it.name) }.toSet(),
+            fts5TableNames = fts5Defs.map { it.name.lowercase() }.toSet(),
+            fts5ByContentTable = fts5Defs.filter { it.contentTable != null }
+                .groupBy { it.contentTable!!.lowercase() },
+        )
+    }
+
+    /**
+     * Die echten Constraint-Namen eines `CREATE TABLE`-Textes — die, die ein
+     * Autor geschrieben hat. Sie werden vor der Namensvergabe reserviert.
+     */
+    private fun realConstraintNames(createSql: String): List<String> =
+        SqliteForeignKeyConstraintScanner.scan(createSql).mapNotNull { it.name } +
+            SqliteUniqueConstraintScanner.scan(createSql).mapNotNull { it.name } +
+            SqliteCheckConstraintScanner.scan(createSql).named.map { it.first }
+
+    /** Was das Lesen **einer** Tabelle braucht; die Meldungen stehen daneben. */
+    private data class TableRead(
+        val session: JdbcMetadataSession,
+        val tableName: String,
+        val createSql: String,
+        val geometryColumns: List<SqliteGeometryColumn>,
+        val fts5Defs: List<SqliteFts5Reverse.Fts5Definition>,
+        val options: SchemaReadOptions,
+        val constraintNames: SqliteConstraintNames,
+    )
+
+    private fun readTable(read: TableRead, notes: MutableList<SchemaReadNote>): TableDefinition {
+        val session = read.session
+        val tableName = read.tableName
+        val createSql = read.createSql
+        val geometryColumns = read.geometryColumns
+        val fts5Defs = read.fts5Defs
+        val options = read.options
+        val constraintNames = read.constraintNames
         val columns = SqliteMetadataQueries.listColumns(session, tableName)
         // `table_info` laesst generierte Spalten ganz weg; `table_xinfo` fuehrt
         // sie samt Speicherform, und der Ausdruck steht im abgelegten
@@ -173,7 +240,10 @@ class SqliteSchemaReader : SchemaReader {
         val generated = SqliteMetadataQueries.listGeneratedColumnDetails(session, tableName)
         val generatedExpressions = SqliteGeneratedColumnScanner.expressionsOf(createSql)
         val pkColumns = SqliteMetadataQueries.listPrimaryKeyColumns(session, tableName)
-        val fks = SqliteMetadataQueries.listForeignKeys(session, tableName)
+        val fks = SqliteMetadataQueries.listForeignKeys(
+            session, tableName,
+            foreignKeyNaming(tableName, createSql, constraintNames),
+        )
         val indices = SqliteMetadataQueries.listIndices(session, tableName)
         // AP4: UNIQUE-Constraint-Autoindizes (origin 'u') — vorher komplett
         // verworfen (Fidelity-Bug: Reverse verlor inline-UNIQUE ganz).
@@ -230,7 +300,7 @@ class SqliteSchemaReader : SchemaReader {
         val constraints = mutableListOf<ConstraintDefinition>()
         constraints += SchemaReaderUtils.buildForeignKeyConstraints(fks)
         constraints += SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
-        constraints += multiColumnUniqueConstraints(createSql, uniqueConstraintIndexes)
+        constraints += multiColumnUniqueConstraints(tableName, createSql, uniqueConstraintIndexes, constraintNames)
         // CHECK constraints from CREATE TABLE SQL
         val checkScan = SqliteCheckConstraintScanner.scan(createSql)
         for ((checkName, checkExpr) in checkScan.named) {
@@ -253,6 +323,32 @@ class SqliteSchemaReader : SchemaReader {
             )
         }
 
+        val allIndices = indexDefinitions(indices, columnDefs.keys, tableName, geometryColumns, fts5Defs)
+
+        val metadata = if (isWithoutRowid) TableMetadata(withoutRowid = true) else null
+
+        return TableDefinition(
+            columns = columnDefs,
+            primaryKey = pkColumns,
+            indices = allIndices,
+            constraints = constraints,
+            metadata = metadata,
+        )
+    }
+
+    /**
+     * Die Indizes einer Tabelle: die gewoehnlichen aus `PRAGMA index_list`,
+     * der raeumliche aus der SpatiaLite-Registry und der Volltext-Index aus der
+     * FTS5-Landschaft. Ausgelagert, weil `readTable` sonst ueber die
+     * Laengenschwelle liefe — drei Quellen, ein Ergebnis.
+     */
+    private fun indexDefinitions(
+        indices: List<IndexProjection>,
+        columnNames: Set<String>,
+        tableName: String,
+        geometryColumns: List<SqliteGeometryColumn>,
+        fts5Defs: List<SqliteFts5Reverse.Fts5Definition>,
+    ): List<IndexDefinition> {
         // Non-unique, non-autoindex indices
         val regularIndices = indices.filter { it.where != null || !it.isUnique || it.columns.size > 1 }
             .filter { it.where != null || !(it.isUnique && it.columns.size > 1) } // multi-col unique already in constraints
@@ -271,7 +367,7 @@ class SqliteSchemaReader : SchemaReader {
         // Aus dem Flag den neutralen IndexType.SPATIAL rekonstruieren, damit der
         // Round-Trip den räumlichen Index nicht verliert.
         val spatialIndices = geometryColumns.filter { it.spatialIndexEnabled }.mapNotNull { gc ->
-            val colName = columnDefs.keys.firstOrNull { it.equals(gc.column, ignoreCase = true) }
+            val colName = columnNames.firstOrNull { it.equals(gc.column, ignoreCase = true) }
                 ?: return@mapNotNull null
             // Index-Name aus dem aufgelösten colName (echte Spaltenschreibweise), nicht aus
             // der geometry_columns-Registry-Schreibweise — sonst Casing-Drift im Round-Trip.
@@ -293,21 +389,12 @@ class SqliteSchemaReader : SchemaReader {
             IndexDefinition(
                 name = fts.name,
                 columns = fts.columns.map { c ->
-                    IndexColumn(columnDefs.keys.firstOrNull { it.equals(c, ignoreCase = true) } ?: c)
+                    IndexColumn(columnNames.firstOrNull { it.equals(c, ignoreCase = true) } ?: c)
                 },
                 type = IndexType.FULLTEXT,
             )
         }
-
-        val metadata = if (isWithoutRowid) TableMetadata(withoutRowid = true) else null
-
-        return TableDefinition(
-            columns = columnDefs,
-            primaryKey = pkColumns,
-            indices = regularIndices + spatialIndices + fullTextIndices,
-            constraints = constraints,
-            metadata = metadata,
-        )
+        return regularIndices + spatialIndices + fullTextIndices
     }
 
     /**
@@ -319,29 +406,47 @@ class SqliteSchemaReader : SchemaReader {
      * (`uq_N`, Präzedenz: FK-Reverse `fk_N`).
      */
     private fun multiColumnUniqueConstraints(
+        tableName: String,
         createSql: String,
         uniqueConstraintIndexes: List<IndexProjection>,
+        constraintNames: SqliteConstraintNames,
     ): List<ConstraintDefinition> {
         val clauses = SqliteUniqueConstraintScanner.scan(createSql)
             .map { it to it.columns.map(String::lowercase) }
             .toMutableList()
-        // Synthetische Namen dürfen nicht mit real rekonstruierten kollidieren
-        // (Tabelle mit echtem `uq_0` + unbenannter Klausel → uq_1).
-        val taken = clauses.mapNotNull { it.first.name }.toMutableSet()
         return uniqueConstraintIndexes.filter { it.columns.size > 1 }.map { idx ->
             val wanted = idx.columns.map(String::lowercase)
             val match = clauses.firstOrNull { it.second == wanted }
             if (match != null) clauses.remove(match)
-            val name = match?.first?.name ?: syntheticUniqueName(taken)
-            taken += name
+            val name = match?.first?.name?.let(constraintNames::real)
+                ?: constraintNames.generated("uq", tableName, *idx.columns.toTypedArray())
             ConstraintDefinition(name = name, type = ConstraintType.UNIQUE, columns = idx.columns)
         }
     }
 
-    private fun syntheticUniqueName(taken: Set<String>): String {
-        var n = 0
-        while ("uq_$n" in taken) n++
-        return "uq_$n"
+    /**
+     * Der Name eines Fremdschluessels: aus dem `CREATE TABLE`-Text, wenn er
+     * dort steht, sonst gebildet nach dem Vorbild des Generators
+     * (`fk_<tabelle>_<spalte>`). Die Klauseln werden **verbraucht** — zwei
+     * gleich geformte Fremdschluessel derselben Tabelle bekommen so
+     * deterministisch je ihren eigenen Namen, wie beim UNIQUE-Scanner.
+     */
+    private fun foreignKeyNaming(
+        tableName: String,
+        createSql: String,
+        constraintNames: SqliteConstraintNames,
+    ): (List<String>, String) -> String {
+        val clauses = SqliteForeignKeyConstraintScanner.scan(createSql).toMutableList()
+        return { columns, referencedTable ->
+            val wanted = columns.map(String::lowercase)
+            val match = clauses.firstOrNull {
+                it.columns.map(String::lowercase) == wanted &&
+                    it.referencedTable.equals(referencedTable, ignoreCase = true)
+            }
+            if (match != null) clauses.remove(match)
+            match?.name?.let(constraintNames::real)
+                ?: constraintNames.generated("fk", tableName, *columns.toTypedArray())
+        }
     }
 
     private fun readViews(session: JdbcMetadataSession): Map<String, ViewDefinition> {

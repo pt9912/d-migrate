@@ -36,6 +36,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Ein SQLite-Reverse liefert Constraint-Namen aus der Quelle, und gebildete
+  Namen sind schemaweit eindeutig.** SQLite fuehrt die Namen nicht im Katalog;
+  `PRAGMA foreign_key_list` nummeriert je Tabelle durch, und der Reverse vergab
+  daraufhin `fk_0`, `uq_0` — in einem Schema mit zwei Tabellen also zweimal
+  denselben Namen. PostgreSQL und SQL Server lehnten die daraus erzeugte DDL ab
+  (`relation "uq_0" already exists`, `Msg 2714`). Jetzt liest der Reverse den
+  Namen aus dem gespeicherten `CREATE TABLE`-Text — fuer die Klausel auf
+  Tabellenebene **und** die an der Spalte — und bildet, wo keiner steht, einen
+  aus Tabelle und Spalten (`fk_<tabelle>_<spalte>`, `uq_<tabelle>_<spalten>`),
+  schemaweit eindeutig, auf 63 Zeichen gekuerzt und bei jedem Lauf gleich.
+  Zwei weitere Faelle desselben Textes: ein Fremdschluessel **ohne
+  Spaltenliste** (`REFERENCES t`) liest jetzt den Primaerschluessel der
+  Zieltabelle, statt den Lauf mit einem Typfehler abzubrechen; und die Scanner
+  ueberspringen Kommentare — ein `AUTOINCREMENT` oder ein `CHECK` in einem
+  Kommentar wurde bisher mitgelesen. **Folge:** ein Reverse derselben Datenbank
+  liefert andere Constraint-Namen als bisher.
+
 - **Ein SQL-Server-Reverse liefert den Berechnungsausdruck einer Spalte ohne
   T-SQL-Quoting.** `sys.computed_columns.definition` fuehrt ihn in
   Oberflaechensyntax (`([quantity]*[unit_price])`); der Reverse uebernahm ihn
