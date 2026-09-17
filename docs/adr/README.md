@@ -111,3 +111,4 @@ argumentiert werden.
 | 0055 | [Der Wertevorrat eines Enums zählt auch im zielbewussten Vergleich, nicht nur im Fingerprint](0055-enum-wertevorrat-im-zielbewussten-vergleich.md) | accepted |
 | 0056 | [Dialekt-Schreibweise roher SQL-Texte — `schema compare` setzt sie gleich, `schema migrate` und der Fingerabdruck nicht](0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md) | accepted |
 | 0057 | [Eine Semantik für `schema compare` in CLI, `schema_compare` und `schema_compare_start` — die Herkunft einer Seite ist kein Unterschied](0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md) | accepted |
+| 0058 | [Ein beim Reverse verlorener SRID ist eine Warnung, kein Blocker](0058-verlorener-srid-beim-reverse-ist-warnung.md) | accepted |
