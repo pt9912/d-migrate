@@ -23,14 +23,22 @@
 -- das Ganze ein zweites Mal escapet). Vor P6 war jedes MySQL-Reverse damit
 -- ungueltig (E012/E136) und die ganze MySQL-Zeile der Matrix unmessbar.
 
+-- seed: sl_my_expr.id | paket: P6 | quelle: identifier(auto)
+--   ziel postgresql: identifier(auto) | code: keinen
+--   ziel mssql: identifier(auto) | code: keinen
+--   ziel sqlite: identifier(auto) | code: keinen
+-- seed: sl_my_expr.note | paket: P6 | quelle: text(40)
+--   ziel postgresql: text(40) | code: keinen
+--   ziel mssql: text(40) | code: keinen
+--   ziel sqlite: text | code: keinen
 -- seed: sl_my_expr.Menge | paket: P6 | quelle: integer
 --   ziel postgresql: integer | code: keinen
 --   ziel mssql: integer | code: keinen
 --   ziel sqlite: integer | code: keinen
 -- seed: sl_my_expr.stufe | paket: P6 | quelle: text(10)
---   ausdruck: (case when (Menge > 0) then 'hoch' else 'keine' end)
+--   ausdruck: (case when ("Menge" > 0) then 'hoch' else 'keine' end)
 --   ziel postgresql: text(10) | code: keinen
---   ziel mssql: text(10) | code: keinen
+--   ziel mssql: text(5) | code: keinen
 --   ziel sqlite: text | code: keinen
 CREATE TABLE sl_my_expr (
   id INT NOT NULL AUTO_INCREMENT,

@@ -802,6 +802,93 @@ Erwartungsdatei bewegt sich nicht), `make mcp-e2e-roundtrip` und
 `make mcp-e2e-smoke` grün.
 
 
+### P0 Teile 2 bis 5 — Seeds, Anmerkungen und der Silent-Loss-Check (2026-09-17)
+
+**Die Anmerkungen** stehen im Kopf jeder Seed-Datei und in der README. Format:
+
+```
+-- seed: <tabelle>.<spalte> | paket: <Paket> | quelle: <form> [| code: <Code|keinen>]
+--   [generation: <gen>]
+--   [ausdruck: <text>]
+--   ziel <dialekt>: <form> | code: <Code|keinen> [| generation: <gen>] [| ausdruck: <text>]
+```
+
+Die Form ist eine kurze Schreibweise des neutralen Typs (`text(40)`,
+`array(text)`, `identifier(auto)`, `decimal(12,2)`, `float`), daneben die
+Erzeugung (`identity(always)`, `computed(stored)`) und der rohe
+Berechnungsausdruck. Sie beschreiben den **Zielzustand** nach den vier Plänen.
+
+**Das Modell des Checks — eine Abweichung vom Plan, bewusst.** Der Check
+braucht die neutralen Formen; die stehen im Schema-Dokument, das MCP-Artefakt
+ist YAML, und der Harness hat keinen YAML-Leser (`jq` liest kein YAML, `yq`
+ist keine Voraussetzung). Der Lauf liest deshalb je Dialekt ein **zweites**
+Reverse über die CLI (`schema reverse --format json`) — dieselbe Datenbank,
+derselbe Reader, dieselbe Konfigurationsdatei wie der MCP-Server (mit der
+Präferenz `identity`). Die **Zellen** der Matrix kommen unverändert aus dem
+MCP-Reverse; nur die Formen des Checks aus dem JSON. Die Reports bleiben YAML
+und werden mit einem selbstprüfenden awk gelesen: die Zahlen aus `summary`
+müssen zu den gelesenen Listen passen, sonst scheitert der Lauf laut.
+
+**Vier Klassen**, wie geplant: `quelle` (Form, Erzeugung, Ausdruck und der
+Code des Reverse-Reports), `reftype` (ein `ref_type` ohne Eintrag in
+`custom_types`, auf **jedem** Reverse), `verloren` (eine angemerkte Spalte, die
+der Reverse nicht hat; eine Spalte der Quelle, die im Ziel fehlt und nicht in
+`skipped_objects` steht) und `ziel` (die Zielform samt M1: eine Degradierung
+ohne Code im Generate-Report, und eine Degradierung, deren Anmerkung „keinen"
+sagt). Dazu eine fünfte Selbstprüfung, die der Plan nicht nennt: eine
+**Seed-Spalte ohne Anmerkung** ist ein Fehlschlag — sonst wäre ein Seed, den
+niemand angemerkt hat, im Check unsichtbar.
+
+**Die Liste bekannter Befunde** steht in
+[`examples/mcp-e2e/scripts/lib/silent-loss.sh`](../../../examples/mcp-e2e/scripts/lib/silent-loss.sh), nicht in
+der Erwartungsdatei: 24 Einträge, jeder wortgleich der Verstoß und dahinter das
+Paket. Sie sind das Arbeitsvorrat-Bild der Pläne 2 und 4:
+
+| Befund | Anzahl | Paket |
+| --- | --- | --- |
+| `R301` (unbekanntes Array-Element), `R402` (`json`), `R404` (`numeric` ohne Präzision), `R221` (SQLite `NUMERIC`) fehlen im Reverse-Report | 4 | N1, P8, P9 (Plan 2) |
+| die `integer`-Identity liest als `identifier` ohne Modus | 2 | S1 (Plan 2) |
+| Array-Verlust ohne `W162` auf MySQL und SQLite | 8 | P5 (Plan 2) |
+| `ALWAYS` ohne Entsprechung, ohne `W163` auf MySQL und SQLite | 4 | P10, S1 (Plan 2) |
+| SQL Server: `integer`+`ALWAYS` → `identifier(auto)` ohne Code | 1 | S1, Zielseite (Plan 2) |
+| SQLite verschweigt Typmarke und Länge (`json` → `text`, `text(40)` → `text`) | 4 | neuer Befund, [`../open/sqlite-generate-verschweigt-typmarke-und-laenge.md`](../open/sqlite-generate-verschweigt-typmarke-und-laenge.md) |
+| SQL Server leitet Typ **und** Nullbarkeit einer berechneten Spalte ab (`text(10)` → `text(5)`) | 1 | D1 (Plan 4) |
+
+**Zwei neue Befunde**, die der Check gefunden hat und die kein Paket trägt:
+
+1. **SQLite verschweigt, was es verwirft** — die deklarierte Länge und die
+   Typmarke `json` fallen ohne Code weg, während der Präzisionsverlust bei
+   `decimal` `W200` bekommt. Eigener `open/`-Eintrag (oben).
+2. **Der Reverse-Report von PostgreSQL trägt `R400`** („extension postgis is
+   installed") — die Folge von Teil 1, gepinnt in `REPORT_CODES_POSTGRESQL`.
+
+**Was der Check **nicht** prüft:** Constraints, Indizes und Sichten. Die
+Anmerkung hängt an einer Spalte; die Namen der SQLite-Constraints (P11) misst
+die Zelle SQLite → SQL Server, nicht der Check.
+
+**Sabotage-Protokoll P0** (je ein voller Matrix-Lauf, die Erwartungsdatei
+blieb in jedem unverändert — Prüfsumme vorher und nachher gleich):
+
+| Sabotage | Ergebnis |
+| --- | --- |
+| (a) eine Anmerkung nennt einen Code, den der Reverse-Report nicht trägt (`R999`) | rot: „quelle postgresql: sl_pg_text.free_text: der Reverse-Report nennt R999 nicht" |
+| (b) eine Anmerkung für eine Spalte, die es nicht gibt | rot: „verloren postgresql: sl_pg_text.gibtsnicht: die Anmerkung nennt eine Spalte, die der Reverse nicht hat" |
+| (f) eine Ziel-Degradierung mit einem Code, den der Generate-Report nicht trägt (`W999`) | rot: „ziel postgresql->sqlite: sl_pg_number.bounded: Degradierung ohne W999 im Generate-Report" |
+| Selbstprüfung: eine Seed-Spalte ohne Anmerkung | rot: „anmerkung postgresql: sl_pg_text.id: Seed-Spalte ohne Anmerkung" |
+| (d) dieselben drei mit `--update-expectations` | „Erwartungen NICHT geschrieben: 4 nicht pinnbare Abweichung(en)", Exit 2, Datei-Prüfsumme unverändert |
+| (c) ein bekannter Befund, der nicht auftritt | rot: „bekannter Befund verschwunden — Liste nachziehen: …" |
+| (e) ein kaputtes jq-Programm | rot: viermal „die Spalten des Reverse sind nicht lesbar: jq: error …" und zwanzigmal „bekannter Befund verschwunden" — nie „nichts gefunden" |
+| Report mit falscher Zahl in `summary` (direkt geprüft) | `report_json` scheitert laut: „summary nennt 2 notes, gelesen wurden 1" |
+
+**Drei Fehler, die erst die Sabotage zeigte** (alle behoben): die Prüfung auf
+nicht angemerkte Seed-Spalten lief still leer (`$annotated | index(.)` — das
+`.` ist in jq hinter dem Pipe der **Array**, nicht der Schlüssel); dieselbe
+Falle in der Prüfung auf verlorene Spalten (dort hätte sie einen jq-Fehler
+geworfen, der in der Pipeline verlorenging); und ein jq-Fehler des Erzeugers
+ging in `erzeuger | bewerter` unter — die Auswertung läuft jetzt über eine
+Variable und meldet den Fehler.
+
+
 ## Akzeptanzkriterien
 
 1. Ein MySQL-Reverse mit Introducer, Backslash-Escape und Backtick-Quoting

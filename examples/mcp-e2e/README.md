@@ -260,15 +260,63 @@ gefahren):
 | SQLite → MySQL | `APPLY-FAIL` (`ERROR 1170`) | der SQLite-Reverse kennt keine Laenge; MySQL indiziert `TEXT` nicht ohne Praefix |
 | SQLite → SQL Server | `APPLY-FAIL` (`Msg 2714`) | der SQLite-Reverse nennt die Fremdschluessel jeder Tabelle `fk_0` …; SQL Server verlangt eindeutige Namen |
 
-**Native Typ-Seeds** je Dialekt: liegt `fixtures/seeds/<dialekt>.sql`, wendet
-der Lauf sie nach der Fixture an, und sie gehen in den Reverse der Quelle ein.
-Sie tragen, was nur dieser Dialekt so zurueckgibt. Jede Seed-Spalte traegt eine
-Anmerkung **ausserhalb** der `CREATE`-Anweisung (SQLite speichert Kommentare im
-Tabellentext, und die Scanner dort kennen keine): erwartete neutrale Form der
-Quelle, je Ziel die Form im Reverse des Ziels und der Code, den der
-Generate-Report dafuer traegt — oder ausdruecklich „keinen". Das Format steht
-im Kopf jeder Seed-Datei. Heute gibt es `mysql.sql` (P6: CHECK und
-Berechnungsausdruck mit Zeichenkette, eine nicht kleingeschriebene Spalte).
+### Native Typ-Seeds und der Silent-Loss-Check
+
+Die Zahlen oben zaehlen **Vergleichsfunde**. Ein **Verlust** faellt dabei nicht
+auf: geht eine Eigenschaft beim Lesen oder beim Erzeugen verloren, sind
+hinterher beide Seiten gleich verloren, und die Zelle meldet null Funde. Der
+Silent-Loss-Check (`scripts/lib/silent-loss.sh`) fragt deshalb etwas anderes:
+**kommt an, was ankommen soll — und wo nicht, wird es gesagt?**
+
+**Die Seeds.** Liegt `fixtures/seeds/<dialekt>.sql`, wendet der Lauf die Datei
+nach der Fixture an; sie geht in den Reverse der Quelle ein und traegt, was nur
+dieser Dialekt so zurueckgibt. Heute: `postgresql.sql` (Arrays, `json`/`jsonb`,
+`numeric` ohne Praezision, `varchar` ohne Laenge, `interval`, zwei
+IDENTITY-Spalten mit `ALWAYS`), `mysql.sql` (CHECK und Berechnungsausdruck mit
+Zeichenkette, eine nicht kleingeschriebene Spalte) und `sqlite.sql` (benannte
+und unbenannte Fremdschluessel, zweimal dieselbe unbenannte UNIQUE-Klausel,
+`NUMERIC` ohne Praezision).
+
+**Die Anmerkungen.** Jede Seed-Spalte traegt eine, und zwar **ausserhalb** der
+`CREATE`-Anweisung — SQLite speichert Kommentare im Tabellentext mit, und die
+Scanner des Readers kennen keine:
+
+```
+-- seed: <tabelle>.<spalte> | paket: <Paket> | quelle: <form> [| code: <Code|keinen>]
+--   [generation: <gen>]
+--   [ausdruck: <text>]
+--   ziel <dialekt>: <form> | code: <Code|keinen> [| generation: <gen>] [| ausdruck: <text>]
+```
+
+`quelle` ist die neutrale Form, die der Reverse **dieser** Quelle liefern muss,
+`ziel <d>` die Form im Reverse des Ziels; `code` nennt den Code, den der
+zugehoerige Report dafuer traegt — oder ausdruecklich `keinen`. Die Anmerkungen
+beschreiben den **Zielzustand**, nicht den Ist-Zustand.
+
+**Vier Klassen** (`quelle`, `reftype`, `verloren`, `ziel`) pruefen daraufhin
+den Reverse der Quelle, jeden Reverse eines Ziels und die beiden Reports. Ein
+Verstoss ist ein Fehlschlag — **ausser** er steht wortgleich in der Liste
+bekannter Befunde in `scripts/lib/silent-loss.sh`, mit dem Paket, das ihn
+aufloest. Die Liste ist **Code**, keine Erwartung: `--update-expectations`
+erweitert sie nicht, und ein Eintrag, der im Lauf **nicht** auftritt, ist
+selbst ein Fehlschlag.
+
+**Zwei weitere Schluesselfamilien** in der Erwartungsdatei, gepinnt wie
+`CELL_`/`CODES_`:
+
+- `REPORT_CODES_<DIALEKT>` — die Codes des Reverse-Reports der Quelle, mit
+  Anzahl;
+- `GEN_CODES_<QUELLE>_<ZIEL>` — die Codes aus dem Sidecar-Report des
+  Generate-Schritts. Sie entstehen **vor** dem Anwenden und gelten deshalb auch
+  fuer eine Zelle, die danach `APPLY-FAIL` wird.
+
+Ein Paket, das eine Note einfuehrt, wird damit zu einem bewussten Neu-Pin.
+
+**Das Modell des Checks** liest eine zweite, gleichlautende Reverse-Ausgabe der
+CLI (`schema reverse --format json`, mit derselben Konfiguration wie der
+MCP-Server): die Formen stehen im Schema-Dokument, das MCP-Artefakt ist YAML,
+und der Harness hat keinen YAML-Leser. Die **Zellen** der Matrix kommen
+unveraendert aus dem MCP-Reverse.
 
 **Oracle** faehrt nur mit `make mcp-e2e-compare-matrix-oracle`; ohne diesen
 Aufruf werden seine Zellen weder gemessen noch geprueft. Der Workflow

@@ -27,7 +27,19 @@
 # der eine Identity-Spalte (`BY DEFAULT`, Fixture) sich nur im Sequenznamen
 # unterscheiden koennte.
 #
-# **Ausgabe:** je Zelle die Zahl der Funde und ihre Codes. **Erwartungen**
+# **Silent-Loss-Check** (lib/silent-loss.sh): die Zahlen einer Zelle zeigen
+# keinen **Verlust** — geht eine Eigenschaft verloren, sind hinterher beide
+# Seiten gleich verloren, und die Zelle meldet null Funde. Der Check prueft
+# deshalb die Seeds (fixtures/seeds/<dialekt>.sql) gegen ihre Anmerkungen:
+# die neutrale Form im Reverse der Quelle, die Form im Reverse jedes Ziels und
+# den Code, den der zugehoerige Report dafuer traegt. Ein Verstoss ist nie
+# pinnbar; bekannte Befunde stehen als feste Liste im Code (nicht in der
+# Erwartungsdatei), und einer, der nicht mehr auftritt, ist selbst ein
+# Fehlschlag.
+#
+# **Ausgabe:** je Zelle die Zahl der Funde und ihre Codes, dazu die Codes je
+# Reverse (`REPORT_CODES_*`) und je Generate (`GEN_CODES_*`, vor dem
+# Anwenden). **Erwartungen**
 # stehen in expected/compare-matrix.env und sind an die d-migrate-Version
 # gebunden: weicht eine Zelle ab, scheitert der Lauf; nach bewusster Pruefung
 # des Unterschieds pinnt `--update-expectations` neu (den Diff der Datei vor
@@ -101,6 +113,8 @@ note_deviation() { note_to "$DEVIATIONS_FILE" "$@"; }
 . "$SCRIPT_DIR/lib/dialects.sh"
 # shellcheck source=lib/compare-guards.sh
 . "$SCRIPT_DIR/lib/compare-guards.sh"
+# shellcheck source=lib/silent-loss.sh
+. "$SCRIPT_DIR/lib/silent-loss.sh"
 
 for tool in docker jq sqlite3; do
     command -v "$tool" > /dev/null || fail "$tool fehlt auf dem Host"
@@ -112,8 +126,11 @@ SERVER_LOG="$OUT/server.log"
 : > "$SERVER_LOG"
 FAILURES_FILE="$OUT/.failures"
 DEVIATIONS_FILE="$OUT/.deviations"
+# Welche bekannten Befunde im Lauf wirklich auftraten (s. lib/silent-loss.sh).
+KNOWN_SEEN_FILE="$OUT/.known-seen"
 : > "$FAILURES_FILE"
 : > "$DEVIATIONS_FILE"
+: > "$KNOWN_SEEN_FILE"
 
 # Die Server-Konfiguration (s. Kopf): die Verbindungen plus die Praeferenz.
 SERVER_CONFIG="$OUT/server.d-migrate.yaml"
@@ -320,6 +337,50 @@ generated_ok() {
     esac
 }
 
+# Das **Modell** eines Reverse als JSON, fuer den Silent-Loss-Check
+# (lib/silent-loss.sh). Der Check braucht die neutralen Formen, und die stehen
+# im Schema-Dokument; das MCP-Artefakt ist YAML, und der Harness hat keinen
+# YAML-Leser. Gelesen wird dieselbe Datenbank mit demselben Reader und
+# **derselben Konfiguration** wie der MCP-Server (die Praeferenzdatei aus
+# $SERVER_CONFIG) — die Zellen der Matrix kommen weiterhin aus dem
+# MCP-Reverse, dieses Dokument nur der Check.
+# $1=Dialekt $2=Ausgabedatei (Host) $3=Protokoll
+json_reverse() {
+    mcp_e2e_compose run --rm -T dmigrate --config "$(in_container "$SERVER_CONFIG")" \
+        schema reverse --source "$(dialect_connection "$1")" --format json \
+        --output "$(in_container "$2")" > "$3" 2>&1
+}
+
+# Verstoesse des Silent-Loss-Checks bewerten: ein bekannter Befund wird
+# vermerkt, jeder andere ist ein nicht pinnbarer Fehlschlag. Die Verstoesse
+# kommen von stdin.
+silent_loss_judge() {
+    local line package
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        if package="$(silent_loss_known_package "$line")"; then
+            printf '%s\n' "$line" >> "$KNOWN_SEEN_FILE"
+            log "   bekannter Befund ($package): $line"
+        else
+            note_failure "$line"
+        fi
+    done
+}
+
+# Eine Pruefung des Checks fahren und ihr Ergebnis bewerten. **Nicht** als
+# Pipeline: ein jq-Fehler im Erzeuger ginge dort verloren, und der Lauf laese
+# „keine Verstoesse". $1=Herkunft (fuer die Meldung), Rest: die Pruefung.
+silent_loss_run() {
+    local label="$1" out err
+    shift
+    err="$OUT/.silent-loss.err"
+    if ! out="$("$@" 2> "$err")"; then
+        note_failure "$label: der Silent-Loss-Check ist nicht auswertbar: $(head -c 300 "$err")"
+        return 0
+    fi
+    silent_loss_judge <<< "$out"
+}
+
 # --- Erwartungen ------------------------------------------------------
 declare -A EXPECT MEASURED
 EXPECT_HEADER=""
@@ -382,6 +443,12 @@ mcp_e2e_stack_up
 mcp_e2e_assert_postgis
 log "Stack bereit"
 
+# Die Anmerkungen der Seeds, einmal fuer den ganzen Lauf. Ein Formatfehler
+# scheitert hier — nicht spaeter als „nichts gefunden".
+ANNOTATIONS="$(seed_annotations "$SEED_DIR")" \
+    || fail "die Anmerkungen der Seeds sind nicht lesbar (s. oben)"
+log "Anmerkungen: $(jq 'length' <<< "$ANNOTATIONS") Seed-Spalte(n)"
+
 declare -A CELL CODES
 DIALECTS="$(dialect_list)"
 
@@ -411,6 +478,27 @@ for source in $DIALECTS; do
         continue
     fi
 
+    # --- Silent-Loss-Check, Quellseite --------------------------------
+    # Die Codes des Reverse-Reports stehen unabhaengig davon, ob das Modell
+    # lesbar ist: sonst verschwaende ein Lesefehler auch die gepinnten Codes.
+    if ! source_report="$(report_json "$sdir/reverse-report.yaml" 2> "$sdir/report.err")"; then
+        note_failure "$source: der Reverse-Report ist nicht lesbar: $(head -c 300 "$sdir/report.err")"
+    else
+        check_expect "REPORT_CODES_$(tr '[:lower:]' '[:upper:]' <<< "$source")" "$(report_codes "$source_report")"
+        silent_loss_run "$source" silent_loss_source_codes "$ANNOTATIONS" "$source" "$source_report"
+    fi
+    source_columns=""
+    if ! json_reverse "$source" "$sdir/reversed.json" "$sdir/json-reverse.log"; then
+        note_failure "$source: der Reverse fuer den Silent-Loss-Check scheiterte ($sdir/json-reverse.log)"
+    elif ! source_columns="$(reverse_columns "$sdir/reversed.json" 2> "$sdir/silent-loss.err")"; then
+        note_failure "$source: die Spalten des Reverse sind nicht lesbar: $(head -c 300 "$sdir/silent-loss.err")"
+        source_columns=""
+    else
+        silent_loss_run "$source" silent_loss_source "$ANNOTATIONS" "$source" "$source_columns"
+        silent_loss_run "$source" silent_loss_unannotated "$ANNOTATIONS" "$source" "$source_columns"
+        silent_loss_run "$source" silent_loss_ref_types "$sdir/reversed.json" "$source"
+    fi
+
     for target in $DIALECTS; do
         [ "$target" = "$source" ] && continue
         cell="${source}_${target}"
@@ -435,6 +523,14 @@ for source in $DIALECTS; do
             note_failure "$cell: generate scheiterte ($gen_rc, $cdir/generate.log)"
             continue
         fi
+        # Die Codes des Generate-Schritts entstehen **vor** dem Anwenden: sie
+        # gelten auch fuer eine Zelle, die danach APPLY-FAIL wird.
+        gen_report=""
+        if ! gen_report="$(report_json "$cdir/generated.report.yaml" 2> "$cdir/report.err")"; then
+            note_failure "$cell: der Generate-Report ist nicht lesbar: $(head -c 300 "$cdir/report.err")"
+        else
+            check_expect "GEN_CODES_$key" "$(report_codes "$gen_report")"
+        fi
         dialect_clean "$target"
         if ! dialect_apply "$target" "$cdir/generated.sql" "$cdir/apply.log"; then
             # Das Ziel lehnt die aus dem Reverse der Quelle erzeugte DDL ab —
@@ -451,6 +547,19 @@ for source in $DIALECTS; do
         fi
         if ! target_ref="$(mcp_reverse "$target" "$cdir")"; then
             CELL[$cell]="REV-FAIL"; note_failure "$cell: Reverse des Ziels scheiterte ($cdir)"; continue
+        fi
+
+        # --- Silent-Loss-Check, Zielseite -----------------------------
+        if [ -n "$source_columns" ] && [ -n "$gen_report" ]; then
+            if ! json_reverse "$target" "$cdir/reversed.json" "$cdir/json-reverse.log"; then
+                note_failure "$cell: der Reverse des Ziels fuer den Silent-Loss-Check scheiterte ($cdir/json-reverse.log)"
+            elif ! target_columns="$(reverse_columns "$cdir/reversed.json" 2> "$cdir/silent-loss.err")"; then
+                note_failure "$cell: die Spalten des Ziel-Reverse sind nicht lesbar: $(head -c 300 "$cdir/silent-loss.err")"
+            else
+                silent_loss_run "$cell" silent_loss_target "$ANNOTATIONS" "$source" "$target" \
+                    "$source_columns" "$target_columns" "$gen_report"
+                silent_loss_run "$cell" silent_loss_ref_types "$cdir/reversed.json" "$cell"
+            fi
         fi
 
         # Werkzeug
@@ -540,6 +649,15 @@ for s in $DIALECTS; do
         printf '  %-10s -> %-10s %s\n' "$s" "$t" "${CODES[${s}_$t]:-${CELL[${s}_$t]:-?}}"
     done
 done
+
+# Ein bekannter Befund, der im Lauf **nicht** auftrat, ist selbst ein
+# Fehlschlag: der Befund ist weg, die Liste in lib/silent-loss.sh gehoert
+# nachgezogen.
+while IFS= read -r known; do
+    [ -n "$known" ] || continue
+    grep -qxF "$known" "$KNOWN_SEEN_FILE" \
+        || note_failure "bekannter Befund verschwunden — Liste nachziehen: $known"
+done < <(silent_loss_known_list)
 
 mapfile -t FAILURES < "$FAILURES_FILE"
 mapfile -t DEVIATIONS < "$DEVIATIONS_FILE"
