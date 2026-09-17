@@ -580,6 +580,27 @@ weiterhin geratene Namen, und die Meldung bleibt richtig.
    Notes und uebersprungene Objekte. Im `plain`-Modus erscheinen
    Warnungen und Skips zusaetzlich auf `stderr`.
 
+**Form des Reverse-Reports** (YAML; dieselbe Form legen die Lese-Jobs des
+MCP-Servers ab, siehe [MCP-Server](mcp-server.md)):
+
+| Feld | Inhalt |
+|---|---|
+| `source.kind` | Art der Quelle: `url` (Verbindungs-URL, maskiert), `alias` (benannte Verbindung) oder `connection` (Verbindungs-Verweis des MCP-Servers) |
+| `source.value` | die Quelle selbst — URL (maskiert), Alias bzw. Verbindungs-Verweis |
+| `schema.name`, `schema.version` | Name und Version des gelesenen Schemas (im Regelfall die Reverse-Markierung) |
+| `schema.generated_at` | Zeitpunkt der Erzeugung (ISO-8601, UTC) |
+| `summary.notes` | Zahl aller Notes |
+| `summary.warnings`, `summary.action_required` | Zahl der Notes mit dieser Stufe |
+| `summary.skipped_objects` | Zahl der uebersprungenen Objekte |
+| `notes[]` | je Note `severity` (`info`, `warning`, `action_required`), `code` (`Rnnn`), `object`, `message` und optional `hint`; fehlt, wenn es keine Notes gibt |
+| `skipped_objects[]` | je Objekt `type`, `name`, `reason` und optional `code` und `hint`; fehlt, wenn nichts uebersprungen wurde |
+
+Eine Note, die eine deklarierte Praeferenz bestaetigt (`R204`, `R205`), nennt
+die Stelle der Deklaration — das Flag oder den Konfigurationsschluessel
+([Dialekt-Praeferenzen](dialect-preference-mechanism.md)); ein Hinweis, der zu
+einem anderen Wert raet (`R202`), nennt dieselbe Stelle, ohne gesetztes Flag
+den Konfigurationsschluessel.
+
 **Ausgabeverhalten**:
 
 - `--output-format plain` (Default): Erfolgsmeldungen auf `stdout`,

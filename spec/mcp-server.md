@@ -260,11 +260,10 @@ dieselben Felder und Eintraege wie die Antwort von `schema_compare`, aber nie
 gekuerzt. `truncated`, `diffArtifactRef` und `executionMeta` beschreiben einen
 Aufruf, nicht das Ergebnis, und stehen nicht im Artefakt. Gefunden wird das
 Artefakt des Jobs ueber `job_status_get` (`artifacts`, an erster Stelle) und
-`artifact_list` (Art `COMPARE`). Der Index `diffs` (`diff_list`,
-`dmigrate://tenants/{tenantId}/diffs/{diffId}`) fuehrt es in `mcp serve`
-nicht: dort ist er nicht verdrahtet und bleibt leer. Die Art `DIFF` erzeugt der
-Server nicht; ein Upload (`artifact_upload_init`) kann die Art `COMPARE` nicht
-tragen.
+`artifact_list` (Art `COMPARE`) sowie ueber den Index `diffs` (`diff_list`,
+`dmigrate://tenants/{tenantId}/diffs/{diffId}`), der es mit Quell- und
+Zielverweis fuehrt. Die Art `DIFF` erzeugt der Server nicht; ein Upload
+(`artifact_upload_init`) kann die Art `COMPARE` nicht tragen.
 
 Jeder Eintrag in `findings` traegt `severity`, `code`, `path` und `message`,
 optional `details` mit `before` und/oder `after`:
@@ -358,7 +357,7 @@ Es gibt fuenf Discovery-Tools, alle mit
 | Tool             | Collection-Feld | Wire-spezifische Filter                              |
 | ---------------- | --------------- | ---------------------------------------------------- |
 | `job_list`       | `jobs`          | `status`, `operation`, `createdAfter/Before`         |
-| `artifact_list`  | `artifacts`     | `kind` (`SCHEMA`, `PROFILE`, `DIFF`, `COMPARE`, `DATA_EXPORT`, `UPLOAD_INPUT`, `OTHER`), `jobId`, `createdAfter/Before` |
+| `artifact_list`  | `artifacts`     | `kind` (`SCHEMA`, `PROFILE`, `DIFF`, `COMPARE`, `REVERSE_REPORT`, `DATA_EXPORT`, `UPLOAD_INPUT`, `OTHER`), `jobId`, `createdAfter/Before` |
 | `schema_list`    | `schemas`       | `jobId`, `createdAfter/Before`                       |
 | `profile_list`   | `profiles`      | `jobId`, `createdAfter/Before`                       |
 | `diff_list`      | `diffs`         | `jobId`, `sourceRef`, `targetRef`, `createdAfter/Before` |
@@ -630,14 +629,25 @@ der Reverse-Report von `schema reverse` in der
 Verbindungs-Verweis als `value`), `schema`, `summary`, `notes` und
 `skipped_objects`. Dort stehen die Hinweise des Readers, darunter die
 Bestaetigung einer deklarierten Praeferenz (`R204`, `R205`). Der Report ist
-ein Artefakt der Art `OTHER` (`application/x-yaml`) ohne eigenen Index. Die
-Reihenfolge in `artifacts` (`job_status_get`) ist fest:
+ein Artefakt der eigenen Art `REVERSE_REPORT` (`application/x-yaml`) ohne
+eigenen Index; ein Abnehmer findet ihn ueber `job_status_get` oder ueber
+`artifact_list` mit `kind: REVERSE_REPORT`. Nur der Server erzeugt diese Art;
+ein Upload (`artifact_upload_init`) kann sie nicht tragen. Die Reihenfolge in
+`artifacts` (`job_status_get`) ist fest:
 
 - `schema_reverse_start`: das Schema (Art `SCHEMA`), dann der Reverse-Report.
 - `schema_compare_start`: das Compare-Artefakt (Art `COMPARE`), dann je Seite,
   die der Job aus einer Verbindung liest, ihr Reverse-Report — Quelle vor
   Ziel. Zwei gespeicherte oder hochgeladene Schemata ergeben nur das
   Compare-Artefakt.
+
+Das Ergebnis (Schema bzw. Compare-Artefakt) traegt sich als **Letztes** in
+seinen Index ein (`schemas` bzw. `diffs`). Scheitert eine Ablage, endet der
+Job `FAILED` ohne `artifacts`, und im Index steht kein Eintrag aus diesem Job;
+was bis dahin abgelegt war (etwa der Reverse-Report), bleibt bis zu seinem
+Ablauf (`expiresAt`) im Artefakt-Speicher (`artifact_list`) und traegt den
+Job-Verweis. Ein Abnehmer nimmt Artefakte deshalb nur aus einem Job mit Status
+`SUCCEEDED`.
 
 ### Wire-Contracts
 

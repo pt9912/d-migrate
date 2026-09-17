@@ -86,7 +86,7 @@ Die Konfigurationsdatei ist optional; alle Felder haben Defaults. Sektionen
 | `i18n` | Sprache, Zeitzone, Unicode-Normalisierung (siehe 3.4) |
 | `ddl` / `docgen` | DDL-Generierungs- und Doku-Optionen |
 | `logging` | Log-Level und -Ausgabe (siehe [§8.1](#8-logging-und-telemetrie)) |
-| `reverse` / `write` | Präferenzen für Fälle, in denen ein Dialekt beim Lesen bzw. Schreiben mehrere Antworten zulässt; der MCP-Server liest `reverse` aus der Datei von `--connection-config` |
+| `reverse` / `write` | Präferenzen für Fälle, in denen ein Dialekt beim Lesen bzw. Schreiben mehrere Antworten zulässt; der MCP-Server liest `reverse` aus der Datei von `--connection-config`, **einmal beim Start** (siehe [§6.3](#63-konfigurations-flags-referenz)) |
 | `artifacts` | nur MCP-Server: Artefakt-Speicher-Backend (siehe [§5](#5-object-storage--artifactstore-s3)) |
 
 ### 3.2 Effektiver Konfigurationspfad
@@ -349,7 +349,9 @@ Normativ: [`ki-mcp.md`](../../spec/ki-mcp.md) §6.2.
 
 Boot-Validierung (sonst Exit 2): Nicht-Loopback-`--bind` verlangt aktive Auth;
 `--public-base-url` muss `https` sein; `--allow-origin` ohne `*` und bei
-Nicht-Loopback Pflicht; Algorithmus-Allowlist ohne `none`/`HS*`.
+Nicht-Loopback Pflicht; Algorithmus-Allowlist ohne `none`/`HS*`; jeder Wert im
+Block `reverse:` der Connection-Config muss erkannt sein (siehe
+[§6.3](#63-konfigurations-flags-referenz)).
 
 ### 6.3 Konfigurations-Flags-Referenz
 
@@ -358,6 +360,21 @@ Approval-Store, State-Dir und Timeouts werden über `mcp serve`-Flags gesetzt �
 vollständige Tabelle: [API-Referenz §4.12](api-referenz.md#412-server-konfiguration).
 Server-State und Job-Executor zusätzlich über `D_MIGRATE_SERVER_*` (siehe
 [§3.3](#3-konfiguration), [§7](#7-asynchrone-jobs-und-job-executor)).
+
+**Reverse-Präferenzen des Servers.** Den Block `reverse:` (etwa
+`reverse.mysql.autoincrement_syntax: identity`) liest `mcp serve` aus der
+Datei von `--connection-config` **einmal beim Start**. Er gilt für jeden
+Lesezugriff auf eine Verbindung (`schema_reverse_start`,
+`schema_compare_start` mit Verbindungen); eine Änderung an der Datei wirkt
+erst nach einem **Neustart** des Servers. Die Bestätigung einer Präferenz
+(`R204`, `R205`) steht im Reverse-Report, den die Lese-Jobs neben ihrem
+Ergebnis ablegen (Artefakt-Art `REVERSE_REPORT`).
+
+Ein **nicht erkannter Wert** (`identiy`, eine Breite `16`) verhindert den
+Start: `mcp serve` endet mit Exit 2 und nennt den Schlüssel. Ältere Versionen
+fielen bei einem solchen Tippfehler still auf den Default zurück — prüfen Sie
+den Block vor einem Update, sonst startet der Server danach nicht mehr. Ein
+fehlender Block oder eine fehlende Datei bleiben „nicht erklärt" (Default).
 
 ### 6.4 Approval-Flow und fail-closed Grants
 

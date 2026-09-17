@@ -15,7 +15,8 @@ import java.nio.file.Paths
  * nur fuer sie gibt es den Schluessel. Ein vorhandener, aber nicht erkannter
  * Wert in der Konfiguration ist wie beim Breiten-Schluessel ein
  * Konfigurationsfehler ([InvalidReversePreference]); das Flag prueft Clikt
- * selbst (Exit 2).
+ * selbst — ein ungueltiger Wert ist ein Usage-Fehler, kein
+ * Konfigurationsfehler (Exit-Codes: `spec/cli-spec.md`).
  */
 class ReverseAutoIncrementSyntaxResolver(
     private val configPathFromCli: Path? = null,

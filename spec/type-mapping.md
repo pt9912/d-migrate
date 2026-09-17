@@ -197,7 +197,7 @@ die per Spaltenbreite (int4/int8) unterscheiden. Der Reverse löst das über ein
 
 | Breite | Reverse-Ergebnis | Note |
 |--------|------------------|------|
-| `32` (Default) | `identifier` (32-bit-Vertrag) | R202 (Verengungs-Hinweis, nennt den Flag) |
+| `32` (Default) | `identifier` (32-bit-Vertrag) | R202 (Verengungs-Hinweis; rät zur Breite `64` an der Stelle der Deklaration — das Flag, wenn es gesetzt war, sonst der Konfigurationsschlüssel) |
 | `64` | `biginteger` + `generation: identity` (`legacySerialSyntax = true`, wie der MySQL-`BIGINT AUTO_INCREMENT`-Reverse → PG `BIGSERIAL`) | R204 (Bestätigung) |
 
 Deklaration: CLI `--sqlite-autoincrement-width` bzw. Config

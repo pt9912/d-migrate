@@ -334,6 +334,20 @@ Start-Tools sind symmetrisch:
 FAILED, CANCELLED}`, `terminal`, `resourceUri` und ein einheitliches
 `executionMeta` (u. a. `cancelRequested`, `cancelAckPending`, `retryAfter`).
 
+`artifacts` eines beendeten Lese-Jobs nennt das Ergebnis an erster Stelle,
+danach je gelesener Verbindung deren Reverse-Report (Art `REVERSE_REPORT`,
+YAML):
+
+| Job | `artifacts` |
+| --- | ----------- |
+| `schema_reverse_start` | Schema (`SCHEMA`), Reverse-Report (`REVERSE_REPORT`) |
+| `schema_compare_start` | Compare-Artefakt (`COMPARE`), dann je Seite aus einer Verbindung ihr Reverse-Report — Quelle vor Ziel; zwei gespeicherte Schemata ergeben nur das Compare-Artefakt |
+
+Die Art eines Artefakts liefert `resources/read` (`kind`) und `artifact_list`
+(`artifactKind`, Filter `kind`). Ein Job mit `FAILED` nennt keine Artefakte;
+was er vor dem Fehler abgelegt hat, kann noch in `artifact_list` stehen —
+verwenden Sie Artefakte nur aus Jobs mit `SUCCEEDED`.
+
 ### 4.7 Idempotenz
 
 `idempotencyKey` ist bei allen `*_start`-Tools Pflicht. Ein erneuter Start mit

@@ -33,9 +33,12 @@ getan hat.
 - **Nicht stumm.** Weicht ein Lauf per Präferenz vom Default ab, wird das mit
   einer INFO-Note im Report festgehalten (Audit-Trail). Die Note nennt die
   Stelle, an der die Präferenz erklärt wurde — das Flag oder den
-  Konfigurationsschlüssel. Wo ein Lauf keinen Report-Pfad hat, legt er den
-  Report dort ab, wo er sein Ergebnis ablegt (MCP-Server: als Artefakt des
-  Jobs, siehe [`mcp-server.md`](mcp-server.md)).
+  Konfigurationsschlüssel. Ein Hinweis, der zu einem anderen Wert rät, nennt
+  dieselbe Stelle; ohne gesetztes Flag ist das der Konfigurationsschlüssel,
+  den jede Oberfläche liest — auch der MCP-Server, der keine Flags kennt. Wo
+  ein Lauf keinen Report-Pfad hat, legt er den Report dort ab, wo er sein
+  Ergebnis ablegt (MCP-Server: als Artefakt des Jobs, siehe
+  [`mcp-server.md`](mcp-server.md)).
 
 ## 2. Auflösungs-Präzedenz
 
@@ -50,14 +53,18 @@ gewinnt:
 Die Granularität ist global (pro Lauf/Projekt).
 
 **Fehlt eine Deklaration, gilt der Default; ist sie unlesbar, ist das ein
-Fehler.** Für Lese- und Schreib-Präferenzen gleichermaßen: ein fehlender
-Eintrag, ein fehlender Block oder eine nicht lesbare Konfigurationsdatei
-heißen „nicht erklärt". Ein **vorhandener, aber nicht erkannter Wert** ist ein
-Konfigurationsfehler — in der CLI Exit 7, beim MCP-Server ein Startfehler —,
-keine stille Rückkehr zum Default: ein Tippfehler (`identiy`, `eror`) sähe
-sonst aus wie eine Entscheidung. Ein Flag prüft die CLI selbst (ungültiger
-Wert: Exit 2); ein gesetztes Flag verdeckt den Konfigurationswert desselben
-Dialekts.
+Fehler.** Für Lese- und Schreib-Präferenzen in der Konfiguration
+gleichermaßen: ein fehlender Eintrag, ein fehlender Block oder eine nicht
+lesbare Konfigurationsdatei heißen „nicht erklärt". Ein **vorhandener, aber
+nicht erkannter Wert** ist ein Konfigurationsfehler — in der CLI Exit 7, beim
+MCP-Server ein Startfehler —, keine stille Rückkehr zum Default: ein
+Tippfehler (`identiy`, `eror`) sähe sonst aus wie eine Entscheidung. Ein
+gesetztes Flag verdeckt den Konfigurationswert desselben Dialekts. Ein Flag
+mit einem nicht erkannten Wert endet je nach Art verschieden: die Flags der
+Lese-Präferenzen haben eine feste Werteliste, ein anderer Wert ist ein
+Usage-Fehler (Exit 2, [`cli-spec.md`](cli-spec.md)); das Flag der
+Schreib-Präferenz nimmt einen offenen Wert (`literal:<text>`) und weist einen
+nicht erkannten wie die Konfiguration als Konfigurationsfehler ab (Exit 7).
 
 ## 3. Oberfläche
 

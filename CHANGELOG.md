@@ -24,16 +24,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Die MCP-Lese-Jobs legen den Reverse-Report ab.** `schema_reverse_start`
   veroeffentlicht neben dem Schema den Reverse-Report der gelesenen Verbindung
-  (dieselbe Form wie der Report von `schema reverse`, Art `OTHER`,
-  `application/x-yaml`): Notes, uebersprungene Objekte und die Bestaetigung
-  einer deklarierten Praeferenz (`R204`, `R205`). Bisher verwarf der Server
-  sie — wer `identity` ueber die Server-Konfiguration erklaerte, sah davon
-  nichts. `schema_compare_start` legt fuer jede Seite, die es aus einer
-  Verbindung liest, ebenfalls ihren Report ab. In `job_status_get.artifacts`
-  steht das Ergebnis weiter an erster Stelle, die Reports folgen (Quelle vor
-  Ziel).
+  (dieselbe Form wie der Report von `schema reverse`, `application/x-yaml`)
+  unter der **neuen Artefakt-Art `REVERSE_REPORT`**: Notes, uebersprungene
+  Objekte und die Bestaetigung einer deklarierten Praeferenz (`R204`,
+  `R205`). Bisher verwarf der Server sie — wer `identity` ueber die
+  Server-Konfiguration erklaerte, sah davon nichts. `schema_compare_start`
+  legt fuer jede Seite, die es aus einer Verbindung liest, ebenfalls ihren
+  Report ab. `artifact_list` kennt den Filterwert `REVERSE_REPORT`; ein Upload
+  kann die Art nicht tragen. Die Felder des Reports stehen in
+  `spec/cli-spec.md`.
 
 ### Changed
+
+- **Die MCP-Lese-Jobs nennen mehr als ein Artefakt.** `job_status_get`
+  meldet fuer `schema_reverse_start` jetzt **zwei** Eintraege in `artifacts`
+  (das Schema, dann den Reverse-Report) und fuer `schema_compare_start` mit
+  Verbindungen bis zu **drei** (das Compare-Artefakt, dann je aus einer
+  Verbindung gelesene Seite ihren Report, Quelle vor Ziel); zwei gespeicherte
+  Schemata ergeben weiter nur das Compare-Artefakt. Das Ergebnis steht
+  unveraendert an erster Stelle — ein Abnehmer, der `artifacts` als
+  einelementig liest oder den letzten Eintrag nimmt, muss nachziehen oder per
+  Art filtern (`SCHEMA`, `COMPARE`, `REVERSE_REPORT`). Die Artefakt-Arten von
+  `artifact_list` (`kind`, `artifactKind`) haben einen Wert mehr.
+
+- **`R202` nennt die Stelle, an der die Breite erklaert wird.** Der Hinweis
+  riet bisher immer zuerst zum Flag `--sqlite-autoincrement-width 64` (den
+  Schluessel nur als Alternative) — auch ueber MCP, das kein Flag kennt. Jetzt
+  nennt er wie `R204`/`R205` das Flag nur, wenn es gesetzt war, und sonst den
+  Konfigurationsschluessel `reverse.sqlite.autoincrement_width: 64`.
 
 - **Die Reverse-Praeferenzen der Konfiguration gelten jetzt auch fuer
   `db:`-Operanden von `schema compare` und fuer `mcp serve`**
@@ -51,9 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Ein nicht erkannter Wert einer Lese-Praeferenz ist ein
   Konfigurationsfehler.** `reverse.mysql.autoincrement_syntax: identiy` oder
   `reverse.sqlite.autoincrement_width: 16` fielen still auf den Default
-  zurueck; jetzt enden `schema reverse`, `schema compare` (mit `db:`-Operand)
-  und `data transfer` mit Exit 7, und `mcp serve` startet nicht (Exit 2). Ein
-  fehlender Block oder eine fehlende Datei bleiben „nicht erklaert".
+  zurueck; jetzt enden `schema reverse` und `schema compare` (mit
+  `db:`-Operand) mit Exit 7, und `mcp serve` startet nicht (Exit 2) — ein
+  Betreiber, dessen Konfiguration bisher einen solchen Tippfehler trug, muss
+  ihn vor dem naechsten Start beheben. `data transfer` liest nur die Breite:
+  dort endet `autoincrement_width: 16` mit Exit 7, ein Tippfehler in
+  `autoincrement_syntax` bleibt ohne Wirkung (der Transfer liest den Schluessel
+  nicht). Ein fehlender Block oder eine fehlende Datei bleiben „nicht
+  erklaert".
 
 - **`R204` und `R205` nennen die Stelle, an der die Praeferenz erklaert
   wurde** — das Flag (`--mysql-autoincrement-syntax identity`) oder den

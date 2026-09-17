@@ -668,8 +668,9 @@ nützlich in Skripten.
   dasselbe Artefakt nennt `schema_compare` in `diffArtifactRef`, wenn die
   Antwort nicht alle Funde trägt. Die Präferenz `serial`/`identity` liest der
   MCP-Server einmal beim Start aus seiner Konfigurationsdatei; vergleicht der
-  Job eine Verbindung, legt er zusätzlich deren Reverse-Report ab. Bei einem
-  hochgeladenen Schema zählt, womit die Datei erzeugt wurde.
+  Job eine Verbindung, legt er zusätzlich deren Reverse-Report ab (Art
+  `REVERSE_REPORT`; `artifact_list` mit `kind: REVERSE_REPORT` findet alle).
+  Bei einem hochgeladenen Schema zählt, womit die Datei erzeugt wurde.
 - **Eine Änderung am Berechnungsausdruck einer `computed`-Spalte kann der
   Vergleich nicht immer sehen.** Ohne Herkunfts-Overlay oder Server-Sandkasten
   ist die Frage unentscheidbar — der Vergleich meldet dann bewusst **keinen**
@@ -1752,7 +1753,8 @@ Tool-Aufrufe, in dieser Reihenfolge:
 2. **Job pollen** (`job_status_get`) mit derselben `jobId`, bis `status`
    `SUCCEEDED` ist. Die Antwort trägt `artifacts[]`: an erster Stelle das
    reverse-engineerte Schema, an zweiter den Reverse-Report mit den Hinweisen
-   des Readers (etwa `R202`, `R205`).
+   des Readers (etwa `R202`, `R205`; Artefakt-Art `REVERSE_REPORT`). Nehmen
+   Sie Artefakte nur aus einem Job mit `SUCCEEDED`.
 
 3. **Katalogisiertes Schema finden** (`schema_list`). Der Filter `jobId`
    erwartet die **Job-URI** — die `resourceUri` aus Schritt 1, nicht die
