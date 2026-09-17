@@ -2798,6 +2798,18 @@ entfernt), `42f91a8a5` und `5ffa09bf1` (Toleranzprofil geschnitten,
   ohne den Blocker-Fix grün).
 - **Sample-DB:** `make sample-db-smoke` gleich der Baseline
   (`IDENTICAL`), `make sample-db-spatial-smoke` grün.
+- **Abschluss-Verifikation** (nach dem sechsten Abschnitt, im eigenen
+  `--no-local`-Klon, 2026-09-17): graduationsreif. HC und HB gegen selbst
+  gebaute Images rot, der Neu-Pin-Schutz schreibt bei einem Generate-Exit 7
+  nichts, drei Unit-Sabotagen rot (eine nur über `:test:e2e-cli` — der
+  `artifact_list`-Filter ist allein dort gepinnt). Eine Lücke fand sie: die
+  Regel „das Ergebnis trägt sich zuletzt ein" war für den Compare-Worker nur
+  mit **einer** Verbindungsseite gepinnt (Sabotage „Quell-Report, Ergebnis,
+  Ziel-Report" überstand alle Tests). Nach der Graduation geschlossen: ein Fall
+  mit zwei Verbindungsseiten und scheiterndem Ziel-Report in
+  `SchemaCompareJobWorkerTest` (auf HEAD grün, mit der Sabotage rot).
+  Nebenbefund ohne eigenen Ort: `make mcp-e2e-up` scheitert in einem frischen
+  Klon an der fehlenden `.env`; die Harness-Skripte legen sie selbst an.
 - **Gates** des letzten Bauabschnitts stehen dort: `make docker-check` je Modul
   und einmal ohne `MODULES` (12 213 Tests, 0 Fehler), `make integration`
   (`:test:e2e-cli`; im vierten und fünften Abschnitt auch

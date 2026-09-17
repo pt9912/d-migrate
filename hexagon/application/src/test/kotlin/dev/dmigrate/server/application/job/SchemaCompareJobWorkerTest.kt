@@ -332,4 +332,27 @@ class SchemaCompareJobWorkerTest : FunSpec({
         }
         order shouldBe emptyList()
     }
+
+    test("with two connection sides the result is published only after both reports") {
+        val order = mutableListOf<String>()
+        val worker = SchemaCompareJobWorker(
+            sourceRef = "dmigrate://tenants/acme/connections/a",
+            targetRef = "dmigrate://tenants/acme/connections/b",
+            schemaLoader = { _, _, _ -> LoadedCompareSide.read(SchemaReadResult(emptySchema)) },
+            comparator = { _, _ -> identicalDiff },
+            publisher = JobArtifactPublisher { _, _ ->
+                order += "result"
+                "dmigrate://tenants/acme/artifacts/result"
+            },
+            reportPublisher = JobArtifactPublisher { _, input ->
+                order += "report:" + input.source.value.substringAfterLast('/')
+                if (input.source.value.endsWith("/b")) error("target-report-store-unavailable")
+                "dmigrate://tenants/acme/artifacts/report"
+            },
+        )
+        shouldThrow<IllegalStateException> {
+            worker.execute(Fixtures.jobRecord("j-two-sides"), CancellationToken.none())
+        }
+        order shouldBe listOf("report:a", "report:b")
+    }
 })
