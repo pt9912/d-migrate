@@ -127,14 +127,17 @@ versions:
     - "docs/planning/done/oci-image-runtime-divergence.md"
     - "docs/planning/in-progress/roadmap.md"
 
-# vcs: git-Diff-Immutabilitaet fuer akzeptierte ADRs (nicht in `modules:` --
-# braucht eine Commit-Range, nicht Teil des hermetischen `make docs-check`-
-# Laufs; nur ueber `make doc-immutable RANGE=<base>..<head>` bzw. gezieltes
-# `--enable vcs --range` genutzt). Unsere ADRs tragen den Status im
-# YAML-Frontmatter (`status: accepted`), nicht als Body-Zeile `**Status:**` --
-# status-line/immutable-when/head-allow entsprechend angepasst.
+# vcs: git-Diff-Immutabilitaet fuer akzeptierte und uebersteuerte ADRs (nicht
+# in `modules:` -- braucht eine Commit-Range, nicht Teil des hermetischen
+# `make docs-check`-Laufs; nur ueber `make doc-immutable RANGE=<base>..<head>`
+# bzw. gezieltes `--enable vcs --range` genutzt). Unsere ADRs tragen den Status
+# im YAML-Frontmatter (`status: accepted`), nicht als Body-Zeile `**Status:**`
+# -- status-line/immutable-when/head-allow entsprechend angepasst.
+# immutable-when wird an der Basis der Range gelesen: ein ADR, der dort schon
+# `superseded by` traegt, ist als Historie genauso fest; der Wechsel
+# accepted -> superseded bleibt ueber head-allow erlaubt.
 vcs:
   paths: ["docs/adr/[0-9]*.md"]
-  immutable-when: '^status: accepted'
+  immutable-when: '^status: (accepted|superseded by ADR-\d{4})'
   status-line: '^status:'
   head-allow: '^status: (accepted|superseded by ADR-\d{4})'
