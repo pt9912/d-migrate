@@ -1042,6 +1042,86 @@ Spalte über zwei PascalCase-Spalten. Sein `SET QUOTED_IDENTIFIER ON` ist Pflich
    mit Ort im `open/`-Eintrag zu SQLite.
 
 
+### P11 — SQLite: Constraint-Namen aus der Quelle, schemaweit eindeutig (2026-09-17)
+
+**Zuerst gemessen:**
+
+1. **Eine von d-migrate angelegte SQLite-Datenbank** (Fixture der Matrix,
+   `schema generate --target sqlite`, angewandt): der Text trägt
+   `CONSTRAINT "fk_cm_order_customer" FOREIGN KEY …` — der Reverse nannte
+   beide Fremdschlüssel trotzdem `fk_0`. Ein **Spalten**-Fremdschlüssel trägt
+   dort nie einen Namen (der Generator schreibt keinen, M8); ein von Hand
+   geschriebener (`CONSTRAINT fk_named_col REFERENCES …`) schon.
+2. **Konvergenz** (`make sample-db-types-smoke`, nach S4): grün — T3
+   („Konvergenz-Zweitlauf") plant 0 Anweisungen, der PK-Fall ebenso. Ein
+   zweiter Lauf plant nichts nach.
+3. **Der Vergleich gegen eine ältere Reverse-Datei** (`fk_0`) meldet die neuen
+   Namen **nicht**: `schema compare` fand zwischen altem und neuem Reverse
+   derselben Datenbank nur die Tabelle, die zwischenzeitlich dazukam. Der
+   Namenswechsel einspaltiger Constraints ist dort kein Fund — die sichtbare
+   Änderung ist die **erzeugte DDL**, nicht der Vergleich zweier Reverses.
+
+**Gebaut** (`:adapters:driven:driver-sqlite`):
+
+- `SqliteForeignKeyConstraintScanner` liest beide Klauselformen samt Namen. Er
+  zerlegt den Rumpf in seine Glieder statt nach Schlüsselwörtern zu suchen —
+  `REFERENCES` steht in beiden Formen, und nur die Stellung sagt, welche.
+- `SqliteConstraintNames` vergibt **schemaweit**: echte Namen aus **allen**
+  `CREATE TABLE`-Texten werden vorab reserviert, ein gebildeter weicht ihnen mit
+  einem Zähler aus, gekürzt auf 63 Zeichen (die kleinste Bezeichnergrenze der
+  fünf Ziele). Form: `fk_<tabelle>_<spalten>` / `uq_<tabelle>_<spalten>`.
+- **I3:** ein Fremdschlüssel ohne Spaltenliste liest den Primärschlüssel der
+  Zieltabelle; ohne Primärschlüssel scheitert der Lauf mit einer Meldung, die
+  beide Tabellen nennt (die Klausel ist dann in SQLite selbst unbrauchbar).
+- **Kommentare:** `SqliteDdlScanning` kennt Zeilen- und Blockkommentare, und
+  alle Scanner gehen darüber; `hasAutoincrement`/`hasWithoutRowid` prüfen das
+  Schlüsselwort im Code statt per `contains`.
+
+**Die Stopp-Regel greift nicht:** keine `names*`-Fähigkeit wurde geändert oder
+neu angelegt, und der Generator schreibt weiterhin keinen Namen für einen
+Spalten-Fremdschlüssel. Die Änderung liegt vollständig im Reader.
+
+**Vier Detekt-Größenbefunde** entstanden dabei und sind **aufgeteilt**, nicht
+unterdrückt: `readTable` bekam ein Parameterobjekt und gab den Indexteil ab
+(`indexDefinitions`), `read` gab die Katalog-Vorbereitung ab (`readScope`), und
+die Bezeichner-Bedingung des Scanners wurde eine eigene Funktion.
+
+**Doku:** `spec/type-mapping.md` 5.2a (woher der Name kommt, wie ein fehlender
+gebildet wird, die Kommentar-Regel, der Fremdschlüssel ohne Spaltenliste);
+Anwenderhandbuch 3.3; CHANGELOG „Changed". Kein neuer Code, kein Ledger.
+
+**Sabotage S-P11** (gebildete Namen wieder ohne Tabelle und Spalten **und**
+Kommentare wieder unsichtbar): **6 von 766 Tests** in `driver-sqlite` rot —
+die Namensfälle, der Kürzungsfall, die Determinismusprobe und der
+`AUTOINCREMENT`-im-Kommentar-Fall. Rücknahme per Prüfsumme belegt; danach
+`:test:integration-sqlite` vollständig grün und `make sample-db-types-smoke`
+grün.
+
+### Neu-Pin P11 — die SQLite-Zeile misst (2026-09-17)
+
+**Sechs Schlüssel**, alle mit Quelle SQLite:
+
+| Schlüssel | vorher | nachher |
+| --- | --- | --- |
+| `CELL_SQLITE_POSTGRESQL` / `CODES_…` | `APPLY-FAIL` / `apply:relation "uq_0" already exists` | `3` / `TABLE_CONSTRAINT_CHANGED:2 W137:1` |
+| `CELL_SQLITE_MSSQL` / `CODES_…` | `APPLY-FAIL` / `apply:Msg 2714` | `6` / `TABLE_COLUMN_REQUIRED_TIGHTENED:1 TABLE_CONSTRAINT_CHANGED:2 TABLE_CONSTRAINT_REMOVED:2 W137:1` |
+| `GEN_CODES_SQLITE_MSSQL` / `…_MYSQL` | `E057:3` / `E057:1 W125:2` | `E057:2` / `E057:1 W125:1` |
+
+SQLite → MySQL bleibt `APPLY-FAIL` (`ERROR 1170`) — die andere Ursache, wie der
+Plan sie nennt. PostgreSQL → SQLite, MySQL → SQLite und SQL Server → SQLite
+sind unverändert (geprüft): der Ziel-Reverse liefert zwar andere Namen, aber
+der Vergleich wertet den Namen eines einspaltigen Constraints nicht.
+
+**Ein Befund auf dem Weg dorthin, gemeldet und umgangen.** Mit der ersten
+Fassung des Seeds wechselte SQLite → SQL Server nur den Grund: von `Msg 2714`
+auf `Msg 1776`. Ursache: der mehrspaltige Fremdschlüssel verwies auf zwei
+**Textspalten**, deren UNIQUE-Klausel SQL Server nicht als Schlüssel nimmt
+(`E057`) — der Generator ließ die Klausel weg und den Fremdschlüssel darauf
+stehen. Der Seed verweist jetzt auf Zahlenspalten, damit P11s Zelle misst; der
+Befund selbst steht in
+[`../open/generate-fk-ohne-uebersprungenen-schluessel.md`](../open/generate-fk-ohne-uebersprungenen-schluessel.md).
+
+
 ## Akzeptanzkriterien
 
 1. Ein MySQL-Reverse mit Introducer, Backslash-Escape und Backtick-Quoting
