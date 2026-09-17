@@ -657,7 +657,7 @@ allein steht.**
 | 7 | **P2b** | Abnahme in `:test:integration-postgresql`, nicht in der Matrix (sie hält PostGIS bewusst aus `public`, s. P0). | — |
 | 8 | **P1**, **P2a** | Ein gemeinsamer Lauf von `:test:integration-oracle` (`ORACLE_FULL`). | — |
 | 9 | **P7** | Abnahme in `:test:integration-sqlite` und im `[lite]`-Bein von `make sample-db-spatial-smoke`; die Matrix fährt kein SpatiaLite. | Nulllinie von `:test:integration-sqlite` (s. „Verifikation", Punkt 2) |
-| 10 | **P13** | Zuletzt: erst messen, dann nach der Regel entscheiden, die der Eigner bestätigt. Variante a setzt die Normalisierung aus P12 voraus. | P12; Eigner-Frage 1 |
+| 10 | **P13** | Zuletzt: erst messen, dann nach der Regel entscheiden, die der Eigner bestätigt. Variante a setzt die Normalisierung aus P12 voraus. | P12; Eigner-Frage 1 (entschieden 2026-09-17) |
 
 Die Schritte 7 bis 9 hängen an keinem anderen Paket und dürfen früher kommen;
 sie berühren die Matrix nicht.
@@ -1604,8 +1604,11 @@ und [`../open/json-jsonb-zweite-json-art.md`](../open/json-jsonb-zweite-json-art
 verweisen auf die Pakete und schliessen mit der Graduation dieses Slices; ihre
 Zeilen in [`../open/README.md`](../open/README.md) sind nachgezogen.
 
-**Eigner-Fragen aus dem Schnitt** (je mit Empfehlung; die erste sperrt P13,
-die zweite nichts):
+**Eigner-Fragen aus dem Schnitt — beide am 2026-09-17 entschieden, jeweils
+wie empfohlen:** (1) P13 wählt nach der Messung selbst nach der Regel unten;
+(2) `numeric` ohne Präzision wird in diesem Slice nur gemeldet (P9), die
+Modellerweiterung wird bei der Graduation ein eigener `open/`-Eintrag. P13 ist
+damit nicht mehr gesperrt. Die Fragen im Wortlaut des Schnitts:
 
 1. **D1/P13 — die Entscheidungsregel.** Soll P13 nach der Messung selbst
    zwischen „CAST-Hülle mit Rückführung im Reader" (Variante a) und „ohne Typ,
