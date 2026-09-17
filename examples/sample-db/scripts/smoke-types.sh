@@ -131,7 +131,12 @@ migrate_sqlite rebuild-v1 rebuild || fail "[T4] v1-Apply != 0"
 migrate_sqlite rebuild-v2 rebuild || fail "[T4] Rebuild mit UNIQUE != 0 (Original-Trigger-Szenario regressiert)"
 log "[T4] OK"
 
-# ── [T5] Rollback-Round-Trip (v7-Artefakt) ─────────────────────────
+# ── [T5] Rollback-Round-Trip (Fingerabdruck-Artefakt) ──────────────
+# Geprueft wird, **dass** das Artefakt den Algorithmus nennt, nicht welche
+# Fassung: die Nummer steigt mit jeder Projektionsaenderung (Quelle:
+# `MigrationFingerprint.ALGORITHM`), und eine hier festgeschriebene Nummer
+# machte den Smoke bei jeder Anhebung rot — so geschehen zwischen v7 und v16,
+# ohne dass es jemandem auffiel.
 log "[T5] Rollback-Round-Trip..."
 rm -f "$WORK/out/rollback.db" "$WORK/out/down.sql"
 $DRUN schema migrate --execute --generate-rollback \
@@ -140,12 +145,12 @@ $DRUN schema migrate --execute --generate-rollback \
   --report "/work/$WORK_REL/out/rollback-up.report.yaml" \
   --rollback-output "/work/$WORK_REL/out/down.sql" > /dev/null 2>&1 \
   || fail "[T5] migrate mit --rollback-output != 0"
-grep -q "schema-fingerprint-v7" "$WORK/out/down.sql" \
-  || fail "[T5] Artefakt trägt nicht schema-fingerprint-v7"
+grep -qE "schema-fingerprint-v[0-9]+" "$WORK/out/down.sql" \
+  || fail "[T5] Artefakt trägt keinen schema-fingerprint-Algorithmus"
 $DRUN schema rollback --execute --allow-destructive \
   --source "/work/$WORK_REL/out/down.sql" \
   --target "db:sqlite:///work/$WORK_REL/out/rollback.db" > /dev/null 2>&1 \
-  || fail "[T5] schema rollback --execute != 0 (v7-Verify/Kanonisierer-Regression?)"
+  || fail "[T5] schema rollback --execute != 0 (Verify-/Kanonisierer-Regression?)"
 log "[T5] OK"
 
 # ── [T6] Gegenprobe: schema compare bleibt strikt ──────────────────
