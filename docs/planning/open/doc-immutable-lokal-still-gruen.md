@@ -2,12 +2,13 @@
 
 > **Status:** Befund (Gate-Infrastruktur), gemessen 2026-09-16.
 > **Trigger:** Beim Übersteuern von ADR 0053 (Slice
-> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md))
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md))
 > sollte die Gegenprobe zeigen, dass das Gate eine Kernänderung fängt. Im
 > Arbeits-Repo fing es sie nicht.
 > **Eigner-Entscheidung (2026-09-16): Weg 1** — das Target prüft gegen einen
 > frischen `--no-local`-Klon; dazu ein Issue an d-check (ein Lesefehler darf nicht
-> grün enden). Wird nach dem laufenden Compare-Slice gebaut; `make/d-check.mk`
+> grün enden). Wird nach dem Compare-Slice gebaut — der ist seit 2026-09-17
+> graduiert, die Bedingung damit erfüllt; `make/d-check.mk`
 > ist generiert, die Änderung gehört deshalb nicht dort hinein.
 
 ## Befund

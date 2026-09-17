@@ -1,6 +1,10 @@
 # Compare: Restfehlalarme und Projektionslücken aus der Konsumentenmessung
 
-> **Status:** In Arbeit seit 2026-09-16 (aktiviert nach zwei Review-Runden).
+> **Status:** **Done — graduiert 2026-09-17.** Aktiv seit 2026-09-16, sechs
+> Bauabschnitte, fünf Review- und Verifikationsrunden. Noch nicht released: die
+> Wirkung steht in `CHANGELOG.md` unter `[Unreleased]` (Stand `main`,
+> 1.8.0-SNAPSHOT). Die Closure mit Paket → Commit steht am Ende, jeder offene
+> Punkt mit seinem Ort unter „Restflächen" direkt unter diesem Kopf.
 > **Geliefert — erster Bauabschnitt:** P8 (Altbestand, `50ee1bd00`), P5
 > (`3b30d9f8a`), P3 (`ba263c737`), P6 (`10eb5a1df`), P2a (`a723584ff`), P2b
 > (`b1de205f9`), P1 (`e08e217fb`), Spec-Teil von P7 (`26ff678ed`); der
@@ -40,19 +44,21 @@
 > Stelle der Deklaration (`453722a34`), Harness-Blocker, Pin-Schutz,
 > Selbstprobe und sehender Sequenz-Wächter samt rot sichtbarem Workflow
 > (`328479ba4`, `61ab4aaae`), Spec, Handbücher und CHANGELOG (`d5e0c5f9b`).
-> **Offen in diesem Slice:** nichts mehr zu bauen. Offen bleiben die zwei
-> Eigner-Fragen (Schlüsselwort-Case, `RESTRICT`) und die Punkte unter „Offen"
-> — die Liste „braucht nach der Graduation einen Ort" ist dort vollständig.
-> Posten 4 (MySQL-Introducer) liegt im Reader-Slice; die neuen Harnesses
-> weisen ihn als bekannten Zustand aus.
+> **Offen in diesem Slice:** nichts. Die zwei Eigner-Fragen
+> (Schlüsselwort-Case, `RESTRICT`) und jeder Punkt der Liste „braucht nach der
+> Graduation einen Ort" haben bei der Graduation einen Ort bekommen (s.
+> „Restflächen"). Posten 4 (MySQL-Introducer) liegt im Reader-Slice; die
+> Harnesses weisen ihn als bekannten Zustand aus.
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
 > Meldung nahelegte (Reader statt Kanonisierung), nicht eine andere Tatsache.
 > **Vorbedingung / Gate:** Die **zwei** verbliebenen Grenzfragen
 > (Schlüsselwort-Case, `RESTRICT` gegen implizit) gehören dem Eigner und werden
 > **hier nicht** entschieden; `RESTRICT` ist in
-> [`compare-falsch-positive-cross-dialekt.md`](compare-falsch-positive-cross-dialekt.md)
-> verankert, der Schlüsselwort-Case hat noch keinen Ort (s. „Offen"). Die dritte
+> [`compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md)
+> verankert, der Schlüsselwort-Case hatte bei der Aktivierung keinen Ort; seit
+> 2026-09-17 stehen beide im
+> [Toleranzprofil](../next/compare-toleranzprofil.md) (K1, K4). Die dritte
 > Frage der ersten Fassung — `= ANY(ARRAY[…])` gegen `IN (…)` — ist **keine
 > offene Frage**: sie ist in
 > [`ADR 0055`](../../adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md)
@@ -79,6 +85,96 @@
 > `ADR 0053` weiter „`schema compare` bleibt streng" sagte. P7 hat nicht nur
 > die Erweiterung abgeschlossen, sondern auch diesen Altbestand (ADR 0056).
 > **Aktiviert** am 2026-09-16 (Move aus `../next/`).
+> **Graduiert** am 2026-09-17 (Move nach `../done/`).
+
+## Restflächen (2026-09-17)
+
+**Nichts davon ist Bauschuld dieses Slices.** Jeder Punkt ist entweder eine
+Eigner- oder ADR-Frage, ein vorbestehender Befund, der beim Bauen sichtbar
+wurde, oder eine Grenze, die der Slice bewusst zieht. Jeder hat bei der
+Graduation einen Ort bekommen; die Liste „Offen" weiter unten bleibt als Stand vor
+der Graduation stehen.
+
+**Eigner- und ADR-Fragen**
+
+| Punkt | Ort |
+| --- | --- |
+| Schlüsselwort-Case (`sum` gegen `SUM`) | [Toleranzprofil](../next/compare-toleranzprofil.md), Kandidat K1 |
+| `RESTRICT` gegen implizit | Toleranzprofil K4; Umbrella [`compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md) |
+| Identity-Modus gegen MySQL und SQLite (Fähigkeitsunterschied, ADR 0057) | Toleranzprofil K2 |
+| `= ANY(ARRAY[…])` gegen `IN (…)` | keine offene Frage: [ADR 0055](../../adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md) entscheidet sie; als Toleranz Kandidat K3 (bräuchte eine Statusänderung an 0055 und 0056) |
+| F4 — die übrigen server-vergebenen Namen (Messauftrag, ADR 0057) | [`../open/compare-serververgebene-namen-messauftrag.md`](../open/compare-serververgebene-namen-messauftrag.md) |
+| MCP `schema_compare` validiert nicht (CLI: Exit 3) | [`../open/mcp-schema-compare-validiert-nicht.md`](../open/mcp-schema-compare-validiert-nicht.md) |
+
+**Vergleich und MCP-Vertrag**
+
+| Punkt | Ort |
+| --- | --- |
+| Unbenannte Indizes werden über das rohe Prädikat zugeordnet (P5, Grenze) | [`../open/compare-unbenannte-indizes-kanonische-zuordnung.md`](../open/compare-unbenannte-indizes-kanonische-zuordnung.md) |
+| Partitionierungs-Änderung ohne MCP-Fund (gepinnt in `ObjectDiffFieldsCompletenessTest`) | [`../open/compare-different-ohne-sichtbaren-fund.md`](../open/compare-different-ohne-sichtbaren-fund.md), Punkt 1 |
+| „0 change(s)" bei `DIFFERENT` (nur Name/Version, zwei handgeschriebene Schemata) | ebenda, Punkt 2 |
+| Index `diffs` (und `profiles`) in `mcp serve` leer | [`../open/mcp-verdrahtungsluecken.md`](../open/mcp-verdrahtungsluecken.md), Punkt 1 |
+| `job_input`-Upload über das Tool-Schema nicht erreichbar | ebenda, Punkt 2 |
+| `artifact_upload_init` nimmt mehr Arten an, als die Spec nennt | [`../open/mcp-server-spec-hygiene-residuals.md`](../open/mcp-server-spec-hygiene-residuals.md), Befund 3 |
+| `schema_list` filtert `jobId` gegen die Job-URI | ebenda, Befund 4 |
+
+**Reverse und Präferenzen**
+
+| Punkt | Ort |
+| --- | --- |
+| Präferenz `serial`/`identity` pro MCP-Aufruf | [`../open/reverse-praeferenzen-oberflaechen-restflaechen.md`](../open/reverse-praeferenzen-oberflaechen-restflaechen.md), Punkt 1 |
+| `R202` nennt ohne gesetztes Flag auch in der CLI nur den Konfigurationsschlüssel — bewusst so gelassen (spec-konform) | ebenda, Punkt 2 |
+| `data transfer` gibt keine Reader-Notes aus | ebenda, Punkt 3 |
+| `schema migrate` gegen MySQL plant ein wirkungsloses `MODIFY COLUMN` (zwei Ursachen, ADR 0027) | [`../open/sqlite-migrate-biginteger-identity-render-gap.md`](../open/sqlite-migrate-biginteger-identity-render-gap.md), Nachtrag MySQL |
+| Reverse-Umfang CLI (`--include-*`) gegen MCP (immer) | [`../open/reverse-umfang-cli-gegen-mcp.md`](../open/reverse-umfang-cli-gegen-mcp.md) |
+
+**Reader und Generator** (Reader-Slice
+[`reader-treue-spatial-array-json.md`](../next/reader-treue-spatial-array-json.md))
+
+| Punkt | Ort |
+| --- | --- |
+| Posten 4 — MySQL-Introducer macht das Schema ungültig (`E012`), samt der `E012`-Grenze im Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2198`) | Reader-Slice C1/P6 |
+| Typ einer berechneten Spalte in SQL Server | Reader-Slice D1 |
+| `numeric` ohne Präzision als `float` gelesen | Reader-Slice D2 |
+| `varchar` ohne Länge und `inet`/`interval` als `text` | Reader-Slice D3 |
+| MySQL-Generator rendert `GENERATED ALWAYS` ohne Warnung | Reader-Slice D4 |
+| Matrix `APPLY-FAIL` SQLite → SQL Server (`Msg 2714`, `fk_0`-Namen) | Reader-Slice D5 |
+| Matrix `APPLY-FAIL` SQL Server → PostgreSQL/MySQL (T-SQL-Quoting, `E053`) | Reader-Slice D6 |
+| Matrix `APPLY-FAIL` SQLite → MySQL (`ERROR 1170`) | [`pk-constraint-prefix-length.md`](../next/pk-constraint-prefix-length.md), Nachtrag (andere Ursache: längenloser Text) |
+| Native Typ-Seeds und Silent-Loss-Check der Compare-Matrix | Reader-Slice, „Verifikation", Punkt 5 |
+
+**Gates, CI und Test-Infrastruktur**
+
+| Punkt | Ort |
+| --- | --- |
+| Dreizehn Workflows mit job-weitem `continue-on-error` (sechs Sample-DB-Cross-Smokes, sieben weitere) | [`../open/ci-verdeckte-fehlschlaege.md`](../open/ci-verdeckte-fehlschlaege.md), Teil 1 |
+| `integration.yml` ohne `--continue` | ebenda, Teil 2 |
+| Der Workflow der Compare-Matrix ist bei der Graduation noch nie in CI gelaufen | ebenda, Teil 3 (Beobachtungspunkt) |
+| Das FTS-Testimage pinnt das Paket `mssql-server` nicht | [`../open/mssql-testimage-2025-cu1-startet-nicht.md`](../open/mssql-testimage-2025-cu1-startet-nicht.md), Nachtrag |
+| `make doc-immutable` friert `superseded`-ADRs nicht ein (P7-DoD 3 eingeschränkt) | [`../open/doc-immutable-lokal-still-gruen.md`](../open/doc-immutable-lokal-still-gruen.md), Nachtrag |
+| Oracle in Repro und Harnesses nicht gefahren | [`../open/mcp-e2e-oracle-nicht-gefahren.md`](../open/mcp-e2e-oracle-nicht-gefahren.md) |
+| Usage-Fehler enden mit Exit 1 statt 2 (Review Runde 5, M-3) | [`../open/cli-usage-fehler-exit-1-statt-2.md`](../open/cli-usage-fehler-exit-1-statt-2.md) |
+| Kein statisches Gate für Shell, Kotlin und YAML; zwei vorbestehende shellcheck-Befunde in `examples/mcp-e2e/scripts/smoke-scope-matrix.sh` | [`semgrep-scoped-packs.md`](../next/semgrep-scoped-packs.md), Nachtrag |
+
+**Bewusst ohne eigenen Ort** — dokumentierte Grenzen, keine offene Arbeit:
+
+- Die `notation`-Heuristik der Harness-Wächter erkennt kein Paar, dessen
+  Seiten verschiedene Signaturformate tragen (beide Seiten kommen aus
+  demselben Renderer); der `metadata`-Wächter ist in der Matrix strukturell
+  blind, der Roundtrip sichert ihn. Beides steht im README und im Kopf des
+  Harness.
+- Ein `varchar` ohne Länge bleibt ein Fund, wo PostgreSQL `(spalte)::text`
+  schreibt — der Preis der M1-Korrektur in P9; die Modellfrage dahinter ist
+  Reader-Slice D3.
+- Die MySQL-View-Formatierung bleibt ein Fund (Abgrenzung).
+- Die 1.7.1-Zählung PG↔MSSQL (23 Funde hier, 22 beim Konsumenten) ist nicht
+  untersucht; sie betrifft nur die Vergleichsbasis, nicht den gebauten Stand.
+- Die Zwischencommits `49a3b3d4c` und `f345e00f7` sind nicht einzeln gebaut,
+  nur der Endstand — ein Hinweis für `git bisect`.
+
+**Und die `Datei:Zeile`-Anker im Text sind Entwurfs- bzw. Bauabschnittsstand.**
+Wer einen Beleg nachfährt, sucht über den Symbolnamen; nachgezogen ist bei der
+Graduation nur der `E012`-Anker des Anwenderhandbuchs.
 
 ## Befund (gemeldet gegen 1.7.1, im Code nachgemessen)
 
@@ -342,8 +438,9 @@ Dokumenten stabil bleiben.
   der PG↔MSSQL-Fall fällt nicht darunter, und dort differiert nur
   `sum`/`SUM` plus Whitespace. Das Falten von **Schlüsselwörtern** wäre eng —
   das Falten von **Bezeichnern** wäre falsch (`"MyCol"` ≠ `mycol` in
-  PostgreSQL). Die Grenze zu ziehen ist eine Eigner-Entscheidung; **sie hat
-  noch keinen Ort** (s. „Offen"). Und „nirgends normativ gefasst" stimmt nur
+  PostgreSQL). Die Grenze zu ziehen ist eine Eigner-Entscheidung; **sie hatte
+  bei der Aktivierung keinen Ort** — seit 2026-09-17 Kandidat K1 im
+  [Toleranzprofil](../next/compare-toleranzprofil.md). Und „nirgends normativ gefasst" stimmt nur
   halb: `spec/ddl-generation-rules.md:2067` schreibt „Schlüsselwörter:
   **UPPERCASE**" fest (Generate-Pfad), und `spec/cli-spec.md:673` sagt,
   kanonisiert werde „**ausschliesslich** die **Schreibweise**, nicht die
@@ -1053,7 +1150,8 @@ eine erlaubte Kernänderung ist die Statuszeile: `0053` wechselt auf
 `status: superseded by ADR-00NN` (`.d-check.yml` lässt genau diese Form zu).
 
 Der Repo-eigene Fahrplan für diese Linie steht in
-`compare-falsch-positive-cross-dialekt.md:274-282` und verlangt
+[`compare-falsch-positive-cross-dialekt.md`](../in-progress/compare-falsch-positive-cross-dialekt.md)
+(Abschnitt „Was ein Schnitt braeuchte") und verlangt
 **Eigner-Entscheidung, ADR, Spec-Update, Testumzug** — in dieser Reihenfolge.
 Die Eigner-Entscheidung holt das Paket **vorher** ein; sie ist die Vorbedingung
 dieses Slices (s. Kopfzeile), nicht sein Inhalt.
@@ -2385,7 +2483,8 @@ unberührt, kein Oracle-Opt-in.
 - **Die Grenze bei verlustbehafteten Readern** (P9, erste Fassung) —
   widerlegt und korrigiert (H1, M1).
 
-**Offen — braucht nach der Graduation einen Ort:**
+**Offen — bei der Graduation verortet** (der Ort je Punkt steht unter
+„Restflächen" oben; die Liste bleibt als Stand vor der Graduation):
 - **Der Schlüsselwort-Case** (`sum` gegen `SUM`) — Eigner-Frage. Seit dem
   2026-09-17 hat sie einen Ort: der Plan
   [`../next/compare-toleranzprofil.md`](../next/compare-toleranzprofil.md)
@@ -2476,7 +2575,7 @@ unberührt, kein Oracle-Opt-in.
   Korrektur; dritter Bauabschnitt, L3); Fund-Pfade, `details` und die
   Faltungsmenge stehen in `spec/`, nicht im Handbuch. **Eine Ausnahme wandert
   mit:** der Posten C1/P6 im Reader-Slice verschiebt die Grenze von `E012`, und
-  die steht im Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2196`) — dort
+  die steht im Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2198`) — dort
   zieht der Reader-Slice mit.
 - **Oracle im Konsumenten-Repro und in den Harnesses** — nicht gefahren. Der
   laufende `mcp-e2e-oracle-1` gehört zum Compose-Projekt des Harness, ist aber
@@ -2532,7 +2631,8 @@ unberührt, kein Oracle-Opt-in.
   `bi-demo-smoke`, `mcp-e2e-smoke` und `perf-acceptance` — ein Fehlschlag
   bleibt dort ein grüner Haken. Die Compare-Matrix ist seit dem sechsten
   Bauabschnitt rot sichtbar; die Geschwister sind auf Eigner-Anweisung nicht
-  angefasst — ein `open/`-Ticket bei der Graduation.
+  angefasst — ein `open/`-Ticket bei der Graduation
+  ([`../open/ci-verdeckte-fehlschlaege.md`](../open/ci-verdeckte-fehlschlaege.md)).
 - **Shell, Kotlin und YAML haben kein statisches Sicherheits-Gate.**
   `make semgrep` fährt zwei Regeln auf fünf Dateien (Verifikation Runde 5);
   shellcheck ist kein Repo-Gate (hier per Container gefahren;
@@ -2560,3 +2660,160 @@ dabei eine ADR-Linie — das ist kein Nebeneffekt, sondern P7.
 [Reader-Slice](../next/reader-treue-spatial-array-json.md) gewandert, als Posten C1 mit
 Paket P6. **Nicht behoben** wird die Umschreibung `= ANY(…)` gegen `IN (…)`:
 sie ist in ADR 0055 entschieden.
+
+## Closure
+
+**Graduiert 2026-09-17.** Alle Pakete sind gebaut (P1–P3, P5–P11; P4 ist in
+den Reader-Slice gewandert), in sechs Bauabschnitten und fünf Review- und
+Verifikationsrunden. Released ist es noch nicht: die Wirkung steht in
+`CHANGELOG.md` unter `[Unreleased]`. Offen bleibt in diesem Slice nichts; jeder
+verbliebene Punkt hat unter „Restflächen" einen Ort außerhalb.
+
+**Woran „fertig" gemessen ist** — am Vertrag, nicht an diesem Plan:
+
+- [LF-015](../../../spec/lastenheft-d-migrate.md#lf-015) (Schema-Vergleiche
+  zwischen Umgebungen): zwei Reverses verschiedener Dialekte melden keine
+  Unterschiede mehr, die nur Schreibweise oder Herkunft sind; was bleibt, ist
+  ein Fähigkeitsunterschied, ADR-entschieden oder eine Eigner-Frage mit Ort.
+- [ADR 0056](../../adr/0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md)
+  übersteuert [ADR 0053](../../adr/0053-vergleich-rohen-sql-texts.md)
+  (Statuszeile in `c9737f909`). Seine „Bestätigung" ist eingelöst: jede
+  Faltungsregel mit Gegenprobe (`ExpressionCanonicalisationTest`,
+  `ViewQueryCanonicalisationTest`, `SpellingFoldBoundaryTest`,
+  `ColumnCastFoldTest`), die Rückzugsfälle gepinnt, der Migrate-Pfad
+  nachweislich streng (`SchemaMigrateComparatorsTest`), Sabotage je Regel
+  (Protokolle des zweiten bis vierten Bauabschnitts).
+- [ADR 0057](../../adr/0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md)
+  (`accepted` seit `f6bab1514`): eine Semantik an einer Stelle, Herkunft kein
+  Unterschied, das Compare-Artefakt. Die Tests seiner „Bestätigung" existieren
+  und sind je Sabotage rot geworden (dritter und vierter Bauabschnitt).
+- [ADR 0027](../../adr/0027-reverse-preferences-inhaerente-mehrdeutigkeit.md)
+  und `spec/dialect-preference-mechanism.md`: `legacy_serial_syntax` löst eine
+  Präferenz am Reverse, nicht der Vergleich; „Nicht stumm" gilt auch über MCP
+  (Reverse-Report der Lese-Jobs).
+- Die Spec beschreibt das Gebaute: `spec/cli-spec.md` (Faltungsmenge, Grenze
+  und Rückzug, Pfad-Schema der Funde, Reverse-Markierung, Lese-Flags, Form des
+  Reverse-Reports), `spec/mcp-server.md` (Funde, Artefakt-Arten `COMPARE` und
+  `REVERSE_REPORT`, Artefakte der Lese-Jobs, Index `diffs`),
+  `spec/connection-config-spec.md`. `docs/user/` beschreibt den Ist-Zustand
+  (Anwender- und Administrationshandbuch, API-Referenz).
+
+**Paket → Commit**
+
+| Abschnitt | Paket | Commit |
+| --- | --- | --- |
+| Aktivierung | Eigner gibt die Linie von ADR 0053 im vollen Umfang frei | `1f5503e70` |
+| 1 | P7, ADR-Teil: ADR 0056, 0053 auf `superseded` | `c9737f909` |
+| 1 | P8 (Altbestand) · P5 · P3 · P6 · P2a · P2b · P1 | `50ee1bd00` · `3b30d9f8a` · `ba263c737` · `10eb5a1df` · `a723584ff` · `b1de205f9` · `e08e217fb` |
+| 1 | P7, Spec-Teil | `26ff678ed` |
+| 1 | Nebenbefund: `make doc-immutable` lokal still grün | `dbb50a666` |
+| 2 | P9 nachgetragen (Plan) | `dbb8ef117` |
+| 2 | P9 samt Rückzug, Schlüsselwörtern, Lexik (A–D, H) | `13e397475` |
+| 2 | MCP-Werte in Dokument-Schreibweise, Index-Pfad (E, F) | `58510584d` |
+| 2 | Absicherung am echten Migrate-Pfad, Vollständigkeit je Feld (G) | `522722ad3` |
+| 2 | Sample-DB: PostgreSQL-18-Mount | `0f39332d9` |
+| 2 | Handbuch im Ist-Zustand, Abnahme am Repro (I, J) | `2913ab7fd` |
+| 2 | Gates, Partitionierungs-Lücke gepinnt; Eigner-Entscheidungen (Plan) | `d14f7021b`, `5986d25dd` |
+| 3 | Faltungsgrenzen (H1, M1, L1, INFO 5, INFO 6) | `175800393` |
+| 3 | P10, erste Fassung (Vergleichs-Faltung; im vierten Abschnitt zurückgenommen) | `b3e583522` |
+| 3 | P11 samt M3 | `2601d1631` |
+| 3 | MCP-Funde (L2, INFO 3, INFO 4) · Handbuch (L3) · PostGIS-Mount | `ff4d56082` · `f8c819f6c` · `47f8a8641` |
+| 3 | Plan | `c946c2f6e` |
+| 4 | P10 als Reverse-Präferenz `serial`/`identity` (F3) | `5a9eaf0a2` |
+| 4 | Name und Version kein Fund bei einer Reverse-Seite (M1) | `0e0e1cb24` |
+| 4 | Artefakt-Art `COMPARE` in einer Form, typisierter Publisher (F1, L1, I1, I5) | `694b88776` |
+| 4 | Doku (L2, L3, I2–I4) · Handbuch `schema migrate` mit `identity` · MySQL-Integrationsfall | `e3116c34c` · `fe6b3d270` · `542008cbd` |
+| 4 | Plan | `d3ef2d77d` |
+| 4 | P7, zweiter ADR: ADR 0057 `accepted` | `f6bab1514` |
+| 5 | Lese-Präferenzen streng, mit Herkunft, `mcp serve` einmal (L-3, INFO) | `49a3b3d4c` |
+| 5 | Reverse-Report der MCP-Lese-Jobs (M-2) | `f345e00f7` |
+| 5 | Spec, Handbuch, Ticket, CHANGELOG (M-1, L-1, L-2, INFO) | `a1a02b919` |
+| 5 | E2E-Harnesses: Roundtrip-Wächter, 5x5-Compare-Matrix, Workflow | `c7bfe88dd` |
+| 5 | Plan | `2299f0cf5` |
+| 6 | Artefakt-Art `REVERSE_REPORT` | `df098292c` |
+| 6 | Lese-Jobs legen ihr Ergebnis zuletzt ab | `c803dda52` |
+| 6 | `R202` an der Stelle der Deklaration | `453722a34` |
+| 6 | Harness-Blocker, Pin-Schutz, Selbstprobe, sehender Sequenz-Wächter, Workflow rot sichtbar | `328479ba4`, `61ab4aaae` |
+| 6 | Spec, Handbücher, CHANGELOG (M-3, LOW-2..4, INFO) | `d5e0c5f9b` |
+| 6 | Plan | `6bd249365` |
+| Graduation | Orte in `open/` · Nachträge in bestehenden Plänen · Move mit Closure | `2a3820362` · `58d3335fa` · der Move-Commit |
+
+Im selben Zeitraum, aber **nicht** dieser Slice: `00c738c27` (Gradle-Wrapper
+entfernt), `42f91a8a5` und `5ffa09bf1` (Toleranzprofil geschnitten,
+`next/`-Bestand), `076d6c955` (Reader-Slice nimmt A6/B3 und D1–D3 auf).
+
+**Was über den Entwurf hinausging**
+
+- **P8 und P9 kamen dazu.** Die Faltung aus 1.7.0/1.7.1 setzte Verschiedenes
+  gleich (Kommentar, Dollar-Quoting, jeder Cast, kein Literalschutz im
+  Sichten-Rumpf); P8 baute ein gemeinsames Gerüst mit Rückzug. P9 wurde neu
+  gefasst, nachdem eine Messung gegen PostgreSQL zeigte, dass ein Cast die
+  umgebende Operation umtypt: ein Cast fällt nur als Operand eines Vergleichs
+  und nur mit dem Spaltentyp dieser Seite. Runde 2 zog die Regel an zwei
+  verlustbehafteten Readern weiter zurück (Gleitkomma, `R301`).
+- **P10 wurde revidiert.** Die erste Fassung faltete `legacy_serial_syntax` im
+  Vergleich. Der Architekt fand im ADR-Entwurf den Widerspruch zu
+  `spec/dialect-preference-mechanism.md` („nie im nachgelagerten Vergleich");
+  der Eigner entschied (F3): zurück, stattdessen die Reverse-Präferenz
+  `serial`/`identity` nach ADR 0027 — streng, mit Herkunft, auch für
+  `db:`-Operanden und `mcp serve`.
+- **P11 und ein zweiter ADR.** Die drei Oberflächen von `schema compare`
+  verglichen verschieden (der Job wortgleich, MCP ohne Entfernen der
+  Markierung). Jetzt eine Stelle (`SchemaCompareSemantics`), festgeschrieben in
+  ADR 0057; der Entwurf kannte nur den einen ADR, der 0053 übersteuert.
+- **Zwei neue Artefakt-Arten.** `COMPARE` (Job-Ergebnis und Überlauf von
+  `schema_compare`, eine Form, ungekürzt) und `REVERSE_REPORT` (der
+  Reverse-Report der Lese-Jobs — ohne ihn war die Präferenz über MCP stumm).
+- **E2E-Harnesses in `examples/mcp-e2e`.** Roundtrip-Wächter nach Klassen
+  (`notation`, `metadata`, `sequence`, Selbstprobe der Form) und eine
+  5x5-Compare-Matrix über MCP mit versionsgebundenen Erwartungen, Pin-Schutz
+  und einem rot sichtbaren Workflow.
+- **Beim Bauen mitbehoben:** das Überlauf-Artefakt entstand nur über die
+  Byte-Grenze; `data transfer` fing eine ungültige Oracle-Präferenz nie ab
+  (Stacktrace, Exit 1 statt 7); die Sample-DB startete unter PostgreSQL 18
+  nicht (beide Dienste); der Report-Wächter der Matrix schlug nie an, weil
+  sein Eintrag in einer Subshell verloren ging.
+
+**Abnahme**
+
+- **Konsumenten-Repro** (Schema des Konsumenten, PostgreSQL 18.6 mit
+  PostGIS 3.6, MySQL 9.7.2, SQL Server 2025, SQLite mit SpatiaLite; Oracle
+  nicht): Funde von `schema_compare` 1.7.1 → jetzt PG↔MSSQL 23 → 17,
+  PG↔MySQL 20 → 19, PG↔SQLite 36 → 35, MSSQL↔MySQL 19 → 18, mit und ohne
+  Präferenz gleich; `schema_compare_start` liefert dieselben Einträge unter
+  `COMPARE`. Kein Namens- oder Versionsfund, kein Platzhalter. Mit `identity`
+  entfällt das Serial-Flag an fünf Spalten; der Modus bleibt (`GENERATED
+  ALWAYS` gegen `by_default`). Sonde `BY DEFAULT`: mit `identity` kein
+  Identity-Fund, ohne fünf. Am nachgebauten Schema (CLI): Posten 3 in PG↔MSSQL
+  und PG↔SQLite geschlossen, Posten 5 ohne reine Schreibweise-Differenz,
+  Posten 1 mit Vorher/Nachher, Posten 2 im Pfad-Schema, Posten 6 für `serial`
+  und mit der Präferenz für `IDENTITY`.
+- **5x5-Compare-Matrix** (MCP, `d-migrate:dev` 1.8.0-SNAPSHOT, Oracle nicht):
+  PostgreSQL → MySQL 6, → SQL Server 5, → SQLite 13; SQL Server → SQLite 9;
+  SQLite → PostgreSQL 3; MySQL als Quelle `INVALID` (Posten 4); vier
+  `APPLY-FAIL`-Zellen aus Reader und Generator. Kein Wächter schlägt an;
+  `OR`/`IS NULL`, `numeric > 0`, Index-Prädikat und Sequenzname melden
+  nirgends. Roundtrip: PostgreSQL 1, MySQL ungültig, SQL Server 5, SQLite 6.
+  Die Wächter sind nachweislich scharf (Sabotagen HC, HB, WK, WF, JQ, H2′;
+  ohne den Blocker-Fix grün).
+- **Sample-DB:** `make sample-db-smoke` gleich der Baseline
+  (`IDENTICAL`), `make sample-db-spatial-smoke` grün.
+- **Gates** des letzten Bauabschnitts stehen dort: `make docker-check` je Modul
+  und einmal ohne `MODULES` (12 213 Tests, 0 Fehler), `make integration`
+  (`:test:e2e-cli`; im vierten und fünften Abschnitt auch
+  `:test:integration-mysql` und `:test:integration-sqlite`),
+  `make golden-update`, `make docs-check`, `make solid-suppression-gate`,
+  `make doc-immutable` im frischen `--no-local`-Klon.
+- **CI, Stand bei Graduation:** `f6bab1514` (damals `origin/main`) ist
+  vollständig grün — `Build & Test`, `Integration Tests`, `Per-Module
+  Coverage`, `Dependency Submission`. Die zwölf Commits danach (`49a3b3d4c`
+  bis `6bd249365`) und die drei Graduations-Commits waren bei der Graduation
+  nicht gepusht; ihr CI-Lauf und der erste Lauf des Matrix-Workflows standen
+  zu diesem Zeitpunkt aus (Beobachtungspunkt in
+  [`../open/ci-verdeckte-fehlschlaege.md`](../open/ci-verdeckte-fehlschlaege.md)).
+
+**Was von diesem Slice lesenswert bleibt.** Die zwei größten Korrekturen kamen
+aus Messung und Nachlesen, nicht aus dem Plan: P9 hielt einer Messung gegen
+PostgreSQL nicht stand, P10 nicht dem Abgleich mit der eigenen Spec. Und ein
+Wächter, der nie anschlägt, sieht genau aus wie ein grüner Lauf — erst die
+Sabotage gegen ein präpariertes Image hat den Blocker gezeigt.

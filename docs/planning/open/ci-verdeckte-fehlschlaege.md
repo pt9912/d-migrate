@@ -3,7 +3,7 @@
 > **Status:** Befund / Vorabklärung (2026-09-17), zwei Mechanismen und ein
 > Beobachtungspunkt.
 > **Trigger:** Compare-Slice
-> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md)
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md)
 > (vierter Bauabschnitt: CI an `e3116c34c`; sechster Bauabschnitt:
 > Eigner-Entscheidung zum Workflow der Compare-Matrix; „Offen"). Der Eigner hat
 > dort entschieden, den **neuen** Workflow rot sichtbar zu machen und die

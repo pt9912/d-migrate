@@ -349,7 +349,7 @@ die Begründung und die Messung stehen in den `open/`-Einträgen.
   [`../open/json-jsonb-zweite-json-art.md`](../open/json-jsonb-zweite-json-art.md).
 
 **Neue Posten aus dem Compare-Bau** (gemessen dort, Belegart: *nachgemessen*;
-Quelle: [`../in-progress/compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
+Quelle: [`../done/compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md),
 Abschnitt „Offen"). Das Paket je Posten wird bei der Aktivierung geschnitten.
 
 - **D1 — Der Typ einer berechneten Spalte in SQL Server.** SQL Server führt für
@@ -425,7 +425,7 @@ Kein Verlust bleibt still. Wo Information nicht erhalten werden kann, wird sie
 benutzen, statt mit einem je Dialekt neu gebauten.
 
 Das hat fuenf Ausgaenge, und sie in einen Satz zu zwingen waere die erste
-Ungenauigkeit (Muster: [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
+Ungenauigkeit (Muster: [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md),
 das dieselbe Zerlegung braucht):
 
 1. **Der Verlust ist unvermeidbar und wird benannt** — A1 (der SRID einer

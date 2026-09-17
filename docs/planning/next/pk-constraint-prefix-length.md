@@ -80,7 +80,7 @@ Anhängsels").
 ## Nachtrag 2026-09-17 — `ERROR 1170` in der Compare-Matrix, aus einer anderen Ursache
 
 Die 5x5-Compare-Matrix des Compare-Slices
-([`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
+([`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md),
 „Offen") scheitert in der Zelle **SQLite → MySQL** mit `ERROR 1170` (gepinnt als
 `APPLY-FAIL` in
 [`examples/mcp-e2e/expected/compare-matrix.env`](../../../examples/mcp-e2e/expected/compare-matrix.env)).

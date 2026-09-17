@@ -80,7 +80,7 @@ Test offline gegen das Repo mit `p/dockerfile` + `p/secrets` + `p/python`
 ## Nachtrag 2026-09-17 — Shell, Kotlin und YAML haben kein statisches Gate
 
 Aus der Verifikation Runde 5 des Compare-Slices
-([`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
+([`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md),
 „Offen"):
 
 - **`make semgrep` fährt zwei Regeln auf fünf Dateien.** Die Ausgangslage und

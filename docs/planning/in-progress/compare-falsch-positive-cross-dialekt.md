@@ -1,6 +1,23 @@
 # Cross-Dialekt-`schema compare`: Falsch-Positive abbauen (Slice A + konservative Fälle)
 
 > **Status:** Entwurf (2026-09-14)
+> **Nachtrag 2026-09-17 — die zwei Eigner-Punkte dieses Plans sind entschieden
+> und gebaut.** Die rohen CHECK- und Sichten-Texte (dazu das Index-Prädikat)
+> faltet `schema compare` in der Dialekt-Schreibweise
+> ([ADR 0056](../../adr/0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md),
+> übersteuert ADR 0053); `schema migrate` und der Fingerabdruck bleiben
+> streng — das beantwortet die „Kernfrage für den Eigner" unten. Der „strikte
+> Modus selbst" ist für Reverses geöffnet: die Herkunft einer Seite ist kein
+> Unterschied, und CLI, `schema_compare` und `schema_compare_start`
+> vergleichen gleich
+> ([ADR 0057](../../adr/0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md)).
+> Gebaut und am Konsumenten-Repro nachgemessen im Slice
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md)
+> (graduiert). **Offen bleibt** `RESTRICT` gegen implizit — als opt-in-Toleranz
+> K4 im [Toleranzprofil](../next/compare-toleranzprofil.md); vom strukturellen
+> Rest der MySQL-Sichten deckt K1 die Schlüsselwort-Schreibung, Schemaqualifikation
+> und gliedernde Klammern bleiben ein Fund (Parser-Frage). Die Abschnitte unten
+> sind Stand vor diesen Entscheidungen.
 > **Ziel:** Die gemessene Falsch-Positiv-Quote von `schema compare` zwischen
 > zwei zurückgelesenen Schemata senken — ohne die Zusage des strikten Modus
 > aufzuweichen.

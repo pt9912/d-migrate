@@ -2,7 +2,7 @@
 
 > **Status:** Befund (2026-09-17), zwei Stellen.
 > **Trigger:** Beim Bau des Compare-Slices
-> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md)
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md)
 > gesehen (P2b bzw. Review Runde 3, M1) und dort unter „Offen" geführt; nicht
 > Teil jenes Slices.
 > **Aktivierungsbedingung:** Ein Abnehmer, der Ergebnisse maschinell auswertet

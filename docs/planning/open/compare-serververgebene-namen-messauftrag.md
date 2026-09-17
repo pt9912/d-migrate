@@ -2,7 +2,7 @@
 
 > **Status:** Vorabklärung (Messauftrag), 2026-09-17.
 > **Trigger:** Eigner-Entscheidung F4 im Compare-Slice
-> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md)
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md)
 > (Abschnitt „Offen"), festgeschrieben in
 > [ADR 0057](../../adr/0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md),
 > Entscheidung 2, Punkt 3 („Reichweite"). `schema compare` nimmt von der Familie

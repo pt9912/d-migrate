@@ -2,7 +2,7 @@
 
 > **Status:** Befund / Korrektur ohne Eigner-Frage (2026-09-17).
 > **Trigger:** Grenze aus P5 des Compare-Slices
-> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md)
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md)
 > („Grenze, bewusst nicht gebaut"). Der Plan
 > [`compare-toleranzprofil.md`](../next/compare-toleranzprofil.md) hat den Punkt
 > geprüft und **nicht** als Toleranz aufgenommen („Geprüft und nicht

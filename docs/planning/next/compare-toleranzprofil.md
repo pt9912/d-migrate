@@ -21,10 +21,12 @@
 > 2. **Die Eigner-Fragen E1 bis E7** (s. dort). Mindestens muss feststehen,
 >    welche Kandidaten ins Profil kommen.
 > 3. **Die Graduation des aktiven Slices**
->    [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md).
+>    [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md).
 >    Das Profil baut auf dessen Faltung, Pfad-Schema und `details`-Format auf
 >    und setzt voraus, dass beide MCP-Oberflächen gleich vergleichen (s.
 >    „Abhängigkeit").
+>    **Erfüllt am 2026-09-17:** der Slice ist nach `../done/` graduiert;
+>    „aktiver Slice" meint im ganzen Plan diesen.
 > **Aktivierung:** Der Plan wandert mit dem ersten Implementierungs-Commit nach
 > `../in-progress/`, frühestens wenn alle drei Vorbedingungen erfüllt sind.
 > **Belegart:** Die heutige Wirkung jedes Kandidaten ist am Code (Stand
@@ -437,7 +439,7 @@ verweist dabei **nicht** auf den ADR; Verweise von `spec` auf `adr` sind laut
 ## Abhängigkeit
 
 - **Aktiver Slice**
-  ([`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md)).
+  ([`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md)).
   Das Profil baut auf auf:
   - der Faltung (`RawSqlSkeleton`, `ExpressionSpelling`, `QuerySpelling`); K1
     hängt sich hinter den Rückzug;
@@ -720,7 +722,7 @@ Semantik-Aussagen von K2 und K4 werden dabei gegen PostgreSQL nachgemessen:
 ## Herkunft
 
 - Der aktive Slice
-  [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md):
+  [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md):
   die Abgrenzung (Schlüsselwort-Schreibung, `= ANY` gegen `IN`, `RESTRICT`,
   MySQL-Sichtformatierung) und „Offen" (Identity-Modus mit `W140`, zweite
   MCP-Oberfläche, unbenannte Indizes, `legacy_serial_syntax`).

@@ -2,7 +2,7 @@
 
 > **Status:** Befund (2026-09-17), vorbestehend.
 > **Trigger:** Review Runde 4 und 5 des Compare-Slices
-> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md)
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md)
 > (L-1, LOW-4; „Offen"). Der Slice hat den Vertrag des Index `diffs` in
 > `spec/mcp-server.md` beschrieben; `mcp serve` erfüllt ihn nicht. Beide
 > Punkte sind älter als der Slice.

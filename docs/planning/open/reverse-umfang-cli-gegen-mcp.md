@@ -2,7 +2,7 @@
 
 > **Status:** Befund / Vorabklärung (2026-09-17).
 > **Trigger:** Konsumenten-Repro des Compare-Slices
-> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md)
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md)
 > (dritter Bauabschnitt, „Konsumenten-Repro mit dem Schema des Konsumenten";
 > „Offen"). Kein Compare-Thema: der Unterschied entsteht vor dem Vergleich.
 > **Aktivierungsbedingung:** Eine Entscheidung, ob beide Oberflächen denselben

@@ -2,7 +2,7 @@
 
 > **Status:** Sammlung (2026-09-17).
 > **Trigger:** Drei Punkte aus dem Compare-Slice
-> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md)
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md)
 > (P10, fünfter und sechster Bauabschnitt, „Offen"). Der Slice hat die
 > Lese-Präferenz `serial`/`identity` gebaut, die Präferenzen streng gemacht
 > und ihnen eine Herkunft gegeben (`PreferenceSource`). Drei Oberflächen tragen

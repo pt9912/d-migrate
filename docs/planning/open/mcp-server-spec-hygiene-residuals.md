@@ -58,7 +58,7 @@ Aussage entsprechend korrigieren oder bestätigen. Nicht blind umschreiben.
 ## Befund 3 — `artifact_upload_init` nimmt mehr Arten an, als die Spec nennt (Nachtrag 2026-09-17)
 
 Aus dem Compare-Slice
-([`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
+([`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md),
 „Offen"). `spec/mcp-server.md` zählt für den Upload `schema`, `ddl`,
 `transform-script`, `seed-data`, `rules` und `generic` auf; der Handler
 ([`ArtifactUploadInitHandler`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/ArtifactUploadInitHandler.kt))

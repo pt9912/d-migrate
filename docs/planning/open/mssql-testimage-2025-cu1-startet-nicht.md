@@ -65,7 +65,7 @@ Der MCP-E2E-Harness hat für sich auf `2025-latest` gewechselt
 ## Nachtrag 2026-09-17 — das Volltext-Testimage und der Ausreißer in CI
 
 Aus dem Compare-Slice
-([`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
+([`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md),
 vierter Bauabschnitt und „Offen"): an `e3116c34c` war `Integration Tests` rot,
 weil der Container `d-migrate-mssql-fts:local` in
 `MssqlFullTextEnvironmentIntegrationTest` nicht startete; der nächste Lauf war

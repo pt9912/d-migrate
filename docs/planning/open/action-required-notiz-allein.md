@@ -11,7 +11,8 @@
 > ([`../in-progress/action-required-bestimmt-den-ausgang.md`](../in-progress/action-required-bestimmt-den-ausgang.md),
 > P1), und MCP liefert `skippedCount`. Eine notiz-allein verworfene Stelle ist
 > damit ein Lauf, der als vollständig gilt, obwohl er es nicht ist. Wird nach dem
-> Compare-Slice als `next/`-Plan geschnitten.
+> Compare-Slice als `next/`-Plan geschnitten (der Compare-Slice ist seit
+> 2026-09-17 graduiert).
 > **Aktivierungsbedingung:** Wird priorisiert, sobald ein Konsument die
 > **Zählung** als Vollständigkeitsmaß nutzt (MCP `skippedCount`, Exit-Code) oder
 > ein Dialekt-Vergleich daran hängt — dann ein `next/`-Plan mit je Dialekt einer

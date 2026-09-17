@@ -2,7 +2,7 @@
 
 > **Status:** Befund (Test-Infrastruktur), 2026-09-17.
 > **Trigger:** Die E2E-Harnesses des Compare-Slices
-> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md)
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md)
 > (fünfter Bauabschnitt, „E2E-Harnesses"; „Offen"). Beide Harnesses kennen
 > Oracle als Opt-in; gefahren wurde es weder dort noch im Konsumenten-Repro.
 > **Aktivierungsbedingung:** Ein Messhost ohne fremden `mcp-e2e-oracle-1`, oder

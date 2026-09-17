@@ -2,7 +2,7 @@
 
 > **Status:** Vorabklärung / Eigner-Frage (2026-09-17).
 > **Trigger:** Compare-Slice
-> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md),
 > P11 („Nicht Teil von P11") und „Offen". P11 hat den drei Oberflächen von
 > `schema compare` eine Semantik gegeben (ADR 0057, Entscheidung 1); die
 > Validierung davor hat der Eigner ausdrücklich ausgenommen.

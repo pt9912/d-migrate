@@ -44,7 +44,7 @@ Beide müssen behoben werden — der Render-Fix allein lässt die Drift bestehen
 ## Nachtrag 2026-09-17 — MySQL: zwei Ursachen, nicht eine
 
 Seit dem vierten Bauabschnitt des Compare-Slices
-([`../in-progress/compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md))
+([`../done/compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md))
 gibt es die Reverse-Präferenz `serial`/`identity` für MySQLs
 `BIGINT AUTO_INCREMENT` (und SQLite unter der 64-Bit-Breite). Gegen MySQL 9.7.2
 gemessen, `schema migrate --plan-only` gegen dieselbe Datenbank, aus der das

@@ -2,7 +2,7 @@
 
 > **Status:** Befund (2026-09-17), vorbestehend und global.
 > **Trigger:** Review Runde 5 des Compare-Slices
-> [`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md)
+> [`compare-projektion-und-normalisierung.md`](../done/compare-projektion-und-normalisierung.md)
 > (M-3; „Offen"). Beim Prüfen der neuen Lese-Flags gemessen; der Slice hat nur
 > seine eigenen Sätze korrigiert und den Befund nicht gebaut.
 > **Aktivierungsbedingung:** Ein `next/`-Plan, sobald ein Anwender oder
