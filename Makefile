@@ -172,14 +172,14 @@ docker-coverage-modules-html:
 integration:
 	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
 
-# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.74.1, siehe
-# https://github.com/pt9912/d-check/releases/tag/v0.74.1). Die doc-*-Targets
-# (doc-check/-trace/-complete/-doctor/-repair/-immutable/-commits/-planning/-tracked/-targets/-structure/-help)
+# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.76.1, siehe
+# https://github.com/pt9912/d-check/releases/tag/v0.76.1). Die doc-*-Targets
+# (doc-check/-trace/-complete/-doctor/-repair/-immutable/-commits/-planning/-tracked/-targets/-structure/-usage/-help)
 # kommen aus make/d-check.mk, regeneriert via
-# `docker run --rm ghcr.io/pt9912/d-check:v0.74.1 --print-mk > make/d-check.mk`;
+# `docker run --rm ghcr.io/pt9912/d-check:v0.76.1 --print-mk > make/d-check.mk`;
 # der Image-Pin lebt dort. DCHECK_DIGEST MUSS vor dem include stehen — die .mk
 # wertet den Digest beim Parsen aus (ifeq → DCHECK_REF).
-DCHECK_DIGEST = sha256:e31a372b66dbde26305982424854cfce7c9ab7ce555a94debeee7ee26e6d4641
+DCHECK_DIGEST = sha256:1470ecdcaa686a5ef4513dee9b0ae522586f54b87d568b06fc6b5b2741b633b3
 include make/d-check.mk
 
 # ── Quality-Gates ──────────────────────────────────────────────────
