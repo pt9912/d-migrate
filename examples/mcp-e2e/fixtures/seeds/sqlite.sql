@@ -94,3 +94,40 @@ CREATE TABLE sl_sq_child (
   UNIQUE (country, area),
   FOREIGN KEY (country, area) REFERENCES sl_sq_region(country, area) ON DELETE CASCADE
 );
+
+-- P11, I3: ein Fremdschluessel **ohne Spaltenliste**. `REFERENCES t` meint den
+-- Primaerschluessel der Zieltabelle; `PRAGMA foreign_key_list` gibt dafuer
+-- `to = NULL` zurueck, und der Reverse scheiterte daran an einer gueltigen
+-- Datenbank. Der Seed haelt den Fall in der Matrix fest.
+-- seed: sl_sq_ref.id | paket: P11 | quelle: integer
+--   ziel postgresql: integer | code: keinen
+--   ziel mysql: integer | code: keinen
+--   ziel mssql: integer | code: keinen
+-- seed: sl_sq_ref.parent_id | paket: P11 | quelle: integer
+--   ziel postgresql: integer | code: keinen
+--   ziel mysql: integer | code: keinen
+--   ziel mssql: integer | code: keinen
+CREATE TABLE sl_sq_ref (
+  id INTEGER PRIMARY KEY,
+  parent_id INTEGER NOT NULL REFERENCES sl_sq_parent
+);
+
+-- P11, M8: ein Kommentar **innerhalb** des `CREATE TABLE`-Textes. SQLite legt
+-- den Text wortgetreu ab, samt Kommentar; ein Apostroph darin verschob den
+-- Scannern die Abgrenzung der Literale, und ein Schluesselwort darin wurde
+-- mitgelesen. Beide Fallen stehen hier: `it's` und das Wort AUTOINCREMENT in
+-- einem Kommentar an einer Spalte, die keines traegt. Laese ein Scanner es
+-- mit, kaeme `id` als `identifier(auto)` zurueck statt als `integer` — die
+-- Anmerkung unten faengt genau das.
+-- seed: sl_sq_comment.id | paket: P11 | quelle: integer
+--   ziel postgresql: integer | code: keinen
+--   ziel mysql: integer | code: keinen
+--   ziel mssql: integer | code: keinen
+-- seed: sl_sq_comment.menge | paket: P11 | quelle: integer
+--   ziel postgresql: integer | code: keinen
+--   ziel mysql: integer | code: keinen
+--   ziel mssql: integer | code: keinen
+CREATE TABLE sl_sq_comment ( -- it's a table comment
+  id INTEGER PRIMARY KEY, -- AUTOINCREMENT steht hier nur als Wort, it's a trap
+  menge INTEGER NOT NULL /* it's a block comment, too */
+);

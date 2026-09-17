@@ -246,20 +246,40 @@ report_json() {
           if (v ~ /^".*"$/) v = substr(v, 2, length(v) - 2)
           return v
       }
-      /^summary:/ { section = "summary"; next }
+      # Der Wert des Feldes [name] in [line] — oder NOFIELD, wenn die Zeile
+      # dieses Feld nicht **traegt**. Der Anker ist Pflicht: `code:` steht auch
+      # mitten in einer Meldung (`message: "... code: W200 ..."`), und ein
+      # unverankertes Muster mit `substr($0, index($0, ":") + 1)` nahm dann den
+      # Text ab dem ERSTEN Doppelpunkt als Code — pinnbar falsch.
+      function field(line, name) {
+          if (match(line, "^[ \t]*(-[ \t]+)?" name ":") == 0) return NOFIELD
+          return unquote(substr(line, RSTART + RLENGTH))
+      }
+      BEGIN { NOFIELD = "\001kein-feld\001" }
+      /^summary:/ { section = "summary"; seen_summary = 1; next }
       /^notes:/ { section = "notes"; next }
       /^skipped_objects:/ { section = "skipped"; next }
       /^[a-z_]+:/ { section = "other"; next }
-      section == "summary" && /^[ \t]+notes:/ { want_notes = unquote(substr($0, index($0, ":") + 1)) + 0; next }
-      section == "summary" && /^[ \t]+skipped_objects:/ { want_skipped = unquote(substr($0, index($0, ":") + 1)) + 0; next }
+      section == "summary" {
+          v = field($0, "notes"); if (v != NOFIELD) { want_notes = v + 0; next }
+          v = field($0, "skipped_objects"); if (v != NOFIELD) { want_skipped = v + 0; next }
+          next
+      }
       section == "notes" && /^[ \t]*-[ \t]/ { n_notes++; note_code[n_notes] = ""; note_object[n_notes] = "" }
-      section == "notes" && /[ \t]code:[ \t]*/ { note_code[n_notes] = unquote(substr($0, index($0, ":") + 1)) }
-      section == "notes" && /[ \t]object:[ \t]*/ { note_object[n_notes] = unquote(substr($0, index($0, ":") + 1)) }
+      section == "notes" && n_notes > 0 {
+          v = field($0, "code"); if (v != NOFIELD) note_code[n_notes] = v
+          v = field($0, "object"); if (v != NOFIELD) note_object[n_notes] = v
+      }
       section == "skipped" && /^[ \t]*-[ \t]/ { n_skipped++; skip_name[n_skipped] = ""; skip_code[n_skipped] = "" }
-      section == "skipped" && /[ \t]name:[ \t]*/ { skip_name[n_skipped] = unquote(substr($0, index($0, ":") + 1)) }
-      section == "skipped" && /[ \t]code:[ \t]*/ { skip_code[n_skipped] = unquote(substr($0, index($0, ":") + 1)) }
+      section == "skipped" && n_skipped > 0 {
+          v = field($0, "name"); if (v != NOFIELD) skip_name[n_skipped] = v
+          v = field($0, "code"); if (v != NOFIELD) skip_code[n_skipped] = v
+      }
       END {
-          if (seen_summary_missing) die("ohne summary")
+          # Ein Report ohne `summary` ist keine Form, die dieser Leser kennt:
+          # `want_notes`/`want_skipped` blieben 0, und leere Listen liefen
+          # durch, als waere nichts zu melden gewesen.
+          if (!seen_summary) die("ohne summary")
           if (n_notes != want_notes) die(sprintf("summary nennt %d notes, gelesen wurden %d", want_notes, n_notes))
           if (n_skipped != want_skipped) die(sprintf("summary nennt %d skipped_objects, gelesen wurden %d", want_skipped, n_skipped))
           printf("{\"notes\":[")

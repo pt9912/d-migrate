@@ -21,6 +21,12 @@ name: MCP-E2E Compare-Matrix
 # werden in jedem Fall hochgeladen. Der Zeitplan faengt Abweichungen, die kein
 # Push in diese Pfade ausloest; die Pfade schliessen Makefile, make/ und
 # Dockerfile ein, weil das Image aus ihnen entsteht.
+#
+# **Und sie schliessen den gemessenen Code ein.** Was die Matrix pinnt, ist die
+# Wirkung der Reader und Generatoren: ein Push, der nur einen Treiber oder das
+# Hexagon aendert, verschiebt Zellen, ohne einen Pfad unter examples/ zu
+# beruehren. Genau das tun die Reader-Pakete, und ohne adapters/** und
+# hexagon/** liefe der Job dabei nie.
 
 on:
   workflow_dispatch:
@@ -30,6 +36,8 @@ on:
     branches: [main]
     paths:
       - 'examples/mcp-e2e/**'
+      - 'adapters/**'
+      - 'hexagon/**'
       - 'Makefile'
       - 'make/**'
       - 'Dockerfile'

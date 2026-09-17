@@ -275,9 +275,12 @@ nach der Fixture an; sie geht in den Reverse der Quelle ein und traegt, was nur
 dieser Dialekt so zurueckgibt. Heute: `postgresql.sql` (Arrays, `json`/`jsonb`,
 `numeric` ohne Praezision, `varchar` ohne Laenge, `interval`, zwei
 IDENTITY-Spalten mit `ALWAYS`), `mysql.sql` (CHECK und Berechnungsausdruck mit
-Zeichenkette, eine nicht kleingeschriebene Spalte) und `sqlite.sql` (benannte
-und unbenannte Fremdschluessel, zweimal dieselbe unbenannte UNIQUE-Klausel,
-`NUMERIC` ohne Praezision).
+Zeichenkette, eine nicht kleingeschriebene Spalte), `sqlite.sql` (benannte und
+unbenannte Fremdschluessel, ein Fremdschluessel **ohne** Spaltenliste, eine
+Tabelle mit Kommentar im `CREATE TABLE`-Text, zweimal dieselbe unbenannte
+UNIQUE-Klausel, `NUMERIC` ohne Praezision) und `mssql.sql` (eine berechnete
+Spalte ueber zwei PascalCase-Spalten; sein `SET QUOTED_IDENTIFIER ON` ist
+Pflicht, sonst legt SQL Server die Tabelle nicht an — `Msg 1934`).
 
 **Die Anmerkungen.** Jede Seed-Spalte traegt eine, und zwar **ausserhalb** der
 `CREATE`-Anweisung — SQLite speichert Kommentare im Tabellentext mit, und die
@@ -331,6 +334,11 @@ jedem Fall am Lauf.
 ## Benutzung
 
 ```sh
+cp examples/mcp-e2e/.env.example examples/mcp-e2e/.env   # einmalig, sonst
+                                  # startet `make mcp-e2e-up` nicht: compose
+                                  # liest die Zugaenge per `env_file`.
+                                  # (`make mcp-e2e-smoke` legt die Datei selbst
+                                  # an, die uebrigen Ziele nicht.)
 make docker-build IMAGE_TAG=dev   # einmalig: d-migrate:dev-Runtime-Image
 make mcp-e2e-smoke                # up + voller Scope-Matrix-Lauf
 make mcp-e2e-roundtrip            # Hin-und-Her-Migrationen, alle schnellen Dialekte
