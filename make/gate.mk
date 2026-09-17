@@ -16,6 +16,39 @@ docs-check: doc-check coverage-excludes-check
 coverage-excludes-check:
 	python3 ./scripts/verify-kover-excludes-ledger.py
 
+# doc-immutable prueft gegen einen frischen `git clone --no-local`, nicht gegen
+# das Arbeits-Repo: dort liest d-check nicht jedes Objekt und meldet eine
+# Kernaenderung still mit 0 Befunden
+# (docs/planning/done/doc-immutable-lokal-still-gruen.md).
+#
+# Target und Recipe-Zeile kommen unveraendert aus make/d-check.mk (generiert).
+# Umgelenkt wird nur ueber target-spezifische Variablen: CURDIR (die
+# Mount-Quelle) zeigt auf den Klon, RANGE auf zwei Refs darin, und SHELL ist
+# scripts/doc-immutable-in-clone.sh — das Skript loest die Range im
+# Arbeits-Repo auf, baut den Klon, fuehrt die Recipe-Zeile aus und raeumt
+# danach auf; was es tut und was nicht, steht dort im Kopf. `private` haelt
+# die Umlenkung von Vorbedingungen fern. Aufruf unveraendert:
+#   make doc-immutable RANGE=origin/main..HEAD   # Commits der Range
+#   make doc-immutable STAGED=1                  # Index gegen HEAD
+# `make -n doc-immutable RANGE=...` zeigt den Klon-Mount. Der Klon liegt je
+# make-Prozess woanders (Benutzer-ID und PID von make im Namen): ein fester
+# Pfad liess zwei gleichzeitige Laeufe einander den Klon wegraeumen, und der
+# eine meldete darauf 0 Befunde. Die Werte unten werden beim Einlesen
+# festgehalten; ein `$(shell ...)` im Kontext des Targets liefe durch das
+# Skript.
+DOC_IMMUTABLE_REPO := $(CURDIR)
+DOC_IMMUTABLE_CLONE := $(patsubst %/,%,$(or $(TMPDIR),/tmp))/d-migrate-doc-immutable-$(shell echo "$$(id -u)-$$PPID")/repo
+DOC_IMMUTABLE_RANGE := $(RANGE)
+DOC_IMMUTABLE_STAGED := $(strip $(STAGED))
+
+doc-immutable: private override CURDIR := $(DOC_IMMUTABLE_CLONE)
+doc-immutable: private override RANGE := doc-immutable-base..doc-immutable-head
+doc-immutable: private SHELL := ./scripts/doc-immutable-in-clone.sh
+doc-immutable: private export DOC_IMMUTABLE_REPO := $(DOC_IMMUTABLE_REPO)
+doc-immutable: private export DOC_IMMUTABLE_CLONE := $(DOC_IMMUTABLE_CLONE)
+doc-immutable: private export DOC_IMMUTABLE_RANGE := $(DOC_IMMUTABLE_RANGE)
+doc-immutable: private export DOC_IMMUTABLE_STAGED := $(DOC_IMMUTABLE_STAGED)
+
 # Statische Sicherheitsanalyse via semgrep — hermetisches Gate:
 #  - gepinntes Regelset, on-demand gecacht (config/semgrep/, statt `--config auto`).
 #    Upstream ist LGPL-2.1 + Commons Clause → NICHT vendored, sondern per

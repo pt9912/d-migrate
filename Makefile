@@ -82,6 +82,7 @@ help:
 		'  make run ARGS="..."   Run the CLI from the runtime Docker image (cwd mounted at /work)' \
 		'  make integration      Run Docker-backed integration tests' \
 		'  make docs-check       Verify Markdown links and coverage docs' \
+		'  make doc-immutable RANGE=<base>..<head>  Freeze accepted/superseded ADR cores over the range; runs in a fresh clone (STAGED=1: the index)' \
 		'  make solid-suppression-gate  Fail on SOLID detekt suppressions in production Kotlin sources' \
 		'  make parquet-sweep     Run the Parquet Cut-A sealed-when sweep (AP13 §4.1)' \
 		'  make gates            Run Docker check, coverage and docs gates' \
