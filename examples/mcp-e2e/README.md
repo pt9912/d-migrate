@@ -120,22 +120,25 @@ und `IS NULL`, einen CHECK mit Werteliste an einer `varchar`-Spalte, einen
 Identity-Spalte und eine berechnete Spalte. Der Reverse liest Sichten nur mit
 `--include-views`, das der Lauf deshalb setzt.
 
-**Ein bekannter Zustand statt eines Vergleichs: MySQL.** MySQL legt die
+**Ein Waechter gegen einen Rueckfall: der MySQL-Introducer.** MySQL legte die
 String-Literale eines CHECK mit Zeichensatz-Introducer ab (`_latin1'…'`), der
-Reverse uebernimmt ihn, und die Validierung liest ihn als Spalte (`E012`,
-`schema compare` Exit 3). Der Lauf erkennt genau diesen Grund — `E012` an
-einer „Spalte", die ein MySQL-Zeichensatz mit Unterstrich ist (`_latin1`,
-`_utf8mb4`, …) — und weist den Dialekt als „ungueltig" aus; jeder andere Grund
-fuer Exit 3, auch eine andere unbekannte Spalte mit Unterstrich (`_tmp`),
-laesst ihn scheitern. Behoben wird das im Reader, nicht hier.
+Reverse uebernahm ihn, und die Validierung las ihn als Spalte (`E012`,
+`schema compare` Exit 3) — MySQL war damit als „ungueltig" ausgewiesen. Seit
+der Reader den Servertext in neutrale Schreibweise bringt (`spec/type-mapping.md`,
+Abschnitt 4.5) tritt der Zustand nicht mehr auf. Die Erkennung bleibt im
+Skript: sie ist eng auf genau diesen Grund gefasst — `E012` an einer „Spalte",
+die ein MySQL-Zeichensatz mit Unterstrich ist (`_latin1`, `_utf8mb4`, …) —, und
+jeder andere Grund fuer Exit 3, auch eine andere unbekannte Spalte mit
+Unterstrich (`_tmp`), laesst den Lauf scheitern. Kommt der Zustand zurueck,
+faellt er als Abweichung von der Zahl unten auf.
 
-Gemessener Stand (2026-09-17, `d-migrate:dev` aus dem Arbeitsstand des
-fuenften Compare-Bauabschnitts, 1.8.0-SNAPSHOT; Oracle nicht gefahren):
+Gemessener Stand (2026-09-17, `d-migrate:dev` 1.8.0-SNAPSHOT mit dem
+normalisierten MySQL-Reverse; Oracle nicht gefahren):
 
 | Dialekt | Funde | Zusammensetzung |
 | ------- | ----- | --------------- |
 | PostgreSQL | 1 | 1 Tabelle: LIKE-CHECK (`~~`, Schluesselwort-Schreibweise) und Werteliste (`= ANY (ARRAY[…])`, bewusst ein Fund) |
-| MySQL | — | Reverse ungueltig (`E012`, Introducer) |
+| MySQL | 5 | 3 Tabellen (drei CHECKs in MySQLs Kleinschreibung, Enum inline statt als Typ, `legacy_serial_syntax` der Identity-Spalte — der Roundtrip erklaert keine Praeferenz), 1 Typ (Enum), 1 Sicht |
 | SQL Server | 5 | 4 Tabellen (UNIQUE auf ungebundenem `text`, LIKE-Schreibweise, Werteliste als `OR`-Kette, abgeleiteter Typ der berechneten Spalte, Enum als Text mit CHECK, Identity-Modus `always`), 1 Typ |
 | SQLite | 6 | 4 Tabellen (Typdynamik, Identity als `identifier(auto)`), 1 Typ, 1 Sicht |
 | Oracle | — | nicht gefahren |
@@ -214,19 +217,21 @@ Versionsfund zwischen Datei und Reverse faellt im Roundtrip auf.
 **Zustaende statt Zahlen.** Zwei Arten von Zellen messen nichts und sind als
 Zustand gepinnt — verschwindet der Zustand, ist die Erwartung neu zu pinnen:
 
-- `INVALID` / `E012-introducer`: das Reverse der Quelle ist ungueltig (MySQL,
-  siehe oben); die CLI erzeugt daraus keine DDL.
+- `INVALID` / `E012-introducer`: das Reverse der Quelle ist ungueltig; die CLI
+  erzeugt daraus keine DDL. **Tritt seit dem normalisierten MySQL-Reverse nicht
+  mehr auf**; die Erkennung bleibt als Waechter gegen einen Rueckfall (siehe
+  oben).
 - `APPLY-FAIL` / `apply:<Fehlerklasse>`: das Ziel lehnt die aus dem Reverse
   der Quelle erzeugte DDL ab — ein Befund ueber Reader oder Generator.
 
 Gemessener Stand (2026-09-17, `d-migrate:dev` 1.8.0-SNAPSHOT mit der
-Server-Praeferenz `identity` fuer MySQL, zwei Laeufe identisch; Oracle nicht
+Server-Praeferenz `identity` fuer MySQL und dem MySQL-Seed; Oracle nicht
 gefahren):
 
 | Quelle \ Ziel | PostgreSQL | MySQL | SQL Server | SQLite |
 | ------------- | ---------- | ----- | ---------- | ------ |
 | PostgreSQL | — | 6 | 5 | 13 |
-| MySQL | `INVALID` | — | `INVALID` | `INVALID` |
+| MySQL | 4 | — | 8 | 11 |
 | SQL Server | `APPLY-FAIL` | `APPLY-FAIL` | — | 9 |
 | SQLite | 3 | `APPLY-FAIL` | `APPLY-FAIL` | — |
 
@@ -235,15 +240,24 @@ gefahren):
 | PostgreSQL → MySQL | 6: 3 CHECKs und die Berechnung entfallen, Index-Praedikat entfaellt, CHECK mit `OR`/`IS NULL` in Kleinschreibung; die Identity-Spalte meldet nichts (sie unterschiede sich nur im Sequenznamen) | Generator rendert PostgreSQL-Casts nicht (`E053`), MySQL kennt kein Index-Praedikat (`E057`), Schluesselwort-Schreibweise; ohne die Server-Praeferenz kaeme `legacy_serial_syntax` als siebter Fund dazu |
 | PostgreSQL → SQL Server | 5: 3 CHECKs und die Berechnung entfallen, Identity-Modus `always` | Casts wie oben, `W140` |
 | PostgreSQL → SQLite | 13: 8 Typen, 3 CHECKs, Berechnung, Identity | SQLite-Typaffinitaet, Casts wie oben |
+| MySQL → PostgreSQL | 4: Werteliste (`in (…)` gegen `= ANY (ARRAY[…])`), CHECK mit `OR`/`IS NULL` in Kleinschreibung, zweimal `W137` | bewusst ein Fund (Darstellung eines Enums), Schluesselwort-Schreibweise, zwei unentscheidbare Berechnungsausdruecke (Fixture und Seed) |
+| MySQL → SQL Server | 8: dieselben zwei CHECKs, Identity-Modus `always`, abgeleiteter Typ **und** Nullbarkeit der beiden berechneten Spalten, zweimal `W137` | `W140`; SQL Server leitet Typ und `NOT NULL` einer berechneten Spalte aus dem Ausdruck ab |
+| MySQL → SQLite | 11: 10 Typen, Identity | SQLite-Typaffinitaet (Laenge, `decimal`, `datetime`), Identity als `identifier(auto)` |
 | SQL Server → SQLite | 9: 8 Typen, Identity | SQLite-Typaffinitaet |
 | SQLite → PostgreSQL | 3: LIKE-CHECK (`~~`), Werteliste (`= ANY`), `W137` | Schluesselwort-Schreibweise, bewusst ein Fund, unentscheidbarer Berechnungsausdruck |
 | SQL Server → PostgreSQL / MySQL | `APPLY-FAIL` (`syntax error at or near "["`, `ERROR 1064`) | der Reverse liest die berechnete Spalte mit T-SQL-Quoting (`[quantity]*[unit_price]`); die Portabilitaetspruefung (`E053`) erkennt das nicht, und der Generator uebernimmt es |
 | SQLite → MySQL | `APPLY-FAIL` (`ERROR 1170`) | der SQLite-Reverse kennt keine Laenge; MySQL indiziert `TEXT` nicht ohne Praefix |
 | SQLite → SQL Server | `APPLY-FAIL` (`Msg 2714`) | der SQLite-Reverse nennt die Fremdschluessel jeder Tabelle `fk_0` …; SQL Server verlangt eindeutige Namen |
 
-**Native Typ-Seeds** je Dialekt sind vorgesehen: liegt
-`fixtures/seeds/<dialekt>.sql`, wendet der Lauf sie nach der Fixture an, und
-sie gehen in den Reverse der Quelle ein. Heute gibt es keine.
+**Native Typ-Seeds** je Dialekt: liegt `fixtures/seeds/<dialekt>.sql`, wendet
+der Lauf sie nach der Fixture an, und sie gehen in den Reverse der Quelle ein.
+Sie tragen, was nur dieser Dialekt so zurueckgibt. Jede Seed-Spalte traegt eine
+Anmerkung **ausserhalb** der `CREATE`-Anweisung (SQLite speichert Kommentare im
+Tabellentext, und die Scanner dort kennen keine): erwartete neutrale Form der
+Quelle, je Ziel die Form im Reverse des Ziels und der Code, den der
+Generate-Report dafuer traegt — oder ausdruecklich „keinen". Das Format steht
+im Kopf jeder Seed-Datei. Heute gibt es `mysql.sql` (P6: CHECK und
+Berechnungsausdruck mit Zeichenkette, eine nicht kleingeschriebene Spalte).
 
 **Oracle** faehrt nur mit `make mcp-e2e-compare-matrix-oracle`; ohne diesen
 Aufruf werden seine Zellen weder gemessen noch geprueft. Der Workflow

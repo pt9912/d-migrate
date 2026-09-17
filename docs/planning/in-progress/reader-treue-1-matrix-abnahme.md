@@ -728,6 +728,54 @@ INTEGRATION_TASKS=":test:integration-mysql:test"` grün (8 min 30 s);
 jedem Commit.
 
 
+### Neu-Pin P6 — die MySQL-Zeile misst (2026-09-17)
+
+Ein eigener Commit, nur die Wirkung von P6. **Sechs Schlüssel**, alle in der
+MySQL-Zeile; keine andere Zelle hat sich bewegt (der Lauf meldete genau diese
+sechs Abweichungen und keine nicht pinnbare):
+
+| Schlüssel | vorher | nachher |
+| --- | --- | --- |
+| `CELL_MYSQL_POSTGRESQL` / `CODES_…` | `INVALID` / `E012-introducer` | `4` / `TABLE_CONSTRAINT_CHANGED:2 W137:2` |
+| `CELL_MYSQL_MSSQL` / `CODES_…` | `INVALID` / `E012-introducer` | `8` / `TABLE_COLUMN_GENERATION_CHANGED:1 TABLE_COLUMN_REQUIRED_TIGHTENED:1 TABLE_COLUMN_TYPE_CHANGED:2 TABLE_CONSTRAINT_CHANGED:2 W137:2` |
+| `CELL_MYSQL_SQLITE` / `CODES_…` | `INVALID` / `E012-introducer` | `11` / `TABLE_COLUMN_GENERATION_CHANGED:1 TABLE_COLUMN_TYPE_CHANGED:10` |
+
+**Jeder neue Fund ist erklärt** (die MySQL-Zeile war nie gemessen):
+
+- zwei CHECK-Funde auf PostgreSQL und SQL Server: die Werteliste (`in (…)`
+  gegen `= ANY (ARRAY[…])` bzw. gegen die `OR`-Kette) ist bewusst ein Fund
+  ([ADR 0055](../../adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md)),
+  der zweite hängt allein an der Schlüsselwort-Schreibweise (MySQL gibt
+  `is null` klein zurück) — die offene Frage aus
+  [ADR 0056](../../adr/0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md);
+- `W137` zweimal: der Berechnungsausdruck der Fixture und der des Seeds sind
+  ohne Herkunft nicht entscheidbar;
+- auf SQL Server zusätzlich der Identity-Modus (`W140` im Generate-Report) und
+  **Typ und Nullbarkeit** beider berechneter Spalten: SQL Server leitet beides
+  aus dem Ausdruck ab (`decimal(23,2)`, `text(5)`, `NOT NULL`) — derselbe
+  Posten D1, den Plan 4 misst;
+- auf SQLite die Typaffinität (zehn Spalten) und die Identity als
+  `identifier(auto)` — dieselbe Klasse wie in den drei anderen SQLite-Spalten
+  der Matrix.
+
+**Kein Objekt fällt weg:** die Generate-Reports der drei Zellen nennen
+`skipped_objects: 0`; der CHECK mit Zeichenkette und die berechnete Spalte des
+Seeds werden auf allen drei Zielen gerendert. Der Reverse-Report der Quelle
+trägt `R205` (Präferenz) und `R330`.
+
+**Der Seed** (`fixtures/seeds/mysql.sql`, DoD 6) trägt den Fall M10 — eine
+berechnete Spalte, deren Ausdruck eine Zeichenkette enthält — und eine nicht
+kleingeschriebene Spalte (`Menge`) in zwei CHECKs. Der Ausdruck ist bewusst ein
+`CASE`: ein `CONCAT` wäre auf PostgreSQL nicht immutabel und machte die Zelle
+`APPLY-FAIL`. Das Anmerkungsformat, das P0 auswertet, steht im Kopf der Datei.
+
+**Roundtrip** (`make mcp-e2e-roundtrip`, DoD 7): MySQL ist nicht mehr
+„ungültig", sondern misst **5** Funde — drei CHECKs in MySQLs Kleinschreibung,
+das Enum inline statt als Typ und `legacy_serial_syntax` (der Roundtrip
+erklärt keine Präferenz). README nachgezogen, dort und in der Erwartungsdatei
+steht jetzt, dass `INVALID` ein Wächter gegen einen Rückfall ist.
+
+
 ## Akzeptanzkriterien
 
 1. Ein MySQL-Reverse mit Introducer, Backslash-Escape und Backtick-Quoting
