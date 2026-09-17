@@ -41,9 +41,9 @@ in CI, an einer Aufrufstelle, die lokal nie gebaut wurde.
   Test-Tasks und meldet **trotzdem** `BUILD SUCCESSFUL` — ein grüner Lauf, der
   nichts geprüft hat. `make integration` ergänzt sie automatisch.
 - **`make doc-immutable RANGE=<base>..HEAD`** friert den Kern akzeptierter ADRs
-  ein (`status: accepted`; nur die Statuszeile darf noch auf `superseded by`
-  wechseln). Es braucht eine Commit-Range und läuft deshalb **nicht** in
-  `make docs-check` mit — ein grünes `docs-check` sagt darüber nichts. Vor dem
+  ein (`status: accepted` und `superseded by`; nur die Statuszeile darf noch
+  von `accepted` auf `superseded by` wechseln). Es braucht eine Commit-Range
+  und läuft deshalb **nicht** in `make docs-check` mit — ein grünes `docs-check` sagt darüber nichts. Vor dem
   Push mit `RANGE=origin/main..HEAD` fahren.
 
   Die Falle ist nicht der Body, sondern das Frontmatter: verschiebt sich ein
@@ -53,11 +53,13 @@ in CI, an einer Aufrufstelle, die lokal nie gebaut wurde.
   **zweite** Kernänderung: der Lauf ist rot, der nächste Push ohne weitere
   Berührung wieder grün.
 
-  **Im Arbeits-Repo ist das Gate still grün** — eine echte Kernänderung ergibt
-  dort 0 Befunde (gemessen; Befund in
-  `docs/planning/open/doc-immutable-lokal-still-gruen.md`). Belastbar ist der
-  Lauf nur gegen einen frischen `git clone --no-local`, mit demselben
-  `docker run` wie im Target.
+  Das Target prüft gegen einen frischen `git clone --no-local`, nicht gegen
+  das Arbeits-Repo: dort liest d-check die `loose-*`-Packs aus
+  `git maintenance` nicht und meldete eine Kernänderung still mit 0 Befunden
+  (`docs/planning/done/doc-immutable-lokal-still-gruen.md`). `RANGE` wird
+  vorher im Arbeits-Repo aufgelöst (`origin/main`, `HEAD~n` gehen); geprüft
+  werden nur Commits. `STAGED=1` überträgt den Index in den Klon und prüft ihn
+  gegen `HEAD`. Nicht gestagte Änderungen zählen in keinem Modus.
 
 ## Grün heißt nicht geprüft
 
