@@ -45,10 +45,13 @@ import dev.dmigrate.server.core.principal.PrincipalContext
  * the undecidable case to equal (no false alarm), so `status` can read
  * `identical` while a `W137` finding still says the question was open.
  *
- * When findings exceed `maxInlineFindings` or the rendered envelope
- * would breach `maxToolResponseBytes`, the full diff JSON is written
- * via [ArtifactSink] and surfaced as `diffArtifactRef`; `truncated`
- * is `true` and the inline `findings` list is capped.
+ * When findings exceed `maxInlineFindings` or the rendered result would
+ * breach half of `maxToolResponseBytes`, the full result is written via
+ * [ArtifactSink] as a `COMPARE` artefact — the same form the job
+ * `schema_compare_start` publishes ([SchemaCompareOutcome.artifact]) — and
+ * surfaced as `diffArtifactRef`; `truncated` is `true` and the inline
+ * `findings` list is capped. `truncated` never stands without the reference
+ * (the output schema pins that).
  */
 internal class SchemaCompareHandler(
     private val resolver: SchemaSourceResolver,
@@ -74,34 +77,9 @@ internal class SchemaCompareHandler(
         val outcome = SchemaCompareOutcome.of(source, target, comparator)
 
         val allFindings = outcome.findings
-        val cap = limits.maxInlineFindings
-        val findingsTruncated = allFindings.size > cap
-        val inlineFindings = if (findingsTruncated) allFindings.take(cap) else allFindings
-        val identical = outcome.identical
-        // The artefact carries the full UNCAPPED finding list (same
-        // per-finding shape as inline) so an agent reading
-        // `diffArtifactRef` sees every change beyond `maxInlineFindings`.
-        // Richer per-column structure stays in `SchemaDiff` and would
-        // require a stable wire projection — out of scope for LF-012 / LN-027 / LN-028 / LN-038.
-        val inlineDiffThreshold = limits.maxToolResponseBytes / 2
-        val diffArtifactRef = if (!identical) {
-            val diffBytes = gson.toJson(allFindings).toByteArray(Charsets.UTF_8)
-            if (diffBytes.size > inlineDiffThreshold) {
-                artifactSink.writeReadOnly(
-                    principal = context.principal,
-                    kind = ArtifactKind.DIFF,
-                    contentType = "application/json",
-                    filename = "schema-diff.json",
-                    content = diffBytes,
-                    maxArtifactBytes = limits.maxArtifactUploadBytes,
-                ).render()
-            } else {
-                null
-            }
-        } else {
-            null
-        }
-        val sizeTruncated = diffArtifactRef != null
+        val findingsTruncated = allFindings.size > limits.maxInlineFindings
+        val inlineFindings = if (findingsTruncated) allFindings.take(limits.maxInlineFindings) else allFindings
+        val diffArtifactRef = overflowArtifact(outcome, findingsTruncated, context.principal)
 
         return ToolCallOutcome.Success(
             content = listOf(
@@ -111,7 +89,7 @@ internal class SchemaCompareHandler(
                         buildPayload(
                             outcome = outcome,
                             inlineFindings = inlineFindings,
-                            truncated = findingsTruncated || sizeTruncated,
+                            truncated = findingsTruncated || diffArtifactRef != null,
                             diffArtifactRef = diffArtifactRef,
                             requestId = context.requestId,
                         ),
@@ -120,6 +98,30 @@ internal class SchemaCompareHandler(
                 ),
             ),
         )
+    }
+
+    /**
+     * Das Ueberlauf-Artefakt: das ungekuerzte Ergebnis, sobald die Antwort es
+     * nicht mehr ganz traegt — mehr Funde als `maxInlineFindings` oder mehr
+     * als die Haelfte von `maxToolResponseBytes`. Ohne Unterschied und ohne
+     * gekuerzte Funde gibt es keines.
+     */
+    private fun overflowArtifact(
+        outcome: SchemaCompareOutcome,
+        findingsTruncated: Boolean,
+        principal: PrincipalContext,
+    ): String? {
+        val content = gson.toJson(outcome.artifact()).toByteArray(Charsets.UTF_8)
+        val tooLarge = !outcome.identical && content.size > limits.maxToolResponseBytes / 2
+        if (!findingsTruncated && !tooLarge) return null
+        return artifactSink.writeReadOnly(
+            principal = principal,
+            kind = ArtifactKind.COMPARE,
+            contentType = "application/json",
+            filename = "schema-compare.json",
+            content = content,
+            maxArtifactBytes = limits.maxArtifactUploadBytes,
+        ).render()
     }
 
     private fun parseArguments(raw: JsonElement?): SchemaCompareArgs {

@@ -66,13 +66,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   klein (`kind: enum -> domain`).
 
 - **`schema_compare_start` vergleicht wie `schema_compare` und legt dieselben
-  Funde ab.** Der Job verglich wortgleich und veroeffentlichte den internen
-  Vergleichsbaum als JSON — mit Feldnamen und Typdarstellungen des Codes. Er
-  setzt jetzt dieselbe Dialekt-Schreibweise gleich wie `schema compare`, blendet
-  dieselbe Server-Buchhaltung aus, und sein Artefakt (Art `diff`) ist ein
+  Funde ab — unter einer eigenen Artefakt-Art.** Der Job verglich wortgleich
+  und veroeffentlichte den internen Vergleichsbaum als JSON unter der Art
+  `DIFF` — mit Feldnamen und Typdarstellungen des Codes. Er setzt jetzt
+  dieselbe Dialekt-Schreibweise gleich wie `schema compare`, blendet dieselbe
+  Server-Buchhaltung aus, und sein Artefakt hat die **neue Art `COMPARE`**: ein
   Objekt mit `status`, `summary` und `findings` — dieselben Eintraege wie die
-  Antwort von `schema_compare`, ungekuerzt. **Fuer Abnehmer des Artefakts ein
-  Vertragswechsel**; das Format steht in `spec/mcp-server.md`.
+  Antwort von `schema_compare`, ungekuerzt. Dieselbe Art und Form hat jetzt
+  das Ueberlauf-Artefakt von `schema_compare` (`diffArtifactRef`), bisher ein
+  nacktes Array unter `DIFF`. **Fuer Abnehmer beider Artefakte ein
+  Vertragswechsel:** wer nach `DIFF` sucht, findet nichts mehr, statt die
+  neue Form falsch zu lesen; `artifact_list` kennt den Filterwert `COMPARE`.
+  Ein Upload kann die Art `COMPARE` nicht tragen. Das Format steht in
+  `spec/mcp-server.md`.
 
 - **Ein unbenannter Index heisst im Fund-Pfad nach seinen Schluesseln ohne
   Punkt.** Ein Ausdrucks-Schluessel stand dort bisher roh und mit Praefix
@@ -82,6 +88,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Sortierrichtung und Praefixlaenge.
 
 ### Fixed
+
+- **`schema_compare` legt bei mehr Funden als `maxInlineFindings` das
+  Ueberlauf-Artefakt an.** Bisher entstand es nur, wenn das Ergebnis mehr als
+  die Haelfte von `maxToolResponseBytes` belegte; darunter war `truncated`
+  gesetzt, `diffArtifactRef` fehlte, und die Funde jenseits der Grenze waren
+  nirgends abrufbar — entgegen dem Ausgabeschema, das zu `truncated` den
+  Verweis verlangt.
 
 - **`schema_compare` meldet die Reverse-Markierung nicht mehr als Aenderung.**
   Zwei Reverse-Artefakte aus verschiedenen Dialekten tragen verschiedene

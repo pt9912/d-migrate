@@ -640,8 +640,11 @@ nützlich in Skripten.
   liest solche Spalten als `always`. Enthält ein Ausdruck einen Kommentar,
   Dollar-Quoting oder einen Backslash, vergleicht d-migrate ihn wortgleich.
 - **Über MCP gilt dasselbe:** `schema_compare` und der Job
-  `schema_compare_start` vergleichen wie die CLI; der Job legt seine Funde als
-  Artefakt ab (Art `diff`).
+  `schema_compare_start` vergleichen wie die CLI. Der Job legt sein Ergebnis
+  als Artefakt der Art `COMPARE` ab (`status`, `summary`, alle `findings`);
+  dasselbe Artefakt nennt `schema_compare` in `diffArtifactRef`, wenn die
+  Antwort nicht alle Funde trägt. Die Präferenz `serial`/`identity` liest der
+  MCP-Server aus seiner Konfigurationsdatei.
 - **Eine Änderung am Berechnungsausdruck einer `computed`-Spalte kann der
   Vergleich nicht immer sehen.** Ohne Herkunfts-Overlay oder Server-Sandkasten
   ist die Frage unentscheidbar — der Vergleich meldet dann bewusst **keinen**

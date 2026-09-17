@@ -11,7 +11,6 @@ import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.profiling.model.DatabaseProfile
 import dev.dmigrate.server.application.fingerprint.JsonValue
 import dev.dmigrate.server.application.job.DataProfileJobWorker
-import dev.dmigrate.server.application.job.JobArtifactPublisher
 import dev.dmigrate.server.application.job.JobStartRequest
 import dev.dmigrate.server.application.job.SchemaReverseJobWorker
 import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
@@ -54,7 +53,6 @@ import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.sql.DriverManager
 import java.time.Clock
-import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 
@@ -92,7 +90,7 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
         reloaded.deleteExpired(NOW.minusSeconds(1)) shouldBe 0
     }
 
-    test("McpCoreJobWorkerFactory publishes schema_compare_start diff artifact from schema refs") {
+    test("McpCoreJobWorkerFactory publishes the schema_compare_start artifact (kind COMPARE) from schema refs") {
         val artifactStore = InMemoryArtifactStore()
         val contentStore = InMemoryArtifactContentStore()
         val schemaStore = InMemorySchemaStore()
@@ -118,6 +116,8 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
         val success = outcome.shouldBeInstanceOf<JobWorkerOutcome.Succeeded>()
         success.artifactRefs.shouldHaveSize(1)
         success.artifactRefs.first() shouldStartWith "dmigrate://tenants/acme/artifacts/art-"
+        artifactStore.findById(TENANT, success.artifactRefs.first().substringAfterLast('/'))!!.kind shouldBe
+            ArtifactKind.COMPARE
         diffStore.list(TENANT, dev.dmigrate.server.core.pagination.PageRequest(pageSize = 10)).items
             .shouldHaveSize(1)
     }
@@ -327,7 +327,7 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
         val contentStore = InMemoryArtifactContentStore()
         val schemaStore = InMemorySchemaStore()
         val profileStore = InMemoryProfileStore()
-        val publisher = mcpJobArtifactPublisher(
+        val artifacts = jobArtifacts(
             artifactStore = artifactStore,
             contentStore = contentStore,
             schemaStore = schemaStore,
@@ -336,8 +336,9 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
         )
         val job = operationRecord("job-publish", SchemaReverseStartHandler.OPERATION)
 
-        val schemaRef = publisher.publish(job, SchemaDefinition(name = "orders", version = "1.0"))
-        val profileRef = publisher.publish(job, DatabaseProfile(databaseProduct = "postgresql", tables = emptyList()))
+        val schemaRef = artifacts.schemas().publish(job, SchemaDefinition(name = "orders", version = "1.0"))
+        val profileRef = artifacts.profiles()
+            .publish(job, DatabaseProfile(databaseProduct = "postgresql", tables = emptyList()))
 
         schemaRef shouldStartWith "dmigrate://tenants/acme/artifacts/art-"
         profileRef shouldStartWith "dmigrate://tenants/acme/artifacts/art-"
@@ -353,18 +354,40 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
         }
     }
 
-    test("Mcp job artifact publisher rejects unsupported payloads") {
-        val publisher = mcpJobArtifactPublisher(
-            artifactStore = InMemoryArtifactStore(),
-            contentStore = InMemoryArtifactContentStore(),
+    test("the compare publisher writes the COMPARE form and indexes it as a diff with both refs") {
+        // Welche Nutzlast welcher Publisher nimmt, prueft der Compiler
+        // (JobArtifactPublisher<P>); eine Laufzeit-Verzweigung nach dem Typ
+        // gibt es nicht mehr.
+        val artifactStore = InMemoryArtifactStore()
+        val contentStore = InMemoryArtifactContentStore()
+        val diffStore = InMemoryDiffStore()
+        val artifacts = jobArtifacts(
+            artifactStore = artifactStore,
+            contentStore = contentStore,
             schemaStore = InMemorySchemaStore(),
             profileStore = InMemoryProfileStore(),
-            diffStore = InMemoryDiffStore(),
+            diffStore = diffStore,
         )
+        val job = compareJobRecord()
+        val finding = mapOf("severity" to "info", "code" to "TABLE_ADDED", "path" to "tables.t", "message" to "m")
+        val ref = artifacts.comparisons("dmigrate://tenants/acme/schemas/s1", "dmigrate://tenants/acme/schemas/s2")
+            .publish(job, SchemaCompareOutcome(identical = false, findings = listOf(finding)))
 
-        shouldThrow<IllegalStateException> {
-            publisher.publish(operationRecord("job-bad-payload", SchemaReverseStartHandler.OPERATION), "unsupported")
-        }.message shouldBe "unsupported MCP job artifact payload type: kotlin.String"
+        val record = artifactStore.findById(TENANT, ref.substringAfterLast('/')).shouldNotBeNull()
+        record.kind shouldBe ArtifactKind.COMPARE
+        record.managedArtifact.contentType shouldBe "application/json"
+        val content = contentStore.openRangeRead(record.managedArtifact.artifactId, 0, record.managedArtifact.sizeBytes)
+            .readAllBytes().toString(Charsets.UTF_8)
+        val json = com.google.gson.JsonParser.parseString(content).asJsonObject
+        json.keySet() shouldBe setOf("status", "summary", "findings")
+        json.get("status").asString shouldBe "different"
+        json.getAsJsonArray("findings").single().asJsonObject.get("code").asString shouldBe "TABLE_ADDED"
+        diffStore.list(TENANT, PageRequest(pageSize = 10)).items.single().run {
+            artifactRef shouldBe record.managedArtifact.artifactId
+            sourceRef shouldBe "dmigrate://tenants/acme/schemas/s1"
+            targetRef shouldBe "dmigrate://tenants/acme/schemas/s2"
+            jobRef shouldBe job.resourceUri.render()
+        }
     }
 
     test("McpCoreJobWorkerFactory returns null for operations it does not own") {
@@ -507,26 +530,17 @@ private fun unusedConnectionSecretResolver() = object : ConnectionSecretResolver
         error("connection resolver must not be used in this test")
 }
 
-private fun mcpJobArtifactPublisher(
+private fun jobArtifacts(
     artifactStore: InMemoryArtifactStore,
     contentStore: InMemoryArtifactContentStore,
     schemaStore: InMemorySchemaStore,
     profileStore: InMemoryProfileStore,
     diffStore: InMemoryDiffStore,
-): JobArtifactPublisher {
-    val constructor = Class.forName("dev.dmigrate.mcp.registry.McpJobArtifactPublisher")
-        .declaredConstructors
-        .first { it.parameterCount == 9 }
-    constructor.isAccessible = true
-    return constructor.newInstance(
-        artifactStore,
-        contentStore,
-        schemaStore,
-        profileStore,
-        diffStore,
-        Clock.fixed(NOW, ZoneOffset.UTC),
-        Duration.ofHours(24),
-        null,
-        null,
-    ) as JobArtifactPublisher
-}
+) = McpJobArtifacts(
+    artifactStore = artifactStore,
+    artifactContentStore = contentStore,
+    schemaStore = schemaStore,
+    profileStore = profileStore,
+    diffStore = diffStore,
+    clock = Clock.fixed(NOW, ZoneOffset.UTC),
+)

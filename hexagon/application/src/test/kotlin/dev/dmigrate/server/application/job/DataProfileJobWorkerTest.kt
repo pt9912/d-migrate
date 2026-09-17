@@ -39,7 +39,7 @@ class DataProfileJobWorkerTest : FunSpec({
         }
 
     fun publisher(prefix: String = "dmigrate://tenants/acme/artifacts/") =
-        JobArtifactPublisher { job, _ -> prefix + job.managedJob.jobId }
+        JobArtifactPublisher<Any> { job, _ -> prefix + job.managedJob.jobId }
 
     test("Happy path: materialize → profile → publish → Succeeded") {
         var profileWasCalled = false
@@ -111,7 +111,7 @@ class DataProfileJobWorkerTest : FunSpec({
                 source.cancel("after-profile")
                 emptyProfile
             },
-            publisher = JobArtifactPublisher { _, _ ->
+            publisher = JobArtifactPublisher<Any> { _, _ ->
                 publishCalled = true
                 "dmigrate://x"
             },
@@ -159,7 +159,7 @@ class DataProfileJobWorkerTest : FunSpec({
             connectionRef = connectionRef,
             materializer = materializer(),
             runProfile = { _, _ -> emptyProfile },
-            publisher = JobArtifactPublisher { _, _ -> error("artifact-store-unavailable") },
+            publisher = JobArtifactPublisher<Any> { _, _ -> error("artifact-store-unavailable") },
         )
         shouldThrow<IllegalStateException> {
             worker.execute(Fixtures.jobRecord("j-7"), CancellationToken.none())

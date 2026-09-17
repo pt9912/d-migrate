@@ -303,51 +303,6 @@ class SchemaCompareHandlerTest : FunSpec({
         }
     }
 
-    test("large diff is moved to a tenant-scoped artefact and returned as diffArtifactRef") {
-        // Tiny tool-response budget plus many changed tables forces
-        // the artefact fallback. Each table change projects into one
-        // finding; the inline cap is also tiny so both truncation
-        // paths fire — `truncated=true` either way.
-        val tinyLimits = McpLimitsConfig(maxToolResponseBytes = 200, maxInlineFindings = 3)
-        val setup = setup(tinyLimits)
-        val leftTables = (1..20).map { "t$it" }.toTypedArray()
-        val rightTables = (21..40).map { "t$it" }.toTypedArray()
-        stageSchema(setup, "left", schemaJson("orders", *leftTables))
-        stageSchema(setup, "right", schemaJson("orders", *rightTables))
-        val json = parsePayload(
-            setup.handler.handle(
-                ToolCallContext(
-                    "schema_compare",
-                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
-                    PRINCIPAL,
-                ),
-            ),
-        )
-        json.get("status").asString shouldBe "different"
-        json.get("truncated").asBoolean shouldBe true
-        json.get("diffArtifactRef").asString shouldStartWith "dmigrate://tenants/acme/artifacts/"
-        json.getAsJsonArray("findings").size() shouldBe 3
-    }
-
-    test("identical schemas never produce a diff artefact even at tiny limits") {
-        // Defensive: only the `different` branch should ever spend
-        // artefact-store quota on the diff — `identical` carries no
-        // finding payload.
-        val setup = setup(McpLimitsConfig(maxToolResponseBytes = 200))
-        stageSchema(setup, "left", schemaJson("orders", "t1"))
-        stageSchema(setup, "right", schemaJson("orders", "t1"))
-        val json = parsePayload(
-            setup.handler.handle(
-                ToolCallContext(
-                    "schema_compare",
-                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
-                    PRINCIPAL,
-                ),
-            ),
-        )
-        json.has("diffArtifactRef") shouldBe false
-    }
-
     test("column added produces TABLE_COLUMN_ADDED info finding (LF-012 / LN-027 / LN-028 / LN-038)") {
         val setup = setup()
         stageSchema(setup, "left", singleTable(columns = mapOf("id" to "\"type\":\"identifier\"")))

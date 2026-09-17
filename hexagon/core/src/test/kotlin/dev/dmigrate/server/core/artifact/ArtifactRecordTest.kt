@@ -102,6 +102,7 @@ class ArtifactRecordTest : FunSpec({
             ArtifactKind.SCHEMA,
             ArtifactKind.PROFILE,
             ArtifactKind.DIFF,
+            ArtifactKind.COMPARE,
             ArtifactKind.DATA_EXPORT,
             ArtifactKind.UPLOAD_INPUT,
             ArtifactKind.OTHER,

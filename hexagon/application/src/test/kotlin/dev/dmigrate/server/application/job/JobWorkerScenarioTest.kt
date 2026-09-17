@@ -135,7 +135,7 @@ class JobWorkerScenarioTest : FunSpec({
     }
 
     fun stubPublisher(prefix: String = "dmigrate://tenants/acme/artifacts/") =
-        JobArtifactPublisher { job, _ -> prefix + job.managedJob.jobId }
+        JobArtifactPublisher<Any> { job, _ -> prefix + job.managedJob.jobId }
 
     test("End-to-End Reverse-Job: orchestrator commits QUEUED → dispatcher runs worker → SUCCEEDED + artifact") {
         val fx = Fixture(policyEffect = PolicyEffect.Allow)
@@ -247,7 +247,7 @@ class JobWorkerScenarioTest : FunSpec({
             comparator = { _, _ ->
                 error("must not reach compare after cancel")
             },
-            publisher = dev.dmigrate.server.application.job.JobArtifactPublisher { _, _ ->
+            publisher = dev.dmigrate.server.application.job.JobArtifactPublisher<Any> { _, _ ->
                 publishCalled = true
                 "dmigrate://x"
             },

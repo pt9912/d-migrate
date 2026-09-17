@@ -29,7 +29,7 @@ class DataProfileJobWorker(
     private val connectionRef: String,
     private val materializer: ConnectionMaterializer,
     private val runProfile: (ConnectionConfig, CancellationToken) -> DatabaseProfile,
-    private val publisher: JobArtifactPublisher,
+    private val publisher: JobArtifactPublisher<DatabaseProfile>,
 ) : JobWorker {
 
     override fun execute(job: JobRecord, token: CancellationToken): JobWorkerOutcome {

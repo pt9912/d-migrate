@@ -304,7 +304,10 @@ Antwort — nicht im Transport-Signal. `schema_generate` setzt `status`
 kamen (dieselbe Regel, die die CLI mit Exit `8` beendet, sofern nicht
 `--allow-incomplete` gesetzt ist); `schema_validate` setzt `valid=false` bei
 einem ungültigen Schema; `schema_compare` setzt `status=different` bei
-Unterschieden. `isError=true` bleibt fachlichen Ausführungsfehlern
+Unterschieden. Trägt die Antwort nicht alle Funde, setzt `schema_compare`
+`truncated` und nennt in `diffArtifactRef` ein Artefakt der Art `COMPARE` —
+dieselbe Form (`status`, `summary`, alle `findings`), die der Job
+`schema_compare_start` ablegt. `isError=true` bleibt fachlichen Ausführungsfehlern
 (`VALIDATION_ERROR`, `POLICY_REQUIRED`, `TENANT_SCOPE_DENIED`, …) vorbehalten —
 ein fehlgeschlagener Aufruf trägt die `findings` und die erzeugte DDL nicht.
 

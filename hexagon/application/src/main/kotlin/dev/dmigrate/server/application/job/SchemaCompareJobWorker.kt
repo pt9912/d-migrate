@@ -35,8 +35,10 @@ import dev.dmigrate.server.ports.JobWorkerOutcome
  * [comparator] und [publisher]: pure Funktionen ueber [SchemaDefinition]
  * bzw. das Vergleichsergebnis [R]. Was das Ergebnis ist, entscheidet die
  * Baustelle: der MCP-Job veroeffentlicht dieselben Funde wie das Werkzeug
- * `schema_compare`, nicht den rohen `SchemaDiff`. Compare ist CPU-bound
- * aber im Regelfall schnell; der Cancel-Checkpoint VOR Compare reicht.
+ * `schema_compare`, nicht den rohen `SchemaDiff`. [R] bindet beide
+ * aneinander — der Publisher nimmt genau, was der Comparator liefert.
+ * Compare ist CPU-bound aber im Regelfall schnell; der Cancel-Checkpoint
+ * VOR Compare reicht.
  */
 class SchemaCompareJobWorker<R : Any>(
     private val sourceRef: String,
@@ -47,7 +49,7 @@ class SchemaCompareJobWorker<R : Any>(
         token: CancellationToken,
     ) -> SchemaDefinition,
     private val comparator: (SchemaDefinition, SchemaDefinition) -> R,
-    private val publisher: JobArtifactPublisher,
+    private val publisher: JobArtifactPublisher<R>,
 ) : JobWorker {
 
     override fun execute(job: JobRecord, token: CancellationToken): JobWorkerOutcome {

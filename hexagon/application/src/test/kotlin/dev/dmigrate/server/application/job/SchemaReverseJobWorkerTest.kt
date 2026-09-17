@@ -39,7 +39,7 @@ class SchemaReverseJobWorkerTest : FunSpec({
     }
 
     fun publisher(prefix: String = "dmigrate://tenants/acme/artifacts/") =
-        JobArtifactPublisher { job, _ -> prefix + job.managedJob.jobId }
+        JobArtifactPublisher<Any> { job, _ -> prefix + job.managedJob.jobId }
 
     test("Happy path: materialize → read → publish → Succeeded") {
         var readWasCalled = false
@@ -117,7 +117,7 @@ class SchemaReverseJobWorkerTest : FunSpec({
                 source.cancel("after-read")
                 emptySchema
             },
-            publisher = JobArtifactPublisher { _, _ ->
+            publisher = JobArtifactPublisher<Any> { _, _ ->
                 publishCalled = true
                 "dmigrate://x"
             },
@@ -170,7 +170,7 @@ class SchemaReverseJobWorkerTest : FunSpec({
             connectionRef = connectionRef,
             materializer = materializer(),
             readSchema = { _, _ -> emptySchema },
-            publisher = JobArtifactPublisher { _, _ -> error("artifact-store-unavailable") },
+            publisher = JobArtifactPublisher<Any> { _, _ -> error("artifact-store-unavailable") },
         )
         shouldThrow<IllegalStateException> {
             worker.execute(Fixtures.jobRecord("j-7"), CancellationToken.none())

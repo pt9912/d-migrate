@@ -24,7 +24,7 @@ class SchemaCompareJobWorkerTest : FunSpec({
     val identicalDiff = SchemaComparator().compare(emptySchema, emptySchema)
 
     fun publisher(prefix: String = "dmigrate://tenants/acme/artifacts/") =
-        JobArtifactPublisher { job, _ -> prefix + job.managedJob.jobId }
+        JobArtifactPublisher<Any> { job, _ -> prefix + job.managedJob.jobId }
 
     test("Happy path: load source + load target → compare → publish → Succeeded") {
         val refsSeen = mutableListOf<String>()
@@ -124,7 +124,7 @@ class SchemaCompareJobWorkerTest : FunSpec({
                 source.cancel("after-compare")
                 identicalDiff
             },
-            publisher = JobArtifactPublisher { _, _ ->
+            publisher = JobArtifactPublisher<Any> { _, _ ->
                 publishCalled = true
                 "dmigrate://x"
             },
@@ -207,7 +207,7 @@ class SchemaCompareJobWorkerTest : FunSpec({
                 targetRef = targetRef,
                 schemaLoader = { _, _, _ -> emptySchema },
                 comparator = { _, _ -> identicalDiff },
-                publisher = JobArtifactPublisher { _, _ -> error("artifact-store-down") },
+                publisher = JobArtifactPublisher<Any> { _, _ -> error("artifact-store-down") },
             ).execute(Fixtures.jobRecord("j-10"), CancellationToken.none())
         }
     }
@@ -221,7 +221,7 @@ class SchemaCompareJobWorkerTest : FunSpec({
             targetRef = targetRef,
             schemaLoader = { ref, _, _ -> if (ref == sourceRef) schemaA else schemaB },
             comparator = SchemaComparator()::compare,
-            publisher = JobArtifactPublisher { job, payload ->
+            publisher = JobArtifactPublisher<Any> { job, payload ->
                 publisherPayload = payload
                 "dmigrate://tenants/acme/artifacts/${job.managedJob.jobId}"
             },

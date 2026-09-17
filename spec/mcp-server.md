@@ -245,11 +245,20 @@ Praefix bei unvollstaendiger Markierung, antwortet `schema_compare` mit
 `right.schemaRef`); der Job `schema_compare_start` endet mit Status `FAILED`
 und dem Fehlercode `RUNNER_ERROR`, ohne Artefakt.
 
-Der Job `schema_compare_start` veroeffentlicht **ein** Artefakt der Art `diff`
-(`application/json`): ein Objekt mit `status` (`identical`/`different`),
-`summary` und `findings` — dieselben Felder und Eintraege wie die Antwort von
-`schema_compare`, aber nie gekuerzt; `truncated` und `diffArtifactRef` gibt es
-dort nicht.
+**Das Compare-Artefakt.** Der Job `schema_compare_start` veroeffentlicht
+**ein** Artefakt der Art `COMPARE` (`application/json`). Dasselbe Artefakt legt
+`schema_compare` an, wenn seine Antwort das Ergebnis nicht mehr ganz traegt —
+mehr Funde als `maxInlineFindings` oder mehr als die Haelfte von
+`maxToolResponseBytes` —, und nennt es in `diffArtifactRef` (`truncated:
+true`; ohne Verweis ist `truncated` nie gesetzt). Beide haben **eine** Form:
+ein Objekt mit `status` (`identical`/`different`), `summary` und `findings` —
+dieselben Felder und Eintraege wie die Antwort von `schema_compare`, aber nie
+gekuerzt. `truncated`, `diffArtifactRef` und `executionMeta` beschreiben einen
+Aufruf, nicht das Ergebnis, und stehen nicht im Artefakt. Das Artefakt des
+Jobs steht zusaetzlich im Index `diffs` (`diff_list`,
+`dmigrate://tenants/{tenantId}/diffs/{diffId}`, Feld `artifactRef`). Die Art
+`DIFF` erzeugt der Server nicht; ein Upload (`artifact_upload_init`) kann die
+Art `COMPARE` nicht tragen.
 
 Jeder Eintrag in `findings` traegt `severity`, `code`, `path` und `message`,
 optional `details` mit `before` und/oder `after`:
@@ -342,7 +351,7 @@ Es gibt fuenf Discovery-Tools, alle mit
 | Tool             | Collection-Feld | Wire-spezifische Filter                              |
 | ---------------- | --------------- | ---------------------------------------------------- |
 | `job_list`       | `jobs`          | `status`, `operation`, `createdAfter/Before`         |
-| `artifact_list`  | `artifacts`     | `kind`, `jobId`, `createdAfter/Before`               |
+| `artifact_list`  | `artifacts`     | `kind` (`SCHEMA`, `PROFILE`, `DIFF`, `COMPARE`, `DATA_EXPORT`, `UPLOAD_INPUT`, `OTHER`), `jobId`, `createdAfter/Before` |
 | `schema_list`    | `schemas`       | `jobId`, `createdAfter/Before`                       |
 | `profile_list`   | `profiles`      | `jobId`, `createdAfter/Before`                       |
 | `diff_list`      | `diffs`         | `jobId`, `sourceRef`, `targetRef`, `createdAfter/Before` |

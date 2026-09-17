@@ -9,7 +9,25 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
 enum class ArtifactKind {
     SCHEMA,
     PROFILE,
+
+    /**
+     * Kein Server-Pfad erzeugt diese Art mehr. Bis 1.7.x trug sie das Ergebnis
+     * von `schema_compare_start` als serialisierten internen Vergleichsbaum und
+     * das Ueberlauf-Artefakt von `schema_compare` als nacktes Array. Beide
+     * stehen jetzt unter [COMPARE]; die Art bleibt als Filterwert und fuer
+     * gespeicherte oder hochgeladene Artefakte bestehen.
+     */
     DIFF,
+
+    /**
+     * Das Ergebnis eines Schema-Vergleichs in **einer** Form
+     * (`spec/mcp-server.md`): ein Objekt mit `status`, `summary` und den
+     * ungekuerzten `findings` — das Ergebnis von `schema_compare_start` und
+     * das Ueberlauf-Artefakt von `schema_compare`. Eine eigene Art, damit ein
+     * Abnehmer der alten Form unter [DIFF] nichts findet, statt falsch zu
+     * lesen. Nur der Server erzeugt sie; ein Upload kann sie nicht tragen.
+     */
+    COMPARE,
     DATA_EXPORT,
     UPLOAD_INPUT,
     OTHER,

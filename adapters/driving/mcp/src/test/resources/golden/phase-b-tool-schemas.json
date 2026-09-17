@@ -120,6 +120,7 @@
             "SCHEMA",
             "PROFILE",
             "DIFF",
+            "COMPARE",
             "DATA_EXPORT",
             "UPLOAD_INPUT",
             "OTHER"
@@ -153,6 +154,7 @@
                   "SCHEMA",
                   "PROFILE",
                   "DIFF",
+                  "COMPARE",
                   "DATA_EXPORT",
                   "UPLOAD_INPUT",
                   "OTHER"

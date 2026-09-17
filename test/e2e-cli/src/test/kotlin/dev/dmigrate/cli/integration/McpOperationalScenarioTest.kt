@@ -40,8 +40,9 @@ import kotlin.io.path.deleteIfExists
  * 2. **Compare success** — second `schema_reverse_start` against the
  *    same SQLite file (different idempotency key) followed by
  *    `schema_compare_start` with both schema URIs; assert the
- *    compare job reaches terminal SUCCEEDED with a published diff
- *    artefact.
+ *    compare job reaches terminal SUCCEEDED with a published compare
+ *    artefact — kind `COMPARE`, read back via `resources/read` and
+ *    `artifact_chunk_get`, form `{status, summary, findings}`.
  * 3. **Validation/policy blocker** — call `schema_reverse_start` under
  *    the default fail-closed policy; the handler rejects with
  *    `POLICY_DENIED` before any worker dispatch.
@@ -236,10 +237,36 @@ class McpOperationalScenarioTest : FunSpec({
                     compareStatusJson.get("status").asString shouldBe "SUCCEEDED"
                     compareStatusJson.get("terminal").asBoolean shouldBe true
                 }
-                withClue("compare job must surface one diff artefact; body=$compareStatusText") {
+                withClue("compare job must surface one compare artefact; body=$compareStatusText") {
                     val artifacts = compareStatusJson.getAsJsonArray("artifacts")
                     artifacts.size() shouldBe 1
                     artifacts.get(0).asString shouldContain "/artifacts/"
+                }
+
+                // Art und Form des Artefakts (spec/mcp-server.md): eine eigene
+                // Art und ein Objekt mit status, summary und den ungekuerzten
+                // findings. Zwei Reverses derselben Datei sind identisch.
+                val compareArtifactUri = compareStatusJson.getAsJsonArray("artifacts").get(0).asString
+                val artifactMeta = readJsonContent(harness, compareArtifactUri)
+                withClue("the compare artefact has its own kind; body=$artifactMeta") {
+                    artifactMeta.get("kind").asString shouldBe "COMPARE"
+                    artifactMeta.get("contentType").asString shouldBe "application/json"
+                }
+                val chunkText = harness.toolsCall(
+                    "artifact_chunk_get",
+                    JsonObject().apply {
+                        addProperty("artifactId", compareArtifactUri.substringAfterLast('/'))
+                        addProperty("chunkId", "0")
+                    },
+                ).content.firstOrNull()?.text ?: error("artifact_chunk_get had no text content")
+                val artefact = JsonParser.parseString(
+                    JsonParser.parseString(chunkText).asJsonObject.get("text").asString,
+                ).asJsonObject
+                withClue("the compare artefact is {status, summary, findings}; body=$artefact") {
+                    artefact.keySet() shouldBe setOf("status", "summary", "findings")
+                    artefact.get("status").asString shouldBe "identical"
+                    artefact.get("summary").asString shouldBe "Schemas are identical."
+                    artefact.getAsJsonArray("findings").size() shouldBe 0
                 }
             } finally {
                 harness.close()

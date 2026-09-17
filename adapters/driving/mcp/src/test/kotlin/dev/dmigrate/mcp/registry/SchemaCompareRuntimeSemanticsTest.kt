@@ -80,7 +80,7 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
     val contentStore = InMemoryArtifactContentStore()
     val schemaStore = InMemorySchemaStore()
     val clock = Clock.fixed(Instant.parse("2026-05-02T12:00:00Z"), ZoneOffset.UTC)
-    val tool = McpRuntimeRegistries.defaultToolRegistry(
+    fun toolWith(limits: McpLimitsConfig) = McpRuntimeRegistries.defaultToolRegistry(
         McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
@@ -89,10 +89,11 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
             schemaStore = schemaStore,
             jobStore = InMemoryJobStore(),
             quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
-            limits = McpLimitsConfig(),
+            limits = limits,
             clock = clock,
         ),
     ).findHandler("schema_compare")!!
+    val tool = toolWith(McpLimitsConfig())
     val jobs = McpCoreJobWorkerFactory(
         connectionStore = InMemoryConnectionReferenceStore(),
         connectionSecretResolver = object : ConnectionSecretResolver {
@@ -148,8 +149,8 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
         raw = payload.toString(),
     )
 
-    fun viaTool(left: String, right: String): Result {
-        val outcome = tool.handle(
+    fun toolPayload(left: String, right: String, handler: ToolHandler = tool): JsonObject {
+        val outcome = handler.handle(
             ToolCallContext(
                 "schema_compare",
                 JsonParser.parseString("""{"left":{"schemaRef":"${ref(left)}"},"right":{"schemaRef":"${ref(right)}"}}""")
@@ -158,7 +159,16 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
             ),
         )
         val text = outcome.shouldBeInstanceOf<ToolCallOutcome.Success>().content.single().text!!
-        return parse(JsonParser.parseString(text).asJsonObject)
+        return JsonParser.parseString(text).asJsonObject
+    }
+
+    fun viaTool(left: String, right: String): Result = parse(toolPayload(left, right))
+
+    /** Art und Inhalt eines Artefakts. */
+    fun artifact(artifactId: String): Pair<ArtifactKind, JsonObject> {
+        val record = artifactStore.findById(TENANT, artifactId)!!
+        val bytes = contentStore.openRangeRead(artifactId, 0, record.managedArtifact.sizeBytes).readAllBytes()
+        return record.kind to JsonParser.parseString(bytes.toString(Charsets.UTF_8)).asJsonObject
     }
 
     fun jobRecord() = Fixtures.jobRecord("job-compare").copy(
@@ -168,7 +178,7 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
         ),
     )
 
-    fun viaJob(left: String, right: String): Result {
+    fun jobArtifact(left: String, right: String): JsonObject {
         val request = JobStartRequest(
             toolName = SchemaCompareStartHandler.TOOL_NAME,
             tenantId = TENANT,
@@ -187,11 +197,13 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
         val outcome = worker.execute(jobRecord(), CancellationTokenSource.create().token)
         val artifactId = outcome.shouldBeInstanceOf<JobWorkerOutcome.Succeeded>().artifactRefs.single()
             .substringAfterLast('/')
-        val record = artifactStore.findById(TENANT, artifactId)!!
-        record.kind shouldBe ArtifactKind.DIFF
-        val bytes = contentStore.openRangeRead(artifactId, 0, record.managedArtifact.sizeBytes).readAllBytes()
-        return parse(JsonParser.parseString(bytes.toString(Charsets.UTF_8)).asJsonObject)
+        val (kind, content) = artifact(artifactId)
+        kind shouldBe ArtifactKind.COMPARE
+        content.keySet() shouldBe setOf("status", "summary", "findings")
+        return content
     }
+
+    fun viaJob(left: String, right: String): Result = parse(jobArtifact(left, right))
 
     /** Beide Oberflaechen, mit dem Namen der Oberflaeche im Fehlerfall. */
     fun bothSurfaces(left: String, right: String, check: (Result) -> Unit) {
@@ -229,6 +241,8 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
     stage("my-authored", schema("shop", "1", pgCheck, pgPredicate, myIdentity))
     stage("broken-marker", schema(myName, "1", pgCheck, pgPredicate, mySerial))
     stage("renamed", schema("shop2", "2", pgCheck, pgPredicate, pgIdentity))
+    // Vier Funde, jeder mit `details`: Version, Erzeugung, Index-Praedikat, CHECK.
+    stage("many", schema("shop", "2", "quantity > 1", "status <> 'VOID'", """{"type":"identity","mode":"always"}"""))
 
     context("die Faltung roher Ausdruecke ist verdrahtet") {
 
@@ -297,6 +311,28 @@ class SchemaCompareRuntimeSemanticsTest : FunSpec({
             val failure = shouldThrow<ValidationErrorException> { viaTool("broken-marker", "pg-authored") }
             failure.violations.single().field shouldBe "left.schemaRef"
             shouldThrow<IllegalStateException> { viaJob("pg-authored", "broken-marker") }
+        }
+    }
+
+    context("dieselben Funde, ungekuerzt, in einer Form (Verifikation Runde 3, M1; Review L1)") {
+
+        test("the job publishes the tool's findings in full — every entry, with its details") {
+            val tool = viaTool("pg-spelling", "many")
+            tool.findings.size() shouldBe 4
+            tool.findings.all { (it as JsonObject).has("details") } shouldBe true
+            val job = viaJob("pg-spelling", "many")
+            job.findings shouldBe tool.findings
+            job.status shouldBe tool.status
+        }
+
+        test("the tool's overflow artefact is the job's artefact: kind COMPARE, same form, same content") {
+            val payload = toolPayload("pg-spelling", "many", toolWith(McpLimitsConfig(maxInlineFindings = 2)))
+            payload.get("truncated").asBoolean shouldBe true
+            payload.getAsJsonArray("findings").size() shouldBe 2
+            val (kind, overflow) = artifact(payload.get("diffArtifactRef").asString.substringAfterLast('/'))
+            kind shouldBe ArtifactKind.COMPARE
+            overflow shouldBe jobArtifact("pg-spelling", "many")
+            overflow.getAsJsonArray("findings") shouldBe toolPayload("pg-spelling", "many").getAsJsonArray("findings")
         }
     }
 

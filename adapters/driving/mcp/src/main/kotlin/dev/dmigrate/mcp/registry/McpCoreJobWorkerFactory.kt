@@ -1,6 +1,5 @@
 package dev.dmigrate.mcp.registry
 
-import com.google.gson.GsonBuilder
 import dev.dmigrate.cli.commands.CompareSide
 import dev.dmigrate.cli.commands.SchemaCompareSemantics
 import dev.dmigrate.core.diff.SchemaDiff
@@ -12,28 +11,20 @@ import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
-import dev.dmigrate.format.SchemaFileResolver
-import dev.dmigrate.format.report.ProfileReportWriter
 import dev.dmigrate.mcp.schema.SchemaContentLoader
 import dev.dmigrate.mcp.schema.SchemaSource
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.profiling.ProfilingAdapterSet
-import dev.dmigrate.profiling.model.DatabaseProfile
 import dev.dmigrate.profiling.service.ProfileDatabaseService
 import dev.dmigrate.profiling.service.ProfileTableService
 import dev.dmigrate.server.application.connection.ConnectionMaterializer
 import dev.dmigrate.server.application.fingerprint.JsonValue
 import dev.dmigrate.server.application.job.DataProfileJobWorker
-import dev.dmigrate.server.application.job.JobArtifactPublisher
 import dev.dmigrate.server.application.job.JobStartRequest
 import dev.dmigrate.server.application.job.JobWorkerFactory
 import dev.dmigrate.server.application.job.SchemaCompareJobWorker
 import dev.dmigrate.server.application.job.SchemaReverseJobWorker
-import dev.dmigrate.server.core.artifact.ArtifactKind
-import dev.dmigrate.server.core.artifact.ArtifactRecord
-import dev.dmigrate.server.core.artifact.ManagedArtifact
 import dev.dmigrate.server.core.job.JobRecord
-import dev.dmigrate.server.core.job.JobVisibility
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.resource.ResourceKind
@@ -43,19 +34,11 @@ import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
 import dev.dmigrate.server.ports.ConnectionReferenceStore
 import dev.dmigrate.server.ports.ConnectionSecretResolver
-import dev.dmigrate.server.ports.DiffIndexEntry
 import dev.dmigrate.server.ports.DiffStore
-import dev.dmigrate.server.ports.ProfileIndexEntry
 import dev.dmigrate.server.ports.ProfileStore
 import dev.dmigrate.server.ports.ResolvedConnection
-import dev.dmigrate.server.ports.SchemaIndexEntry
 import dev.dmigrate.server.ports.SchemaStore
-import dev.dmigrate.server.ports.WriteArtifactOutcome
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.time.Clock
-import java.time.Duration
-import java.util.UUID
 
 /**
  * Production worker factory for the 0.9.6 controlled read-side jobs.
@@ -107,7 +90,7 @@ class McpCoreJobWorkerFactory(
                         .read(pool, readOptions(config.dialect)).schema
                 }
             },
-            publisher = publisher(),
+            publisher = artifacts.schemas(),
         )
 
     private fun profileWorker(request: JobStartRequest) =
@@ -127,7 +110,7 @@ class McpCoreJobWorkerFactory(
                         )
                 }
             },
-            publisher = publisher(),
+            publisher = artifacts.profiles(),
         )
 
     private fun compareWorker(request: JobStartRequest) =
@@ -155,7 +138,7 @@ class McpCoreJobWorkerFactory(
             // Dieselbe Semantik und dieselben Funde wie das Werkzeug
             // `schema_compare` (SchemaCompareSemantics, SchemaCompareOutcome).
             comparator = { left, right -> SchemaCompareOutcome.ofSchemas(left, right, compareSchemas) },
-            publisher = publisher(
+            publisher = artifacts.comparisons(
                 sourceRef = request.requiredString("sourceUri"),
                 targetRef = request.requiredString("targetUri"),
             ),
@@ -235,18 +218,13 @@ class McpCoreJobWorkerFactory(
         )
     }
 
-    private fun publisher(
-        sourceRef: String? = null,
-        targetRef: String? = null,
-    ): JobArtifactPublisher = McpJobArtifactPublisher(
+    private val artifacts = McpJobArtifacts(
         artifactStore = artifactStore,
         artifactContentStore = artifactContentStore,
         schemaStore = schemaStore,
         profileStore = profileStore,
         diffStore = diffStore,
         clock = clock,
-        sourceRef = sourceRef,
-        targetRef = targetRef,
     )
 
     private fun parseResourceUri(ref: String): ResourceUriParseResult = ServerResourceUri.parse(ref)
@@ -264,149 +242,4 @@ class McpCoreJobWorkerFactory(
         (payload.fields[field] as? JsonValue.Arr)?.items
             ?.mapNotNull { (it as? JsonValue.Str)?.value }
             ?.takeIf { it.isNotEmpty() }
-}
-
-private class McpJobArtifactPublisher(
-    private val artifactStore: ArtifactStore,
-    private val artifactContentStore: ArtifactContentStore,
-    private val schemaStore: SchemaStore,
-    private val profileStore: ProfileStore,
-    private val diffStore: DiffStore,
-    private val clock: Clock,
-    private val ttl: Duration = Duration.ofHours(24),
-    private val sourceRef: String? = null,
-    private val targetRef: String? = null,
-) : JobArtifactPublisher {
-
-    private val gson = GsonBuilder().disableHtmlEscaping().create()
-
-    override fun publish(job: JobRecord, payload: Any): String {
-        val rendered = renderPayload(payload)
-        val artifactId = "art-${UUID.randomUUID().toString().replace("-", "").take(16)}"
-        val bytes = rendered.bytes
-        val write = artifactContentStore.write(artifactId, ByteArrayInputStream(bytes), bytes.size.toLong())
-        val sha256 = when (write) {
-            is WriteArtifactOutcome.Stored -> write.sha256
-            is WriteArtifactOutcome.AlreadyExists -> write.existingSha256
-            is WriteArtifactOutcome.SizeMismatch ->
-                error("artifact size mismatch while publishing job '${job.managedJob.jobId}'")
-            is WriteArtifactOutcome.Conflict ->
-                error("artifact id conflict while publishing job '${job.managedJob.jobId}'")
-        }
-
-        val now = clock.instant()
-        val artifactUri = ServerResourceUri(job.tenantId, ResourceKind.ARTIFACTS, artifactId)
-        artifactStore.save(
-            ArtifactRecord(
-                managedArtifact = ManagedArtifact(
-                    artifactId = artifactId,
-                    filename = rendered.filename,
-                    contentType = rendered.contentType,
-                    sizeBytes = bytes.size.toLong(),
-                    sha256 = sha256,
-                    createdAt = now,
-                    expiresAt = now.plus(ttl),
-                ),
-                kind = rendered.kind,
-                tenantId = job.tenantId,
-                ownerPrincipalId = job.ownerPrincipalId,
-                visibility = JobVisibility.OWNER,
-                resourceUri = artifactUri,
-                jobRef = job.resourceUri.render(),
-            ),
-        )
-        indexPayload(job, rendered, artifactId, artifactUri, sha256, now)
-        return artifactUri.render()
-    }
-
-    private fun renderPayload(payload: Any): RenderedArtifact = when (payload) {
-        is SchemaDefinition -> RenderedArtifact(
-            kind = ArtifactKind.SCHEMA,
-            filename = "schema-${safeId()}.yaml",
-            contentType = "application/x-yaml",
-            bytes = ByteArrayOutputStream().also { SchemaFileResolver.codecForFormat("yaml").write(it, payload) }
-                .toByteArray(),
-        )
-        is DatabaseProfile -> RenderedArtifact(
-            kind = ArtifactKind.PROFILE,
-            filename = "profile-${safeId()}.json",
-            contentType = "application/json",
-            bytes = ProfileReportWriter().renderJson(payload).toByteArray(Charsets.UTF_8),
-        )
-        // `schema_compare_start`: dieselben Felder wie die Antwort von
-        // `schema_compare` (`spec/mcp-server.md`), ungekuerzt.
-        is SchemaCompareOutcome -> RenderedArtifact(
-            kind = ArtifactKind.DIFF,
-            filename = "diff-${safeId()}.json",
-            contentType = "application/json",
-            bytes = gson.toJson(payload.artifact()).toByteArray(Charsets.UTF_8),
-        )
-        else -> error("unsupported MCP job artifact payload type: ${payload::class.qualifiedName}")
-    }
-
-    private fun indexPayload(
-        job: JobRecord,
-        rendered: RenderedArtifact,
-        artifactId: String,
-        artifactUri: ServerResourceUri,
-        sha256: String,
-        now: java.time.Instant,
-    ) {
-        when (rendered.kind) {
-            ArtifactKind.SCHEMA -> schemaStore.save(
-                SchemaIndexEntry(
-                    schemaId = "sch-${artifactId.removePrefix("art-")}",
-                    tenantId = job.tenantId,
-                    resourceUri = ServerResourceUri(job.tenantId, ResourceKind.SCHEMAS, "sch-${artifactId.removePrefix("art-")}"),
-                    artifactRef = artifactId,
-                    displayName = "Schema from ${job.managedJob.operation}",
-                    createdAt = now,
-                    expiresAt = now.plus(ttl),
-                    jobRef = job.resourceUri.render(),
-                    format = "yaml",
-                    origin = job.managedJob.operation,
-                    sizeBytes = rendered.bytes.size.toLong(),
-                    hash = sha256,
-                ),
-            )
-            ArtifactKind.PROFILE -> profileStore.save(
-                ProfileIndexEntry(
-                    profileId = "prof-${artifactId.removePrefix("art-")}",
-                    tenantId = job.tenantId,
-                    resourceUri = ServerResourceUri(job.tenantId, ResourceKind.PROFILES, "prof-${artifactId.removePrefix("art-")}"),
-                    artifactRef = artifactId,
-                    displayName = "Profile from ${job.managedJob.operation}",
-                    createdAt = now,
-                    expiresAt = now.plus(ttl),
-                    jobRef = job.resourceUri.render(),
-                ),
-            )
-            ArtifactKind.DIFF -> diffStore.save(
-                DiffIndexEntry(
-                    diffId = "diff-${artifactId.removePrefix("art-")}",
-                    tenantId = job.tenantId,
-                    resourceUri = ServerResourceUri(job.tenantId, ResourceKind.DIFFS, "diff-${artifactId.removePrefix("art-")}"),
-                    artifactRef = artifactId,
-                    sourceRef = sourceRef ?: "",
-                    targetRef = targetRef ?: "",
-                    displayName = "Diff from ${job.managedJob.operation}",
-                    createdAt = now,
-                    expiresAt = now.plus(ttl),
-                    jobRef = job.resourceUri.render(),
-                    statusSummary = "DIFF_PUBLISHED",
-                ),
-            )
-            else -> Unit
-        }
-        require(artifactUri.kind == ResourceKind.ARTIFACTS)
-    }
-
-    private fun safeId(): String = UUID.randomUUID().toString().replace("-", "").take(8)
-
-    private data class RenderedArtifact(
-        val kind: ArtifactKind,
-        val filename: String,
-        val contentType: String,
-        val bytes: ByteArray,
-    )
 }

@@ -76,7 +76,7 @@ internal object McpListToolSchemas {
         input = obj(
             *(
                 listInputCommon() + mapOf(
-                    "kind" to enumField("SCHEMA", "PROFILE", "DIFF", "DATA_EXPORT", "UPLOAD_INPUT", "OTHER"),
+                    "kind" to enumField("SCHEMA", "PROFILE", "DIFF", "COMPARE", "DATA_EXPORT", "UPLOAD_INPUT", "OTHER"),
                     "jobId" to stringField(),
                 )
                 ).entries.map { it.key to it.value }.toTypedArray(),
@@ -150,7 +150,7 @@ internal object McpListToolSchemas {
         "properties" to mapOf(
             "artifactId" to stringField(),
             "tenantId" to stringField(),
-            "artifactKind" to enumField("SCHEMA", "PROFILE", "DIFF", "DATA_EXPORT", "UPLOAD_INPUT", "OTHER"),
+            "artifactKind" to enumField("SCHEMA", "PROFILE", "DIFF", "COMPARE", "DATA_EXPORT", "UPLOAD_INPUT", "OTHER"),
             "jobId" to stringField(),
             "filename" to stringField(),
             "sizeBytes" to integerField(),

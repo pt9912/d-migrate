@@ -7,8 +7,10 @@ import dev.dmigrate.core.model.SchemaDefinition
 
 /**
  * Das Ergebnis eines Schema-Vergleichs, wie **beide** MCP-Oberflaechen es
- * tragen: das Werkzeug `schema_compare` (in seiner Antwort) und der Job
- * `schema_compare_start` (als Artefakt der Art `diff`).
+ * tragen: das Werkzeug `schema_compare` (in seiner Antwort und, wenn sie zu
+ * gross wird, als Ueberlauf-Artefakt) und der Job `schema_compare_start`
+ * (als Artefakt). Beide Artefakte haben die Art `COMPARE` und **eine** Form
+ * ([artifact]).
  *
  * [findings] ist die ungekuerzte Liste — die Funde des Diffs
  * ([SchemaCompareFindings]) und danach die `W137`-Funde. [identical] haengt
@@ -28,7 +30,14 @@ internal data class SchemaCompareOutcome(
         else -> "Schemas differ (${findings.size} change(s))."
     }
 
-    /** Der Inhalt des Job-Artefakts: dieselben Felder wie die Antwort von `schema_compare`, ungekuerzt. */
+    /**
+     * Der Inhalt eines Compare-Artefakts (`spec/mcp-server.md`): `status`,
+     * `summary` und `findings` wie in der Antwort von `schema_compare`, aber
+     * ungekuerzt. `truncated`, `diffArtifactRef` und `executionMeta` gehoeren
+     * zur Antwort eines Aufrufs, nicht zum Ergebnis — der Job hat keinen
+     * Aufruf, dessen `requestId` er tragen koennte, und dasselbe Ergebnis
+     * soll unabhaengig vom Weg dieselben Bytes ergeben.
+     */
     fun artifact(): Map<String, Any?> = linkedMapOf(
         "status" to status,
         "summary" to summary(),

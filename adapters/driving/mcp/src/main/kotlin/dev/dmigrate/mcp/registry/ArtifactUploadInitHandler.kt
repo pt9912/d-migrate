@@ -395,15 +395,15 @@ internal class ArtifactUploadInitHandler(
             "seed-data", "generic" -> ArtifactKind.UPLOAD_INPUT
             "schema" -> ArtifactKind.SCHEMA
             "ddl", "transform-script", "rules" -> ArtifactKind.OTHER
-            else -> runCatching { ArtifactKind.valueOf(raw.uppercase(Locale.US)) }.getOrElse {
-                throw ValidationErrorException(
+            else -> ArtifactKind.entries.firstOrNull { it.name == raw.uppercase(Locale.US) }
+                ?.takeIf { it !in SERVER_ONLY_KINDS }
+                ?: throw ValidationErrorException(
                     listOf(ValidationViolation(
                         "artifactKind",
-                        "must be one of ${ArtifactKind.entries.map { it.name }.sorted()} plus " +
+                        "must be one of ${(ArtifactKind.entries - SERVER_ONLY_KINDS).map { it.name }.sorted()} plus " +
                             "[ddl, generic, rules, schema, seed-data, transform-script]",
                     )),
                 )
-            }
         }
     }
 
@@ -705,6 +705,13 @@ internal class ArtifactUploadInitHandler(
 
         /** LF-010 / LF-013 / LN-009 / LN-011: policy-pflichtiger Init-Intent. */
         const val INTENT_JOB_INPUT: String = "job_input"
+
+        /**
+         * Arten, die nur der Server erzeugt: ein hochgeladenes Artefakt unter
+         * [ArtifactKind.COMPARE] saehe fuer einen Abnehmer aus wie ein
+         * Vergleichsergebnis (`spec/mcp-server.md`).
+         */
+        private val SERVER_ONLY_KINDS: Set<ArtifactKind> = setOf(ArtifactKind.COMPARE)
 
         /**
          * AP 6.13 stale-lease guard: a replay returning a TTL below

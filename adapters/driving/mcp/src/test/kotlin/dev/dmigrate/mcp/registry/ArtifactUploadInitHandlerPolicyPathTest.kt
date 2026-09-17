@@ -43,6 +43,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Clock
@@ -540,6 +541,18 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
             )
         }
         ex.violations.map { it.field } shouldContain "artifactKind"
+    }
+
+    test("artifactKind COMPARE erzeugt nur der Server -> VALIDATION_ERROR(artifactKind), ohne Session") {
+        for (kind in listOf("COMPARE", "compare")) {
+            val fx = Fixture()
+            val ex = shouldThrow<ValidationErrorException> {
+                fx.handler.handle(ToolCallContext("artifact_upload_init", jobInputArgs(artifactKind = kind), principal))
+            }
+            ex.violations.single().field shouldBe "artifactKind"
+            ex.violations.single().reason shouldNotContain "COMPARE"
+            fx.sessionStore.findById(tenant, "ups-1") shouldBe null
+        }
     }
 
     test("Ohne Orchestrator faellt job_input weiterhin auf LF-012 / LN-038 POLICY_REQUIRED zurueck") {

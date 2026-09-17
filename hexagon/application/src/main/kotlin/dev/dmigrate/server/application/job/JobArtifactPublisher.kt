@@ -21,15 +21,14 @@ import dev.dmigrate.server.core.job.JobRecord
  *   diese landet in [JobWorkerOutcome.Succeeded.artifactRefs] und
  *   ueber den Dispatcher in `ManagedJob.artifacts`.
  *
- * @param payload typabhaengig vom konkreten Tool. Schema-Reverse
- *   uebergibt eine `SchemaDefinition`, Data-Profile einen Report,
- *   Schema-Compare einen Diff. Der konkrete Publisher kennt den
- *   Payload-Typ und delegiert die Serialisierung an seine eigene
- *   Strategie. Hier `Any` belassen, damit die Port-Surface tool-
- *   neutral bleibt; konkrete Adapter-Klassen pruefen den Typ und
- *   werfen `IllegalArgumentException` bei Inkompatibilitaet.
+ * [P] ist der Nutzlasttyp des Workers: Schema-Reverse veroeffentlicht eine
+ * `SchemaDefinition`, Data-Profile einen Report, Schema-Compare das
+ * Vergleichsergebnis, das die Baustelle waehlt. Der Port bleibt damit
+ * tool-neutral, und trotzdem prueft der Compiler, dass ein Worker nur
+ * veroeffentlicht, was sein Publisher schreiben kann — ohne Typpruefung zur
+ * Laufzeit. Kontravariant (`in`): ein Publisher fuer `Any` passt ueberall.
  */
-fun interface JobArtifactPublisher {
+fun interface JobArtifactPublisher<in P : Any> {
 
-    fun publish(job: JobRecord, payload: Any): String
+    fun publish(job: JobRecord, payload: P): String
 }

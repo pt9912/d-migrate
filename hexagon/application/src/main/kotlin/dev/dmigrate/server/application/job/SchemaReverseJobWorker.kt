@@ -45,7 +45,7 @@ class SchemaReverseJobWorker(
     private val connectionRef: String,
     private val materializer: ConnectionMaterializer,
     private val readSchema: (ConnectionConfig, CancellationToken) -> SchemaDefinition,
-    private val publisher: JobArtifactPublisher,
+    private val publisher: JobArtifactPublisher<SchemaDefinition>,
 ) : JobWorker {
 
     override fun execute(job: JobRecord, token: CancellationToken): JobWorkerOutcome {
