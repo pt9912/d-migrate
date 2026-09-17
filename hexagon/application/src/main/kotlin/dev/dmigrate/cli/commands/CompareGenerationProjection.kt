@@ -40,20 +40,49 @@ fun compareProjectionDialect(vararg sourceDialects: DatabaseDialect?): DatabaseD
     sourceDialects.filterNotNull().firstOrNull { !DialectCapabilities.forDialect(it).namesIdentitySequences }
 
 /**
+ * Der Dialekt, dessen Serial-Naht ([capabilitySerialSyntaxCanonicalizer]) der
+ * symmetrische Vergleich benutzt: der der **ersten** Seite, deren Dialekt
+ * `SERIAL` und IDENTITY nicht unterscheidet
+ * (`DialectCapabilities.distinguishesSerialFromIdentity = false`: MySQL,
+ * SQLite, SQL Server, Oracle). Stammt eine Seite von dort, traegt
+ * `legacy_serial_syntax` keine Aussage ueber die Spalte, und der Vergleich
+ * wertet es auf **beiden** Seiten nicht. Unterscheiden beide Seiten (zwei
+ * PostgreSQL-Reverses) oder hat keine Seite einen Dialekt, `null`: das Flag
+ * bleibt ein Unterschied.
+ */
+fun compareSerialDialect(vararg sourceDialects: DatabaseDialect?): DatabaseDialect? =
+    sourceDialects.filterNotNull().firstOrNull { !DialectCapabilities.forDialect(it).distinguishesSerialFromIdentity }
+
+/**
  * Die Erzeugungs-Projektion von `schema compare` — `null` heisst strikt.
  *
- * **Nur der Namens-Teil** der Faehigkeits-Naht, nicht die ganze
- * [capabilityGenerationCanonicalizer]: deren Speicherform-Teil haengt an einer
- * Zielseite und ihrer Version, und die gibt es hier nicht. `stored` bleibt
- * deshalb sichtbar. Der Fingerabdruck und `schema migrate` sehen diese
- * Projektion nicht.
+ * Zwei Teile, beide an der Faehigkeits-Naht und beide nur fuer den
+ * symmetrischen Vergleich:
+ * - der **Namens-Teil** ([compareProjectionDialect],
+ *   [capabilityIdentitySequenceNameCanonicalizer]) — nicht die ganze
+ *   [capabilityGenerationCanonicalizer]: deren Speicherform-Teil haengt an
+ *   einer Zielseite und ihrer Version, und die gibt es hier nicht; `stored`
+ *   bleibt deshalb sichtbar;
+ * - der **Serial-Teil** ([compareSerialDialect],
+ *   [capabilitySerialSyntaxCanonicalizer]).
+ *
+ * Der Modus einer Identity-Spalte bleibt ein Unterschied. Der Fingerabdruck
+ * und `schema migrate` sehen diese Projektion nicht.
  */
 fun compareGenerationCanonicalizer(
     source: CompareSide,
     target: CompareSide,
-): ((ColumnGeneration?) -> ColumnGeneration?)? =
-    compareProjectionDialect(source.sourceDialect, target.sourceDialect)
+): ((ColumnGeneration?) -> ColumnGeneration?)? {
+    val names = compareProjectionDialect(source.sourceDialect, target.sourceDialect)
         ?.let { capabilityIdentitySequenceNameCanonicalizer(it) }
+    val serial = compareSerialDialect(source.sourceDialect, target.sourceDialect)
+        ?.let { capabilitySerialSyntaxCanonicalizer(it) }
+    return when {
+        names == null -> serial
+        serial == null -> names
+        else -> { generation -> serial(names(generation)) }
+    }
+}
 
 /**
  * Der Dialekt aus der Reverse-Markierung eines Schemas

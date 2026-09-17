@@ -103,8 +103,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Der Sequenzname einer Identity-Spalte ist in `schema compare` kein Fund
   mehr**, sobald eine Seite aus PostgreSQL oder Oracle zurueckgelesen wurde —
   dort vergibt ihn der Server. PostgreSQL gegen MySQL meldete
-  `sequenceName=public.customer_id_seq` gegen `null`. Der Modus bleibt ein
-  Unterschied, `schema migrate` und der Fingerabdruck sind unberuehrt.
+  `sequenceName=public.customer_id_seq` gegen `null`. **Ebenso
+  `legacy_serial_syntax`**, sobald eine Seite aus MySQL, SQLite, SQL Server
+  oder Oracle stammt: deren Reverse setzt das Feld pauschal, und eine
+  PostgreSQL-IDENTITY-Spalte erschien gegen MySQLs `AUTO_INCREMENT` weiter als
+  Aenderung. Der Modus bleibt ein Unterschied — gegen SQL Server auch dort, wo
+  es kein `BY DEFAULT` gibt (`W140`) —, `schema migrate` und der Fingerabdruck
+  sind unberuehrt.
 
 ### Removed
 

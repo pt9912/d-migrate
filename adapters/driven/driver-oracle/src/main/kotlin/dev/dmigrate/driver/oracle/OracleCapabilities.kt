@@ -61,6 +61,9 @@ object OracleCapabilities : DialectReadCapabilityProvider {
             // einen Namen.
             namesFullTextIndexes = true,
             namesIdentitySequences = false,
+            // Nur `GENERATED … AS IDENTITY`: der Reverse setzt
+            // `legacy_serial_syntax` nie.
+            distinguishesSerialFromIdentity = false,
             supportsBitmapIndexes = true,
             carriesFullTextConfiguration = false,
             carriesPartialIndexPredicate = false,

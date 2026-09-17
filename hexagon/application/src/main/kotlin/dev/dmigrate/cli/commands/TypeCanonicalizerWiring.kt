@@ -283,3 +283,22 @@ fun capabilityIdentitySequenceNameCanonicalizer(
         if (generation is ColumnGeneration.Identity) generation.copy(sequenceName = null) else generation
     }
 }
+
+/**
+ * Blendet `legacy_serial_syntax` einer IDENTITY-Spalte aus, wo der Dialekt
+ * `SERIAL` und IDENTITY nicht unterscheidet
+ * (`DialectCapabilities.distinguishesSerialFromIdentity`) — dort setzt sein
+ * Reverse das Flag pauschal, und es beschreibt den Reader, nicht die Spalte.
+ *
+ * Nur fuer den **symmetrischen** Vergleich (`schema compare`,
+ * [compareGenerationCanonicalizer]); der Fingerabdruck und `schema migrate`
+ * werten das Flag weiter, denn auf PostgreSQL rendert es eine andere Spalte.
+ */
+fun capabilitySerialSyntaxCanonicalizer(
+    dialect: DatabaseDialect,
+): (ColumnGeneration?) -> ColumnGeneration? {
+    if (DialectCapabilities.forDialect(dialect).distinguishesSerialFromIdentity) return { it }
+    return { generation ->
+        if (generation is ColumnGeneration.Identity) generation.copy(legacySerialSyntax = false) else generation
+    }
+}

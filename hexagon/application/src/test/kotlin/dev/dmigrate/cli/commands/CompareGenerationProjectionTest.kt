@@ -10,7 +10,9 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.PostgresServerVersion
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldNotBeEmpty
@@ -67,7 +69,7 @@ class CompareGenerationProjectionTest : FunSpec({
             compareProjectionDialect(DatabaseDialect.MYSQL, DatabaseDialect.MSSQL).shouldBeNull()
             compareProjectionDialect(DatabaseDialect.SQLITE, null).shouldBeNull()
             compareProjectionDialect(null, null).shouldBeNull()
-            compareGenerationCanonicalizer(side(mysql, DatabaseDialect.MYSQL), side(mysql, null)).shouldBeNull()
+            compareGenerationCanonicalizer(side(mysql, null), side(mysql, null)).shouldBeNull()
         }
     }
 
@@ -107,6 +109,82 @@ class CompareGenerationProjectionTest : FunSpec({
                 side(mysql.copy(mode = IdentityMode.ALWAYS), DatabaseDialect.MYSQL),
             ).tablesChanged.single().columnsChanged.single().generation!!
             (change.before as ColumnGeneration.Identity).sequenceName shouldBe "public.customer_id_seq"
+        }
+    }
+
+    context("P10: legacy_serial_syntax zaehlt nur, wo beide Seiten SERIAL und IDENTITY unterscheiden") {
+
+        val pgIdentity = ColumnGeneration.Identity(mode = IdentityMode.BY_DEFAULT, sequenceName = "public.orders_id_seq")
+
+        test("only PostgreSQL's reverse tells the two apart (capability per dialect)") {
+            DialectCapabilities.forDialect(DatabaseDialect.POSTGRESQL).distinguishesSerialFromIdentity shouldBe true
+            for (dialect in listOf(DatabaseDialect.MYSQL, DatabaseDialect.SQLITE, DatabaseDialect.MSSQL, DatabaseDialect.ORACLE)) {
+                withClue(dialect) { DialectCapabilities.forDialect(dialect).distinguishesSerialFromIdentity shouldBe false }
+            }
+        }
+
+        test("the first side whose dialect does not tell them apart") {
+            compareSerialDialect(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL) shouldBe DatabaseDialect.MYSQL
+            compareSerialDialect(DatabaseDialect.MSSQL, DatabaseDialect.POSTGRESQL) shouldBe DatabaseDialect.MSSQL
+            compareSerialDialect(DatabaseDialect.SQLITE, DatabaseDialect.ORACLE) shouldBe DatabaseDialect.SQLITE
+            compareSerialDialect(DatabaseDialect.POSTGRESQL, DatabaseDialect.POSTGRESQL).shouldBeNull()
+            compareSerialDialect(DatabaseDialect.POSTGRESQL, null).shouldBeNull()
+            compareSerialDialect(null, null).shouldBeNull()
+        }
+
+        test("a PostgreSQL IDENTITY against MySQL's AUTO_INCREMENT is no change") {
+            compare(side(pgIdentity, DatabaseDialect.POSTGRESQL), side(mysql, DatabaseDialect.MYSQL))
+                .tablesChanged.shouldBeEmpty()
+            compare(side(mysql, DatabaseDialect.MYSQL), side(pgIdentity, DatabaseDialect.POSTGRESQL))
+                .tablesChanged.shouldBeEmpty()
+        }
+
+        test("against SQL Server and SQLite the flag does not count either") {
+            val mssql = ColumnGeneration.Identity(mode = IdentityMode.ALWAYS)
+            compare(side(postgres.copy(mode = IdentityMode.ALWAYS), DatabaseDialect.POSTGRESQL), side(mssql, DatabaseDialect.MSSQL))
+                .tablesChanged.shouldBeEmpty()
+            compare(side(pgIdentity, DatabaseDialect.POSTGRESQL), side(mysql, DatabaseDialect.SQLITE))
+                .tablesChanged.shouldBeEmpty()
+        }
+
+        test("the mode stays a change: SQL Server reads BY DEFAULT as ALWAYS (W140)") {
+            val mssql = ColumnGeneration.Identity(mode = IdentityMode.ALWAYS)
+            compare(side(pgIdentity, DatabaseDialect.POSTGRESQL), side(mssql, DatabaseDialect.MSSQL))
+                .tablesChanged.single().columnsChanged.single().generation shouldNotBe null
+        }
+
+        test("two PostgreSQL reverses: SERIAL against IDENTITY stays a change") {
+            compare(side(postgres, DatabaseDialect.POSTGRESQL), side(pgIdentity, DatabaseDialect.POSTGRESQL))
+                .tablesChanged.shouldNotBeEmpty()
+        }
+
+        test("a PostgreSQL reverse against a hand-written schema, and two hand-written ones, stay strict") {
+            compare(side(pgIdentity, DatabaseDialect.POSTGRESQL), side(pgIdentity.copy(legacySerialSyntax = true), null))
+                .tablesChanged.shouldNotBeEmpty()
+            compare(side(pgIdentity.copy(sequenceName = null), null), side(mysql, null))
+                .tablesChanged.shouldNotBeEmpty()
+        }
+
+        test("a MySQL reverse against a hand-written schema does not count the flag") {
+            compare(side(mysql, DatabaseDialect.MYSQL), side(ColumnGeneration.Identity(), null))
+                .tablesChanged.shouldBeEmpty()
+        }
+
+        test("the reported change still carries the unprojected flag") {
+            val change = compare(
+                side(pgIdentity, DatabaseDialect.POSTGRESQL),
+                side(mysql.copy(mode = IdentityMode.ALWAYS), DatabaseDialect.MYSQL),
+            ).tablesChanged.single().columnsChanged.single().generation!!
+            (change.after as ColumnGeneration.Identity).legacySerialSyntax shouldBe true
+        }
+
+        test("migrate's seam, the strict comparator and the fingerprint keep the flag") {
+            capabilityGenerationCanonicalizer(DatabaseDialect.MYSQL)(mysql) shouldBe mysql
+            capabilityGenerationCanonicalizer(DatabaseDialect.MSSQL)(mysql) shouldBe mysql
+            SchemaComparator().compare(schemaWith(pgIdentity.copy(sequenceName = null)), schemaWith(mysql))
+                .tablesChanged.shouldNotBeEmpty()
+            MigrationFingerprint.compute(schemaWith(ColumnGeneration.Identity())) shouldNotBe
+                MigrationFingerprint.compute(schemaWith(mysql))
         }
     }
 

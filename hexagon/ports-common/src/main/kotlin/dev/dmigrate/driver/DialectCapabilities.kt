@@ -304,6 +304,31 @@ data class DialectCapabilities(
      */
     val namesIdentitySequences: Boolean = true,
     /**
+     * Ob der Reverse des Dialekts eine Spalte in der Schreibweise `SERIAL`
+     * von einer IDENTITY-Spalte **unterscheidet** — ob also
+     * `ColumnGeneration.Identity.legacySerialSyntax` aus diesem Dialekt eine
+     * Aussage traegt.
+     *
+     * Nur PostgreSQL kennt beides als verschiedene Dinge (eine Sequenz mit
+     * Default gegen `GENERATED … AS IDENTITY`, siehe
+     * [rendersAutoIncrementAsIdentity]), und nur sein Reverse setzt das Flag
+     * je nach Spalte. Die uebrigen vier kennen **eine** Form, und ihr Reverse
+     * setzt das Flag pauschal:
+     * - MySQL (`AUTO_INCREMENT` auf `bigint`) und SQLite (`AUTOINCREMENT`,
+     *   64-Bit-Rekonstruktion) immer `true`;
+     * - SQL Server (`IDENTITY`) und Oracle (`GENERATED … AS IDENTITY`) nie.
+     *
+     * Dort beschreibt das Flag nicht die Spalte, sondern den Reader. Der
+     * symmetrische Vergleich (`schema compare`) wertet es deshalb nicht,
+     * sobald eine Seite aus einem solchen Dialekt stammt — sonst meldete
+     * PostgreSQL gegen MySQL jede IDENTITY-Spalte. Der Fingerabdruck und
+     * `schema migrate` sehen diese Projektion nicht.
+     *
+     * Dieselbe Familie wie [namesIdentitySequences]. Der Default `true` ist
+     * die strenge Antwort; die vier Dialekte mit einer Form setzen `false`.
+     */
+    val distinguishesSerialFromIdentity: Boolean = true,
+    /**
      * Ob das **Ziel** eine virtuelle berechnete Spalte kennt — eine, deren Wert
      * bei jedem Lesen neu berechnet statt gespeichert wird.
      *

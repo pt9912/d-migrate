@@ -101,14 +101,17 @@ class SchemaMigrateComparatorsTest : FunSpec({
 
     context("am Objekt: beide Comparatoren vergleichen wortgleich") {
 
-        fun table(check: String, sequenceName: String?) = SchemaDefinition(
+        fun table(check: String, sequenceName: String?, legacySerial: Boolean = false) = SchemaDefinition(
             name = "shop", version = "1",
             tables = mapOf(
                 "orders" to TableDefinition(
                     columns = mapOf(
                         "id" to ColumnDefinition(
                             NeutralType.BigInteger,
-                            generation = ColumnGeneration.Identity(sequenceName = sequenceName),
+                            generation = ColumnGeneration.Identity(
+                                sequenceName = sequenceName,
+                                legacySerialSyntax = legacySerial,
+                            ),
                         ),
                         "status" to ColumnDefinition(NeutralType.Text(maxLength = 20)),
                         "qty" to ColumnDefinition(NeutralType.Integer),
@@ -138,6 +141,14 @@ class SchemaMigrateComparatorsTest : FunSpec({
             val pg = table("qty > 0", "public.orders_id_seq")
             val mysql = table("qty > 0", null)
             SchemaMigrateComparators.strict(pg, mysql).isEmpty() shouldBe false
+        }
+
+        test("legacy_serial_syntax is compared, not projected away as in schema compare (P10)") {
+            val identity = table("qty > 0", null)
+            val autoIncrement = table("qty > 0", null, legacySerial = true)
+            SchemaMigrateComparators.strict(identity, autoIncrement).isEmpty() shouldBe false
+            SchemaMigrateComparators.targetAware(identity, autoIncrement, strictProjection, null, null)
+                .isEmpty() shouldBe false
         }
 
         test("control: equal schemas are equal") {
