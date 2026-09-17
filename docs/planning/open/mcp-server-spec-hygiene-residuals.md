@@ -6,6 +6,8 @@
 > Rest-Befunde sichtbar, die über die beauftragte Runde (Phasen-Marker +
 > `(Plan §…)`-Provenienzen entfernen) hinausgehen und je eigene Klärung
 > brauchen.
+> **Nachtrag (2026-09-17):** zwei Vertrags-Genauigkeitsfragen aus dem
+> Compare-Slice (Befund 3 und 4).
 > **Aktivierungsbedingung:** Wird einer der Punkte priorisiert, entsteht ein
 > `next/`-Plan bzw. die Korrektur wird direkt im Spec-Commit erledigt; der
 > Eintrag verweist dann darauf.
@@ -52,6 +54,32 @@ eine **Vertrags-Genauigkeitsfrage**.
 **Arbeit:** gegen den Code (`adapters/driving/mcp`, `ToolRegistry`/Dispatch)
 prüfen, ob heute alle registrierten Tools über `tools/call` laufen, und die
 Aussage entsprechend korrigieren oder bestätigen. Nicht blind umschreiben.
+
+## Befund 3 — `artifact_upload_init` nimmt mehr Arten an, als die Spec nennt (Nachtrag 2026-09-17)
+
+Aus dem Compare-Slice
+([`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
+„Offen"). `spec/mcp-server.md` zählt für den Upload `schema`, `ddl`,
+`transform-script`, `seed-data`, `rules` und `generic` auf; der Handler
+([`ArtifactUploadInitHandler`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/ArtifactUploadInitHandler.kt))
+nimmt zusätzlich jeden Namen aus `ArtifactKind` an (etwa `diff`, `profile`).
+Ausgenommen sind seit dem Compare-Slice nur `COMPARE` und `REVERSE_REPORT` —
+beide erzeugt nur der Server, gepinnt in
+`ArtifactUploadInitHandlerPolicyPathTest`. Die übrige Nachsicht ist älter.
+
+**Arbeit:** entscheiden, ob die Spec die Menge des Handlers übernimmt oder der
+Handler auf die Spec-Menge verengt wird (dann Vertragswechsel für Clients, die
+heute `diff` hochladen). Nicht blind verengen.
+
+## Befund 4 — `schema_list` filtert `jobId` gegen die Job-URI (Nachtrag 2026-09-17)
+
+Aus demselben Slice (Review Runde 4, gemessen). Die bloße Kennung, die
+`schema_reverse_start` liefert, findet in `schema_list` nichts; der Filter
+vergleicht gegen die Job-URI. Die Spec nennt nur „`jobId`". Das
+Anwenderhandbuch-Beispiel ist auf den Ist-Zustand korrigiert.
+
+**Arbeit:** Vertragsfrage — nimmt der Filter die Kennung, die URI oder beides?
+Danach Spec, Tool-Schema-Beschreibung und ggf. Handler angleichen.
 
 ## Referenzen
 

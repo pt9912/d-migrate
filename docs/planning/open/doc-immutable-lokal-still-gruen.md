@@ -53,3 +53,21 @@ nicht der Mechanismus.
 
 Bis dahin gilt als Arbeitsweise: die Range in einem frischen Klon prüfen
 (`git clone --no-local`, dann dasselbe `docker run` wie im Target gegen den Klon).
+
+## Nachtrag 2026-09-17 — ein `superseded`-ADR ist nicht eingefroren
+
+Zweiter Befund aus demselben Slice (Verifikation Runde 4, P7-DoD 3), unabhängig
+vom Lesefehler oben: das Modul `vcs` friert nur ADRs ein, deren Basis
+`status: accepted` trägt (`.d-check.yml`, `vcs.immutable-when:
+'^status: accepted'`). Nach dem Statuswechsel von ADR 0053 auf
+`superseded` (übersteuert von ADR 0056) fiele eine spätere Kernänderung an 0053 keinem Gate
+auf — obwohl der Kern eines übersteuerten ADR als Historie genauso fest sein
+sollte. Die Gegenprobe von P7 („eine Kernänderung an 0053 macht das Gate rot")
+gilt damit nur für Ranges, deren Basis 0053 noch als `accepted` führt.
+
+**Wege:** `immutable-when` im Repo auf beide Statusformen erweitern (zu prüfen:
+wie d-check die Basis wertet, wenn die Statuszeile im selben Range wechselt —
+der legitime Wechsel darf nicht rot werden), oder eine Regel upstream in
+d-check (ein Issue zusammen mit dem Lesefehler). Gegenprobe in jedem Fall im
+frischen `--no-local`-Klon: eine Rumpfzeile von 0053 ändern, das Gate muss rot
+werden; der Statuswechsel aus `c9737f909` muss grün bleiben.

@@ -6,6 +6,8 @@
 > (D-4) bleibt in Kraft, bis dieser Slice aktiviert wird — Präfixlängen sind in 0.9.9
 > ausschließlich auf `IndexColumn`. Aktivierung (Move nach `../in-progress/`) erst beim
 > ersten Implementierungs-Commit, frühestens 1.0.x.
+> **Nachtrag (2026-09-17):** `ERROR 1170` aus der Compare-Matrix, andere Ursache
+> (längenloser Text statt Präfix-PK), s. unten.
 
 ## Ziel
 
@@ -74,6 +76,41 @@ Anhängsels").
 - Nackte (längenlose) PK/Constraint-Schemata bleiben vollständig abwärtskompatibel.
 - ADR 0012 wird beim Slice-Start abgelöst/ergänzt (neuer ADR „Präfixlängen auch auf
   PK/Constraints", der D-4 für 1.0.x aufhebt).
+
+## Nachtrag 2026-09-17 — `ERROR 1170` in der Compare-Matrix, aus einer anderen Ursache
+
+Die 5x5-Compare-Matrix des Compare-Slices
+([`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
+„Offen") scheitert in der Zelle **SQLite → MySQL** mit `ERROR 1170` (gepinnt als
+`APPLY-FAIL` in
+[`examples/mcp-e2e/expected/compare-matrix.env`](../../../examples/mcp-e2e/expected/compare-matrix.env)).
+Derselbe Fehler, aber **nicht** der Fall dieses Plans:
+
+1. Die Fixture trägt `email: { type: text, max_length: 254, unique: true }`.
+2. Der SQLite-Generator rendert jeden `text` als `TEXT` und lässt die Länge
+   fallen
+   ([`SqliteTypeMapper`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTypeMapper.kt));
+   der Reverse liest deshalb `text` **ohne** `max_length`.
+3. Der MySQL-Generator rendert daraus `TEXT` mit `UNIQUE` — ohne Präfixlänge
+   lehnt MySQL den Schlüssel ab.
+
+Hier fehlt also nicht die Präfixlänge im Modell (die hätte die Quelle gar nicht),
+sondern die Länge der Spalte. Die Mechanik dieses Plans (`KeyColumn` mit
+`prefixLength`) schließt die Zelle nur, wenn ein Generator die Länge selbst
+**ableitet** — das wäre eine eigene Entscheidung. Näher liegen zwei andere Wege,
+die bei der Aktivierung mitzuwiegen sind:
+
+- **MySQL meldet statt zu scheitern:** ein `UNIQUE`/`PRIMARY KEY` auf einer
+  längenlosen Text-Spalte wird mit Code und Hinweis ausgelassen
+  (`skipped_objects`, Exit 8) statt als DDL erzeugt, die der Server ablehnt.
+- **SQLite behält die Länge:** der Generator schreibt `VARCHAR(n)` (in SQLite
+  gültig, Typaffinität `TEXT`), der Reverse liest sie zurück. Das ist eine
+  Fidelity-Frage wie im Reader-Slice
+  ([`reader-treue-spatial-array-json.md`](reader-treue-spatial-array-json.md),
+  Posten D3 — dort für PostgreSQL).
+
+Hinter `ERROR 1170` wartet in derselben Zelle vermutlich ein zweiter Fehler:
+die doppelten Fremdschlüsselnamen des SQLite-Reverse (Reader-Slice, Posten D5).
 
 ## Aktivierungs-Trigger
 

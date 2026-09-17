@@ -76,3 +76,28 @@ Test offline gegen das Repo mit `p/dockerfile` + `p/secrets` + `p/python`
 
 - Aufnahme in den CI-Workflow (`.github/workflows/build.yml`) — eigene
   Entscheidung; das Gate ist heute lokal (`make gates`/`make docker-gates`).
+
+## Nachtrag 2026-09-17 — Shell, Kotlin und YAML haben kein statisches Gate
+
+Aus der Verifikation Runde 5 des Compare-Slices
+([`compare-projektion-und-normalisierung.md`](../in-progress/compare-projektion-und-normalisierung.md),
+„Offen"):
+
+- **`make semgrep` fährt zwei Regeln auf fünf Dateien.** Die Ausgangslage und
+  das Nicht-Ziel oben sind in einem Punkt überholt: das Gate läuft inzwischen
+  in CI (Job `security-gates` in `build.yml`). An der Breite ändert das nichts.
+- **Shell:** die E2E-Harnesses (`examples/mcp-e2e/scripts/`,
+  `examples/sample-db/scripts/`) und `scripts/` haben kein Repo-Gate.
+  shellcheck ist im Compare-Slice nur per Container gefahren worden;
+  [`examples/mcp-e2e/scripts/smoke-scope-matrix.sh`](../../../examples/mcp-e2e/scripts/smoke-scope-matrix.sh)
+  trägt zwei vorbestehende Befunde (`SC1091`, `SC2155`) und ist dort bewusst
+  nicht angefasst. shellcheck ist kein semgrep-Pack — ein eigenes
+  hermetisches Target (Image per Digest) liegt näher als ein Pack.
+- **YAML:** die offene Frage `p/github-actions` oben deckt die Workflows ab
+  (vor Aufnahme messen); die Compose-Dateien der Harnesses fallen nicht darunter.
+- **Kotlin:** kein Pack im Vorschlag; ob `p/kotlin` für den Stack etwas bringt,
+  ist ungemessen. Detekt deckt Stil und Größe, nicht Sicherheit.
+
+**Für den Schnitt:** Pack-Auswahl um `p/github-actions` und ggf. `p/kotlin`
+erweitern, jeweils erst nach einem Messlauf gegen das Repo; shellcheck als eigenes Target neben semgrep,
+mit den zwei Altbefunden als erstem Triage-Fall.

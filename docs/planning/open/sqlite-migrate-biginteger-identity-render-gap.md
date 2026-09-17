@@ -8,6 +8,13 @@
 > SQLite-Ziel** mit authored `biginteger`+`generation: identity`.
 > Severity: **P3** (schmal — nur wer explizit `biginteger`+`identity` gegen SQLite
 > migriert; final beim Schnitt einzustufen).
+> **Reichweite (2026-09-17):** Der Eintrag trägt seit dem Nachtrag unten auch den
+> **MySQL**-Fall (`schema migrate` plant ein wirkungsloses `MODIFY COLUMN`,
+> sobald das Soll kein `legacy_serial_syntax` trägt); er ist bei der Graduation
+> des Compare-Slices hier verankert. Der Dateiname nennt nur SQLite und bleibt,
+> weil mehrere Pläne ihn verlinken. Wer den Eintrag schneidet, prüft, ob die
+> SQLite-Render-Lücke und die MySQL-Naht in **einen** Plan gehören — sie teilen
+> Ursache 2 (Präferenz im Ist-Stand), nicht Ursache 1.
 
 ## Befund — **zwei** Ursachen (Review B3)
 

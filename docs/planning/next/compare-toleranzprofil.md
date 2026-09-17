@@ -223,7 +223,7 @@ Ergebnis also dasselbe wie heute. Die Schlüsselnamen sind Vorschläge (E7).
 | Frage | Heute | Warum kein Kandidat |
 | ----- | ----- | ------------------- |
 | **MySQL-Sichtformatierung**, der Rest nach K1: Schemaqualifikation, `AS`-Aliase, gliedernde Join-Klammern | Fund | Braucht Namensauflösung und Struktur, also einen Parser (ADR 0056, Option E; [`../open/check-ausdruck-analyse-per-parser.md`](../open/check-ausdruck-analyse-per-parser.md)). Den Anteil der Schlüsselwort-Schreibung deckt K1. |
-| **Unbenannte Indizes über die kanonische Form** (`TableIndexComparator.kt:96`, `indexKey` trägt das rohe Prädikat) | entfernt + hinzugefügt | Keine Anwenderwahl: Die Schreibweise-Faltung ist schon Vertrag (ADR 0056). Dass der Zuordnungsschlüssel sie nicht nutzt, ist eine Lücke in der bestehenden Regel. Sie gehört als Korrektur in einen eigenen Eintrag, sobald der aktive Slice graduiert (dort steht sie unter „Offen"). |
+| **Unbenannte Indizes über die kanonische Form** (`TableIndexComparator.kt:96`, `indexKey` trägt das rohe Prädikat) | entfernt + hinzugefügt | Keine Anwenderwahl: Die Schreibweise-Faltung ist schon Vertrag (ADR 0056). Dass der Zuordnungsschlüssel sie nicht nutzt, ist eine Lücke in der bestehenden Regel. Sie gehört als Korrektur in einen eigenen Eintrag — angelegt als [`compare-unbenannte-indizes-kanonische-zuordnung.md`](../open/compare-unbenannte-indizes-kanonische-zuordnung.md). |
 | **`stored` einer berechneten Spalte** | Fund | Physische Eigenschaft. Das Argument „keine Wahl" braucht Dialekt und Serverversion einer Zielseite. P6 hat `stored` bewusst sichtbar gelassen. |
 | **Typabflachung je Dialekt** (SQLite-Affinität, `identifier(auto)`) | Fund (Nullfall PG↔SQLite) | [ADR 0026](../../adr/0026-fingerprint-kanonisierung-post-compare.md) (D3) hält `schema compare` für Typen streng. Die Round-Trip-Projektion braucht einen Dialekt je Seite, und der Typ ist das wichtigste Vergleichssignal. Nur als eigener Kandidat mit eigener Eigner-Frage denkbar. |
 | **Typ einer berechneten Spalte unter SQL Server** (`decimal(23,2)`) | Fund | Thema von Reader und Generator, kein Vergleichsthema (aktiver Slice, „Offen"). |
@@ -703,12 +703,16 @@ Semantik-Aussagen von K2 und K4 werden dabei gegen PostgreSQL nachgemessen:
 ## Offen (nicht Teil dieses Plans)
 
 - **Zuordnung unbenannter Indizes über die kanonische Form.** Das ist eine
-  Korrektur und keine Toleranz (s. „Geprüft und nicht aufgenommen"). Sie
-  braucht einen eigenen Eintrag, sobald der aktive Slice graduiert.
+  Korrektur und keine Toleranz (s. „Geprüft und nicht aufgenommen"). Der
+  eigene Eintrag ist angelegt:
+  [`compare-unbenannte-indizes-kanonische-zuordnung.md`](../open/compare-unbenannte-indizes-kanonische-zuordnung.md).
 - **Typabflachung als Toleranz.** Nur mit eigener Eigner-Frage und im Bezug zu
   ADR 0026.
 - **Ob der Generator eine `always`-Spalte für MySQL und SQLite meldet.** Das ist
-  beim Schnitt nicht geprüft worden. Es berührt K2 nur als Beleg.
+  beim Schnitt nicht geprüft worden. Es berührt K2 nur als Beleg. Für MySQL
+  ist der stille Verlust im Konsumenten-Repro des Compare-Slices gemessen; der
+  Posten steht im [Reader-Slice](reader-treue-spatial-array-json.md) als D4
+  (SQLite dort als offene Prüfung).
 - **Die veraltete KDoc und Spec-Zeile zu `RESTRICT`/`no_action`** (K4,
   Nebenbefunde). Sie werden mit T5 bzw. dem Spec-Schritt korrigiert, nicht
   vorher.

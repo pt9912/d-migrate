@@ -25,7 +25,9 @@
 > **Nachtrag 2026-09-17:** A6 und B3 sind vom Eigner entschieden und werden bei
 > der Aktivierung zu Paketen; dazu drei Reader-Posten aus dem Compare-Bau (D1–D3,
 > s. Abschnitt D). Beides ist hier festgehalten, damit es nicht mit dem
-> Compare-Slice nach `done/` wandert.
+> Compare-Slice nach `done/` wandert. Bei dessen Graduation (2026-09-17) kamen
+> D4–D6 dazu (Generator-Warnung bei `ALWAYS`, `fk_0`-Namen, T-SQL-Quoting samt
+> `E053`).
 > **Aktivierung:** Move nach `../in-progress/` beim ersten Implementierungs-Commit.
 
 ## Der gemeinsame Nenner
@@ -369,6 +371,52 @@ Abschnitt „Offen"). Das Paket je Posten wird bei der Aktivierung geschnitten.
   Modellposten ist (Kandidatenfamilie
   [`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md))
   oder nur der `varchar`-Teil hierher gehört.
+
+**Nachtrag bei der Graduation des Compare-Slices (2026-09-17).** Drei weitere
+Posten aus dessen Repro und 5x5-Compare-Matrix (Belegart: *nachgemessen*, dort
+unter „Offen"; in der Matrix als Zustand `APPLY-FAIL` gepinnt,
+[`examples/mcp-e2e/expected/compare-matrix.env`](../../../examples/mcp-e2e/expected/compare-matrix.env)).
+Wie bei D1–D3 wird das Paket bei der Aktivierung geschnitten; ob ein Posten
+dann hier bleibt oder als Generator-Thema einen eigenen Plan bekommt, ist Teil
+des Schnitts.
+
+- **D4 — Der MySQL-Generator rendert `GENERATED ALWAYS` ohne Warnung.**
+  Muster 1 (Fidelity, wie B1): MySQL kennt nur `AUTO_INCREMENT`; der Generator
+  rendert eine `always`-Spalte dorthin, **ohne** es zu melden, und der Reverse
+  liest `by_default`. Gemessen im Konsumenten-Repro (Schema des Konsumenten,
+  fünf Identity-Spalten mit `GENERATED ALWAYS`). Der Schwesterfall hat einen
+  Code: SQL Server meldet den umgekehrten Verlust (`BY DEFAULT`) mit `W140`.
+  Zu klären: ein eigener Code oder `W140`-analog; ob SQLite (`AUTOINCREMENT`)
+  denselben stillen Verlust hat — **nicht geprüft**. Im Vergleich bleibt der
+  Modus ein Fund (Fähigkeitsunterschied,
+  [ADR 0057](../../adr/0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md));
+  eine Toleranz dafür ist Kandidat K2 im
+  [Toleranzprofil](compare-toleranzprofil.md), das den Generator-Befund nur als
+  Beleg braucht.
+- **D5 — Der SQLite-Reverse nennt die Fremdschlüssel jeder Tabelle `fk_0` ….**
+  SQLite führt keine Namen für Fremdschlüssel; der Reverse vergibt sie je
+  Tabelle ab `fk_0`, also mehrfach im Schema. SQL Server verlangt eindeutige
+  Constraint-Namen und lehnt die erzeugte DDL ab (Matrix: SQLite → SQL Server,
+  `Msg 2714`). MySQL verlangt Fremdschlüsselnamen ebenfalls datenbankweit
+  eindeutig; die Zelle SQLite → MySQL scheitert heute schon vorher (`ERROR
+  1170`, s. [`pk-constraint-prefix-length.md`](pk-constraint-prefix-length.md)).
+  Zu klären: schemaweit eindeutige Namen im Reader (etwa mit Tabellenpräfix)
+  oder eine Entschärfung im Generator je Zieldialekt. Verwandt, aber nicht
+  dieselbe Familie: die server-vergebenen Namen, die `schema compare` ausnehmen
+  könnte ([`../open/compare-serververgebene-namen-messauftrag.md`](../open/compare-serververgebene-namen-messauftrag.md)).
+- **D6 — T-SQL-Quoting in berechneten Ausdrücken, und `E053` sieht es nicht.**
+  Muster 2 (Modell-Reinheit, wie C1): der SQL-Server-Reverse liest den
+  Ausdruck einer berechneten Spalte als Server-Text mit Klammer-Quoting
+  (`[quantity]*[unit_price]`). Die Portabilitätsprüfung (`E053`,
+  [`RawSqlExpressionPortability`](../../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/RawSqlExpressionPortability.kt))
+  meldet T-SQL-Klammern **bewusst nicht** („ohne Herkunft wäre die
+  Unterscheidung geraten"); der Generator übernimmt den Text, und PostgreSQL
+  (`syntax error at or near "["`) und MySQL (`ERROR 1064`) lehnen die DDL ab
+  (Matrix: SQL Server → PostgreSQL/MySQL). Zwei Hälften: der Reader (Quoting
+  entfernen, wo der Bezeichner es nicht braucht — der MSSQL-Präzedenzfall
+  `N'…'` aus C1 ist dieselbe Klasse) und die Prüfung (die Herkunft ist inzwischen
+  bekannt: ein Reverse trägt seine Markierung mit Dialekt). Ob die Prüfung hier
+  oder in einem eigenen Plan nachzieht, entscheidet der Schnitt.
 
 ## Ziel
 
