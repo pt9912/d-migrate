@@ -251,7 +251,7 @@ class SchemaCompareJobWorkerTest : FunSpec({
         publisherPayload.shouldBeInstanceOf<SchemaDiff>()
     }
 
-    test("a side read from a connection publishes its read report after the result, source before target") {
+    test("a side read from a connection publishes its read report; the refs list the result first, source before target") {
         // Ueber MCP gibt es sonst keinen Ort fuer die Notes des Readers —
         // auch nicht fuer die Bestaetigung einer deklarierten Praeferenz.
         val note = SchemaReadNote(SchemaReadSeverity.INFO, "R205", "t.id", "read as identity")
@@ -297,5 +297,39 @@ class SchemaCompareJobWorkerTest : FunSpec({
             "dmigrate://tenants/acme/artifacts/report-1",
         )
         reports.single().source.value shouldBe connB
+    }
+
+    test("the result is published last: a failing report publish leaves no compare artefact behind") {
+        // spec/mcp-server.md: das Ergebnis (mit Eintrag im Index `diffs`)
+        // wird zuletzt abgelegt.
+        val order = mutableListOf<String>()
+        fun worker(reports: JobArtifactPublisher<SchemaReadReportInput>) = SchemaCompareJobWorker(
+            sourceRef = "dmigrate://tenants/acme/connections/a",
+            targetRef = targetRef,
+            schemaLoader = { ref, _, _ ->
+                if (ref.contains("/connections/")) LoadedCompareSide.read(SchemaReadResult(emptySchema))
+                else LoadedCompareSide(emptySchema)
+            },
+            comparator = { _, _ -> identicalDiff },
+            publisher = JobArtifactPublisher { _, _ ->
+                order += "result"
+                "dmigrate://tenants/acme/artifacts/result"
+            },
+            reportPublisher = reports,
+        )
+
+        val reports = JobArtifactPublisher<SchemaReadReportInput> { _, _ ->
+            order += "report"
+            "dmigrate://tenants/acme/artifacts/report"
+        }
+        worker(reports).execute(Fixtures.jobRecord("j-13"), CancellationToken.none())
+        order shouldBe listOf("report", "result")
+
+        order.clear()
+        shouldThrow<IllegalStateException> {
+            worker(JobArtifactPublisher { _, _ -> error("report-store-unavailable") })
+                .execute(Fixtures.jobRecord("j-14"), CancellationToken.none())
+        }
+        order shouldBe emptyList()
     }
 })

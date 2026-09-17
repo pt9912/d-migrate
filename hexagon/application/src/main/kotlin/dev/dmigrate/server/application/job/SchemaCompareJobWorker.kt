@@ -34,9 +34,11 @@ import dev.dmigrate.server.ports.JobWorkerOutcome
  * verlaesst sich darauf, dass es Tenant-Scope durchsetzt und den
  * Token an seine internen Layer weiterreicht. Eine aus einer Verbindung
  * gelesene Seite bringt ihr [SchemaReadResult] mit ([LoadedCompareSide]);
- * deren Reverse-Report veroeffentlicht [reportPublisher] nach dem
- * Vergleichsergebnis, Quelle vor Ziel — sonst blieben die Hinweise des
- * Readers ueber MCP stumm (`spec/mcp-server.md`).
+ * deren Reverse-Report veroeffentlicht [reportPublisher], Quelle vor Ziel —
+ * sonst blieben die Hinweise des Readers ueber MCP stumm
+ * (`spec/mcp-server.md`). In den Verweisen steht das Vergleichsergebnis
+ * vorn; **abgelegt** wird es zuletzt, damit ein Job, dessen Report-Ablage
+ * scheitert, keinen Eintrag im Index `diffs` hinterlaesst.
  *
  * [comparator] und [publisher]: pure Funktionen ueber [SchemaDefinition]
  * bzw. das Vergleichsergebnis [R]. Was das Ergebnis ist, entscheidet die
@@ -70,10 +72,10 @@ class SchemaCompareJobWorker<R : Any>(
         val result = comparator(source.schema, target.schema)
 
         token.throwIfCancellationRequested()
-        val artifactRef = publisher.publish(job, result)
         val reportRefs = listOf(sourceRef to source, targetRef to target).mapNotNull { (ref, side) ->
             side.readResult?.let { reportPublisher.publish(job, connectionReport(ref, it)) }
         }
+        val artifactRef = publisher.publish(job, result)
 
         return JobWorkerOutcome.Succeeded(artifactRefs = listOf(artifactRef) + reportRefs)
     }

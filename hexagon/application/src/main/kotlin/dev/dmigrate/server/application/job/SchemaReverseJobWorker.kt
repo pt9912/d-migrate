@@ -28,15 +28,17 @@ import dev.dmigrate.server.ports.JobWorkerOutcome
  * 3. **Artefakt-Publish** — [JobArtifactPublisher.publish] persistiert
  *    den serialisierten Schema-Output und liefert die wire-stabile
  *    `dmigrate://...artifacts/<id>`-URI fuer
- *    `JobWorkerOutcome.Succeeded.artifactRefs`. Danach veroeffentlicht
+ *    `JobWorkerOutcome.Succeeded.artifactRefs`. Daneben veroeffentlicht
  *    [reportPublisher] den Reverse-Report (Notes und uebersprungene
  *    Objekte des Readers) — dieselbe Trennung wie `schema reverse` in der
  *    CLI: das Schema-Dokument traegt keine Notes, der Report schon. Ohne ihn
  *    blieben die Hinweise des Readers ueber MCP stumm, auch die
  *    Bestaetigung einer deklarierten Praeferenz
  *    (`spec/dialect-preference-mechanism.md`, „Nicht stumm"). Die
- *    Reihenfolge der Verweise ist Vertrag (`spec/mcp-server.md`): erst das
- *    Schema, dann der Report.
+ *    Reihenfolge der **Verweise** ist Vertrag (`spec/mcp-server.md`): erst
+ *    das Schema, dann der Report. **Abgelegt** wird der Report zuerst: das
+ *    Schema traegt sich als Letztes in den Index `schemas` ein, und ein Job,
+ *    dessen Report-Ablage scheitert, hinterlaesst dort keinen Eintrag.
  *
  * Cancel-Verhalten (LF-012 / LN-011 / LN-017 / LN-027 + Cancel-Checkpoints):
  *
@@ -69,8 +71,8 @@ class SchemaReverseJobWorker(
         val result = readSchema(config, token)
 
         token.throwIfCancellationRequested()
-        val schemaRef = publisher.publish(job, result.schema)
         val reportRef = reportPublisher.publish(job, connectionReport(connectionRef, result))
+        val schemaRef = publisher.publish(job, result.schema)
 
         return JobWorkerOutcome.Succeeded(artifactRefs = listOf(schemaRef, reportRef))
     }

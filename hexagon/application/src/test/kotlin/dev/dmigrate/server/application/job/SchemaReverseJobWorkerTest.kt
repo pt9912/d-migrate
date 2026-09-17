@@ -240,7 +240,7 @@ class SchemaReverseJobWorkerTest : FunSpec({
         seenTenant shouldBe Fixtures.tenant("beta")
     }
 
-    test("the read report carries the reader's notes and names the connection, after the schema") {
+    test("the read report carries the reader's notes and names the connection; its ref follows the schema") {
         // Das Schema-Dokument traegt keine Notes (wie `schema reverse`);
         // ohne den Report blieben sie ueber MCP stumm.
         val note = SchemaReadNote(SchemaReadSeverity.INFO, "R205", "t.id", "read as identity")
@@ -263,10 +263,31 @@ class SchemaReverseJobWorkerTest : FunSpec({
             "dmigrate://tenants/acme/artifacts/schema",
             "dmigrate://tenants/acme/artifacts/report",
         )
-        published[0] shouldBe emptySchema
-        published[1] shouldBe SchemaReadReportInput(
+        // Abgelegt wird der Report zuerst, das Schema (mit Index) zuletzt.
+        published[0] shouldBe SchemaReadReportInput(
             ReverseSourceRef(ReverseSourceKind.CONNECTION, connectionRef),
             SchemaReadResult(emptySchema, notes = listOf(note)),
         )
+        published[1] shouldBe emptySchema
+    }
+
+    test("a failing report publish leaves no schema behind: the schema publisher is never called") {
+        // spec/mcp-server.md: ein gescheiterter Lese-Job hinterlaesst keinen
+        // Eintrag im Index `schemas` — das Schema wird zuletzt abgelegt.
+        var schemaPublished = false
+        val worker = SchemaReverseJobWorker(
+            connectionRef = connectionRef,
+            materializer = materializer(),
+            readSchema = { _, _ -> SchemaReadResult(emptySchema) },
+            publisher = JobArtifactPublisher { _, _ ->
+                schemaPublished = true
+                "dmigrate://tenants/acme/artifacts/schema"
+            },
+            reportPublisher = JobArtifactPublisher { _, _ -> error("report-store-unavailable") },
+        )
+        shouldThrow<IllegalStateException> {
+            worker.execute(Fixtures.jobRecord("j-11"), CancellationToken.none())
+        }.message shouldBe "report-store-unavailable"
+        schemaPublished shouldBe false
     }
 })
