@@ -58,13 +58,17 @@ internal class RawSqlSkeleton private constructor(
          *   Schlusszeichen ist ein anderes;
          * - ein Backslash: ob er ein Anfuehrungszeichen escapet, haengt am
          *   Dialekt (MySQL ja, PostgreSQL nur in `E'…'`);
-         * - ein `[` nach Leerraum hinter einem Namen, einer Klammer oder einem
-         *   Platzhalter: in PostgreSQL ein Index (`tags [pos]`), in T-SQL
-         *   Quoting (`[orders] [o]`). Es gilt als Quoting, wenn der Text an
-         *   anderer Stelle **eindeutiges** Bracket-Quoting traegt (ein `[` am
-         *   Anfang, hinter einem Operator, Komma, einer oeffnenden Klammer oder
-         *   einem Schluesselwort — dort ist es in PostgreSQL, MySQL und Oracle
-         *   gar keine Syntax); sonst zieht sich die Faltung zurueck;
+         * - ein **zweideutiges** `[`: nach Leerraum hinter einem Namen, der in
+         *   PostgreSQL kein reserviertes Wort ist, hinter `)`, `]` oder einem
+         *   Platzhalter — in PostgreSQL ein Index (`tags [pos]`, `level [1]`),
+         *   in T-SQL Quoting (`[orders] [o]`) —, und ein `[` hinter `[` oder
+         *   `,` — in PostgreSQL ein geschachteltes Array (`ARRAY[[1,2],[3,4]]`),
+         *   in T-SQL Quoting. Es gilt als Quoting, wenn der Text an anderer
+         *   Stelle **eindeutiges** Bracket-Quoting traegt (ein `[` am Anfang,
+         *   hinter einem Operator, einer oeffnenden Klammer, einem `.` oder
+         *   einem in PostgreSQL reservierten Wort — dort ist es in PostgreSQL,
+         *   MySQL und Oracle gar keine Syntax); sonst zieht sich die Faltung
+         *   zurueck;
          * - eine nicht geschlossene Quotierung.
          */
         fun of(sql: String): RawSqlSkeleton? {
@@ -81,6 +85,9 @@ internal class RawSqlSkeleton private constructor(
 
         /** Was ausser einem Namen vor `[` steht, wenn die Klammer ein Index ist und kein Quoting. */
         private val SUBSCRIPT_BASE = setOf(']', ')', CLOSE)
+
+        /** Wovor `[` in PostgreSQL ein geschachteltes Array oeffnet (`ARRAY[[1,2],[3,4]]`). */
+        private val NESTED_ARRAY_BASE = setOf('[', ',')
 
         private val PLACEHOLDER = Regex("([\uE000\uE002])(\\d+)\uE001")
 
@@ -137,21 +144,37 @@ internal class RawSqlSkeleton private constructor(
             return true
         }
 
-        /** `"…"`, `` `…` `` oder `[…]` mit verdoppeltem Schlusszeichen als Escape. */
+        /**
+         * `"…"`, `` `…` `` oder `[…]` mit verdoppeltem Schlusszeichen als Escape.
+         *
+         * Direkt hinter `::` steht ein **Typname**: dort bleibt die Quotierung
+         * wortgleich stehen — `::"char"` ist ein anderer Typ als `::char`.
+         */
         private fun quotedIdentifier(close: Char): Boolean {
             val end = closing(close, position + 1) ?: return false
-            identifier(sql.substring(position, end + 1), sql.substring(position + 1, end))
+            val raw = sql.substring(position, end + 1)
+            if (afterCast()) {
+                placeholder(IDENTIFIER, raw)
+            } else {
+                identifier(raw, sql.substring(position + 1, end))
+            }
             position = end + 1
             return true
         }
+
+        private fun afterCast(): Boolean =
+            out.trimEnd { SqlLexis.WHITESPACE_CHARS.indexOf(it) >= 0 }.endsWith("::")
 
         /**
          * `[…]` ist T-SQL-Quoting — ausser direkt hinter einem Namen, einer
          * Klammer oder einem Platzhalter: dort ist es ein Index oder ein
          * Array (`data[0]`, `ARRAY[…]`) und bleibt Syntax. Steht Leerraum
          * dazwischen, liest PostgreSQL es genauso (`tags [pos]`), T-SQL als
-         * Quoting — sicher ist es nur hinter einem Schluesselwort (Quoting)
-         * und hinter `ARRAY` (Array); sonst zieht sich die Faltung zurueck.
+         * Quoting — sicher ist es nur hinter einem in PostgreSQL reservierten
+         * Wort (Quoting) und hinter `ARRAY` (Array). Hinter `[` und `,` ist es
+         * in PostgreSQL ein geschachteltes Array. In den zweideutigen Faellen
+         * zieht sich die Faltung zurueck, wenn der Text kein eindeutiges
+         * Quoting traegt.
          */
         private fun bracket(): Boolean {
             when (bracketReading()) {
@@ -172,15 +195,16 @@ internal class RawSqlSkeleton private constructor(
         private fun bracketReading(): BracketReading {
             val previous = out.lastOrNull() ?: return BracketReading.QUOTING
             if (SqlLexis.isNameChar(previous) || previous in SUBSCRIPT_BASE) return BracketReading.SUBSCRIPT
+            if (previous in NESTED_ARRAY_BASE) return BracketReading.AMBIGUOUS
             if (SqlLexis.WHITESPACE_CHARS.indexOf(previous) < 0) return BracketReading.QUOTING
             val before = out.trimEnd { SqlLexis.WHITESPACE_CHARS.indexOf(it) >= 0 }
             val significant = before.lastOrNull() ?: return BracketReading.QUOTING
-            if (significant in SUBSCRIPT_BASE) return BracketReading.AMBIGUOUS
+            if (significant in SUBSCRIPT_BASE || significant in NESTED_ARRAY_BASE) return BracketReading.AMBIGUOUS
             if (!SqlLexis.isNameChar(significant)) return BracketReading.QUOTING
             val word = SqlLexis.wordBefore(before, before.length)
             return when {
                 word.equals("array", ignoreCase = true) -> BracketReading.SUBSCRIPT
-                SqlKeywords.isKeyword(word) -> BracketReading.QUOTING
+                SqlKeywords.isPostgresReserved(word) -> BracketReading.QUOTING
                 else -> BracketReading.AMBIGUOUS
             }
         }
@@ -204,6 +228,7 @@ internal class RawSqlSkeleton private constructor(
         private fun identifier(raw: String, content: String) {
             when {
                 !SIMPLE_IDENTIFIER.matches(content) -> placeholder(IDENTIFIER, raw)
+                SqlKeywords.isQuotedTypeName(content) -> placeholder(IDENTIFIER, raw)
                 SqlKeywords.isKeyword(content) -> placeholder(IDENTIFIER, "\"$content\"")
                 else -> out.append(content)
             }

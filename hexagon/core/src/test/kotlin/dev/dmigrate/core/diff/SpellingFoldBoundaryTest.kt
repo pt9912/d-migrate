@@ -174,6 +174,27 @@ class SpellingFoldBoundaryTest : FunSpec({
             equalAsCheck("a = ANY (ARRAY [b])", "a = ANY (ARRAY  [b])") shouldBe true
             equalAsCheck("a = ANY (ARRAY [b])", "a = ANY (ARRAY b)") shouldBe false
         }
+
+        test("a word PostgreSQL does not reserve can be a column: `level [pos]` is a subscript") {
+            // `level` und `zone` sind in PostgreSQL nicht reserviert (gemessen,
+            // 18.6: `select level [1]` sucht die Spalte `level`).
+            viewChanged("SELECT level [1], tags [pos] FROM t", "SELECT level [1], tags pos FROM t") shouldBe true
+            equalAsCheck("zone [pos] = 1", "zone pos = 1") shouldBe false
+            equalAsCheck("level [pos] = 1", "level pos = 1") shouldBe false
+        }
+
+        test("a bracket after `[` or `,` is a nested array in PostgreSQL, no evidence of T-SQL") {
+            viewChanged("SELECT ARRAY[[1,2] ] AS a, tags [pos] FROM t", "SELECT ARRAY[[1,2] ] AS a, tags pos FROM t") shouldBe true
+            equalAsCheck("x = ARRAY[[1,2]] AND tags [pos] = 1", "x = ARRAY[[1,2]] AND tags pos = 1") shouldBe false
+            equalAsCheck("x = ARRAY[[a],[b]]", "x = ARRAY[a,b]") shouldBe false
+            equalAsCheck("x = ARRAY[[a], [b]]", "x = ARRAY[[a],b]") shouldBe false
+        }
+
+        test("counter-check: a reserved word or an operator still proves T-SQL quoting") {
+            viewChanged("SELECT [a], [b] FROM [t]", "SELECT a, b FROM t") shouldBe false
+            equalAsCheck("x = [a] AND y IN ([b], [c])", "x = a AND y IN (b, c)") shouldBe true
+            equalAsCheck("[a] LIKE [b]", "a LIKE b") shouldBe true
+        }
     }
 
     context("Grenze: `\"…\"` ist immer ein Bezeichner") {
@@ -348,6 +369,31 @@ class SpellingFoldBoundaryTest : FunSpec({
 
         test("counter-check: a different case is a different quoted name") {
             equalAsCheck("\"User\" = 'x'", "\"user\" = 'x'") shouldBe false
+        }
+    }
+
+    context("Typnamen und Funktions-Schluesselwoerter bleiben quotiert") {
+
+        test("a quoted type name after `::` is another type (PG: `' '::\"char\"` is not `' '::char`)") {
+            equalAsCheck("x = ' '::\"char\"", "x = ' '::char") shouldBe false
+            equalAsCheck("x = '101'::\"bit\"", "x = '101'::bit") shouldBe false
+            equalAsCheck("x = 'a'::\"text\"", "x = 'a'::text") shouldBe false
+        }
+
+        test("`char` and `bit` stay quoted everywhere, also in CAST") {
+            equalAsCheck("CAST(x AS \"char\") = 'a'", "CAST(x AS char) = 'a'") shouldBe false
+            equalAsCheck("CAST(x AS [bit]) = 1", "CAST(x AS bit) = 1") shouldBe false
+        }
+
+        test("the argument words of trim and overlay are syntax (PG: `trim(\"both\" from x)` trims column both)") {
+            equalAsCheck("trim(\"both\" from x) <> ''", "trim(both from x) <> ''") shouldBe false
+            equalAsCheck("trim([leading] from x) <> ''", "trim(leading from x) <> ''") shouldBe false
+            equalAsCheck("overlay(x \"placing\" y from 1 \"for\" 2) = z", "overlay(x placing y from 1 for 2) = z") shouldBe false
+        }
+
+        test("counter-check: around them quoting and whitespace still fold") {
+            equalAsCheck("trim(both from \"x\") <> ''", "trim(both  from x)<>''") shouldBe true
+            equalAsCheck("\"x\" = ' '::char", "x = ' '::char") shouldBe true
         }
     }
 

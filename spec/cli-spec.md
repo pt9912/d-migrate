@@ -692,8 +692,12 @@ Kanonisiert wird ausschliesslich die **Schreibweise**, nicht die Bedeutung:
   unquotiert etwas anderes lesen — als Wert oder Funktion ohne Klammern
   (`user`, `current_user`, `current_date`, `null`, `true`, Oracles `sysdate`
   und `level`) oder als Syntax (`and`, `or`, `not`, `in`, `like`, `between`,
-  `case` …): `"user"` bleibt verschieden von `user`; seine drei Quotierungen
-  gelten untereinander als gleich;
+  `case`, die Argument-Woerter `both`, `leading`, `trailing`, `for`, `placing`
+  …): `"user"` bleibt verschieden von `user`; seine drei Quotierungen gelten
+  untereinander als gleich. Ebenso bleiben die Typnamen `char` und `bit`
+  quotiert — `"char"` und `"bit"` sind in PostgreSQL andere Typen als `char`
+  und `bit` —, und direkt hinter `::` bleibt jede Quotierung wortgleich stehen
+  (`' '::"char"` bleibt verschieden von `' '::char`);
 - Klammern, die nur ein Zahl-Literal oder einen Namen umschliessen — nicht die
   Klammern eines Funktionsaufrufs, auch mit Leerraum vor der Klammer (`f(x)`
   und `f (x)` bleiben verschieden von `fx`; Namen duerfen Zeichen ausserhalb
@@ -713,38 +717,57 @@ Kanonisiert wird ausschliesslich die **Schreibweise**, nicht die Bedeutung:
 - ein **Cast, der nur Schreibweise ist** — entschieden mit den Spaltentypen der
   Tabelle **dieser** Seite. Ein Cast faellt nur, wenn der gecastete Operand
   **unmittelbarer Operand eines Vergleichs** ist (`=`, `<>`, `!=`, `<`, `<=`,
-  `>`, `>=`, `LIKE`/`~~`; links auch vor `= ANY (…)`) — nicht neben einem
+  `>`, `>=`, `LIKE`/`~~`; links auch vor einem solchen Vergleich mit
+  `ANY (…)`, `SOME (…)` oder `ALL (…)`) — nicht neben einem
   Rechenoperator, nicht in einer Argumentliste, nicht auf einer Ebene mit
   `BETWEEN` —, keinen Typmodifikator und kein `[]` traegt und der Typ aus der
   Tabelle belegt ist:
   - ein **Spalten-Cast** (`spalte::typ`, `(spalte)::typ`), der den Wert der
-    Spalte haelt: eine Zeichenkette variabler Laenge auf `text`, `varchar`
-    oder `character varying`; eine Ganzzahl auf einen gleich breiten oder
-    breiteren Ganzzahltyp oder auf `numeric`/`decimal`; ein `numeric` auf
+    Spalte haelt: eine Zeichenkette **mit Laengenangabe** (`text` mit
+    `max_length`, `email`) auf `text`, `varchar` oder `character varying`;
+    eine Ganzzahl auf einen gleich breiten oder breiteren Ganzzahltyp oder auf
+    `numeric`/`decimal`; ein `numeric` auf `numeric`/`decimal`. Eine
+    `identifier`-Spalte zaehlt als breiteste Ganzzahl (ihre Breite ist je
+    Dialekt verschieden): an ihr faellt nur ein Cast auf `bigint`/`int8` oder
     `numeric`/`decimal`. Die andere Seite des Vergleichs behaelt dabei ihren
     Typ: bei Text ein String-Literal, ein Text-Cast, eine Textspalte oder ein
-    Text-Array; bei Zahlen eine Zahl, ein Zahl-Cast oder eine Zahlspalte —
-    kein unmarkiertes String-Literal, das den Typ seines Gegenuebers annaehme;
+    Text-Array; bei Zahlen ein Zahl-Literal, ein Cast auf einen **exakten**
+    Zahltyp (Ganzzahl, `numeric`/`decimal`) oder eine Spalte eines exakten
+    Zahltyps (Ganzzahl, `identifier`, `decimal`) — kein unmarkiertes
+    String-Literal, das den Typ seines Gegenuebers annaehme;
   - ein **Literal-Cast** (`literal::typ`, `(literal)::typ`), dem eine Spalte
     gegenuebersteht — bloss oder hinter einem Spalten-Cast, der selbst faellt
     — und dessen Typ genau deren Familie ist: Textspalte — String-Literal auf
     `text`, `varchar`, `character varying` (unter `LIKE` nur dies); `char(n)`
     — String-Literal auf `bpchar`; Ganzzahlspalte — eine ganze Zahl auf einen
     Ganzzahltyp, in den sie passt, oder ein String-Literal auf genau den Typ
-    der Spalte; `decimal` — Literal auf `numeric`/`decimal`; Gleitkomma — eine
-    Zahl auf `double precision`/`float8`/`float`, ein String-Literal auf genau
-    den Typ der Spalte; `date`, `datetime` (mit und ohne Zeitzone) und `time` —
-    ein String-Literal auf genau diesen Typ, auch ausgeschrieben
+    der Spalte (an einer `identifier`-Spalte nie); `decimal` — Literal auf
+    `numeric`/`decimal`; Gleitkomma — eine **ganze** Zahl auf
+    `double precision`/`float8`/`float`, ein String-Literal auf genau den Typ
+    der Spalte; `date`, `datetime` (mit und ohne Zeitzone) und `time` — ein
+    String-Literal auf genau diesen Typ, auch ausgeschrieben
     (`timestamp without time zone`);
-  - in `spalte = ANY (ARRAY[…])` die `::text` der Elemente, wenn die Spalte
-    Text ist und das Array nur String-Literale traegt — ein solches Array ist
-    auch ohne sie ein Text-Array.
+  - in einem Vergleich einer Textspalte mit `ANY`, `SOME` oder
+    `ALL (ARRAY[…])` die `::text` der Elemente, wenn das Array nur
+    String-Literale traegt — ein solches Array ist auch ohne sie ein
+    Text-Array.
 
   Typnamen gelten nur kleingeschrieben (`"TEXT"` waere ein anderer Typ;
   `character` ohne Laenge ist `character(1)`). Ohne Tabelle, an einem Namen,
   der keine eindeutige Spalte ist, und bei einem Spaltentyp ohne diese Regeln —
   etwa `citext` (ein benutzerdefinierter Typ), `boolean` oder JSON — faellt
   kein Cast.
+
+  **Grenze — ein Reader, der zwei Typen auf einen faltet:** die Regel nimmt
+  den Spaltentyp aus dem Schema. Der PostgreSQL-Reverse liest `numeric` ohne
+  Praezision als `float`, `varchar` ohne Laenge wie `text` und einen Typ, den
+  er nicht kennt (`inet`, `interval`), als `text` ohne Laenge. Deshalb faellt
+  an einer Gleitkommaspalte nur der Cast einer **ganzen** Zahl — PostgreSQL
+  schreibt `(nu > 0.5)` bei `numeric`, aber `(x > (0.5)::double precision)`
+  bei `double precision` — und an einer Textspalte **ohne** Laenge kein
+  Spalten-Cast: `(ip)::text` aendert bei `inet` den Wert. Ein `varchar` ohne
+  Laenge bleibt dadurch ein Unterschied, wo PostgreSQL `(spalte)::text`
+  schreibt.
 
 **Was ein Unterschied bleibt:** vertauschte Operanden und umgestellte
 Konjunktionen; **gliedernde** Klammern — um eine ganze Komposition
@@ -755,7 +778,9 @@ Funktionen; die Gross-/Kleinschreibung von **Bezeichnern** (`"Quantity"` und
 `quantity` sind in PostgreSQL verschiedene Spalten); jeder Cast, der den Wert
 aendern oder die umgebende Operation umtypen kann — neben einem Rechenoperator
 (`qty / 2::numeric > 1` gegen `qty / 2 > 1`), an einer Spalte, deren Wert er
-aendert (`(code)::text` bei `char(n)`, `price::integer`), mit Typmodifikator
+aendert (`(code)::text` bei `char(n)`, `(ip)::text` an einer Textspalte ohne
+Laenge, `price::integer`), eine Dezimalzahl auf Gleitkomma
+(`(0.5)::double precision`), mit Typmodifikator
 (`'abc'::varchar(2)`), als Array, auf eine andere Typfamilie (`'…'::date` gegen
 eine `datetime`-Spalte, `'…'::bpchar` gegen eine Textspalte, `'…'::text` gegen
 `char(n)`) und an einer Spalte, deren Vergleich vom Zieltyp abweicht (`citext`);
@@ -778,13 +803,16 @@ Dollar-Quoting (`$$…$$`, `$tag$…$tag$`, auch mit Zeichen ausserhalb von ASCI
 im Tag) oder Oracles alternative Quotierung (`q'[…]'`, `nq'…'`), an beliebiger
 Stelle einen Backslash (ob er ein Anfuehrungszeichen escapet, ist
 dialektabhaengig), eine nicht geschlossene Quotierung oder ein **zweideutiges
-`[`** — nach Leerraum hinter einem Namen, `)`, `]` oder einem Literal, in
-PostgreSQL ein Index (`tags [pos]`), in T-SQL Quoting —, wird dieses Feld
-**wortgleich** verglichen. Ein zweideutiges `[` gilt als Quoting, wenn der Text
-an anderer Stelle eindeutiges Bracket-Quoting traegt (ein `[` am Anfang,
-hinter einem Operator, Komma, `(`, `.` oder Schluesselwort). Ein Kommentar,
-dessen Reichweite das Zusammenziehen von Leerraum verschoebe, bleibt so ein
-Unterschied.
+`[`**, wird dieses Feld **wortgleich** verglichen. Zweideutig ist ein `[` nach
+Leerraum hinter einem Namen, der in PostgreSQL kein reserviertes Wort ist
+(auch `level` und `zone`), hinter `)`, `]` oder einem Literal — in PostgreSQL
+ein Index (`tags [pos]`, `level [1]`), in T-SQL Quoting — sowie ein `[` hinter
+`[` oder `,` — in PostgreSQL ein geschachteltes Array (`ARRAY[[1,2],[3,4]]`).
+Ein zweideutiges `[` gilt als Quoting, wenn der Text an anderer Stelle
+eindeutiges Bracket-Quoting traegt: ein `[` am Anfang, hinter einem Operator,
+`(`, `.` oder einem in PostgreSQL reservierten Wort (`FROM`, `AND`, `AS`,
+`LIKE` …). Ein Kommentar, dessen Reichweite das Zusammenziehen von Leerraum
+verschoebe, bleibt so ein Unterschied.
 
 **Grenze:** `"…"` gilt immer als Bezeichner. MySQL (ohne `ANSI_QUOTES`) und
 SQLite (als Rueckfall) lesen es je nach Lage als Zeichenkette; ein solcher

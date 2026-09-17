@@ -74,8 +74,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `null`) und zwei Operatorzeichen, die erst der gefaltete Leerraum
   zusammenzog (`a < @ b` gegen `a <@ b`). Jetzt zieht sich die Faltung bei
   Kommentaren (auch MySQLs `#`), Dollar-Quoting, Oracles `q'…'`,
-  Backslashes, offener Quotierung und einem zweideutigen `[` (`tags [pos]`)
-  zurueck, und quotierte Schluesselwoerter bleiben quotiert.
+  Backslashes, offener Quotierung und einem zweideutigen `[` (`tags [pos]`,
+  `level [pos]`, ein geschachteltes `ARRAY[[…]]`) zurueck; als Beleg fuer
+  T-SQL-Quoting gilt ein `[` nur noch hinter einem in PostgreSQL reservierten
+  Wort. Quotierte Schluesselwoerter bleiben quotiert — jetzt auch `"both"`,
+  `"leading"`, `"trailing"` (`trim("both" from x)` liest PostgreSQL als
+  Spalte) —, ebenso `"char"` und `"bit"` und jeder quotierte Typname hinter
+  `::` (`' '::"char"` ist ein anderer Typ als `' '::char`).
 
 - **Ein Cast faellt nur noch am Vergleich und mit dem Spaltentyp.** Ein Cast
   aendert den Wert eines Literals nicht, kann aber die umgebende Operation
@@ -83,9 +88,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `email = 'FOO'::text` und `email = 'FOO'` bei `citext`. `schema compare`
   streicht einen Cast deshalb nur, wenn er unmittelbarer Operand eines
   Vergleichs ist und die Tabelle dieser Seite seinen Typ belegt —
-  PostgreSQLs `(status)::text` bei `varchar`, `(0)::numeric`,
+  PostgreSQLs `(status)::text` bei `varchar(n)`, `(0)::numeric`,
   `(0)::double precision`, `'…'::date` und `'…'::bpchar` an einer Spalte
-  dieses Typs melden nichts mehr. Die Regel von 1.7.x, die Casts an einem
+  dieses Typs melden nichts mehr. Wo der PostgreSQL-Reverse zwei Typen auf
+  einen faltet, bleibt der Cast stehen: `(0.5)::double precision` (der
+  Reverse liest auch `numeric` ohne Praezision als Gleitkomma, und dort
+  schreibt PostgreSQL keinen Cast) und `(spalte)::text` an einer Textspalte
+  ohne Laenge (so liest der Reverse auch `inet` und `interval`, wo `::text`
+  den Wert aendert). Die Regel von 1.7.x, die Casts an einem
   Literal ohne Blick auf den Kontext strich (`'%@%'::text`), gilt nicht mehr:
   ohne Spalte faellt kein Cast. Leerraum um `/` und `%` wird jetzt ebenfalls
   gefaltet.

@@ -78,11 +78,9 @@ internal class SqlScopes private constructor(
         private fun opensGroup(previous: SqlToken?): Boolean = when {
             previous == null -> true
             previous.kind in GROUP_PREFIXES -> true
-            else -> JUNCTIONS.any { previous.isWord(it) }
+            else -> SqlKeywords.OPERAND_OPENERS.any { previous.isWord(it) }
         }
 
         private val GROUP_PREFIXES = setOf(SqlTokenKind.OPERATOR, SqlTokenKind.OPEN, SqlTokenKind.COMMA)
-
-        private val JUNCTIONS = listOf("and", "or", "not")
     }
 }

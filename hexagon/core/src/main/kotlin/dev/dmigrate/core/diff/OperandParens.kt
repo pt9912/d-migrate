@@ -114,7 +114,7 @@ internal object OperandParens {
         val top = masked(text)
         if (NOT_A_SINGLE_PREDICATE.containsMatchIn(top.replace(IS_NOT, "IS"))) return false
         return IS_NULL.containsMatchIn(top) ||
-            OPERATOR_RUN.findAll(top).any { it.value in COMPARISON_OPERATORS }
+            OPERATOR_RUN.findAll(top).any { it.value in SqlLexis.COMPARISON_OPERATORS }
     }
 
     private const val START = SqlLexis.WORD_START
@@ -122,9 +122,11 @@ internal object OperandParens {
 
     private val BETWEEN = Regex("(?i)${START}BETWEEN$END")
 
-    private val JUNCTION_BEFORE = Regex("(?i)$START(?:AND|OR)$")
+    private val JUNCTION = SqlKeywords.CONJUNCTIONS.joinToString("|")
 
-    private val JUNCTION_AFTER = Regex("(?i)^(?:AND|OR)$END")
+    private val JUNCTION_BEFORE = Regex("(?i)$START(?:$JUNCTION)$")
+
+    private val JUNCTION_AFTER = Regex("(?i)^(?:$JUNCTION)$END")
 
     /**
      * Was auf der obersten Ebene eines Operanden mehr als ein Vergleich waere:
@@ -141,6 +143,4 @@ internal object OperandParens {
 
     /** Eine zusammenhaengende Operatorfolge — `@>` ist kein `>`. */
     private val OPERATOR_RUN = Regex("[=<>!@#~&|^%]+")
-
-    private val COMPARISON_OPERATORS = setOf("=", "<>", "!=", "<", ">", "<=", ">=")
 }

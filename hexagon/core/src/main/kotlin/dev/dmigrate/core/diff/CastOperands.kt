@@ -125,7 +125,7 @@ internal class CastOperands(private val tokens: List<SqlToken>, private val scop
         val token = tokens.getOrNull(index) ?: return index < 0
         return when (token.kind) {
             SqlTokenKind.OPEN -> scopes.grouping(index)
-            SqlTokenKind.NAME -> LEFT_WORDS.any { token.isWord(it) }
+            SqlTokenKind.NAME -> SqlKeywords.OPERAND_OPENERS.any { token.isWord(it) }
             else -> false
         }
     }
@@ -134,7 +134,7 @@ internal class CastOperands(private val tokens: List<SqlToken>, private val scop
         val token = tokens.getOrNull(index) ?: return index >= tokens.size
         return when (token.kind) {
             SqlTokenKind.CLOSE -> true
-            SqlTokenKind.NAME -> RIGHT_WORDS.any { token.isWord(it) }
+            SqlTokenKind.NAME -> SqlKeywords.CONJUNCTIONS.any { token.isWord(it) }
             else -> false
         }
     }
@@ -193,8 +193,6 @@ internal class CastOperands(private val tokens: List<SqlToken>, private val scop
 
     private companion object {
         val CORE_KINDS = setOf(SqlTokenKind.NAME, SqlTokenKind.NUMBER, SqlTokenKind.LITERAL)
-        val LEFT_WORDS = listOf("and", "or", "not")
-        val RIGHT_WORDS = listOf("and", "or")
         val QUANTIFIERS = listOf("any", "some", "all")
     }
 }

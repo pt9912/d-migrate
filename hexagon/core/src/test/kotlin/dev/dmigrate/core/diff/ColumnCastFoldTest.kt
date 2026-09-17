@@ -42,6 +42,13 @@ class ColumnCastFoldTest : FunSpec({
         // `citext` liest der PostgreSQL-Reverse als benutzerdefinierten Typ.
         "ci" to NeutralType.Enum(refType = "citext"),
         "flag" to NeutralType.BooleanType,
+        // `inet` und `interval` liest der PostgreSQL-Reverse als Text ohne
+        // Laenge (R301) — wie eine echte `text`-Spalte.
+        "ip" to NeutralType.Text(),
+        "mail" to NeutralType.Email,
+        // Einen `integer`-Identity-Primaerschluessel liest der
+        // PostgreSQL-Reverse als `identifier`.
+        "ident" to NeutralType.Identifier(autoIncrement = true),
     )
 
     fun equal(left: String, right: String, leftTypes: Map<String, NeutralType> = columns, rightTypes: Map<String, NeutralType> = columns) =
@@ -108,11 +115,22 @@ class ColumnCastFoldTest : FunSpec({
             equal("(ts > '2024-01-01 00:00:00'::timestamp without time zone)", "ts > '2024-01-01 00:00:00'") shouldBe true
             equal("(tstz > '2024-01-01'::timestamp with time zone)", "tstz > '2024-01-01'") shouldBe true
             equal("(tm > '08:00:00'::time without time zone)", "tm > '08:00:00'") shouldBe true
-            equal("(r > (0.5)::double precision)", "r > 0.5") shouldBe true
+            equal("(r > (0)::double precision)", "r > 0") shouldBe true
             equal("(r > '0.5'::real)", "r > '0.5'") shouldBe true
             equal("(qty > '-5'::integer)", "qty > '-5'") shouldBe true
             equal("(qty > 5::smallint)", "qty > 5") shouldBe true
             equal("(price >= '0.5'::numeric)", "price >= '0.5'") shouldBe true
+        }
+
+        test("a column cast to text on a text column with a length or an email column") {
+            equal("((status)::text <> 'x'::text)", "status <> 'x'") shouldBe true
+            equal("((mail)::text = 'x'::text)", "mail = 'x'") shouldBe true
+        }
+
+        test("an identifier counts as the widest integer: only a cast to bigint or numeric falls") {
+            equal("((ident)::bigint > 0)", "ident > 0") shouldBe true
+            equal("((ident)::numeric > 0)", "ident > 0") shouldBe true
+            equal("(ident > (5)::bigint)", "ident > 5") shouldBe true
         }
 
         test("the literal may stand on the left of an equality") {
@@ -224,6 +242,39 @@ class ColumnCastFoldTest : FunSpec({
             equal("status = 'x'::character", "status = 'x'") shouldBe false
         }
 
+        test("a decimal literal cast to double precision: numeric without precision reads as float") {
+            // Gemessen (PostgreSQL 18.6): `numeric` ohne Praezision schreibt
+            // `(nu > 0.5)`, `double precision` `(x > (0.5)::double precision)`;
+            // der Reverse liest beide Spalten als `float`.
+            equal("(x > (0.5)::double precision)", "x > 0.5") shouldBe false
+            equal("(r > (0.5)::double precision)", "r > 0.5") shouldBe false
+            equal("(x > (1e3)::double precision)", "x > 1e3") shouldBe false
+            compareCheck("(x > (0.5)::double precision)", "(x > 0.5)") shouldBe false
+            compareIndex("(x > (0.5)::double precision)", "(x > 0.5)") shouldBe false
+        }
+
+        test("a column cast to text on a text column without a length (PG: `inet`, `interval` read as text)") {
+            // Gemessen (PostgreSQL 18.6): `(ip)::text` gibt `10.0.0.1/32`; eine
+            // echte `text`-Spalte bekommt keinen Spalten-Cast.
+            equal("((ip)::text <> '10.0.0.1'::text)", "(ip <> '10.0.0.1'::text)") shouldBe false
+            equal("((ip)::text <> '1 day'::text)", "ip <> '1 day'") shouldBe false
+            equal("((note)::text ~~ 'a%'::text)", "note like 'a%'") shouldBe false
+            compareCheck("((ip)::text <> '10.0.0.1'::text)", "(ip <> '10.0.0.1'::text)") shouldBe false
+        }
+
+        test("an identifier is not narrower than bigint, and an untyped literal never takes its width") {
+            equal("((ident)::integer > 0)", "ident > 0") shouldBe false
+            equal("((ident)::smallint > 0)", "ident > 0") shouldBe false
+            equal("(ident = '5'::integer)", "ident = '5'") shouldBe false
+            equal("(ident = '5'::bigint)", "ident = '5'") shouldBe false
+        }
+
+        test("character without a length is character(1): it never stands for char(n)") {
+            equal("code = 'A'::character", "code = 'A'") shouldBe false
+            equal("code = 'A'::char", "code = 'A'") shouldBe false
+            compareCheck("code = 'A'::character", "code = 'A'") shouldBe false
+        }
+
         test("an ANY array of bpchar elements compares padded (not text)") {
             equal("note = ANY (ARRAY['a  '::bpchar])", "note = ANY (ARRAY['a  '])") shouldBe false
         }
@@ -253,6 +304,62 @@ class ColumnCastFoldTest : FunSpec({
         test("a keyword is no column, even if a column carries its name") {
             val keyword = mapOf("user" to NeutralType.Text())
             equal("user = 'x'::text", "user = 'x'", keyword, keyword) shouldBe false
+        }
+    }
+
+    context("Die Spaltentypen **dieser** Seite — links und rechts verschieden") {
+
+        /** Eine Tabelle nur mit [types]; CHECK und Index-Praedikat tragen [expression]. */
+        fun sideTable(types: Map<String, NeutralType>, expression: String) = SchemaDefinition(
+            name = "app", version = "1",
+            tables = mapOf(
+                "t" to TableDefinition(
+                    columns = types.mapValues { ColumnDefinition(it.value) } + ("id" to ColumnDefinition(NeutralType.Integer)),
+                    primaryKey = listOf("id"),
+                    constraints = listOf(ConstraintDefinition(name = "ck", type = ConstraintType.CHECK, expression = expression)),
+                    indices = listOf(IndexDefinition(name = "ix", columns = listOf(IndexColumn("id")), where = expression)),
+                ),
+            ),
+        )
+
+        /** Ob CHECK **und** Index-Praedikat als unveraendert gelten (die Spalten selbst duerfen sich unterscheiden). */
+        fun sameExpression(
+            leftTypes: Map<String, NeutralType>,
+            left: String,
+            rightTypes: Map<String, NeutralType>,
+            right: String,
+        ): Boolean {
+            val changed = SchemaComparator(canonicalizeRawExpressions = true)
+                .compare(sideTable(leftTypes, left), sideTable(rightTypes, right))
+                .tablesChanged.singleOrNull()
+            val check = changed?.constraintsChanged.orEmpty().isEmpty()
+            val index = changed?.indicesChanged.orEmpty().isEmpty()
+            check shouldBe index
+            return check
+        }
+
+        val varchar = mapOf("status" to NeutralType.Text(maxLength = 20))
+        val bpchar = mapOf("status" to NeutralType.Char(length = 3))
+        val none = emptyMap<String, NeutralType>()
+        val pgCast = "((status)::text = 'x'::text)"
+        val plain = "status = 'x'"
+
+        test("the cast is decided with the column set of its own side") {
+            // Nur die Seite mit dem Cast kennt die Spalte.
+            sameExpression(varchar, pgCast, none, plain) shouldBe true
+            sameExpression(none, plain, varchar, pgCast) shouldBe true
+            // Die Seite mit dem Cast kennt sie nicht.
+            sameExpression(none, pgCast, varchar, plain) shouldBe false
+            sameExpression(varchar, plain, none, pgCast) shouldBe false
+        }
+
+        test("the cast is decided with the column type of its own side") {
+            // Links `varchar(20)`: der Cast haelt den Wert. Rechts `char(3)`.
+            sameExpression(varchar, pgCast, bpchar, plain) shouldBe true
+            sameExpression(bpchar, plain, varchar, pgCast) shouldBe true
+            // Links `char(3)`: derselbe Cast streicht die Leerzeichen am Ende.
+            sameExpression(bpchar, pgCast, varchar, plain) shouldBe false
+            sameExpression(varchar, plain, bpchar, pgCast) shouldBe false
         }
     }
 

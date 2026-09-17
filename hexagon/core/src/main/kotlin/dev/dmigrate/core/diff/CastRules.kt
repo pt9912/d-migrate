@@ -52,17 +52,24 @@ internal object CastRules {
      * Ob `spalte::[type]` den Wert der Spalte unveraendert laesst — und die
      * Spalte dabei so vergleicht, wie sie es ohne Cast taete.
      *
-     * Eine Zeichenkette variabler Laenge auf einen Texttyp; eine Ganzzahl auf
-     * einen gleich breiten oder breiteren Ganzzahltyp oder auf `numeric`; ein
-     * `numeric` auf `numeric`. **Nicht** `char(n)` auf `text` (streicht die
+     * Eine Zeichenkette **mit Laengenangabe** auf einen Texttyp; eine Ganzzahl
+     * auf einen gleich breiten oder breiteren Ganzzahltyp oder auf `numeric`;
+     * ein `numeric` auf `numeric`. **Nicht** `char(n)` auf `text` (streicht die
      * Leerzeichen am Ende), nicht auf Gleitkomma, und nie unter `LIKE` ausser
      * bei Text.
+     *
+     * **Nicht** eine Textspalte ohne Laenge: PostgreSQL schreibt `(spalte)::text`
+     * bei `varchar(n)`, nie bei `text` — und der PostgreSQL-Reverse liest einen
+     * Typ, den er nicht kennt (`inet`, `interval`), als Text ohne Laenge
+     * (`R301`). Dort aendert `::text` den Wert (`'10.0.0.1'::inet` wird
+     * `10.0.0.1/32`). Das Modell unterscheidet `varchar` ohne Laenge nicht von
+     * `text`; ein `varchar` ohne Laenge bleibt deshalb ein Fund.
      */
     fun columnCastKeeps(columnType: NeutralType, type: String, like: Boolean): Boolean {
         val family = CastFamily.of(columnType) ?: return false
         if (like && family != CastFamily.TEXT) return false
         return when (family) {
-            CastFamily.TEXT -> type in TEXT_TYPES
+            CastFamily.TEXT -> type in TEXT_TYPES && boundedText(columnType)
             CastFamily.INTEGER -> type in NUMERIC_TYPES || (INTEGER_WIDTHS[type] ?: 0) >= widthOf(columnType)
             CastFamily.DECIMAL -> type in NUMERIC_TYPES
             else -> false
@@ -107,9 +114,8 @@ internal object CastRules {
     private fun integerLiteralKeeps(columnType: NeutralType, literal: CastLiteral, type: String): Boolean {
         val width = INTEGER_WIDTHS[type] ?: return false
         if (literal.string) return columnType !is NeutralType.Identifier && width == widthOf(columnType)
-        val digits = literal.text
-        if (digits.isEmpty() || !digits.all { it in '0'..'9' }) return false
-        return BigInteger(digits) <= INTEGER_MAX.getValue(width)
+        if (!isDigits(literal.text)) return false
+        return BigInteger(literal.text) <= INTEGER_MAX.getValue(width)
     }
 
     /**
@@ -118,15 +124,29 @@ internal object CastRules {
      * dorthin selbst (`(0)::double precision`). Ein Cast auf `real` rundet das
      * Literal und bleibt deshalb stehen. Ein String-Literal nimmt den Typ der
      * Spalte an; nur dieser Typ ist Schreibweise.
+     *
+     * **Nur eine ganze Zahl.** Der PostgreSQL-Reverse liest `numeric` ohne
+     * Praezision als Gleitkomma; gegen eine solche Spalte schreibt PostgreSQL
+     * `(nu > 0.5)` ohne Cast, gegen `double precision` aber
+     * `(x > (0.5)::double precision)`. Beide Spalten sehen im Modell gleich
+     * aus — faellt der Cast, waeren zwei verschiedene Datenbanken gleich. Eine
+     * ganze Zahl bekommt auch an `numeric` einen Cast (`(0)::numeric`), der
+     * nicht faellt.
      */
     private fun floatLiteralKeeps(columnType: NeutralType, literal: CastLiteral, type: String): Boolean {
         val double = (columnType as NeutralType.Float).floatPrecision == FloatPrecision.DOUBLE
         return when {
-            !literal.string -> type in DOUBLE_TYPES
+            !literal.string -> isDigits(literal.text) && type in DOUBLE_TYPES
             double -> type in DOUBLE_TYPES
             else -> type in REAL_TYPES
         }
     }
+
+    /** Eine Textspalte, deren Typ eine Laenge traegt — im Modell `text(n)` oder `email`. */
+    private fun boundedText(columnType: NeutralType): Boolean =
+        columnType == NeutralType.Email || (columnType as? NeutralType.Text)?.maxLength != null
+
+    private fun isDigits(text: String): Boolean = text.isNotEmpty() && text.all { it in '0'..'9' }
 
     private fun timestampTypes(columnType: NeutralType): Set<String> =
         if ((columnType as NeutralType.DateTime).timezone) TIMESTAMPTZ_TYPES else TIMESTAMP_TYPES

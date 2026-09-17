@@ -34,24 +34,22 @@ internal object ColumnCasts {
         for (index in tokens.indices) {
             val kind = comparisonKind(tokens[index]) ?: continue
             if (!scopes.standalone(index)) continue
-            val comparison = Comparison(operands.left(index), operands.right(index), kind == LIKE, columns)
+            val comparison = Comparison(operands.left(index), operands.right(index), kind == ComparisonKind.LIKE, columns)
             ranges += comparison.castsToDrop()
         }
         return drop(skeleton, ranges.toList())
     }
 
-    private const val PLAIN = 0
-    private const val LIKE = 1
+    /** Wie ein Vergleich seine Operanden liest: `LIKE` vergleicht nur Text. */
+    private enum class ComparisonKind { PLAIN, LIKE }
 
     /** `LIKE`, ein anderer Vergleich — oder `null`, wenn [token] keiner ist. */
-    private fun comparisonKind(token: SqlToken): Int? = when {
-        token.kind == SqlTokenKind.OPERATOR && token.text == "~~" -> LIKE
-        token.kind == SqlTokenKind.OPERATOR && token.text in COMPARISONS -> PLAIN
-        token.isWord("like") -> LIKE
+    private fun comparisonKind(token: SqlToken): ComparisonKind? = when {
+        token.kind == SqlTokenKind.OPERATOR && token.text == "~~" -> ComparisonKind.LIKE
+        token.kind == SqlTokenKind.OPERATOR && token.text in SqlLexis.COMPARISON_OPERATORS -> ComparisonKind.PLAIN
+        token.isWord("like") -> ComparisonKind.LIKE
         else -> null
     }
-
-    private val COMPARISONS = setOf("=", "<>", "!=", "<", "<=", ">", ">=")
 
     private fun drop(skeleton: String, ranges: List<IntRange>): String {
         if (ranges.isEmpty()) return skeleton
