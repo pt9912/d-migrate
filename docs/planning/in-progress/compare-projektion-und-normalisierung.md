@@ -28,13 +28,17 @@
 > I4; `e3116c34c`), Handbuch-Hinweis zu `schema migrate` (`fe6b3d270`),
 > MySQL-Integrationsfall (`542008cbd`); der Repro mit dem Schema des
 > Konsumenten ohne und mit Präferenz und `make sample-db-smoke`.
+> **Geliefert — fünfter Bauabschnitt** (Review und Verifikation Runde 4,
+> E2E-Harnesses, s. dort): Reverse-Präferenzen streng, mit Herkunft und
+> einmal beim Start (L-3, INFO; `49a3b3d4c`), Reverse-Report der MCP-Lese-Jobs
+> (M-2; `f345e00f7`), Spec, Handbuch, Ticket und CHANGELOG (M-1, L-1, L-2,
+> INFO; `a1a02b919`), Roundtrip-Wächter und 5x5-Compare-Matrix über MCP
+> samt Workflow (`c7bfe88dd`). ADR 0057 ist seit `f6bab1514` `accepted`.
 > **Offen in diesem Slice:** nichts mehr zu bauen. Offen bleiben die zwei
 > Eigner-Fragen (Schlüsselwort-Case, `RESTRICT`) und die Punkte unter „Offen"
-> (u. a. der F4-Messauftrag, die Präferenz pro MCP-Aufruf, `schema migrate`
-> ohne Präferenz, Validierung über MCP, Modus gegen MySQL, zwei
-> Reader-Verluste). Den ADR zu P11 und zur Herkunftsregel (Entwurf 0057)
-> führt der Architekt. Posten 4 (MySQL-Introducer) liegt im Reader-Slice;
-> das Schema des Konsumenten löst ihn nicht mehr aus.
+> — die Liste „braucht nach der Graduation einen Ort" ist dort vollständig.
+> Posten 4 (MySQL-Introducer) liegt im Reader-Slice; die neuen Harnesses
+> weisen ihn als bekannten Zustand aus.
 > Gemeldet gegen `1.7.1`. **Belegart je Posten:** nachgemessen sind 1, 2, 3, 5, 6
 > **und** 4 — bei 4 hat die Nachmessung nur eine andere *Art* ergeben als die
 > Meldung nahelegte (Reader statt Kanonisierung), nicht eine andere Tatsache.
@@ -1074,7 +1078,10 @@ Dialekt-Schreibweise ist gleichgesetzt).
 3. `make docs-check` und `make doc-immutable RANGE=origin/main..HEAD` grün.
    **Und das ist falsifizierbar:** wer 0053 ohne Statusänderung im Kern anfasst,
    macht `doc-immutable` rot; ein bloss danebengestellter ADR lässt beide Gates
-   grün und ist damit **nicht** die Erfüllung dieses DoD.
+   grün und ist damit **nicht** die Erfüllung dieses DoD. **Eingeschränkt
+   (Verifikation Runde 4):** das gilt nur für eine Range, deren Basis 0053 noch
+   als `accepted` führt. d-check friert `superseded`-ADRs nicht ein; eine
+   spätere Kernänderung an 0053 fiele keinem Gate auf (s. „Offen").
 
 ### Zweiter Bauabschnitt — Review und Verifikation (2026-09-16)
 
@@ -1757,7 +1764,20 @@ grün; Kontroll-Lauf in der Sabotage-Tabelle), `make docs-check` (331 Dateien, 0
 vor jedem Commit, `make sample-db-smoke` (Pagila PG→PG, 22 Tabellen,
 Zeilenzahlen gleich, `schema compare` gleich der Baseline; der Reverse ist ohne
 Präferenz unverändert), `make doc-immutable RANGE=origin/main..HEAD` vor der
-Übergabe. **Beim ersten Integrationslauf gefunden:** der neue
+Übergabe. **Präzisiert (Verifikation Runde 4):** die 331 Dateien zählte der
+Lauf im Arbeits-Repo samt dem damals ungetrackten ADR-Entwurf 0057; ein
+frischer Klon desselben Stands prüft 330. `make doc-immutable` im Arbeits-Repo
+ist kein Beleg (s. `../open/doc-immutable-lokal-still-gruen.md`); belastbar
+ist der Lauf im frischen `--no-local`-Klon des Reviews Runde 4 (Stand
+`d3ef2d77d`, Ranges `e3116c34c..HEAD` und `076d6c955..HEAD`, je 328 Dateien,
+0 Befunde). **CI an `e3116c34c`:** `Build & Test` grün, `Integration Tests`
+rot — `MssqlFullTextEnvironmentIntegrationTest` (der Container
+`d-migrate-mssql-fts:local` startete nicht, ein Ausreißer); Gradle brach
+damit ab, bevor `:test:integration-mysql:test` lief. Dessen neuer Fall wäre
+dort deterministisch rot gewesen (`No DialectCapabilityProvider for
+POSTGRESQL`) und ist in `542008cbd` behoben; lokal lief er grün. Inzwischen
+hat der Eigner bis `f6bab1514` gepusht; dort sind `Build & Test`,
+`Integration Tests`, `Per-Module Coverage` und `Dependency Submission` grün. **Beim ersten Integrationslauf gefunden:** der neue
 MySQL-Vergleichsfall nahm eine PostgreSQL-Markierung, und dieser Klassenpfad
 führt nur den MySQL-Treiber (`No DialectCapabilityProvider for POSTGRESQL`);
 der Fall vergleicht jetzt gegen ein handgeschriebenes IDENTITY-Soll, die
@@ -1817,12 +1837,206 @@ unterscheiden; mit `identity` **keiner** (es bleibt der berechnete
 **`schema migrate` gegen dieselbe MySQL-Datenbank** (`--plan-only`, Soll = der
 MySQL-Reverse): ohne Präferenz keine Operation; mit `identity` fünf
 `AlterColumnGeneration`, gerendert als wirkungsloses
-``ALTER TABLE … MODIFY COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT`` — der
-Ist-Stand wird ohne Präferenz gelesen (s. „Offen"; Handbuch-Hinweis und
-Nachtrag im offenen Ticket).
+``ALTER TABLE … MODIFY COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT``.
+**Korrektur (Review Runde 4, M-1):** die Ursache war hier nur halb benannt
+(„der Ist-Stand wird ohne Präferenz gelesen"). Ein handgeschriebenes Soll ohne
+`legacy_serial_syntax` plant dieselbe Operation ohne jede Präferenz, schon mit
+1.7.1 — die zielbewusste Naht wertet das Flag gegen MySQL. Beide Ursachen
+getrennt im fünften Bauabschnitt und im offenen Ticket.
 
 **CLI** (Exit 1 in allen Paaren, jetzt und 1.7.1): dieselben Identity-Zeilen wie
 oben; kein Bericht enthält den Platzhalter.
+
+### Fünfter Bauabschnitt — Review und Verifikation Runde 4, E2E-Harnesses (2026-09-17)
+
+Grundlage: ein viertes Review und eine vierte Verifikation (Sonden gegen
+`d3ef2d77d`) und der Eigner-Auftrag vom 2026-09-17, beide E2E-Harnesses im
+Compare-Slice zu bauen. ADR 0057 ist inzwischen `accepted` (`f6bab1514`) und
+bleibt unberührt, ebenso 0053 und 0056. Commits `49a3b3d4c` (Präferenzen),
+`f345e00f7` (Reverse-Report), `a1a02b919` (Spec, Handbuch, Ticket,
+CHANGELOG), `c7bfe88dd` (Harnesses).
+
+**Review-Befunde (Runde 4).**
+- **M-1 — die Ursache des wirkungslosen `ALTER` war falsch benannt:**
+  korrigiert im Handbuch (Reverse-Abschnitt: beide Ursachen getrennt, der Rat
+  „ohne `identity` lesen" nur für zurückgelesene Dateien, für ein
+  handgeschriebenes Soll gegen MySQL `legacy_serial_syntax: true`), im
+  vierten Lauf oben, unter „Offen" und im offenen Ticket (Analyse, ADR 0027
+  Entscheidung 3, Spannung zur Präferenz-Spec). **Nicht gebaut.** Gemessen
+  gegen MySQL 9.7.2, `schema migrate --plan-only`: handgeschriebenes Soll ohne
+  Flag — eine `AlterColumnGeneration`, **mit 1.7.1 genauso**; mit Flag — keine
+  Operation; Reverse ohne Präferenz — keine; Reverse mit `identity` — eine.
+- **M-2 — über MCP war die Präferenz stumm:** behoben. Wo sie hingehört,
+  war zu prüfen: `job_status_get` trägt keine Hinweise (`ManagedJob` hat kein
+  Feld dafür, `spec/job-contract.md` sieht keines vor), das Schema-Artefakt
+  trägt laut CLI-Spec keine Notes. Die CLI trennt Schema-Dokument und
+  Reverse-Report — also bekommen die Lese-Jobs **den Reverse-Report als
+  zweites Artefakt**: dieselbe Form wie `schema reverse` (`source` mit
+  `kind: connection`, `summary`, `notes`, `skipped_objects`), Art `OTHER`,
+  `application/x-yaml`, ohne Index. `schema_reverse_start`: Schema, dann
+  Report. `schema_compare_start`: Compare-Artefakt, dann je aus einer
+  Verbindung gelesene Seite ihr Report, Quelle vor Ziel (das Compare-Artefakt
+  bleibt, wie ADR 0057 es festlegt). Nebenbei sichtbar geworden: übersprungene
+  Objekte des Readers verwarf der Server ebenso. Port-Änderungen:
+  `SchemaReverseJobWorker` liest ein `SchemaReadResult` und hat einen
+  `reportPublisher`, `SchemaCompareJobWorker` lädt `LoadedCompareSide`,
+  `ReverseSourceKind.CONNECTION` — eine geteilte Signatur, deshalb einmal ohne
+  `MODULES` gebaut. Spec (`spec/mcp-server.md`, „Artefakte der Lese-Jobs",
+  `spec/dialect-preference-mechanism.md`, „Nicht stumm"), Handbuch
+  (MCP-Beispiel, Compare-Abschnitt), CHANGELOG (Added).
+- **L-1 — `diffs`-Index:** `spec/mcp-server.md` beschreibt den Ist-Zustand
+  (gefunden über `job_status_get` und `artifact_list`; `diff_list` ist in
+  `mcp serve` leer); der Rest steht unter „Offen".
+- **L-2 — CHANGELOG:** die Reichweite der Konfiguration steht unter
+  „Changed", mit dem gemessenen Umkehr-Beispiel (Konfiguration mit Breite 64,
+  `schema compare db:<sqlite>`: gegen einen Reverse mit Breite 64 bisher
+  `DIFFERENT`/Exit 1, jetzt `IDENTICAL`/Exit 0; gegen einen mit Breite 32
+  bisher `IDENTICAL`, jetzt `DIFFERENT`; beides gegen 1.7.1 und das neue Image
+  gemessen).
+- **L-3 — Tippfehler in `autoincrement_syntax`:** behoben, und die Breite
+  gleichgezogen — sie fiel bei einem unbekannten Wert **ebenso still** auf
+  `32`. Ein vorhandener, aber nicht erkannter Wert wirft
+  `InvalidReversePreference`; `schema reverse` und `schema compare` (mit
+  `db:`-Operand, jetzt in Phase 1) enden mit Exit 7, `data transfer` mit
+  Exit 7, `mcp serve` startet nicht (Exit 2, wie die übrigen
+  Konfigurationsfehler). Ein fehlender Block, eine fehlende oder kaputte Datei
+  bleiben „nicht erklärt"; ein gesetztes Flag verdeckt den Wert seines
+  Dialekts. Spec: `connection-config-spec.md` (Kommentar des Blocks),
+  `dialect-preference-mechanism.md` (Abschnitt 2, für Lese- und
+  Schreib-Präferenzen), `cli-spec.md` (Exit-Codes). **Über den Befund
+  hinaus:** `data transfer` fing die gleichwertige
+  `OracleEmptyStringResolver.InvalidPreference` nie ab — mit 1.7.1 gemessen:
+  Java-Stacktrace und Exit 1 statt der spezifizierten Exit 7. Jetzt fängt
+  dieselbe Stelle beide (CHANGELOG, Fixed).
+- **INFO:** `spec/mcp-server.md` präzisiert (bei einem hochgeladenen Schema
+  entscheidet das Werkzeug, das die Datei erzeugt hat); die halbe Markierung
+  steht in `cli-spec.md` (Flagtabelle von `schema reverse` und
+  „Reverse-Markierung"; gemessen: `--version` allein → `schema compare`
+  Exit 7, `--name` → die Datei gilt als handgeschrieben); CHANGELOG nennt den
+  Exit-Code-Wechsel 1 → 0; Handbuch: SQLite nur mit Breite 64; `R205`
+  **und** `R204` nennen die Stelle der Deklaration (`PreferenceSource` in
+  `SchemaReadOptions`, `DeclaredPreference` in `driver-common`; gemessen:
+  `--mysql-autoincrement-syntax identity` → „per declared preference
+  (--mysql-autoincrement-syntax identity)"); `mcp serve` löst die Präferenzen
+  einmal beim Start auf (Spec) und reicht dieselben an beide Serve-Zweige
+  (Test mit In-Memory- und `--server-state`-Zweig).
+
+**Verifikation Runde 4.** Den CI-Stand von `e3116c34c`, die Belege des
+vierten Bauabschnitts und P7-DoD 3 halten die jeweiligen Stellen oben fest;
+der veraltete `E012`-Anker ist hier und im Reader-Slice nachgezogen.
+
+**Abweichungen vom Auftrag.** `data transfer` bekommt die Herkunft der Breite
+nicht: der Transfer verwirft die Reader-Notes ohnehin, die Herkunft hätte dort
+keine sichtbare Wirkung (s. „Offen"). Das Handbuch-Beispiel zu `schema_list`
+ist mitkorrigiert (die bloße `jobId` findet nichts, gemessen). Die
+Zwischencommits `49a3b3d4c` und `f345e00f7` sind nicht einzeln gebaut, nur der
+Endstand.
+
+**Sabotage-Protokoll fünfter Bauabschnitt.** Je Gruppe ein Lauf mit
+`--continue` über `docker build --target build`, Rücknahme per Archiv und
+Prüfsumme (alle Dateien „OK").
+
+| Lauf | Sabotage | rot |
+| ---- | -------- | --- |
+| S1 (app 4, mcp 2, cli 5, driver-common 2, mysql 2, sqlite 1) | M2a: Reverse-Worker veröffentlicht den Report nicht | `SchemaReverseJobWorkerTest` (2), `JobWorkerScenarioTest`, `McpCoreJobWorkerFactoryTest` „publishes the read report" |
+| S1 | M2d: Compare-Worker veröffentlicht Ziel vor Quelle | `SchemaCompareJobWorkerTest` „source before target" |
+| S1 | M2b: Fabrik verwirft das Leseergebnis der Verbindungsseite | `McpCoreJobWorkerFactoryTest` „one read report per connection side" |
+| S1 | L3a: unbekannter Syntax-Wert still `serial` | `ReverseAutoIncrementSyntaxResolverTest`, `SchemaReverseWiringTest` (Exit 7), `SchemaCompareWiringTest`, `McpServeWiringTest` (Exit 2) |
+| S1 | SRCa: Note nennt immer den Schlüssel | `AutoIncrementSyntaxNoteTest` (2), `MysqlTypeMappingTest`, `MysqlSchemaReaderTest`, `SqliteSchemaReaderTest` |
+| S1 | SERVEa: In-Memory-Zweig mit Default-Präferenzen | `McpServeWiringTest` „in-memory branch" |
+| S2 (mcp 2, cli 7, sqlite 1) | M2c: Report ohne Notes | `McpCoreJobWorkerFactoryTest` (2, `R205`) |
+| S2 | L3b: unbekannte Breite still `32` | `ReverseAutoincrementResolverTest`, `ReverseAutoIncrementSyntaxResolverTest`, `DataTransferWiringTest`, `SchemaReverseWiringTest` |
+| S2 | SRCb: Resolver meldet immer `CONFIG` | `ReverseAutoIncrementSyntaxResolverTest` „flags reach both parts", `SchemaReverseWiringTest` „where each preference was declared" |
+| S2 | SRCd: SQLite-Reader ohne Herkunft | `SqliteSchemaReaderTest` „declared by flag" |
+| S2 | SERVEb: `--server-state`-Zweig mit Default-Präferenzen | `McpServeWiringTest` „--server-state branch" |
+| S3 (ports-read 1, mysql 1, cli 5) | L3c: `schema reverse` schluckt den Fehler | `SchemaReverseWiringTest` (Exit 7) |
+| S3 | L3d: `mcp serve` schluckt den Fehler | `McpServeWiringTest` (Exit 2) |
+| S3 | L3e: `data transfer` fängt nur die Lese-Präferenz | `DataTransferWiringTest` (Oracle-Wert) |
+| S3 | L3f: `schema compare` fällt still auf Defaults | `SchemaCompareWiringTest` |
+| S3 | SRCc: `applyTo` verliert die Herkunft | `ReversePreferencesTest`, `SchemaReverseWiringTest` |
+| S3 | SRCe: MySQL-Reader ohne Herkunft | `MysqlSchemaReaderTest` |
+| INT (`make integration`, e2e-cli) | M2a durch den MCP-Client | `McpOperationalScenarioTest` „expected:<2> but was:<1>" (2 Tests, 1 rot) |
+| H1 (Harness) | Roundtrip gegen das Image `1.7.1` | Wächter `metadata` (Platzhalter), `notation` (CHECKs ohne Ausdruck, Index-Prädikat), `sequence` (Identity) |
+| H2 (Harness) | Compare-Matrix gegen das Image `1.7.1` | 31 Abweichungen: Markierung als `SCHEMA_NAME_CHANGED`, Werkzeug ≠ Job, Art nicht `COMPARE`, Form, kein Reverse-Report, Version, Zellen; die Erwartungsdatei blieb unverändert |
+
+**Gates fünfter Bauabschnitt:** `make docker-check` für ports-read (224
+Tests), driver-common (543), driver-mysql (846), driver-sqlite (754),
+application (1907), mcp (1252) und cli (1080), einmal **ohne** `MODULES`
+(12 209 Tests, 0 Fehler, `integration-mysql` und `e2e-cli` kompiliert),
+`make integration` für `:test:e2e-cli`, `:test:integration-mysql` und
+`:test:integration-sqlite` (mit `-PintegrationTests`, 97 Tasks ausgeführt,
+grün; Kontroll-Lauf INT), `make docs-check` (331 Dateien, 0 Befunde — im Arbeits-Repo und im frischen Klon gleich),
+`make solid-suppression-gate` vor jedem Commit, `make semgrep`, für die
+Skripte `bash -n` und shellcheck (per Container, kein Repo-Gate — das Repo hat
+keins für Shell), `make doc-immutable` im frischen `--no-local`-Klon
+(Ranges `f6bab1514..HEAD` = `origin/main..HEAD` und `e3116c34c..HEAD`, je 329
+Dateien, 0 Befunde).
+
+#### E2E-Harnesses (Eigner-Auftrag 2026-09-17)
+
+Vorbild ist das Konsumenten-Repo (nur gelesen): versionsgebundene
+Erwartungen mit `--update-expectations`, versionsunabhängige Wächter, eine
+5x5-Matrix mit Funden und Codes je Zelle. Die Fixtures sind eigene. Gemeinsam
+genutzt: `examples/mcp-e2e/scripts/lib/dialects.sh` (Stack, Leeren,
+Anwenden je Dialekt) und `lib/compare-guards.sh` (Wächter über eine
+vereinheitlichte Fundliste aus CLI-JSON und MCP-Funden).
+
+**Roundtrip** (`smoke-cross-dialect-roundtrip.sh`, `make mcp-e2e-roundtrip`):
+Fixture um CHECK mit `OR`/`IS NULL`, Werteliste an `varchar`,
+`numeric > 0`, LIKE-CHECK, Index mit Prädikat und eine Identity-Spalte
+erweitert. Die Wächter arbeiten auf `schema compare --output-format json` und
+zielen auf Klassen: `notation` (CHECK-, Index- und Fremdschlüssel-Fund, der
+ohne Leerraum, Quoting, Klammern und ausdrückliches `no_action` gleich ist —
+er ersetzt den alten `_fkey`-Grep, der den Fremdschlüssel der Fixture nie
+traf), `metadata` (Name/Version gegen einen Reverse) und `sequence`
+(Erzeugung, die nur am Sequenznamen hängt). MySQL scheitert an den neuen
+String-Literal-CHECKs mit dem bekannten Introducer (`E012`, Exit 3); der Lauf
+erkennt genau diesen Grund und weist den Dialekt als „ungültig" aus. Stand
+2026-09-17 (zwei vollständige Läufe gleich): PostgreSQL 1 Fund, MySQL ungültig,
+SQL Server 5, SQLite 6, Oracle nicht gefahren (README-Tabelle).
+
+**Compare-Matrix** (`smoke-compare-matrix.sh`, `make mcp-e2e-compare-matrix`,
+Oracle mit `…-oracle`): eigene Fixture `fixtures/compare-matrix.yaml`, jeder
+Dialekt einmal Quelle; die Ziel-DDL erzeugt die CLI aus dem Schema, das der
+MCP-Reverse abgelegt hat, angewendet mit dem Client des Dialekts; verglichen
+mit `schema_compare` **und** `schema_compare_start` in einer stdio-Sitzung je
+Quelle. Erwartungen in `expected/compare-matrix.env` (versionsgebunden,
+`EXPECT_VERSION`); nie gepinnt: Werkzeug = Job, Art `COMPARE` und Form des
+Job-Artefakts, die drei Wächter, Reverse-Report je Reverse-Job. Zellen ohne
+Messung sind als Zustand gepinnt (`INVALID`/`E012-introducer`,
+`APPLY-FAIL`/Fehlerklasse des Servers). Native Seeds: `fixtures/seeds/<dialekt>.sql`
+wird angewendet, wenn es die Datei gibt (heute keine). Stand 2026-09-17
+(`d-migrate:dev` 1.8.0-SNAPSHOT; zwei Prüfläufe identisch):
+
+| Quelle \ Ziel | PostgreSQL | MySQL | SQL Server | SQLite |
+| ------------- | ---------- | ----- | ---------- | ------ |
+| PostgreSQL | — | 7 | 5 | 13 |
+| MySQL | `INVALID` | — | `INVALID` | `INVALID` |
+| SQL Server | `APPLY-FAIL` (`syntax error at or near "["`) | `APPLY-FAIL` (`ERROR 1064`) | — | 9 |
+| SQLite | 3 | `APPLY-FAIL` (`ERROR 1170`) | `APPLY-FAIL` (`Msg 2714`) | — |
+
+Codes: PostgreSQL → MySQL `TABLE_COLUMN_GENERATION_CHANGED:2
+TABLE_CONSTRAINT_CHANGED:1 TABLE_CONSTRAINT_REMOVED:3 TABLE_INDEX_REMOVED:1`;
+→ SQL Server `TABLE_COLUMN_GENERATION_CHANGED:2 TABLE_CONSTRAINT_REMOVED:3`;
+→ SQLite `TABLE_COLUMN_GENERATION_CHANGED:2 TABLE_COLUMN_TYPE_CHANGED:8
+TABLE_CONSTRAINT_REMOVED:3`; SQL Server → SQLite
+`TABLE_COLUMN_GENERATION_CHANGED:1 TABLE_COLUMN_TYPE_CHANGED:8`; SQLite →
+PostgreSQL `TABLE_CONSTRAINT_CHANGED:2 W137:1`. Jeder Fund ist erklärt (README
+des Harness): der Generator rendert PostgreSQL-Casts in CHECK und Berechnung
+nicht (`E053`), MySQL kennt kein Index-Prädikat (`E057`), SQL Server kein
+`BY DEFAULT` (`W140`), MySQL ohne deklarierte Präferenz mit
+`legacy_serial_syntax`, Schlüsselwort-Schreibweise, ADR 0055, SQLite-Typaffinität,
+`W137`. Kein Wächter schlägt an; `OR`/`IS NULL`, `numeric > 0`, das
+Index-Prädikat und der Sequenzname melden nirgends etwas. Die
+`APPLY-FAIL`-Zellen sind Reader- und Generator-Befunde (s. „Offen").
+
+**Workflow:** `.github/workflows/mcp-e2e-compare-matrix.yml` („MCP-E2E
+Compare-Matrix (Best-Effort)") — `workflow_dispatch`, wöchentlich montags
+03:17 UTC, Push auf `main` in `examples/mcp-e2e/**`, `make/mcp-e2e.mk` und
+die Workflow-Datei; `continue-on-error`, Checkout per SHA gepinnt wie die
+Sample-DB-Cross-Smokes, ohne Oracle; kein PR-Gate. **Oracle** ist in beiden
+Harnesses nicht gefahren (s. „Offen"). Nach den Läufen `make mcp-e2e-down`;
+der fremde `mcp-e2e-oracle-1` blieb unberührt.
 
 ## Akzeptanzkriterien
 
@@ -1878,7 +2092,10 @@ oben; kein Bericht enthält den Platzhalter.
    deklarierte Reverse-Präferenz: `serial` als Default (byte-identischer
    Reverse), `identity` ohne das Flag und mit `R205`; Flag > Datei > Default;
    die Konfiguration sehen auch `db:`-Operanden von `schema compare` und
-   `mcp serve`. Migrate und Fingerabdruck werten das Flag weiter.
+   `mcp serve` (dort einmal beim Start, in beiden Serve-Zweigen). Ein
+   vorhandener, aber nicht erkannter Wert ist ein Konfigurationsfehler (CLI
+   Exit 7, `mcp serve` Exit 2); `R204`/`R205` nennen die Stelle der
+   Deklaration. Migrate und Fingerabdruck werten das Flag weiter.
 10. `schema compare` hat **eine** Semantik in CLI, `schema_compare` und
     `schema_compare_start` (P11): dieselbe Faltung, dieselbe
     Erzeugungs-Projektion, und trägt eine Seite die Reverse-Markierung, sind
@@ -1887,6 +2104,11 @@ oben; kein Bericht enthält den Platzhalter.
     Werkzeug, **ungekürzt** (volle Listen samt `details` verglichen), unter
     der eigenen Art `COMPARE` und in derselben Form wie das Überlauf-Artefakt
     von `schema_compare` (F1, L1) — gepinnt an den echten Verdrahtungen.
+11. Über MCP ist die Präferenz nicht stumm: jeder Lese-Job, der eine
+    Verbindung liest, legt neben seinem Ergebnis den Reverse-Report dieser
+    Verbindung ab (Notes samt `R204`/`R205`, übersprungene Objekte), in fester
+    Reihenfolge — gepinnt an der echten Fabrik, durch den MCP-Client
+    (`:test:e2e-cli`) und im Harness gegen das gebaute Image.
 
 ## Verifikation
 
@@ -1906,6 +2128,9 @@ oben; kein Bericht enthält den Platzhalter.
    | P11 | `:hexagon:application` (Semantik, Job-Worker), `:adapters:driving:cli`, `:adapters:driving:mcp`; geteilte Signatur → einmal ohne `MODULES`; Job-Pfad durch den MCP-Client in `:test:e2e-cli` | `make docker-check`, `make integration` |
    | P10 (F3) | `:hexagon:ports-read` (Präferenz), `:adapters:driven:driver-common` (`R205`), MySQL- und SQLite-Treiber, `:hexagon:application`, `:adapters:driving:cli`, `:adapters:driving:mcp`; Rücknahme der Fähigkeit in `:hexagon:ports-common` und allen fünf Treibern; der echte MySQL-Reverse in `:test:integration-mysql` | `make docker-check`, `make integration` |
    | F1, L1, I1 | `:hexagon:core` (Art), `:hexagon:application` (Publisher-Port), `:adapters:driving:mcp` (Artefakte, Golden); Job-Artefakt durch den MCP-Client in `:test:e2e-cli` | `make docker-check`, `make golden-update`, `make integration` |
+   | L-3, INFO (fünfter Bauabschnitt) | `:hexagon:ports-read` (Herkunft), `:adapters:driven:driver-common` (Note), MySQL- und SQLite-Treiber, `:hexagon:application`, `:adapters:driving:cli` (Resolver, Wiring, `mcp serve`) | `make docker-check` |
+   | M-2 | `:hexagon:ports-read`, `:hexagon:application` (Worker, geteilte Signatur → einmal ohne `MODULES`), `:adapters:driving:mcp`; Report durch den MCP-Client in `:test:e2e-cli` | `make docker-check`, `make integration` |
+   | E2E-Harnesses | `examples/mcp-e2e` (Skripte, Fixture, Erwartungen), `make/mcp-e2e.mk`, Workflow | `make mcp-e2e-roundtrip`, `make mcp-e2e-compare-matrix`, `bash -n`, shellcheck |
 
    **Integrationsmodule:** Posten 4 (MySQL-Reader) ist in den Reader-Slice
    gewandert. Seit P11 läuft `:test:e2e-cli` mit (der Job
@@ -1924,14 +2149,17 @@ oben; kein Bericht enthält den Platzhalter.
    und SQLite-Reverse. Die **Paare ausschreiben** — „Dreier-Matrix" heisst im
    Dokument sonst die Comparator-Matrix (PG↔MSSQL, PG↔MySQL, MSSQL↔MySQL), und
    SQLite kommt in keinem Posten vor: es ist der **Nullfall** (dort gibt es
-   keine Kanonisierung zu prüfen). `examples/mcp-e2e` fährt die Matrix **nicht**
-   (es vergleicht Quelle gegen je einen Reverse).
+   keine Kanonisierung zu prüfen). Seit dem fünften Bauabschnitt fährt
+   `examples/mcp-e2e` die Matrix über MCP (`smoke-compare-matrix.sh`, 5x5 mit
+   Oracle als Opt-in); der Roundtrip dort vergleicht weiter die Quelle gegen je
+   einen Reverse.
 
 4. **Der Harness mit gepinnten Erwartungen ist ein anderer**:
    `examples/sample-db/expected/pagila-smoke.compare.txt` plus Byte-Diff-Abbruch
    (`examples/sample-db/scripts/smoke.sh:182`; die Baseline steht in Zeile 30).
-   `examples/mcp-e2e` **pinnt nicht** — sein README
-   sagt das ausdruecklich („der Harness pinnt sie nicht, er zeigt sie").
+   Der Roundtrip in `examples/mcp-e2e` pinnt nicht (er zeigt die Funde und
+   verbietet Fehlalarm-Klassen); die Compare-Matrix dort pinnt ihre Zellen
+   versionsgebunden in `examples/mcp-e2e/expected/compare-matrix.env`.
 
 5. **Vertrags-Gates:** `make docs-check` (P7 fasst `spec/` an),
    `make doc-immutable RANGE=origin/main..HEAD` (P7 ändert eine ADR-Statuszeile —
@@ -1953,9 +2181,12 @@ oben; kein Bericht enthält den Platzhalter.
 - **`legacy_serial_syntax` zwischen PostgreSQL und MySQL** — zuerst als
   Vergleichs-Faltung gebaut (P10, dritter Bauabschnitt), auf Eigner-Entscheidung
   (F3) zurückgenommen und als Reverse-Präferenz `serial`/`identity` gebaut.
-- **`schema_compare_start` im ADR** — der Architekt hält P11, die Herkunftsregel
-  und F1–F4 in einem eigenen ADR fest (Entwurf 0057, im Anschluss an diesen
-  Bauabschnitt).
+- **`schema_compare_start` im ADR** — erledigt: ADR 0057 (P11, die
+  Herkunftsregel, F1–F4) ist seit `f6bab1514` `accepted`.
+- **Die Präferenz über MCP war stumm** (Review Runde 4, M-2) — gebaut: der
+  Reverse-Report der Lese-Jobs (fünfter Bauabschnitt).
+- **Ein Tippfehler in einer Lese-Präferenz fiel still auf den Default** (L-3)
+  — gebaut: Konfigurationsfehler, wie bei der Schreib-Präferenz.
 - **Der Identity-Modus zwischen SQL Server und den anderen** — entschieden
   (Eigner, 2026-09-16): bleibt ein Fund, ein Fähigkeitsunterschied
   (`W140`); als Grenze in `spec/cli-spec.md`.
@@ -1990,14 +2221,16 @@ oben; kein Bericht enthält den Platzhalter.
   Pendant zum CLI-Flag ist nicht gebaut. Ein Abnehmer mit verschiedenen
   Wünschen je Aufruf braucht dafür einen eigenen Schnitt (Tool-Schema,
   Idempotenz-Fingerabdruck).
-- **`schema migrate` liest den Ist-Stand ohne Präferenz.** Wer ein
-  MySQL-Schema mit `identity` zurückliest und die Datei gegen dieselbe
-  Datenbank migriert, vergleicht ein Soll ohne gegen ein Ist mit
-  `legacy_serial_syntax` (Messung im Repro des vierten Bauabschnitts). Das ist
-  dieselbe Lücke wie das Präferenz-Threading im Post-Compare-Re-Read für
-  SQLite, das
-  [`../open/sqlite-migrate-biginteger-identity-render-gap.md`](../open/sqlite-migrate-biginteger-identity-render-gap.md)
-  führt; dort ist der MySQL-Fall nachgetragen.
+- **`schema migrate` gegen MySQL plant ein wirkungsloses `MODIFY COLUMN`**,
+  sobald das Soll kein `legacy_serial_syntax` trägt — aus **zwei** Ursachen
+  (Review Runde 4, M-1): die zielbewusste Naht wertet das Flag gegen MySQL,
+  obwohl der Generator beide Formen gleich rendert (trifft auch ein
+  handgeschriebenes Soll ohne Präferenz, schon mit 1.7.1), und der Ist-Stand
+  wird ohne Präferenz gelesen. Eine Faltung in der Naht berührt Abdruck und
+  Overlay-Bindung ([ADR 0027](../../adr/0027-reverse-preferences-inhaerente-mehrdeutigkeit.md),
+  Entscheidung 3) — nicht hier gebaut. Die Analyse samt Spannung zu
+  `spec/dialect-preference-mechanism.md` steht in
+  [`../open/sqlite-migrate-biginteger-identity-render-gap.md`](../open/sqlite-migrate-biginteger-identity-render-gap.md).
 - **`artifact_upload_init` nimmt mehr Arten an, als die Spec nennt.** Die
   Spec zählt `schema`, `ddl`, `transform-script`, `seed-data`, `rules` und
   `generic` auf; der Handler nimmt zusätzlich jeden Namen aus `ArtifactKind`
@@ -2054,9 +2287,52 @@ oben; kein Bericht enthält den Platzhalter.
   Korrektur; dritter Bauabschnitt, L3); Fund-Pfade, `details` und die
   Faltungsmenge stehen in `spec/`, nicht im Handbuch. **Eine Ausnahme wandert
   mit:** der Posten C1/P6 im Reader-Slice verschiebt die Grenze von `E012`, und
-  die steht im Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2148`) — dort
+  die steht im Anwenderhandbuch (`docs/user/anwenderhandbuch.md:2196`) — dort
   zieht der Reader-Slice mit.
-- **Oracle im Konsumenten-Repro** — nicht gefahren (fremder Container).
+- **Oracle im Konsumenten-Repro und in den Harnesses** — nicht gefahren. Der
+  laufende `mcp-e2e-oracle-1` gehört zum Compose-Projekt des Harness, ist aber
+  ein fremder Container: der Opt-in (`make mcp-e2e-roundtrip-oracle`,
+  `make mcp-e2e-compare-matrix-oracle`) würde ihn übernehmen und seine
+  Objekte löschen. Die Oracle-Zellen der Matrix sind deshalb nicht gepinnt;
+  `make mcp-e2e-down` lässt ihn stehen (das Netz bleibt dadurch belegt).
+- **Der Integrations-Workflow läuft ohne `--continue`.** Ein Ausreißer in
+  einem Modul verdeckt deterministische Fehler der übrigen — so an
+  `e3116c34c` (FTS-Container startete nicht, `:test:integration-mysql:test`
+  lief nicht). Eine CI-Frage, nicht dieses Slices.
+- **Das FTS-Test-Image pinnt `mssql-server` nicht**, nur das FTS-Paket; die
+  Basis wandert mit dem Upstream-Tag. Kandidat für den Ausreißer oben.
+- **`make doc-immutable` friert `superseded`-ADRs nicht ein.** Nach dem
+  Statuswechsel fiele eine Kernänderung an 0053 keinem Gate auf (s. P7,
+  DoD 3). Eine Frage an d-check.
+- **Der Index `diffs` ist in `mcp serve` leer.** `McpRuntimeWiring` verdrahtet
+  `EmptyDiffStore`; `diff_list` findet das Artefakt von
+  `schema_compare_start` nicht (Review Runde 4 gemessen, vorbestehend). Die
+  Spec beschreibt jetzt den Ist-Zustand; für `profile_list` gilt dieselbe
+  Verdrahtung (`EmptyProfileStore`, nicht gemessen).
+- **Der `job_input`-Upload ist über die Leitung nicht erreichbar:**
+  `artifact_upload_init` kennt `approvalKey` und `artifactKind` in seinem
+  Eingabeschema nicht (Review Runde 4).
+- **`data transfer` gibt keine Reader-Notes aus.** Der Transfer liest beide
+  Schemata und verwirft deren Notes; `--sqlite-autoincrement-width 64` bleibt
+  dort ohne `R204` — „Nicht stumm" gilt für diesen Weg nicht. Beim Bau von L-3
+  gesehen.
+- **Befunde der Compare-Matrix, die nicht der Vergleich sind** (gepinnt als
+  Zustand `APPLY-FAIL`): der SQL-Server-Reverse liest eine berechnete Spalte
+  mit T-SQL-Quoting (`[quantity]*[unit_price]`), und die
+  Portabilitätsprüfung (`E053`) erkennt das nicht — PostgreSQL und MySQL
+  lehnen die DDL ab; der SQLite-Reverse kennt keine Länge, und MySQL
+  indiziert das eindeutige `TEXT` nicht (`ERROR 1170`); der SQLite-Reverse
+  nennt die Fremdschlüssel jeder Tabelle `fk_0` …, und SQL Server verlangt
+  eindeutige Namen (`Msg 2714`). Ort vermutlich der Reader-Slice (Namen,
+  Längen) und der Generator (Portabilität).
+- **`schema_list` filtert `jobId` gegen die Job-URI.** Die bloße Kennung aus
+  `schema_reverse_start` findet nichts; die Spec nennt nur „`jobId`". Das
+  Handbuch-Beispiel ist auf den Ist-Zustand korrigiert, die Vertragsfrage
+  (Kennung oder URI) ist offen.
+- **Native Typ-Seeds und der Silent-Loss-Check der Compare-Matrix** —
+  gehören in den Reader-Slice (der Koordinator trägt sie dort bei dessen
+  Aktivierung ein). Die Matrix wendet `fixtures/seeds/<dialekt>.sql` bereits
+  an, wenn es die Datei gibt.
 
 ## Was der Slice bewusst nicht tut
 
