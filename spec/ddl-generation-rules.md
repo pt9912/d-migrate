@@ -1145,7 +1145,7 @@ die Ziel-Engine. Es wird nicht geparst oder dialektuebergreifend transformiert.
 | PostgreSQL | `WHERE <predicate>` wird gerendert und per Reverse gelesen |
 | SQLite | `WHERE <predicate>` wird gerendert und per Reverse aus `sqlite_master.sql` gelesen |
 | MySQL | Kein stiller Predicate-Verlust: Index wird uebersprungen und `action_required` E057 erzeugt |
-| MSSQL | `WHERE <predicate>` wird als gefilterter Index gerendert und per Reverse aus `sys.indexes.filter_definition` gelesen |
+| MSSQL | `WHERE <predicate>` wird als gefilterter Index gerendert und per Reverse aus `sys.indexes.filter_definition` gelesen — in **neutraler Syntax**, nach derselben Regel wie CHECK und Berechnungsausdruck ([`type-mapping.md`](type-mapping.md), Abschnitt 6.2) |
 
 Partial-UNIQUE wird genauso behandelt. MySQL darf daraus keinen normalen
 Unique-Index erzeugen, weil das strenger waere als die Quelle.
@@ -1506,11 +1506,30 @@ Zeichenkette und ohne `NO_BACKSLASH_ESCAPES` den Backslash als Escape; beides
 veränderte die Bedingung still, statt sie abzulehnen — `CHECK ("Qty" > 0)`
 verglichen dort eine Zeichenkette mit einer Zahl. Der MySQL-Generator schreibt
 deshalb in diesen vier Feldern `"Name"` als `` `Name` `` und verdoppelt den
-Backslash in einem String-Literal. Das ist dieselbe Umsetzung, die Identifier
-in View-Queries erfahren, und dieselbe Literal-Regel, nach der jeder andere
-MySQL-Literalwert geschrieben wird (Abschnitt 2.3, „String-Literale"). Umgeschrieben wird erst, nachdem die
+Backslash in einem String-Literal — dieselbe Literal-Regel, nach der jeder
+andere MySQL-Literalwert geschrieben wird (Abschnitt 2.3, „String-Literale").
+
+Aus demselben Grund bekommt ein **nacktes Wort, das MySQL reserviert**,
+Backticks. Das neutrale Modell lässt einen rein kleingeschriebenen
+Spaltennamen unquotiert; `` `key` `` eines MySQL-Reverse steht dort als `key`,
+und `CHECK (key > 0)` ist auf MySQL ein Syntaxfehler. Die Wortliste ist
+`information_schema.KEYWORDS` mit `RESERVED = 1`, als Vereinigung über die
+unterstützten Serverversionen. Ausgenommen sind die reservierten Wörter, die
+in einem **skalaren** Ausdruck Syntax sind (`AND`, `BETWEEN`, `CASE`,
+`INTERVAL`, `BINARY`, die Werte-Funktionen ohne Klammern …), ein Wort
+unmittelbar vor `(` (Funktionsaufruf) und eines unmittelbar hinter `AS`
+(Typname eines `CAST`). Ein Wort, das beides sein kann — `binary`, `char`,
+`interval` sind Operator und möglicher Spaltenname —, bleibt nackt; ohne
+Parser ist die Stellung nicht zu entscheiden, und ein falsch gesetztes Quoting
+wäre schlimmer als ein fehlendes. Für die übrigen Ziele gibt es diese
+Rückquotierung nicht: dort scheitert ein solcher Ausdruck am Server, laut und
+mit dessen Meldung.
+
+Umgeschrieben wird im Generate-Pfad erst, nachdem die
 Portabilität beurteilt ist: ein Ausdruck, der ohnehin nicht gerendert wird,
-wird auch nicht umgeschrieben. Kann ein lexikalischer Scanner den Text nicht
+wird auch nicht umgeschrieben. Im Migrate-Pfad schreibt der Generator die
+Schreibweise um, ohne vorher zu beurteilen — dort entscheidet der
+Diff-Planer, welche Operationen entstehen. Kann ein lexikalischer Scanner den Text nicht
 sicher abgrenzen — eine nicht geschlossene Quotierung, ein nicht geschlossener
 Blockkommentar —, bleibt er wortgleich; ein falsch gesetztes
 Anführungszeichen wäre schlimmer als ein fehlendes. Der Inhalt eines

@@ -196,8 +196,18 @@ nicht trägt, gilt als bereits ausgepackt. Ein Steuerzeichen-Escape (`\n`,
 `\t`, `\0`) behält seinen Wert: im neutralen Literal steht das Zeichen selbst,
 wie es die übrigen vier Dialekte schreiben.
 
-Der Rückweg gehört zum Generator: er setzt `"…"` wieder in Backticks und
-verdoppelt den Backslash
+**Eine Quotierung, nicht zwei.** Diese drei Felder führen Bezeichner
+ausschließlich in Backticks und Zeichenketten ausschließlich in `'…'` —
+unabhängig vom `sql_mode` der Sitzung, die den Ausdruck anlegte, und
+unabhängig von dem der Sitzung, die ihn liest. Auch unter `ANSI_QUOTES`
+(enthalten in `ANSI`) bleibt es dabei, obwohl derselbe Server dann
+Tabellen- und Spaltennamen außerhalb des Ausdrucks mit `"` schreibt. Ein
+`"…"`-Lauf in einem dieser Felder ist deshalb keine Zeichenkette; der Reverse
+übernimmt ihn wortgleich als neutralen Bezeichner, statt ihn zu einer
+Konstanten zu machen.
+
+Der Rückweg gehört zum Generator: er setzt `"…"` wieder in Backticks,
+verdoppelt den Backslash und quotiert ein nacktes Wort, das MySQL reserviert
 ([`ddl-generation-rules.md`](ddl-generation-rules.md), „Roher Ausdruckstext").
 
 ---
@@ -336,8 +346,9 @@ String-Literal — das neutrale Modell kennt nur diese vier als Funktion.
 
 **Roher Ausdruckstext** kommt in **neutraler Syntax** ins Modell, nicht in
 T-SQL-Oberflächensyntax — für den **CHECK-Ausdruck**
-(`sys.check_constraints.definition`) und den **Berechnungsausdruck einer
-Spalte** (`sys.computed_columns.definition`) nach derselben Regel: der
+(`sys.check_constraints.definition`), den **Berechnungsausdruck einer
+Spalte** (`sys.computed_columns.definition`) und das **Prädikat eines
+gefilterten Index** (`sys.indexes.filter_definition`) nach derselben Regel: der
 Unicode-Literal-Präfix `N'…'` entfällt (er ist Syntax, kein Wert),
 Klammer-Quoting `[col]` wird zum unquotierten Namen bzw. — wo der Name Quoting
 braucht — zum ANSI-Doppelquote `"col"`, und die äußere Klammer, die der Server

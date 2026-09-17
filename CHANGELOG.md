@@ -65,6 +65,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Die Erkennung der Hash-Partitions-Emulation liest den Katalogtext
   unveraendert weiter.
 
+  Dasselbe gilt fuer das **Praedikat eines gefilterten Index**
+  (`sys.indexes.filter_definition`): es ist derselbe rohe Ausdruckstext aus
+  demselben Katalog und kam bisher als `WHERE ([shipped_at] IS NULL)`, was
+  PostgreSQL und MySQL ablehnten. **Folge beim Umstieg:** `schema compare`
+  meldet den Wechsel **nicht** — die Schreibweise-Faltung traegt ihn
+  (gemessen: alte gegen neue Schreibweise `IDENTICAL`, Exit 0).
+  `schema migrate` faltet die Schreibweise nicht
+  ([ADR 0056](docs/adr/0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md));
+  wer eine **aeltere** Reverse-Datei als Soll gegen dieselbe Datenbank
+  migriert, bekommt je gefiltertem Index ein `DropIndex` und ein `AddIndex`
+  geplant (gemessen, `--plan-only`: zwei Operationen; ein frischer Reverse als
+  Soll plant `no_op`). Der Berechnungsausdruck bleibt davon verschont, weil er
+  eine eigene Entscheidbarkeitsregel hat (`ComputedExpressionDecidability`,
+  `W137`); fuer die uebrigen rohen Felder gibt es sie nicht, dort wird
+  konservativ geplant — wie beim MySQL-CHECK oben.
+
 - **Der MySQL-Generator schreibt `"…"`-Bezeichner in rohen Ausdruecken in
   Backticks um.** Im neutralen Modell ist `"Name"` ein Bezeichner; MySQL liest
   es ohne `ANSI_QUOTES` als Zeichenkette. Ein CHECK, ein Berechnungsausdruck
@@ -77,6 +93,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   danach angelegt wird. Einen Text, den ein lexikalischer Scanner nicht sicher
   abgrenzen kann (nicht geschlossene Quotierung), laesst der Generator
   unveraendert. Uebersetzt wird weiterhin nichts.
+
+  Aus demselben Grund quotiert er ein **nacktes Wort, das MySQL reserviert**.
+  Das neutrale Modell laesst einen rein kleingeschriebenen Spaltennamen
+  unquotiert, also steht `` `key` `` eines MySQL-Reverse dort als `key` — und
+  `CHECK (key > 0)` lehnt MySQL ab (`ERROR 1064`, gemessen an 9.7.2). Die
+  Wortliste ist `information_schema.KEYWORDS` mit `RESERVED = 1`, als
+  Vereinigung ueber MySQL 9.7.2 und 8.0.46. Ausgenommen bleibt, was in einem
+  skalaren Ausdruck Syntax ist (`AND`, `CASE`, `INTERVAL`, `BINARY`, die
+  Werte-Funktionen ohne Klammern …), ein Wort vor `(` (Funktionsaufruf) und
+  eines hinter `AS` (Typname). Fuer PostgreSQL, SQL Server und Oracle gibt es
+  diese Rueckquotierung **nicht**: eine Spalte, die dort reserviert ist
+  (gemessen: PostgreSQL lehnt `CHECK (order > 0)` ab, `key` nimmt es an),
+  scheitert weiter am Server.
 
 - **Die MCP-Lese-Jobs nennen mehr als ein Artefakt.** `job_status_get`
   meldet fuer `schema_reverse_start` jetzt **zwei** Eintraege in `artifacts`
@@ -215,6 +244,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   MySQL 9.7.2, `schema migrate --plan-only`: zwei Operationen, Exit 0); der
   Berechnungsausdruck wird nicht geplant, sondern bleibt unentscheidbar
   (`W137`). Ein frischer Reverse als Soll plant nichts.
+
+  Ein `"…"`-Lauf in einem dieser Felder liest der Reverse jetzt als
+  **Bezeichner** und uebernimmt ihn wortgleich, statt ihn zu einem
+  Zeichenketten-Literal zu machen. Gemessen (MySQL 9.7.2 und 8.0.46): die
+  Felder fuehren Bezeichner ausschliesslich in Backticks und Zeichenketten
+  ausschliesslich in `'…'` — auch unter `ANSI_QUOTES` und auch fuer eine unter
+  `ANSI_QUOTES` angelegte Tabelle. Ein `"` dort waere also nie eine
+  Zeichenkette; es als eine zu lesen machte aus einem Spaltenbezug still eine
+  Konstante.
 
 
 - **`data transfer` meldet einen nicht erkannten Wert von

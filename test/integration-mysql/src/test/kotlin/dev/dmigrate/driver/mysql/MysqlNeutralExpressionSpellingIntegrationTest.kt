@@ -167,7 +167,9 @@ class MysqlNeutralExpressionSpellingIntegrationTest : FunSpec({
                          `UnitPrice` DECIMAL(10,2) NOT NULL,
                          `LineTotal` DECIMAL(12,2) GENERATED ALWAYS AS (`Qty` * `UnitPrice`) STORED,
                          label VARCHAR(60) GENERATED ALWAYS AS (CONCAT('q-', `Qty`)) VIRTUAL,
+                         `key` INT NOT NULL,
                          CONSTRAINT ck_reverse_mail CHECK (email LIKE '%@%'),
+                         CONSTRAINT ck_reverse_key CHECK (`key` > 0),
                          CONSTRAINT ck_reverse_qty CHECK (`Qty` > 0))""",
                 )
                 s.execute("CREATE INDEX ix_reverse_label ON Reverse_Line ((lower(label)))")
@@ -194,6 +196,9 @@ class MysqlNeutralExpressionSpellingIntegrationTest : FunSpec({
             validation.errors.filter { it.code == "E012" || it.code == "E136" }.shouldBeEmpty()
         }
 
+        // M1: ein reserviertes Wort ueberlebt den Weg MySQL -> MySQL.
+        table.constraints.first { it.name == "ck_reverse_key" }.expression shouldBe "(key > 0)"
+
         // N2: und er ist auf jedem anderen Ziel portabel.
         for (target in listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.SQLITE, DatabaseDialect.MSSQL)) {
             for (constraint in table.constraints) {
@@ -207,6 +212,58 @@ class MysqlNeutralExpressionSpellingIntegrationTest : FunSpec({
                     (table.columns.getValue("LineTotal").generation as ColumnGeneration.Computed).expression,
                     target,
                 ) shouldBe null
+            }
+        }
+    }
+
+    /**
+     * M1: derselbe Reverse, zurueck an denselben Server. Der neutrale Text
+     * traegt das reservierte Wort **nackt** (`key > 0`), und genau so
+     * geschrieben lehnt MySQL die Anweisung ab (`ERROR 1064`, an 9.7.2
+     * gemessen). Ein Textvergleich zeigte nur Backticks im DDL; ob der Server
+     * die Anweisung annimmt, sagt nur der Server.
+     */
+    test("MySQL to MySQL: a reserved column name comes back quoted and the server takes it") {
+        val active = pool!!
+        active.borrow().asJdbc().use { c ->
+            c.createStatement().use { s ->
+                s.execute("DROP TABLE IF EXISTS Reserved_Source")
+                s.execute(
+                    """CREATE TABLE Reserved_Source (
+                         id INT PRIMARY KEY,
+                         `key` INT NOT NULL,
+                         `order` INT NOT NULL,
+                         total INT GENERATED ALWAYS AS (`key` + `order`) STORED,
+                         CONSTRAINT ck_reserved_key CHECK (`key` > 0))""",
+                )
+                s.execute("CREATE INDEX ix_reserved_key ON Reserved_Source ((`key` * 2))")
+            }
+        }
+
+        val source = MysqlSchemaReader().read(active).schema.tables.getValue("Reserved_Source")
+        withClue("der neutrale Text traegt das Wort nackt") {
+            source.constraints.first { it.name == "ck_reserved_key" }.expression shouldBe "(key > 0)"
+            (source.columns.getValue("total").generation as ColumnGeneration.Computed).expression shouldBe
+                "(key + order)"
+        }
+
+        val roundTrip = SchemaDefinition(
+            name = "reserved", version = "1",
+            tables = mapOf("Reserved_Target" to source),
+        )
+        val ddl = MysqlDdlGenerator().generate(roundTrip)
+        ddl.render() shouldContain "CHECK ((`key` > 0))"
+
+        active.borrow().asJdbc().use { c ->
+            c.createStatement().use { s -> s.execute("DROP TABLE IF EXISTS Reserved_Target") }
+            c.apply(ddl.statements)
+            withClue("der CHECK auf `key` greift nicht") {
+                val failure = runCatching {
+                    c.createStatement().use { s ->
+                        s.executeUpdate("INSERT INTO Reserved_Target (id, `key`, `order`) VALUES (1, 0, 1)")
+                    }
+                }.exceptionOrNull()?.message ?: ""
+                failure shouldContain "ck_reserved_key"
             }
         }
     }

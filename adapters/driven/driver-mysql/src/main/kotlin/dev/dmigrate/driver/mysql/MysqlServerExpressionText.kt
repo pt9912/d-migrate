@@ -28,6 +28,10 @@ import dev.dmigrate.driver.NeutralExpressionIdentifier
  * Dialekt-Anhaenge fallen weg. Die Regel steht in `spec/type-mapping.md`,
  * Abschnitt 4.
  *
+ * **Eine Quotierung, nicht zwei.** Bezeichner kommen in Backticks, Literale in
+ * `'…'` — unabhaengig von `sql_mode`. Das ist gemessen und nicht angenommen,
+ * siehe [appendDoubleQuoted].
+ *
  * **Zwei Ebenen.** `information_schema` liefert den Text ein zweites Mal
  * escapet, als waere er selbst ein String-Literal: aus `'a\\b'` (Wert `a\b`)
  * wird `\'a\\\\b\'` (gemessen an MySQL 9.7.2, beide Spalten). Erkennbar ist
@@ -95,7 +99,8 @@ internal object MysqlServerExpressionText {
         while (index < text.length) {
             val char = text[index]
             index = when {
-                char == '\'' || char == '"' -> appendLiteral(text, index, out)
+                char == '\'' -> appendLiteral(text, index, out)
+                char == '"' -> appendDoubleQuoted(text, index, out)
                 char == '`' -> appendIdentifier(text, index, out)
                 // Der Introducer faellt weg; das Literal dahinter liest der
                 // naechste Durchlauf.
@@ -136,6 +141,43 @@ internal object MysqlServerExpressionText {
                     value.append(char)
                     index++
                 }
+            }
+        }
+        out.append(text, start, text.length)
+        return text.length
+    }
+
+    /**
+     * Ein `"…"`-Lauf ab [start] — **wortgleich** uebernommen. Rueckgabe: der
+     * Index dahinter.
+     *
+     * **Gemessen** (MySQL 9.7.2 und 8.0.46, `information_schema`): die drei
+     * Ausdrucksfelder drucken Bezeichner **immer** in Backticks und
+     * Zeichenketten **immer** in `'…'` — auch wenn `ANSI_QUOTES` gesetzt ist,
+     * und auch wenn die Tabelle unter `ANSI_QUOTES` angelegt wurde. Selbst
+     * `SHOW CREATE TABLE` unter `ANSI_QUOTES`, das Tabellen- und Spaltennamen
+     * mit `"` schreibt, laesst die Ausdruecke darin in Backticks. Ein `"` an
+     * dieser Stelle ist also nicht die Form, die dieser Server erzeugt.
+     *
+     * Trifft der Leser trotzdem eines (eine andere Version, eine
+     * handgeschriebene Fixture), gilt die **neutrale** Lesart: `"…"` ist ein
+     * Bezeichner, mit `""` als Escape — genau die Schreibweise, die MySQL
+     * unter `ANSI_QUOTES` selbst verwendet. Der Lauf wird deshalb wortgleich
+     * uebernommen, nicht umgedeutet. Ihn als Zeichenkette zu lesen (so tat es
+     * die Vorform) machte aus einem Spaltenbezug still eine Konstante; der
+     * umgekehrte Irrtum ist ausgeschlossen, weil der Server eine Zeichenkette
+     * nie mit `"` druckt.
+     */
+    private fun appendDoubleQuoted(text: String, start: Int, out: StringBuilder): Int {
+        var index = start + 1
+        while (index < text.length) {
+            if (text[index] != '"') {
+                index++
+            } else if (text.getOrNull(index + 1) == '"') {
+                index += 2
+            } else {
+                out.append(text, start, index + 1)
+                return index + 1
             }
         }
         out.append(text, start, text.length)

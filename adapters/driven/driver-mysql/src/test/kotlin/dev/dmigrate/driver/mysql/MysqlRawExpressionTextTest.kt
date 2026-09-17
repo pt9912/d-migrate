@@ -55,8 +55,33 @@ class MysqlRawExpressionTextTest : FunSpec({
             // Kommentare fasst der Scanner nicht an.
             "a > 0 -- \"x\"\nAND \"B\" > 0" to "a > 0 -- \"x\"\nAND `B` > 0",
             "/* \"x\" */ \"B\" > 0" to "/* \"x\" */ `B` > 0",
+            // M1: ein nacktes reserviertes Wort ist in MySQL kein Bezeichner.
+            // Aus `` `key` `` des Reverse wurde neutral `key` — ohne Backticks
+            // ist `CHECK (key > 0)` dort ERROR 1064 (gemessen, 9.7.2).
+            "key > 0" to "`key` > 0",
+            "order > 0 AND `key` > 0" to "`order` > 0 AND `key` > 0",
+            "t.order > 0" to "t.`order` > 0",
+            // Die Schreibweise des Wortes bleibt, wie sie war.
+            "ORDER > 0" to "`ORDER` > 0",
+            // Syntax bleibt Syntax: `` `and` `` waere kein Operator mehr.
+            "a > 0 AND b IS NOT NULL OR c BETWEEN 1 AND 2" to "a > 0 AND b IS NOT NULL OR c BETWEEN 1 AND 2",
+            "CASE WHEN a > 0 THEN 1 ELSE 0 END" to "CASE WHEN a > 0 THEN 1 ELSE 0 END",
+            "binary nm = 'x'" to "binary nm = 'x'",
+            "nm collate utf8mb4_bin = 'x'" to "nm collate utf8mb4_bin = 'x'",
+            "dt + interval 1 year_month" to "dt + interval 1 year_month",
+            "created_at < current_timestamp" to "created_at < current_timestamp",
+            // Vor `(` steht ein Funktionsname, hinter `AS` ein Typname.
+            "left(nm, 1) <> ''" to "left(nm, 1) <> ''",
+            "cast(nm as char) <> ''" to "cast(nm as char) <> ''",
+            "cast(nm as decimal(10,2)) > 0" to "cast(nm as decimal(10,2)) > 0",
+            // Ein reserviertes Wort in einem Literal oder Kommentar bleibt Text.
+            "note <> 'order'" to "note <> 'order'",
+            "a > 0 -- order\nAND b > 0" to "a > 0 -- order\nAND b > 0",
+            // Zahlen sind keine Woerter.
+            "0x41 <> nm AND 1e5 > n" to "0x41 <> nm AND 1e5 > n",
             // Nichts zu tun.
             "quantity > 0" to "quantity > 0",
+            "total > 0" to "total > 0",
             "" to "",
         ).forEachIndexed { index, (input, expected) ->
             test("rewrite #$index: $input") {

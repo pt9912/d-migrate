@@ -18,9 +18,15 @@ package dev.dmigrate.driver
  * Rendern in seine eigene Quotierung um (`spec/ddl-generation-rules.md`,
  * „Roher Ausdruckstext").
  *
- * Bekannte Restluecke: ein kleingeschriebenes reserviertes Wort (`order`)
- * bleibt unquotiert — dafuer braeuchte es eine zieldialekt-abhaengige
- * Schluesselwortliste, die es im neutralen Modell nicht gibt.
+ * **Ein reserviertes Wort quotiert das Ziel, nicht das Modell.** Ein
+ * kleingeschriebenes `key` oder `order` bleibt hier nackt: welche Woerter
+ * reserviert sind, weiss nur der Zieldialekt, und das neutrale Modell kennt
+ * ihn nicht. Der MySQL-Generator setzt die Backticks beim Rendern wieder
+ * (`MysqlReservedWords`, `spec/ddl-generation-rules.md`, „Roher
+ * Ausdruckstext"). Fuer PostgreSQL, SQL Server und Oracle tut das heute
+ * niemand — dort scheitert ein solcher Ausdruck am Server, laut und mit
+ * dessen Meldung; der Posten steht in
+ * `docs/planning/next/reader-treue-2-meldungen.md`.
  */
 object NeutralExpressionIdentifier {
 

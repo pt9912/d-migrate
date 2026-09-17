@@ -223,6 +223,16 @@ Begründet gegen [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004)
 - **S2 übernimmt nur Ursache 1** des `open/`-Eintrags (nach E3); das
   Präferenz-Threading im Post-Compare-Re-Read und der MySQL-Teil bleiben dort.
 - **Der `W137`-Doppelbeleg** wird hier nicht aufgelöst (Ledger-Eintrag).
+- **Nackte reservierte Wörter gegen PostgreSQL, SQL Server und Oracle** gehören
+  nicht hierher, sind aber der nächste Posten derselben Klasse: ein rein
+  kleingeschriebener Spaltenname steht im neutralen Ausdruck unquotiert, und
+  ist er auf dem Ziel reserviert, lehnt der Server die **ganze** DDL ab
+  (gemessen: PostgreSQL `syntax error at or near "order"`, SQL Server
+  `Msg 156`). Nur der MySQL-Generator quotiert seit Plan 1 zurück. Der Befund
+  samt Messung und den drei Wegen steht in
+  [`../open/nackte-reservierte-woerter-im-rohen-ausdruck.md`](../open/nackte-reservierte-woerter-im-rohen-ausdruck.md);
+  er braucht zuerst eine Naht in den übrigen Generatoren und deshalb einen
+  eigenen Schnitt.
 
 ## Arbeitspakete
 

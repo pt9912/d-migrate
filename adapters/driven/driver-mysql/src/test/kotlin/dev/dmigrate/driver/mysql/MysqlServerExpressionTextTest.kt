@@ -66,6 +66,25 @@ class MysqlServerExpressionTextTest : FunSpec({
         MysqlServerExpressionText.normalize("""(`note` <> _utf8mb4\'a\\tb\')""") shouldBe "(note <> 'a\tb')"
     }
 
+    test("a double-quoted run stays as it stands — it is an identifier, not a literal") {
+        // Gemessen (MySQL 9.7.2 und 8.0.46): die drei Ausdrucksfelder drucken
+        // Bezeichner immer in Backticks und Literale immer in `'…'`, auch unter
+        // ANSI_QUOTES und auch fuer eine unter ANSI_QUOTES angelegte Tabelle.
+        // Trifft der Leser doch ein `"…"`, gilt die neutrale Lesart.
+        MysqlServerExpressionText.normalize("""("Note" <> 'x')""") shouldBe """("Note" <> 'x')"""
+        MysqlServerExpressionText.normalize("""("a""b" > 0)""") shouldBe """("a""b" > 0)"""
+        // Gegenprobe: im Literal bleibt `"` ein Zeichen.
+        MysqlServerExpressionText.normalize("""(`note` <> 'say "hi"')""") shouldBe """(note <> 'say "hi"')"""
+    }
+
+    test("M1: a reserved word survives the round trip to MySQL") {
+        // `` `key` `` -> neutral `key` -> zurueck als `` `key` ``. Ohne die
+        // Rueckquotierung ist `CHECK (key > 0)` am Server ERROR 1064.
+        val neutral = MysqlServerExpressionText.normalize("""(`key` > 0)""")
+        neutral shouldBe "(key > 0)"
+        MysqlRawExpressionText.toMysql(neutral) shouldBe "(`key` > 0)"
+    }
+
     test("the normalised expression is portable for every other target") {
         val neutral = MysqlServerExpressionText.normalize("""(`email` like _latin1\'%@%\')""")
         for (target in listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.SQLITE, DatabaseDialect.MSSQL)) {

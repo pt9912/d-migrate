@@ -19,7 +19,12 @@ import dev.dmigrate.driver.renderKey
  *
  * - `"Name"` wird `` `Name` `` (`""` ist das Escape fuer `"`);
  * - ein Backslash in einem String-Literal wird verdoppelt — dieselbe Regel, nach
- *   der [SqlIdentifiers.quoteStringLiteral] MySQL-Literale schreibt.
+ *   der [SqlIdentifiers.quoteStringLiteral] MySQL-Literale schreibt;
+ * - ein **nacktes** Wort, das MySQL reserviert, bekommt Backticks
+ *   ([MysqlReservedWords]). Das neutrale Modell laesst einen rein
+ *   kleingeschriebenen Namen unquotiert, und `` `key` `` eines MySQL-Reverse
+ *   kaeme sonst als `key` zurueck an den Server: `CHECK (key > 0)` ist dort
+ *   `ERROR 1064` (gemessen, 9.7.2).
  *
  * Alles andere bleibt wortgleich: Backtick-Bezeichner, Kommentare und der
  * Inhalt eines Literals (bis auf den Backslash). Kann der Scanner den Text
@@ -37,16 +42,25 @@ internal object MysqlRawExpressionText {
         private val out = StringBuilder(sql.length + 8)
         private var position = 0
 
+        /**
+         * Das zuletzt gelesene Wort, solange nur Leerraum dazwischenstand —
+         * die Stellung „unmittelbar hinter `AS`" (Typname eines `CAST`).
+         */
+        private var previousWord: String? = null
+
         fun render(): String? {
             while (position < sql.length) {
+                val char = sql[position]
                 val ok = when {
-                    sql[position] == '\'' -> literal()
-                    sql[position] == '"' -> doubleQuotedIdentifier()
-                    sql[position] == '`' -> verbatimUntilClosing('`')
+                    char == '\'' -> forgetWord { literal() }
+                    char == '"' -> forgetWord { doubleQuotedIdentifier() }
+                    char == '`' -> forgetWord { verbatimUntilClosing('`') }
                     sql.startsWith("--", position) -> lineComment()
                     sql.startsWith("/*", position) -> blockComment()
+                    isWordStart(char) || char.isDigit() -> wordOrNumber(char)
                     else -> {
-                        out.append(sql[position])
+                        if (!char.isWhitespace()) previousWord = null
+                        out.append(char)
                         position++
                         true
                     }
@@ -54,6 +68,38 @@ internal object MysqlRawExpressionText {
                 if (!ok) return null
             }
             return out.toString()
+        }
+
+        /**
+         * Ein Wort- oder Zahlenlauf. Quotiert wird nur ein Wort, das MySQL
+         * reserviert und das hier kein Bezeichner sein kann: nicht vor `(`
+         * (Funktionsaufruf) und nicht hinter `AS` (Typname).
+         */
+        private fun wordOrNumber(first: Char): Boolean {
+            var end = position
+            while (end < sql.length && isWordPart(sql[end])) end++
+            val word = sql.substring(position, end)
+            position = end
+            val quote = isWordStart(first) &&
+                previousWord?.lowercase() != "as" &&
+                nextCodeChar() != '(' &&
+                MysqlReservedWords.mustQuoteAsIdentifier(word)
+            out.append(if (quote) SqlIdentifiers.quoteIdentifier(word, DatabaseDialect.MYSQL) else word)
+            previousWord = word
+            return true
+        }
+
+        /** Ein Token, hinter dem kein `AS` mehr steht. */
+        private inline fun forgetWord(read: () -> Boolean): Boolean {
+            previousWord = null
+            return read()
+        }
+
+        /** Das naechste Zeichen hinter dem Leerraum ab [position], oder `null`. */
+        private fun nextCodeChar(): Char? {
+            var index = position
+            while (index < sql.length && sql[index].isWhitespace()) index++
+            return sql.getOrNull(index)
         }
 
         /** `'…'` mit `''` als Escape; der Backslash darin wird verdoppelt. */
@@ -114,6 +160,12 @@ internal object MysqlRawExpressionText {
         }
     }
 }
+
+/** Womit ein MySQL-Bezeichner beginnen kann — keine Ziffer. */
+private fun isWordStart(char: Char): Boolean = char.isLetter() || char == '_' || char == '$'
+
+/** Woraus ein MySQL-Bezeichner besteht. */
+private fun isWordPart(char: Char): Boolean = char.isLetterOrDigit() || char == '_' || char == '$'
 
 /**
  * Ein Indexschluessel fuer MySQL: wie [renderKey], der Ausdruck aber in
