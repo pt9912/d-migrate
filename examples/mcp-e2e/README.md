@@ -241,7 +241,7 @@ gefahren):
 
 | Quelle \ Ziel | PostgreSQL | MySQL | SQL Server | SQLite |
 | ------------- | ---------- | ----- | ---------- | ------ |
-| PostgreSQL | — | 13 | 13 | 24 |
+| PostgreSQL | — | 13 | 14 | 25 |
 | MySQL | 4 | — | 8 | 11 |
 | SQL Server | 2 | 6 | — | 11 |
 | SQLite | 3 | `APPLY-FAIL` | 6 | — |
@@ -249,8 +249,8 @@ gefahren):
 | Zelle | Funde bzw. Zustand | Grund |
 | ----- | ------------------ | ----- |
 | PostgreSQL → MySQL | 13: die 6 aus der Fixture (3 CHECKs und die Berechnung entfallen, Index-Praedikat entfaellt, CHECK mit `OR`/`IS NULL` in Kleinschreibung) und 7 aus dem Seed (vier Array-Spalten als `json`, der Identity-Modus `always` der `bigint`-Spalte und **zwei** Funde an der `integer`-Identity: Typ und Erzeugung) | Generator rendert PostgreSQL-Casts nicht (`E053`), MySQL kennt kein Index-Praedikat (`E057`), kein Array und kein `ALWAYS`; Schluesselwort-Schreibweise |
-| PostgreSQL → SQL Server | 13: die 5 aus der Fixture, dazu vier Arrays, zwei `json`-Spalten als `text` (je `W137`) und zwei Funde an der `integer`-Identity (Typ und Erzeugung) | Casts wie oben, `W140`, `W137` |
-| PostgreSQL → SQLite | 24: die 13 aus der Fixture, dazu vier Arrays, zwei `json`, `decimal` → `float` (`W200`) und je **zwei** Funde an den beiden Identity-Spalten (Typ und Erzeugung — SQLite liest beide als `identifier(auto)` zurueck) | SQLite-Typaffinitaet, Casts wie oben |
+| PostgreSQL → SQL Server | 14: die 5 aus der Fixture, dazu vier Arrays, zwei `json`-Spalten als `text` (je `W137`), zwei Funde an der `integer`-Identity (Typ und Erzeugung) und der Untertyp der `geography`-Spalte (`geometry(point,4326)` → `geometry(geometry,4326)`) | Casts wie oben, `W140`, `W137`; SQL Server fuehrt Untertyp und SRID **am Wert**, nicht an der Spalte (`W120` beim Erzeugen, `R345` beim Zuruecklesen) |
+| PostgreSQL → SQLite | 25: die 13 aus der Fixture, dazu vier Arrays, zwei `json`, `decimal` → `float` (`W200`), je **zwei** Funde an den beiden Identity-Spalten (Typ und Erzeugung — SQLite liest beide als `identifier(auto)` zurueck) und die fehlende Geometrie-Tabelle | SQLite-Typaffinitaet, Casts wie oben; ohne `--spatial-profile spatialite` blockt SQLite die ganze Tabelle mit `E052` (`TABLE_REMOVED`) |
 | MySQL → SQL Server / SQLite / PostgreSQL | 8 / 11 / 4 | s. oben, Zeile „MySQL" |
 | SQL Server → PostgreSQL | 2: zweimal `W137` | der Berechnungsausdruck ist ohne Herkunft nicht entscheidbar; sonst nichts — seit der Reverse ihn ohne T-SQL-Quoting liefert |
 | SQL Server → MySQL | 6: zwei CHECKs in MySQLs Schreibweise, Identity-Modus, Index-Praedikat entfaellt, zweimal `W137` | `E057`, Schluesselwort-Schreibweise, Darstellung der Werteliste; die PascalCase-Berechnung des Seeds rechnet dort richtig (der Generator setzt `"Menge"` in Backticks) |
