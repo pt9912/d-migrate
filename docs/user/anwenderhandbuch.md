@@ -2231,6 +2231,14 @@ nennt).
   Ausdruck lässt sich auch gegen ein anderes Ziel erzeugen. Beim Erzeugen
   schreibt jeder Dialekt ihn wieder in seine eigene Schreibweise, MySQL etwa
   `"Menge"` als `` `Menge` ``.
+- **Heißt eine Spalte wie ein in MySQL reserviertes Wort** (`key`, `order`,
+  `mod`, `default`), setzt der MySQL-Generator ihre Backticks beim Erzeugen
+  wieder — im neutralen Text steht der Name nackt. Nicht zurückgesetzt werden
+  die Wörter, die dort auch am Anfang eines Ausdrucks Syntax sind (`not`,
+  `case`, `binary`, `interval`, `distinct`, `null`, `true`, `false`,
+  `current_timestamp` …): eine Spalte dieses Namens lehnt MySQL im CHECK ab.
+  Für PostgreSQL, SQL Server und Oracle gibt es dieses Zurücksetzen nicht;
+  dort entscheidet der Server.
 
 ### 3.20 Große Tabellen partitionieren
 

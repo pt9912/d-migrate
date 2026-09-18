@@ -1514,16 +1514,30 @@ Backticks. Das neutrale Modell lässt einen rein kleingeschriebenen
 Spaltennamen unquotiert; `` `key` `` eines MySQL-Reverse steht dort als `key`,
 und `CHECK (key > 0)` ist auf MySQL ein Syntaxfehler. Die Wortliste ist
 `information_schema.KEYWORDS` mit `RESERVED = 1`, als Vereinigung über die
-unterstützten Serverversionen. Ausgenommen sind die reservierten Wörter, die
-in einem **skalaren** Ausdruck Syntax sind (`AND`, `BETWEEN`, `CASE`,
-`INTERVAL`, `BINARY`, die Werte-Funktionen ohne Klammern …), ein Wort
-unmittelbar vor `(` (Funktionsaufruf) und eines unmittelbar hinter `AS`
-(Typname eines `CAST`). Ein Wort, das beides sein kann — `binary`, `char`,
-`interval` sind Operator und möglicher Spaltenname —, bleibt nackt; ohne
-Parser ist die Stellung nicht zu entscheiden, und ein falsch gesetztes Quoting
-wäre schlimmer als ein fehlendes. Für die übrigen Ziele gibt es diese
-Rückquotierung nicht: dort scheitert ein solcher Ausdruck am Server, laut und
-mit dessen Meldung.
+unterstützten Serverversionen.
+
+Ob ein solches Wort an seiner Stelle Syntax ist oder ein Name, entscheidet
+seine **Stellung**, nicht das Wort: `a mod b` ist ein Operator, `mod > 0` ein
+Spaltenname. Quotiert wird deshalb in **Operandenstellung** — am
+Ausdrucksanfang, hinter `(`, hinter `,`, hinter einem Operatorzeichen und
+hinter einem Wort, auf das ein Operand folgt (`AND`, `IS`, `BETWEEN`, `WHEN`
+…). In Operatorstellung bleibt dasselbe Wort nackt; `` `and` `` wäre dort kein
+Operator mehr. Zwei weitere Stellungen entscheidet der Generator strukturell:
+ein Wort unmittelbar vor `(` ist ein Funktionsaufruf (`left(x,1)`,
+`char(65)`), und der **Typname** eines `CAST`/`CONVERT` bleibt bis zur
+schließenden Klammer des Aufrufs unberührt. Der Typname ist mehrwortig
+(`SIGNED INTEGER`, `CHAR CHARACTER SET utf8mb4`, `DOUBLE PRECISION`), und
+`integer`, `character`, `set` und `precision` sind selbst reserviert — nur das
+erste Wort freizulassen, erzeugte ``cast(total as signed `integer`)`` und damit
+einen Syntaxfehler.
+
+Nackt bleiben die Wörter, die auch am **Anfang eines Operanden** Syntax sind:
+die Präfixoperatoren (`NOT`, `BINARY`, `INTERVAL`), der `CASE`-Ausdruck, die
+Literale `NULL`, `TRUE` und `FALSE`, `DISTINCT` und die Werte-Funktionen ohne
+Klammern. Eine Spalte dieses Namens scheitert weiter am Server — mit dessen
+Meldung, und bei `NULL`, `TRUE` und `FALSE` still, weil MySQL dort das Literal
+liest. Für die übrigen Ziele gibt es die Rückquotierung überhaupt nicht: dort
+scheitert ein solcher Ausdruck am Server, laut und mit dessen Meldung.
 
 Umgeschrieben wird im Generate-Pfad erst, nachdem die
 Portabilität beurteilt ist: ein Ausdruck, der ohnehin nicht gerendert wird,

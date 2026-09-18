@@ -102,13 +102,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unquotiert, also steht `` `key` `` eines MySQL-Reverse dort als `key` — und
   `CHECK (key > 0)` lehnt MySQL ab (`ERROR 1064`, gemessen an 9.7.2). Die
   Wortliste ist `information_schema.KEYWORDS` mit `RESERVED = 1`, als
-  Vereinigung ueber MySQL 9.7.2 und 8.0.46. Ausgenommen bleibt, was in einem
-  skalaren Ausdruck Syntax ist (`AND`, `CASE`, `INTERVAL`, `BINARY`, die
-  Werte-Funktionen ohne Klammern …), ein Wort vor `(` (Funktionsaufruf) und
-  eines hinter `AS` (Typname). Fuer PostgreSQL, SQL Server und Oracle gibt es
-  diese Rueckquotierung **nicht**: eine Spalte, die dort reserviert ist
-  (gemessen: PostgreSQL lehnt `CHECK (order > 0)` ab, `key` nimmt es an),
-  scheitert weiter am Server.
+  Vereinigung ueber MySQL 9.7.2 und 8.0.46. Ob ein Wort dort Syntax ist oder
+  ein Name, entscheidet seine **Stellung**: `a mod b` ist ein Operator,
+  `mod > 0` ein Spaltenname. Quotiert wird in Operandenstellung (am
+  Ausdrucksanfang, hinter `(`, `,`, einem Operatorzeichen und hinter `AND`,
+  `IS`, `WHEN` …), nackt bleibt dasselbe Wort in Operatorstellung. Ein Wort
+  vor `(` ist ein Funktionsaufruf, und der **Typname** eines `CAST`/`CONVERT`
+  bleibt bis zur schliessenden Klammer des Aufrufs unberuehrt — er ist
+  mehrwortig (`SIGNED INTEGER`, `CHAR CHARACTER SET utf8mb4`,
+  `DOUBLE PRECISION`), und `integer`, `character`, `set` und `precision` sind
+  selbst reserviert. Nackt bleibt, was auch am **Anfang eines Operanden**
+  Syntax ist: `NOT`, `BINARY`, `INTERVAL`, `CASE`, `DISTINCT`, `NULL`, `TRUE`,
+  `FALSE` und die Werte-Funktionen ohne Klammern. Eine Spalte dieses Namens
+  scheitert weiter am Server (gemessen auf 9.7.2 und 8.0.46) — bei `NULL`,
+  `TRUE` und `FALSE` sogar still, weil MySQL das Literal liest und die
+  Anweisung annimmt. Fuer PostgreSQL, SQL Server und Oracle gibt es diese
+  Rueckquotierung **nicht**: eine Spalte, die dort reserviert ist (gemessen:
+  PostgreSQL lehnt `CHECK (order > 0)` ab, `key` nimmt es an), scheitert
+  weiter am Server.
 
   **Folge beim Umstieg:** eine neutrale Datei, die einen rohen Ausdruck in
   MySQLs **eigener** Schreibweise traegt — etwa ein vor diesem Stand
