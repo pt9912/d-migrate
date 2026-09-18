@@ -420,12 +420,8 @@ silent_loss_target() {
 # gehoert nachgezogen. Das Paket streicht seinen Eintrag in dem Commit, der den
 # Fix bringt.
 SILENT_LOSS_KNOWN=(
-    "quelle postgresql: sl_pg_array.due_dates: der Reverse-Report nennt R301 nicht|N1 (Plan 2, P9)"
-    "quelle postgresql: sl_pg_json.payload_json: der Reverse-Report nennt R402 nicht|P8 (Plan 2)"
-    "quelle postgresql: sl_pg_number.amount: der Reverse-Report nennt R404 nicht|P9 (Plan 2)"
     "quelle postgresql: sl_pg_identity_int.id: Form erwartet 'integer', gemessen 'identifier(auto)'|S1 (Plan 2)"
     "quelle postgresql: sl_pg_identity_int.id: Erzeugung erwartet 'identity(always)', gemessen '-'|S1 (Plan 2)"
-    "quelle sqlite: sl_sq_child.amount: der Reverse-Report nennt R221 nicht|P9 (Plan 2)"
     "ziel postgresql->mysql: sl_pg_identity_int.id: Degradierung ohne W163 im Generate-Report|S1 und P10 (Plan 2)"
     "ziel postgresql->sqlite: sl_pg_identity_int.id: Degradierung ohne W163 im Generate-Report|S1 und P10 (Plan 2)"
     "ziel postgresql->mssql: sl_pg_identity_int.id: Degradierung integer/identity(always) -> identifier(auto)/- ohne Code (Anmerkung sagt keinen)|Befund open/mssql-integer-identity-pk-verliert-den-modus.md — S1 hat den PostgreSQL-Fall behoben, die Zielseite auf SQL Server ist eine Typfrage"
