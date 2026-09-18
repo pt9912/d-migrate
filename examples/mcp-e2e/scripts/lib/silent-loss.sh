@@ -420,10 +420,6 @@ silent_loss_target() {
 # gehoert nachgezogen. Das Paket streicht seinen Eintrag in dem Commit, der den
 # Fix bringt.
 SILENT_LOSS_KNOWN=(
-    "quelle postgresql: sl_pg_identity_int.id: Form erwartet 'integer', gemessen 'identifier(auto)'|S1 (Plan 2)"
-    "quelle postgresql: sl_pg_identity_int.id: Erzeugung erwartet 'identity(always)', gemessen '-'|S1 (Plan 2)"
-    "ziel postgresql->mysql: sl_pg_identity_int.id: Degradierung ohne W163 im Generate-Report|S1 und P10 (Plan 2)"
-    "ziel postgresql->sqlite: sl_pg_identity_int.id: Degradierung ohne W163 im Generate-Report|S1 und P10 (Plan 2)"
     "ziel postgresql->mssql: sl_pg_identity_int.id: Degradierung integer/identity(always) -> identifier(auto)/- ohne Code (Anmerkung sagt keinen)|Befund open/mssql-integer-identity-pk-verliert-den-modus.md — S1 hat den PostgreSQL-Fall behoben, die Zielseite auf SQL Server ist eine Typfrage"
     "ziel postgresql->sqlite: sl_pg_json.payload_json: Degradierung json/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
     "ziel postgresql->sqlite: sl_pg_json.payload_jsonb: Degradierung json/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
