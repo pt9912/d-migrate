@@ -2,8 +2,10 @@
 
 > **Status:** **Geschlossen (2026-09-18) — P8 ist gebaut.** Der
 > PostgreSQL-Reverse meldet eine `json`-Spalte mit `R402` (`WARNING`), an der
-> Spalte **und** am Element eines `json[]` (der Generator rendert es seit S3
-> als `JSONB[]`); `jsonb` meldet nichts. Die Regel steht in
+> Spalte, am Element eines `json[]` (der Generator rendert es seit S3
+> als `JSONB[]`) **und** am Feld eines zusammengesetzten Typs (`CREATE TYPE …
+> AS (…)` schreibt den Feldtyp durch denselben Mapper wie eine Spalte, also
+> als `jsonb`); `jsonb` meldet nichts. Die Regel steht in
 > [`spec/type-mapping.md`](../../../spec/type-mapping.md), Abschnitt 3.3.
 > Entschieden am 2026-09-16, gebaut als P8 in Plan 2 des Reader-Slices
 > ([`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md)).

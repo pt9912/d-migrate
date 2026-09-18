@@ -198,9 +198,10 @@ datenbankeigener Objekte; PostGIS als Spezial-Feature, Abschnitt 8.4).
 
 ## Arbeitspakete
 
-**Reihenfolge:** P4 (nach P3); P7; P2b; P2a; **S5**. P7, P2a, P2b und S5 sind
-frei reihbar. P2a läuft im selben `:test:integration-oracle`-Lauf wie P1 aus
-Plan 2, wenn beide zeitlich zusammenfallen.
+**Reihenfolge:** P4 (nach P3); P7; P2b; P2a; **S5** und **S6**. P7, P2a, P2b,
+S5 und S6 sind frei reihbar; S5 und S6 stellen **dieselbe** Frage und werden
+zusammen entschieden. P2a läuft im selben `:test:integration-oracle`-Lauf wie
+P1 aus Plan 2, wenn beide zeitlich zusammenfallen.
 
 ### S5 — SQL Server: der `integer`-Identity-Primärschlüssel behält den Modus
 
@@ -219,13 +220,78 @@ mit `generation: identity` (Modus erhalten); `by_default` und die
 `identifier`-Zusage für Spalten ohne Modus bleiben, wie sie sind. Vor dem Bau
 prüfen, ob die SQL-Server-Seite dieselben Nachbarfälle kennt wie S1 (Identity
 ohne Primärschlüssel, mehrspaltiger Primärschlüssel, `smallint`), und ob der
-Generator die Rückrichtung unverändert rendert.
+Generator die Rückrichtung unverändert rendert. **Zusammen mit S6 zu
+entscheiden** — beide fragen, welche Breiten der `identifier`-Vertrag trägt.
 
 **DoD:** Der Seed `sl_pg_identity_int` reist PostgreSQL → SQL Server → Reverse
 mit Modus; der Eintrag fällt aus `SILENT_LOSS_KNOWN`, die betroffene Zelle wird
 **einzeln** neu gepinnt; Gegenproben (`by_default`, ohne Primärschlüssel,
 mehrspaltig) bleiben unverändert; Sabotage je Zweig. Abnahme in
 `:test:integration-mssql` und in der Matrix.
+
+### S6 — PostgreSQL: der `smallint`-Identity-Primärschlüssel verliert den Modus
+
+**Nachgetragen am 2026-09-18** aus der Eigner-Entscheidung H1 zu Plan 2.
+
+**Befund.** `PostgresTypeMapping.mapColumn` gibt für eine generierte Spalte im
+Primärschlüssel `identifier(auto_increment)` zurück — S1 (Plan 2) hat davon
+genau den `integer`-Fall mit `ALWAYS` ausgenommen. Ein
+`smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` liest deshalb weiter als
+`identifier`, und `identifier` trägt keinen Modus: der Verlust ist derselbe wie
+bei `integer`, nur bleibt er hier **ohne Code**.
+
+**Warum der Zweig eng blieb (gemessen, Plan 2).** Nimmt der Zweig auch
+`smallint`, liest die Spalte als `smallint` + `identity(always)` — und genau
+diese Form lehnt die Validierung mit
+[`E130`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/validation/SchemaColumnValidationRules.kt)
+ab („identity generation is only valid for integer or biginteger columns"), und
+[`PostgresColumnConstraintHelper.identityColumnSql`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresColumnConstraintHelper.kt)
+rendert sie für keinen anderen Basistyp. `schema generate` aus dem **eigenen**
+Reverse bräche damit ab: aus einem verlustbehafteten, aber lauffähigen Weg
+würde ein abbrechender. Ein Integrationsfall pinnt heute beides (die
+`identifier`-Lesart und die Validierbarkeit des gelesenen Schemas,
+`PostgresIdentityShapeIntegrationTest`).
+
+**Der Zweig ohne Schlüssel ist schon heute unvalidierbar (gemessen,
+2026-09-18).** Eine `smallint`-Identity **ohne** Primärschlüssel geht durch den
+Zweig für Nicht-Schlüsselspalten, und der nimmt jeden Typ, den
+`mapIntegerTypes` kennt — `smallint` also mit. Der Reverse liefert
+`smallint` + `identity`, und genau diese Form fällt bei `E130`: aus diesem
+Reverse lässt sich nicht generieren. Der Befund ist **älter** als H1 (H1 hat
+nur den Schlüssel-Zweig eng gezogen) und gehört zur selben Entscheidung; ein
+Wächter-Test in `PostgresIdentityShapeIntegrationTest` hält den Zustand fest
+und wird rot, sobald S6 ihn auflöst. Weg 1 müsste ihn mitnehmen (der Zweig
+ohne Schlüssel zieht auf `integer`/`biginteger` zusammen), Weg 2 löst ihn
+mit dem gelockerten `E130` von selbst.
+
+**Dieselbe Frage wie S5.** Beide Posten fragen: **welche Breiten trägt der
+`identifier`-Vertrag, und welche gehören ins Modell?** S5 stellt sie für SQL
+Server (`int IDENTITY`), S6 für PostgreSQL (`smallint`). Eine Antwort, die nur
+einen der beiden bewegt, spaltet die Regel über die Dialekte.
+
+**Zwei Wege (nicht entschieden, Eigner):**
+
+1. **Den Zweig eng lassen und den Verlust melden.** Der Reverse liest weiter
+   `identifier`, benennt den verlorenen Modus aber mit einem PostgreSQL-Code
+   (frei: `R406`). Billig, ändert kein Modell, und die Datei bleibt erzeugbar.
+   Kostet: der Modus ist und bleibt weg — die Meldung ersetzt ihn nicht.
+2. **Das Modell erweitern.** `E130` wird auf `smallint` gelockert, und jeder
+   Generator bekommt eine Render-Regel für eine `smallint`-Identity
+   (PostgreSQL: `smallint GENERATED … AS IDENTITY`; SQL Server hat
+   `SMALLINT IDENTITY` schon, `spec/type-mapping.md` 6.1; Oracle `NUMBER(4)`
+   ebenso; MySQL und SQLite haben keine Entsprechung und melden dann `W163`
+   bzw. verlieren die Identity ganz). Teurer, aber verlustfrei auf dem Rückweg
+   in denselben Dialekt.
+
+**Zu messen vor der Entscheidung:** was die fünf Generatoren heute für eine
+`smallint`-Identity tun (nicht nur PostgreSQL), und ob ein gelockertes `E130`
+irgendwo einen Pfad öffnet, der vorher geschlossen war.
+
+**DoD (nach der Entscheidung zu formulieren):** je nach Weg ein Code samt
+Registrierungsorten oder eine Modelländerung samt Render-Regel je Dialekt;
+`spec/type-mapping.md` 3.4 trägt heute die enge Regel und zieht mit; Gegenprobe
+`BY DEFAULT` und `serial`; Sabotage je Zweig; die Matrix bewegt sich nur, wenn
+ein Seed eine `smallint`-Identity bekommt (heute hat keiner eine).
 
 ### P4 — PostgreSQL `geography` liest als Geometrie (A5, F1, M3, L4, I6)
 
@@ -500,3 +566,7 @@ Index): welche Sequenzen Spatial anlegt, wie sie heißen und was der Katalog
   kein Katalogkriterium findet.
 - **P7, Rebuild:** die Empfehlung „blocken" ist im Paket zu begründen; ein
   Rebuild, der die Registrierung mitnimmt, wäre ein eigener Posten.
+- **S5 und S6 gemeinsam:** welche Breiten der `identifier`-Vertrag trägt. Ohne
+  diese Entscheidung bleibt der SQL-Server-Fall der letzte Eintrag aus Plan 2
+  in `SILENT_LOSS_KNOWN`, und der PostgreSQL-`smallint`-Fall bleibt ganz ohne
+  Code.
