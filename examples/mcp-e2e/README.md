@@ -236,31 +236,45 @@ Zustand gepinnt — verschwindet der Zustand, ist die Erwartung neu zu pinnen:
   der Quelle erzeugte DDL ab — ein Befund ueber Reader oder Generator.
 
 Gemessener Stand (2026-09-18, `d-migrate:dev` 1.8.0-SNAPSHOT mit der
-Server-Praeferenz `identity` fuer MySQL und den vier Seeds; Oracle nicht
-gefahren):
+Server-Praeferenz `identity` fuer MySQL, den vier Seeds und der neuen
+SQL-Server-Identity-Lesart; Oracle nicht gefahren):
 
 | Quelle \ Ziel | PostgreSQL | MySQL | SQL Server | SQLite |
 | ------------- | ---------- | ----- | ---------- | ------ |
-| PostgreSQL | — | 13 | 14 | 25 |
-| MySQL | 4 | — | 8 | 11 |
-| SQL Server | 2 | 6 | — | 11 |
-| SQLite | 3 | `APPLY-FAIL` | 6 | — |
+| PostgreSQL | — | 13 | 16 | 25 |
+| MySQL | 4 | — | 14 | 11 |
+| SQL Server | 2 | 12 | — | 17 |
+| SQLite | 3 | `APPLY-FAIL` | 16 | — |
+
+**Die SQL-Server-Zeile und -Spalte sind seit dem 2026-09-18 groesser, und der
+Grund ist eine Schreibweise.** SQL Server liest `int IDENTITY(1,1)` jetzt als
+`integer` mit `generation: identity (always)` — wie `bigint` seit jeher —,
+waehrend die Gegenseite dieselbe Spalte als `identifier(auto)` fuehrt. Je
+solcher Spalte meldet der Vergleich damit **zwei** Funde, einen Typ- und einen
+Erzeugungsfund (`type changed from identifier(auto) to integer`, `generation
+changed from null to identity(mode=always)`); betroffen sind die zwei
+`identifier`-Spalten der Fixture und die Identity-Spalten der Seeds. Es ist
+dieselbe Spalte in zwei Schreibweisen: `schema compare` hat keine Zielseite,
+an der es sie ausgleichen koennte (der Migrate-Pfad tut das ueber
+`foldsAutoIncrementOntoIdentity`). Dazu melden MySQL und SQLite beim Erzeugen
+jetzt `W163` fuer die MSSQL-Seite: `ALWAYS` koennen sie nicht ausdruecken
+(`GEN_CODES_MSSQL_MYSQL`/`_SQLITE` je `W163:4`).
 
 | Zelle | Funde bzw. Zustand | Grund |
 | ----- | ------------------ | ----- |
 | PostgreSQL → MySQL | 13: die 6 aus der Fixture (3 CHECKs und die Berechnung entfallen, Index-Praedikat entfaellt, CHECK mit `OR`/`IS NULL` in Kleinschreibung) und 7 aus dem Seed (vier Array-Spalten als `json`, der Identity-Modus `always` der `bigint`-Spalte und **zwei** Funde an der `integer`-Identity: Typ und Erzeugung) | Generator rendert PostgreSQL-Casts nicht (`E053`), MySQL kennt kein Index-Praedikat (`E057`), kein Array und kein `ALWAYS`; Schluesselwort-Schreibweise |
-| PostgreSQL → SQL Server | 14: die 5 aus der Fixture, dazu vier Arrays, zwei `json`-Spalten als `text` (je `W137`), zwei Funde an der `integer`-Identity (Typ und Erzeugung) und der Untertyp der `geography`-Spalte (`geometry(point,4326)` → `geometry(geometry,4326)`) | Casts wie oben, `W140`, `W137`; SQL Server fuehrt Untertyp und SRID **am Wert**, nicht an der Spalte (`W120` beim Erzeugen, `R345` beim Zuruecklesen) |
+| PostgreSQL → SQL Server | 16: die 5 aus der Fixture, dazu vier Arrays, zwei `json`-Spalten als `text` (je `W137`), der Untertyp der `geography`-Spalte (`geometry(point,4326)` → `geometry(geometry,4326)`) und die zwei `identifier`-Spalten der Fixture (je Typ und Erzeugung — SQL Server liest sie als `integer` + `identity(always)`) | Casts wie oben, `W140`, `W137`; SQL Server fuehrt Untertyp und SRID **am Wert**, nicht an der Spalte (`W120` beim Erzeugen, `R345` beim Zuruecklesen) |
 | PostgreSQL → SQLite | 25: die 13 aus der Fixture, dazu vier Arrays, zwei `json`, `decimal` → `float` (`W200`), je **zwei** Funde an den beiden Identity-Spalten (Typ und Erzeugung — SQLite liest beide als `identifier(auto)` zurueck) und die fehlende Geometrie-Tabelle | SQLite-Typaffinitaet, Casts wie oben; ohne `--spatial-profile spatialite` blockt SQLite die ganze Tabelle mit `E052` (`TABLE_REMOVED`) |
 | MySQL → SQL Server / SQLite / PostgreSQL | 8 / 11 / 4 | s. oben, Zeile „MySQL" |
 | SQL Server → PostgreSQL | 2: zweimal `W137` | der Berechnungsausdruck ist ohne Herkunft nicht entscheidbar; sonst nichts — seit der Reverse ihn ohne T-SQL-Quoting liefert |
-| SQL Server → MySQL | 6: zwei CHECKs in MySQLs Schreibweise, Identity-Modus, Index-Praedikat entfaellt, zweimal `W137` | `E057`, Schluesselwort-Schreibweise, Darstellung der Werteliste; die PascalCase-Berechnung des Seeds rechnet dort richtig (der Generator setzt `"Menge"` in Backticks) |
+| SQL Server → MySQL | 12: zwei CHECKs in MySQLs Schreibweise, Index-Praedikat entfaellt, zweimal `W137`, dazu die drei Identity-Spalten (je Typ und Erzeugung — die Gegenseite liest `identifier(auto)`) | `E057`, Schluesselwort-Schreibweise, Darstellung der Werteliste; die PascalCase-Berechnung des Seeds rechnet dort richtig (der Generator setzt `"Menge"` in Backticks) |
 | MySQL → PostgreSQL | 4: Werteliste (`in (…)` gegen `= ANY (ARRAY[…])`), CHECK mit `OR`/`IS NULL` in Kleinschreibung, zweimal `W137` | bewusst ein Fund (Darstellung eines Enums), Schluesselwort-Schreibweise, zwei unentscheidbare Berechnungsausdruecke (Fixture und Seed) |
-| MySQL → SQL Server | 8: dieselben zwei CHECKs, Identity-Modus `always`, abgeleiteter Typ **und** Nullbarkeit der beiden berechneten Spalten, zweimal `W137` | `W140`; SQL Server leitet Typ und `NOT NULL` einer berechneten Spalte aus dem Ausdruck ab |
+| MySQL → SQL Server | 14: dieselben zwei CHECKs, abgeleiteter Typ **und** Nullbarkeit der beiden berechneten Spalten, zweimal `W137`, dazu die drei `identifier`-Spalten (Fixture und Seed; je Typ und Erzeugung) | `W140`; SQL Server leitet Typ und `NOT NULL` einer berechneten Spalte aus dem Ausdruck ab |
 | MySQL → SQLite | 11: 10 Typen, Identity | SQLite-Typaffinitaet (Laenge, `decimal`, `datetime`), Identity als `identifier(auto)` |
-| SQL Server → SQLite | 11: 10 Typen, Identity | SQLite-Typaffinitaet (die zwei `decimal`-Spalten des Seeds kommen dazu) |
+| SQL Server → SQLite | 17: 10 Typen, dazu die drei Identity-Spalten (je Typ und Erzeugung) | SQLite-Typaffinitaet (die zwei `decimal`-Spalten des Seeds kommen dazu) und dieselbe Schreibweise-Frage |
 | SQLite → PostgreSQL | 3: LIKE-CHECK (`~~`), Werteliste (`= ANY`), `W137` | Schluesselwort-Schreibweise, bewusst ein Fund, unentscheidbarer Berechnungsausdruck |
 | SQLite → MySQL | `APPLY-FAIL` (`ERROR 1170`) | der SQLite-Reverse kennt keine Laenge; MySQL indiziert `TEXT` nicht ohne Praefix |
-| SQLite → SQL Server | 6: zwei UNIQUE-Klauseln entfallen, zwei CHECKs in anderer Schreibweise, die berechnete Spalte wird `NOT NULL`, `W137` | SQL Server nimmt eine unbegrenzte Textspalte nicht als Schluessel (`E057`), leitet Typ und Nullbarkeit einer berechneten Spalte ab |
+| SQLite → SQL Server | 16: zwei UNIQUE-Klauseln entfallen, zwei CHECKs in anderer Schreibweise, die berechnete Spalte wird `NOT NULL`, `W137`, dazu **fuenf** `identifier`-Spalten (je Typ und Erzeugung) | SQL Server nimmt eine unbegrenzte Textspalte nicht als Schluessel (`E057`), leitet Typ und Nullbarkeit einer berechneten Spalte ab |
 
 ### Das Bein „PostGIS ausserhalb des `search_path`"
 

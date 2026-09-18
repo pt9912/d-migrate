@@ -25,7 +25,7 @@
 
 -- seed: sl_my_expr.id | paket: P6 | quelle: identifier(auto)
 --   ziel postgresql: identifier(auto) | code: keinen
---   ziel mssql: identifier(auto) | code: keinen
+--   ziel mssql: integer | generation: identity(always) | code: keinen
 --   ziel sqlite: identifier(auto) | code: keinen
 -- seed: sl_my_expr.note | paket: P6 | quelle: text(40)
 --   ziel postgresql: text(40) | code: keinen

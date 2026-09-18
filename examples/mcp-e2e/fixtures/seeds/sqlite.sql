@@ -44,7 +44,7 @@ CREATE TABLE sl_sq_region (
 -- seed: sl_sq_parent.id | paket: P11 | quelle: identifier(auto)
 --   ziel postgresql: identifier(auto) | code: keinen
 --   ziel mysql: identifier(auto) | code: keinen
---   ziel mssql: identifier(auto) | code: keinen
+--   ziel mssql: integer | generation: identity(always) | code: keinen
 -- seed: sl_sq_parent.code | paket: P11 | quelle: text
 --   ziel postgresql: text | code: keinen
 --   ziel mysql: text | code: keinen
@@ -63,7 +63,7 @@ CREATE TABLE sl_sq_parent (
 -- seed: sl_sq_child.id | paket: P11 | quelle: identifier(auto)
 --   ziel postgresql: identifier(auto) | code: keinen
 --   ziel mysql: identifier(auto) | code: keinen
---   ziel mssql: identifier(auto) | code: keinen
+--   ziel mssql: integer | generation: identity(always) | code: keinen
 -- seed: sl_sq_child.parent_id | paket: P11 | quelle: integer
 --   ziel postgresql: integer | code: keinen
 --   ziel mysql: integer | code: keinen

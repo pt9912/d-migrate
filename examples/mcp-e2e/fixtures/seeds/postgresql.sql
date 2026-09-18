@@ -107,7 +107,7 @@ CREATE TABLE sl_pg_identity_big (
 --   generation: identity(always)
 --   ziel mysql: identifier(auto) | code: W163
 --   ziel sqlite: identifier(auto) | code: W163
---   ziel mssql: identifier(auto) | code: keinen
+--   ziel mssql: integer | generation: identity(always) | code: keinen
 -- seed: sl_pg_identity_int.label | paket: S1 | quelle: text
 --   ziel mysql: text | code: keinen
 --   ziel sqlite: text | code: keinen

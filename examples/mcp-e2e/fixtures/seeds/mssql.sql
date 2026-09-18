@@ -20,10 +20,11 @@
 SET QUOTED_IDENTIFIER ON;
 GO
 
--- seed: sl_ms_calc.id | paket: P12 | quelle: identifier(auto)
---   ziel postgresql: identifier(auto) | code: keinen
---   ziel mysql: identifier(auto) | code: keinen
---   ziel sqlite: identifier(auto) | code: keinen
+-- seed: sl_ms_calc.id | paket: P12 | quelle: integer
+--   generation: identity(always)
+--   ziel postgresql: integer | generation: identity(always) | code: keinen
+--   ziel mysql: identifier(auto) | code: W163
+--   ziel sqlite: identifier(auto) | code: W163
 -- seed: sl_ms_calc.Menge | paket: P12 | quelle: integer
 --   ziel postgresql: integer | code: keinen
 --   ziel mysql: integer | code: keinen

@@ -375,6 +375,17 @@ silent_loss_ref_types() {
 # $1=Anmerkungen $2=Quelle $3=Ziel $4=Quellspalten $5=Zielspalten $6=Report-JSON der Zelle
 silent_loss_target() {
     jq -r --argjson src "$4" --argjson tgt "$5" --argjson report "$6" --arg s "$2" --arg t "$3" '
+      # **Die Autowert-Schreibweise und eine ausdrueckliche Identitaet sind
+      # dieselbe Spalte.** SQL Server rendert `identifier(auto)` als
+      # `INT IDENTITY(1,1)` und liest das als `integer` + `identity(always)`
+      # zurueck; der Comparator kennt dieselbe Gleichheit
+      # (`foldsAutoIncrementOntoIdentity`). Ohne sie meldete der Check hier
+      # eine Degradierung, die keine ist — und verlangte einen Code fuer eine
+      # Spalte, die verlustfrei angekommen ist.
+      def same_spelling($sf; $sg; $tf; $tg):
+        ($sf == "identifier(auto)") and ($sg == "-")
+        and (($tf == "integer") or ($tf == "biginteger") or ($tf == "smallint"))
+        and ($tg | startswith("identity("));
       ([$report.skipped[] | .name]) as $skipped
       | ([ ($src | to_entries[]) as $entry
            | select(($tgt[$entry.key] // null) == null)
@@ -405,7 +416,8 @@ silent_loss_target() {
                       "ziel \($s)->\($t): \($key): Ausdruck erwartet \u0027\($want.expression)\u0027, gemessen \u0027\($actual.expression)\u0027"
                     else empty end),
                    # M1: eine Degradierung ohne Code im Generate-Report.
-                   ((($a.form != $want.form) or ($a.generation != "-" and $a.generation != $want.generation)) as $degraded
+                   ((((($a.form != $want.form) or ($a.generation != "-" and $a.generation != $want.generation))
+                      and (same_spelling($a.form; $a.generation; $want.form; $want.generation) | not))) as $degraded
                     | if $degraded | not then empty
                       elif $want.code == "keinen" then
                         "ziel \($s)->\($t): \($key): Degradierung \($a.form)/\($a.generation) -> \($want.form)/\($want.generation) ohne Code (Anmerkung sagt keinen)"
@@ -429,7 +441,6 @@ silent_loss_target() {
 # gehoert nachgezogen. Das Paket streicht seinen Eintrag in dem Commit, der den
 # Fix bringt.
 SILENT_LOSS_KNOWN=(
-    "ziel postgresql->mssql: sl_pg_identity_int.id: Degradierung integer/identity(always) -> identifier(auto)/- ohne Code (Anmerkung sagt keinen)|Befund open/mssql-integer-identity-pk-verliert-den-modus.md — S1 hat den PostgreSQL-Fall behoben, die Zielseite auf SQL Server ist eine Typfrage"
     "ziel postgresql->sqlite: sl_pg_json.payload_json: Degradierung json/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
     "ziel postgresql->sqlite: sl_pg_json.payload_jsonb: Degradierung json/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
     "ziel mysql->sqlite: sl_my_expr.note: Degradierung text(40)/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
