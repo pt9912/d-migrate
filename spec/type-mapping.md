@@ -127,6 +127,12 @@ Das ist akzeptabel — Systemkataloge werden selten reversed.
 | `generated always as (...)` | 12 | ❌ Nicht erkannt |
 | `multirange` | 14 | ❌ Nicht erkannt |
 
+### 3.5 Forward-Entscheidungen
+
+| Neutral | PostgreSQL | Regel |
+|---|---|---|
+| `array` | `<element>[]` | Jede Elementart, die der Reverse benennt, wird in ihrem Typ gerendert: `TEXT`, `INTEGER`, `BIGINT`, `BOOLEAN`, `UUID`, `DOUBLE PRECISION` (für `float`), `NUMERIC` (für `decimal`) und `JSONB` (für `json`). Die Schreibweise ist parameterlos — das Modell trägt am Array nur den Namen der Elementart, keine Präzision und keine Länge. Eine Elementart, die der Reverse nicht benennt, bleibt `TEXT[]` |
+
 ---
 
 ## 4. MySQL: Bekannte Lücken

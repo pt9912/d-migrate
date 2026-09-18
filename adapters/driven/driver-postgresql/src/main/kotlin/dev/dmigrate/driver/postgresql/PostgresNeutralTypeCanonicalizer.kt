@@ -73,14 +73,21 @@ internal object PostgresNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
     }
 
     /**
-     * Element-DDL-Rendering → udt-Name. Geschlossener Satz: `resolveElementType`
-     * im [PostgresTypeMapper] rendert Array-Elemente ausschließlich als
-     * TEXT/INTEGER/BOOLEAN/UUID.
+     * Element-DDL-Rendering → udt-Name. Geschlossener Satz: `elementSql` im
+     * [PostgresTypeMapper] rendert genau die Elementarten, die
+     * [PostgresTypeMapping.mapArrayElementType] benennt; alles andere bleibt
+     * `TEXT[]`. Die beiden Seiten gehören zusammen — wer eine erweitert,
+     * erweitert die andere mit, sonst projiziert der Kanonisierer ein Element
+     * auf `text`, das der Reverse richtig liest.
      */
     private fun elementUdtName(elementDdl: String): String = when (elementDdl) {
         "INTEGER" -> "int4"
+        "BIGINT" -> "int8"
         "BOOLEAN" -> "bool"
         "UUID" -> "uuid"
+        "DOUBLE PRECISION" -> "float8"
+        "NUMERIC" -> "numeric"
+        "JSONB" -> "jsonb"
         else -> "text"
     }
 }

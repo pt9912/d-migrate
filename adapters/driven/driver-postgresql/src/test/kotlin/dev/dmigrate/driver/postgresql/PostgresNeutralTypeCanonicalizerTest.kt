@@ -39,11 +39,17 @@ class PostgresNeutralTypeCanonicalizerTest : FunSpec({
         // Review-Härtung R1: FullText round-trippt auf PG treu als tsvector —
         // Fixpunkt der Komposition, kein Carve-out nötig.
         NeutralType.FullText,
-        // Arrays der vier generate-baren Element-Typen round-trippen treu.
+        // Arrays round-trippen treu — fuer **jede** Elementart, die der
+        // Reverse benennt. Vorher rendete der Generator nur vier davon, und
+        // `array(biginteger)` projizierte still auf `array(text)`.
         NeutralType.Array(elementType = "text"),
         NeutralType.Array(elementType = "integer"),
+        NeutralType.Array(elementType = "biginteger"),
         NeutralType.Array(elementType = "boolean"),
         NeutralType.Array(elementType = "uuid"),
+        NeutralType.Array(elementType = "float"),
+        NeutralType.Array(elementType = "decimal"),
+        NeutralType.Array(elementType = "json"),
     )
 
     val edges = mapOf<NeutralType, NeutralType>(
@@ -52,8 +58,10 @@ class PostgresNeutralTypeCanonicalizerTest : FunSpec({
         // Review-Härtung R1: identifier OHNE auto_increment rendert plain
         // INTEGER (kein SERIAL) — die Komposition muss zu Integer falten.
         NeutralType.Identifier() to NeutralType.Integer,
-        // Nicht generate-bare Array-Element-Typen flachen real auf TEXT[] ab.
-        NeutralType.Array(elementType = "biginteger") to NeutralType.Array(elementType = "text"),
+        // Eine Elementart, die der Reverse **nicht** benennt (`date[]` liest
+        // `text`, N1), flacht real auf `TEXT[]` ab — dort ist `text` die
+        // gelesene Wahrheit, keine Projektionsluecke.
+        NeutralType.Array(elementType = "date") to NeutralType.Array(elementType = "text"),
     )
 
     test("faithful round-trip types are fixpoints") {

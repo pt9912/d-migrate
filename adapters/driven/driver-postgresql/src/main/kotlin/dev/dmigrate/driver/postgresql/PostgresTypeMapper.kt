@@ -19,7 +19,7 @@ class PostgresTypeMapper : TypeMapper {
         is NeutralType.Decimal -> "DECIMAL(${type.precision},${type.scale})"
         is NeutralType.DateTime -> if (type.timezone) "TIMESTAMP WITH TIME ZONE" else "TIMESTAMP"
         is NeutralType.Enum -> "TEXT"
-        is NeutralType.Array -> "${toSql(resolveElementType(type.elementType))}[]"
+        is NeutralType.Array -> "${elementSql(type.elementType)}[]"
         is NeutralType.Geometry -> geometryToSql(type)
         else -> simpleToSql(type)
     }
@@ -70,12 +70,35 @@ class PostgresTypeMapper : TypeMapper {
         is DefaultValue.SequenceNextVal -> "nextval('${default.sequenceName}')"
     }
 
-    private fun resolveElementType(name: String): NeutralType = when (name) {
-        "text" -> NeutralType.Text()
-        "integer" -> NeutralType.Integer
-        "boolean" -> NeutralType.BooleanType
-        "uuid" -> NeutralType.Uuid
-        else -> NeutralType.Text()
+    /**
+     * Die DDL-Schreibweise eines Array-Elements.
+     *
+     * Der Satz ist genau der, den der Reverse liefert
+     * ([PostgresTypeMapping.mapArrayElementType]): jedes Element, das er
+     * benennt, wird hier in seinem Typ gerendert. Vorher kannte diese Stelle
+     * nur `text`, `integer`, `boolean` und `uuid` — `bigint[]`,
+     * `double precision[]`, `numeric[]` und `json[]` wurden damit schon
+     * PostgreSQL → PostgreSQL still `TEXT[]`, obwohl der Reverse die
+     * Elementart richtig gelesen hatte.
+     *
+     * Die Schreibweise ist parameterlos (`NUMERIC[]`, nicht
+     * `NUMERIC(p,s)[]`): das neutrale Modell traegt am Array nur den **Namen**
+     * des Elementtyps, keine Praezision und keine Laenge. `float` wird
+     * `DOUBLE PRECISION`, weil der Reverse `float4` und `float8` beide auf
+     * `float` abbildet und die weitere Form nichts verliert.
+     *
+     * Ein Element, das der Reverse nicht benennt (`date[]`, `inet[]` — er
+     * liest sie als `text`), bleibt `TEXT[]`.
+     */
+    private fun elementSql(name: String): String = when (name) {
+        "integer" -> "INTEGER"
+        "biginteger" -> "BIGINT"
+        "boolean" -> "BOOLEAN"
+        "uuid" -> "UUID"
+        "float" -> "DOUBLE PRECISION"
+        "decimal" -> "NUMERIC"
+        "json" -> "JSONB"
+        else -> "TEXT"
     }
 
     companion object {

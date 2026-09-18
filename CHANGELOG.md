@@ -57,6 +57,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Der Fingerabdruck steht auf `schema-fingerprint-v17`** (von `v16`). Der
+  PostgreSQL-Generator rendert Array-Elemente jetzt in ihrem Typ (s. unter
+  „Fixed"), und der Kanonisierer des Abdrucks ist die gelebte Zusammensetzung
+  aus Rendern und Zuruecklesen — er projizierte `array(biginteger)` bisher auf
+  `array(text)`. Derselbe unveraenderte Schemastand hasht damit anders.
+  **Folge:** vor dem Update erzeugte Rollback-Artefakte und Overlay-Dateien
+  passen nicht mehr und werden **laut** abgelehnt (Exit 8,
+  `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` bzw.
+  `OVERLAY_STALE_*_FINGERPRINT`). Erzeugen Sie sie mit der neuen Version neu;
+  bereits ausgerollte Migrationen sind nicht betroffen.
+
+
 - **Ein SQLite-Reverse liefert Constraint-Namen aus der Quelle, und gebildete
   Namen sind schemaweit eindeutig.** SQLite fuehrt die Namen nicht im Katalog;
   `PRAGMA foreign_key_list` nummeriert je Tabelle durch, und der Reverse vergab
@@ -259,6 +271,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Sortierrichtung und Praefixlaenge.
 
 ### Fixed
+
+- **Der PostgreSQL-Generator rendert die Elementart eines Arrays.** Er kannte
+  nur `text`, `integer`, `boolean` und `uuid`; `bigint[]`,
+  `double precision[]`, `numeric[]` und `json[]` wurden damit schon
+  PostgreSQL → PostgreSQL still `TEXT[]`, obwohl der Reverse die Elementart
+  richtig gelesen hatte. Jetzt entsteht `BIGINT[]`, `DOUBLE PRECISION[]`,
+  `NUMERIC[]` bzw. `JSONB[]` — parameterlos, weil das Modell am Array nur den
+  Namen der Elementart traegt. Eine Elementart, die der Reverse **nicht**
+  benennt (`date[]` liest `text`), bleibt `TEXT[]`. Der Fingerabdruck ist
+  dafuer angehoben (s. unter „Changed").
+
 - **`schema migrate` gegen SQLite legt eine Identity-Spalte wieder mit
   `AUTOINCREMENT` an.** Der Diff- und Neubau-Pfad sah `generation: identity`
   gar nicht an: eine `integer`/`biginteger`-Spalte mit erklaerter Identity

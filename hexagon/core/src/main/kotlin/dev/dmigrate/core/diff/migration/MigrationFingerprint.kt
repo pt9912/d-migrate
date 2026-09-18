@@ -169,12 +169,21 @@ object MigrationFingerprint {
      * tat. Dazu wird die HASH-Emulation ueber die berechnete Eimerspalte
      * wiedererkannt und kommt als `HASH` statt als `RANGE` zurueck.
      *
+     * v17: **die Elementart eines PostgreSQL-Arrays.** Der PostgreSQL-Generator
+     * rendert jetzt jedes Element, das sein Reverse benennt, in seinem Typ
+     * (`BIGINT[]`, `DOUBLE PRECISION[]`, `NUMERIC[]`, `JSONB[]`); vorher kannte
+     * er nur `text`, `integer`, `boolean` und `uuid` und schrieb alles andere
+     * als `TEXT[]`. Der Kanonisierer ist die gelebte Zusammensetzung
+     * `reverse(toSql(t))` und spiegelt den erweiterten Satz — er projizierte
+     * `array(biginteger)` bisher auf `array(text)`. Derselbe unveraenderte
+     * Schemastand hasht damit anders.
+     *
      * Die Anhebung ist der Punkt: ohne sie passte ein vor dem Slice
      * erzeugtes Artefakt still nicht mehr, und der Betreiber saehe ein
      * blankes `TARGET_STATE_MISMATCH` statt des Hinweises, das Artefakt neu
      * zu erzeugen.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v16"
+    const val ALGORITHM: String = "schema-fingerprint-v17"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP

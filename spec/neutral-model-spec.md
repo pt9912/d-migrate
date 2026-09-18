@@ -150,7 +150,7 @@ Jeder Spaltentyp im neutralen Modell wird pro Zieldatenbank in den passenden nat
 | `binary`      | BYTEA                   | BLOB                  | BLOB                              |
 | `email`       | VARCHAR(254)            | VARCHAR(254)          | TEXT                              |
 | `enum`        | CREATE TYPE ... ENUM    | ENUM(...)             | TEXT + CHECK                      |
-| `array`       | type[]                  | JSON \*\*\*\*         | TEXT \*\*\*\*                    |
+| `array`       | `<element>[]` \*\*\*    | JSON \*\*\*\*         | TEXT \*\*\*\*                    |
 | `geometry`    | geometry(type, srid) *  | POINT / POLYGON / ... | AddGeometryColumn() *             |
 | `fulltext`    | tsvector                | TEXT **               | TEXT **                           |
 
@@ -163,6 +163,11 @@ Vektor (parameterlos). PostgreSQL round-trippt ihn als `tsvector` (inkl. GiST-In
 MySQL/SQLite haben Volltext nur strukturell anders (MySQL `FULLTEXT`-Index, SQLite
 `FTS5`-virtuelle Tabelle), nicht als Spaltentyp — dort degradiert die Spalte zu
 `TEXT`; die strukturelle Übersetzung ist ein eigener Folge-Slice.
+
+\*\*\* Die Elementart wird mitgerendert (`TEXT[]`, `INTEGER[]`, `BIGINT[]`,
+`BOOLEAN[]`, `UUID[]`, `DOUBLE PRECISION[]`, `NUMERIC[]`, `JSONB[]`), parameterlos
+— das Modell trägt am Array nur den Namen der Elementart. Die Regel steht in
+`spec/type-mapping.md`, samt der Rückrichtung.
 
 \*\*\*\* MySQL und SQLite haben keinen Array-Typ: die Spalte verliert dort ihre
 Array-Eigenschaft (`W162`), und ein Reverse liest `json` bzw. `text` ohne

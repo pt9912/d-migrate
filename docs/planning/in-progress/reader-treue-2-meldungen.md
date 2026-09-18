@@ -729,6 +729,32 @@ den Modus ohnehin nirgends zurück — `SqliteTypeMapping` setzt für eine
 AUTOINCREMENT-Spalte entweder `identifier` (ohne Modus) oder
 `biginteger` + `Identity()` mit dem Default `by_default`. Der Code-Befund ist
 damit an der Stelle bestätigt, an der er zählt.
+
+#### S3 — der PostgreSQL-Generator rendert die Elementart
+
+`resolveElementType` ist zu `elementSql` geworden und liefert die
+DDL-Schreibweise direkt: `TEXT`, `INTEGER`, `BIGINT`, `BOOLEAN`, `UUID`,
+`DOUBLE PRECISION` (für `float`), `NUMERIC` (für `decimal`) und `JSONB` (für
+`json`) — **genau der Satz, den der Reverse benennt**
+(`PostgresTypeMapping.mapArrayElementType`). Eine Elementart, die er nicht
+benennt (`date[]` liest `text`, N1), bleibt `TEXT[]`.
+
+**Parameterlos, und das ist eine Entscheidung.** `NUMERIC[]` statt
+`NUMERIC(p,s)[]`: das neutrale Modell trägt am Array nur den **Namen** der
+Elementart. `float` wird `DOUBLE PRECISION`, weil der Reverse `float4` und
+`float8` beide auf `float` abbildet — die weitere Form verliert nichts.
+
+Der Kanonisierer (`elementUdtName`) spiegelt denselben Satz; beide Stellen
+tragen einen Verweis aufeinander. Der **Fingerabdruck** steht damit auf
+`schema-fingerprint-v17` (von `v16`), samt Eintrag in der Versionsliste von
+`MigrationFingerprint`. `CanonicalPayload` ist **nicht** betroffen: es
+projiziert `array(<element>)` dialektneutral und lief unverändert durch.
+
+**Gemessen ist die ganze Kette** an einem echten Server
+(`:test:integration-postgresql`): `bigint[]`, `double precision[]`,
+`numeric[]`, `jsonb[]` und `text[]` werden gelesen, mit dem Generator wieder
+als DDL geschrieben, vom Server angenommen und ein zweites Mal gelesen — mit
+derselben Elementart. Vorher entstand dort überall `text[]`.
 ## Akzeptanzkriterien
 
 1. Der Array-Verlust ist auf MySQL und SQLite benannt, auf Generate und

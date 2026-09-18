@@ -141,7 +141,7 @@ class IndexPredicateCanonicalisationTest : FunSpec({
             val left = indexed("status IN ('NEW','PAID')")
             val right = indexed("status IN ('NEW', 'PAID')")
             MigrationFingerprint.compute(left) shouldNotBe MigrationFingerprint.compute(right)
-            MigrationFingerprint.project(left).shouldStartWith("algorithm=schema-fingerprint-v16\n")
+            MigrationFingerprint.project(left).shouldStartWith("algorithm=schema-fingerprint-v17\n")
         }
     }
 
