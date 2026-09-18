@@ -272,7 +272,16 @@ mit dem gelockerten `E130` von selbst.
 Server (`int IDENTITY`), S6 für PostgreSQL (`smallint`). Eine Antwort, die nur
 einen der beiden bewegt, spaltet die Regel über die Dialekte.
 
-**Zwei Wege (nicht entschieden, Eigner):**
+**Entschieden (Eigner, 2026-09-18): Weg 1** — melden, Modell unverändert. Der
+Reverse liest `smallint` weiter als `identifier` und benennt den verlorenen
+Modus mit `R406`; der Zweig **ohne** Schlüssel zieht auf `integer`/`biginteger`
+zusammen, weil er heute eine Form liefert, aus der sich nicht generieren lässt
+(der Wächter-Test wird dabei rot und zieht mit). Dieselbe Antwort gilt für S5 in
+dem Sinn, dass der `identifier`-Vertrag seine Breiten behält; S5 baut die
+Behebung für `int IDENTITY` wie beschrieben. Die Messung „was tun die fünf
+Generatoren heute" bleibt Teil des Pakets — sie begründet den Meldetext.
+
+**Die zwei Wege im Wortlaut des Schnitts:**
 
 1. **Den Zweig eng lassen und den Verlust melden.** Der Reverse liest weiter
    `identifier`, benennt den verlorenen Modus aber mit einem PostgreSQL-Code
