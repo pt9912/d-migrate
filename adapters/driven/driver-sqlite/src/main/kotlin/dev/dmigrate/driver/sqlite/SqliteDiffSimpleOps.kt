@@ -152,11 +152,15 @@ internal object SqliteDiffSimpleOps {
             ctx.emit(op, SqliteSpatialDiffOps.addGeometryColumnSql(table, column, op.column))
             return
         }
-        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(table, column, op.column)};")
+        // `ADD COLUMN` legt nie den Primaerschluessel an: SQLite lehnt das ab
+        // („Cannot add a PRIMARY KEY column"), und die Anweisung erklaerte
+        // einen Schluessel, den das Soll nicht nennt. Die Spalte entsteht
+        // hier also nie als Autowert — deshalb `isSolePrimaryKey = false`,
+        // fuer die Deklaration **und** fuer die Notizen daneben.
+        val line = ctx.sql.columnLine(table, column, op.column, isSolePrimaryKey = false)
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN $line;")
         SqliteEnumDegradation.warnIfEnum(op, ctx, column, op.column)
         SqliteArrayDegradation.warnIfArray(op, ctx, column, op.column)
-        // `ADD COLUMN` legt nie den Primaerschluessel an (SQLite laesst das
-        // nicht zu); die Spalte entsteht dort also nicht als Autowert.
         SqliteIdentityModeDegradation.warnIfAlways(op, ctx, column, op.column, isSolePrimaryKey = false)
         // 0.9.7 G5: when the new column carries SequenceNextVal,
         // emit the `_bi`/`_ai` trigger pair against the sequence

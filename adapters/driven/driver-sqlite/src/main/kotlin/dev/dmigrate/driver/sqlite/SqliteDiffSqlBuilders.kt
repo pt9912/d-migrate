@@ -42,11 +42,23 @@ internal class SqliteDiffSqlBuilders {
 
     fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.SQLITE)
 
+    /**
+     * Die Spaltendeklaration.
+     *
+     * [isSolePrimaryKey] ist **ohne Default**, und das ist die Lehre aus
+     * einem Befund: mit `true` als Default rendert eine vergessene
+     * Aufrufstelle den Autowert-Schluessel inline. Auf `ADD COLUMN` war das
+     * `PRIMARY KEY AUTOINCREMENT` an einer Spalte, die gar nicht der
+     * Schluessel ist — SQLite lehnt die Anweisung ab („Cannot add a PRIMARY
+     * KEY column"), und erklaert haette sie einen Schluessel, den das Soll
+     * nicht nennt. Wer die Stelle nicht entscheiden kann, entscheidet sie
+     * jetzt beim Aufruf sichtbar.
+     */
     fun columnLine(
         table: String,
         name: String,
         col: ColumnDefinition,
-        isSolePrimaryKey: Boolean = true,
+        isSolePrimaryKey: Boolean,
     ): String {
         // Wie im Generate-Pfad: eine berechnete Spalte traegt ihren Ausdruck,
         // nicht NOT NULL/DEFAULT/UNIQUE. Beide Renderer muessen dasselbe

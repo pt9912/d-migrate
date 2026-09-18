@@ -99,6 +99,34 @@ class SqliteIdentityGenerationRenderTest : FunSpec({
         createTable shouldContain "PRIMARY KEY (\"id\")"
     }
 
+    // M2: `ADD COLUMN` legt nie den Primaerschluessel an. Der Aufruf nahm den
+    // Default `isSolePrimaryKey = true` und schrieb deshalb fuer **jede**
+    // Identity-Spalte ein `PRIMARY KEY AUTOINCREMENT` — SQLite lehnt die
+    // Anweisung ab, und erklaert haette sie einen Schluessel, den das Soll
+    // nicht nennt.
+    test("migrate: ADD COLUMN erklaert keinen Primaerschluessel") {
+        val r = planAndUp(
+            SchemaDiff(
+                tablesChanged = listOf(
+                    dev.dmigrate.core.diff.TableDiff(
+                        name = "t",
+                        columnsAdded = mapOf(
+                            "counter" to ColumnDefinition(
+                                NeutralType.BigInteger,
+                                generation = ColumnGeneration.Identity(),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val addColumn = r.statements.map { it.sql }.first { it.contains("ADD COLUMN") }
+
+        addColumn shouldContain "ADD COLUMN \"counter\" INTEGER"
+        addColumn shouldNotContain "PRIMARY KEY"
+        addColumn shouldNotContain "AUTOINCREMENT"
+    }
+
     test("migrate: der Tabellen-Neubau behaelt das AUTOINCREMENT") {
         fun schema(labelRequired: Boolean) = SchemaDefinition(
             name = "App", version = "1",

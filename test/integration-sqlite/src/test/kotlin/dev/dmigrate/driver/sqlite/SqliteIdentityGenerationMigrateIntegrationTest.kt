@@ -21,6 +21,7 @@ import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import kotlin.io.path.createTempDirectory
 
 /**
@@ -51,6 +52,38 @@ class SqliteIdentityGenerationMigrateIntegrationTest : FunSpec({
         ConnectionConfig(
             dialect = DatabaseDialect.SQLITE,
             host = null, port = null, database = ":memory:", user = null, password = null,
+        ),
+    )
+
+    /**
+     * Die Tabelle fuer M2, in **genau** der Schreibweise, die der Re-Read des
+     * SQLite-Ziels zurueckliefert (`identifier(auto)`, `text` ohne Laenge).
+     * Nur so plant der zweite Lauf ausschliesslich das `ADD COLUMN` — jede
+     * andere Schreibweise zoege einen Tabellen-Neubau nach sich, und der
+     * blockt hier an der Cast-Whitelist, bevor die Anweisung ueberhaupt
+     * entsteht.
+     */
+    fun addColumnSchema(withCounter: Boolean) = SchemaDefinition(
+        name = "sqlite_identity", version = "1",
+        tables = linkedMapOf(
+            "add_col" to TableDefinition(
+                columns = linkedMapOf<String, ColumnDefinition>(
+                    "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true), ordinal = 1),
+                    "label" to ColumnDefinition(NeutralType.Text(), ordinal = 2),
+                ).apply {
+                    if (withCounter) {
+                        put(
+                            "counter",
+                            ColumnDefinition(
+                                NeutralType.BigInteger,
+                                generation = ColumnGeneration.Identity(),
+                                ordinal = 3,
+                            ),
+                        )
+                    }
+                },
+                primaryKey = listOf("id"),
+            ),
         ),
     )
 
@@ -114,14 +147,16 @@ class SqliteIdentityGenerationMigrateIntegrationTest : FunSpec({
         }
     }
 
-    /** Der gespeicherte `CREATE TABLE`-Text der Tabelle. */
-    fun storedDdl(pool: ConnectionPool): String = pool.borrow().asJdbc().use { conn ->
+    /** Der gespeicherte `CREATE TABLE`-Text einer Tabelle. */
+    fun storedDdlOf(pool: ConnectionPool, table: String): String = pool.borrow().asJdbc().use { conn ->
         conn.createStatement().use { stmt ->
-            stmt.executeQuery("SELECT sql FROM sqlite_master WHERE name = 'id_table'").use { rs ->
+            stmt.executeQuery("SELECT sql FROM sqlite_master WHERE name = '$table'").use { rs ->
                 if (rs.next()) rs.getString(1) else "keine Tabelle"
             }
         }
     }
+
+    fun storedDdl(pool: ConnectionPool): String = storedDdlOf(pool, "id_table")
 
     /**
      * `sqlite_sequence` entsteht **nur** fuer eine Tabelle mit AUTOINCREMENT.
@@ -162,6 +197,58 @@ class SqliteIdentityGenerationMigrateIntegrationTest : FunSpec({
             withClue(report) {
                 storedDdl(pool) shouldContain "AUTOINCREMENT"
                 hasSequenceRow(pool) shouldBe true
+            }
+        } finally {
+            pool.close()
+        }
+    }
+
+    /**
+     * M2 — `ADD COLUMN` einer Identity-Spalte, die **nicht** der Schluessel
+     * ist. Der Renderer nahm dort den Default `isSolePrimaryKey = true` und
+     * schrieb `PRIMARY KEY AUTOINCREMENT`; SQLite lehnt die Anweisung ab
+     * („Cannot add a PRIMARY KEY column"), und erklaert haette sie einen
+     * Schluessel, den das Soll nicht nennt.
+     *
+     * Der Server ist hier der Zeuge: ein Unit-Test zeigt nur die Zeichenkette,
+     * aber ob SQLite die Anweisung **annimmt**, sagt nur er.
+     *
+     * **Und er zeigt, was danach bleibt.** Der Lauf endet mit Exit 5: der
+     * Autowert der neuen Spalte entsteht nicht (SQLite kann einen rowid-Alias
+     * per `ALTER TABLE` gar nicht anlegen), der Post-Compare sieht deshalb
+     * einen Unterschied — und **kein Code sagt es**. Das ist der offene Punkt
+     * aus
+     * `docs/planning/open/sqlite-add-column-identity-verliert-den-autowert.md`;
+     * dieser Test ist sein Waechter und wird rot, sobald er geschlossen ist.
+     */
+    test("M2: ADD COLUMN einer Nicht-Schluessel-Identity laeuft am Server durch") {
+        val pool = newPool()
+        try {
+            val (baseExit, baseReport) = migrate(pool, addColumnSchema(withCounter = false))
+            withClue(baseReport) { baseExit shouldBe 0 }
+
+            val (exit, report) = migrate(pool, addColumnSchema(withCounter = true))
+            val ddl = storedDdlOf(pool, "add_col")
+
+            withClue(report) {
+                // Die Anweisung ist entstanden, nicht geblockt — und der Server
+                // hat sie angenommen. Vorher stand dort
+                // `ADD COLUMN "counter" INTEGER PRIMARY KEY AUTOINCREMENT`,
+                // und SQLite lehnte sie ab.
+                report shouldContain "ADD COLUMN \"counter\" INTEGER;"
+                report shouldContain "blockers=[]"
+                ddl shouldContain "counter"
+                // Und sie erklaert keinen zweiten Schluessel.
+                ddl.substringAfter("counter").substringBefore(")") shouldNotContain "PRIMARY KEY"
+                ddl.substringAfter("counter").substringBefore(")") shouldNotContain "AUTOINCREMENT"
+
+                // Der offene Rest: der Autowert entsteht nicht, der
+                // Post-Compare meldet Drift, und keine Note benennt den
+                // Verlust.
+                exit shouldBe DRIFT_EXIT
+                report shouldContain "POST_EXECUTE_DRIFT"
+                report shouldNotContain "W163"
+                report shouldNotContain "W135"
             }
         } finally {
             pool.close()
