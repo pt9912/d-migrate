@@ -83,6 +83,7 @@ neuen Version.
 | W158 | PostgreSQL unter 18: eine virtuelle berechnete Spalte (`stored: false`) wurde als `STORED` gerendert — die virtuelle Form gibt es dort nicht |
 | W159 | Das Preserve-Fenster ist auf diesem Ziel serialisiert statt atomar: ein Fehlschlag darin laesst Angewandtes stehen (Oracle — jedes DDL committet implizit) |
 | W161 | `data transfer`: eine berechnete Zielspalte wird aus der Übertragung ausgelassen (nirgends schreibbar); das Ziel rechnet sie selbst |
+| W162 | Cross-Dialect: `array`-Spalte verliert ihre Array-Eigenschaft — MySQL rendert sie als `JSON`, SQLite als `TEXT`; ein Reverse liest `json` bzw. `text` ohne Elementart zurück |
 
 Neue Codes werden am Ende des jeweiligen Bereichs angefuegt.
 Luecken (z.B. E021-E051) sind reservierte Bereiche fuer kuenftige

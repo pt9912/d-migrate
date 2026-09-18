@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Der Array-Verlust auf MySQL und SQLite ist benannt (`W162`).** Beide Ziele
+  haben keinen Array-Typ: MySQL rendert eine `array`-Spalte als `JSON`, SQLite
+  als `TEXT`, und ein spaeteres `schema reverse` des Ziels liest `json` bzw.
+  `text` zurueck — die Elementart steht dann nirgends mehr. Bisher geschah das
+  **ohne jede Meldung**, waehrend Oracle denselben Verlust mit `W149` und SQL
+  Server ihn mit `W137` meldete. `schema generate` nennt ihn jetzt als Note,
+  `schema migrate` als Diagnose, an jeder Stelle, die die Spalte schreibt
+  (`CREATE TABLE`, `ADD COLUMN`, `MODIFY COLUMN`, der SQLite-Tabellen-Neubau).
+  Der Rueckweg bleibt verloren: was im Ziel nicht mehr steht, kann kein Reader
+  zurueckgewinnen — gemeldet ist der Hinweg.
+
 
 - **`AUTO_INCREMENT` als `serial` oder als `identity` lesen.** MySQL traegt
   nicht, ob eine `BIGINT AUTO_INCREMENT`-Spalte als `SERIAL` oder als

@@ -306,6 +306,7 @@ W200 - W299: Performance-Warnungen
 | W159 | The preserve window on this target is serialized, not atomic: a failure inside it leaves what already ran applied (Oracle — every DDL commits implicitly) |
 | W160 | `--allow-incomplete` suppressed the exit code that `skipped_objects` would otherwise have caused (`schema generate`) |
 | W161 | A computed target column is excluded from `data transfer`; the target computes it itself |
+| W162 | An `array` column loses its array nature: MySQL renders it as `JSON`, SQLite as `TEXT`, and a reverse read yields `json`/`text` without the element type |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)
 

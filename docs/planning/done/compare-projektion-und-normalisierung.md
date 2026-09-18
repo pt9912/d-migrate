@@ -2552,7 +2552,7 @@ unberührt, kein Oracle-Opt-in.
 - **`numeric` ohne Präzision liest der PostgreSQL-Reverse als `float`** — ein
   Reader-Verlust (s. P9, Grenze): zwei verschiedene Spaltentypen sehen im
   Modell gleich aus, der Spaltentyp-Vergleich ist dort blind. Steht im
-  [Reader-Slice](../next/reader-treue-2-meldungen.md) als Posten D2.
+  [Reader-Slice](../in-progress/reader-treue-2-meldungen.md) als Posten D2.
 - **`varchar` ohne Länge ist im Modell `text`.** Seit M1 bleibt PostgreSQLs
   `(spalte)::text` an einer solchen Spalte ein Fund; ebenso liest der Reverse
   `inet`/`interval` als `text` (`R301`). Dieselbe Reader-/Modell-Frage wie

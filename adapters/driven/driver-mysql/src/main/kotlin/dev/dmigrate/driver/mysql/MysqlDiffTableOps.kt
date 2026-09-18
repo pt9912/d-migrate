@@ -126,7 +126,10 @@ internal object MysqlDiffTableOps {
         partitionNotes.forEach { note ->
             ctx.warning(op, note.message, code = note.code ?: "W112")
         }
-        for ((colName, col) in op.table.columns.inOrdinalOrder()) warnIfDegradingEnum(op, ctx, colName, col)
+        for ((colName, col) in op.table.columns.inOrdinalOrder()) {
+            warnIfDegradingEnum(op, ctx, colName, col)
+            MysqlArrayDegradation.warnIfArray(op, ctx, colName, col)
+        }
         for (idx in op.table.indices) {
             // VA3: ein Index auf eine Geometriespalte → MySQL SPATIAL INDEX (statt
             // die ganze Tabelle zu blocken). Normalisiert auch dialektfremde Typen
@@ -234,6 +237,7 @@ internal object MysqlDiffTableOps {
         }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
         warnIfDegradingEnum(op, ctx, column, op.column)
+        MysqlArrayDegradation.warnIfArray(op, ctx, column, op.column)
         if (seqDefault != null) {
             MysqlDiffSequenceOps.emitSupportTriggerForColumn(
                 op, ctx, table, column, seqDefault.sequenceName,
@@ -309,11 +313,12 @@ internal object MysqlDiffTableOps {
             ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
             return
         }
-        val line = ctx.sql.columnLine(
-            column,
-            declaration.copy(type = targetType, references = null, unique = false, uniqueConstraintName = null),
+        val effective = declaration.copy(
+            type = targetType, references = null, unique = false, uniqueConstraintName = null,
         )
+        val line = ctx.sql.columnLine(column, effective)
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN $line;")
+        MysqlArrayDegradation.warnIfArray(op, ctx, column, effective)
     }
 
     /**
@@ -362,11 +367,12 @@ internal object MysqlDiffTableOps {
         // Dieselbe vollstaendige Deklaration wie bei der Typaenderung: eine
         // berechnete Spalte darf `NOT NULL` tragen, und `MODIFY COLUMN` nimmt es
         // ihr sonst weg (gemessen).
-        val line = ctx.sql.columnLine(
-            column,
-            declaration.copy(generation = computed, references = null, unique = false, uniqueConstraintName = null),
+        val effective = declaration.copy(
+            generation = computed, references = null, unique = false, uniqueConstraintName = null,
         )
+        val line = ctx.sql.columnLine(column, effective)
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN $line;")
+        MysqlArrayDegradation.warnIfArray(op, ctx, column, effective)
     }
 
     /**
@@ -423,6 +429,10 @@ internal object MysqlDiffTableOps {
             return
         }
         val quotedTable = ctx.sql.quote(table)
+        // Der Spaltentausch legt dieselbe Spalte neu an; der Array-Verlust
+        // entsteht dabei genauso wie beim `ADD COLUMN`. Einmal je Operation,
+        // nicht je Anweisung — der Tausch schreibt fuenf davon.
+        MysqlArrayDegradation.warnIfArray(op, ctx, column, declaration)
         if (becomingComputed) {
             ctx.emit(op, "ALTER TABLE $quotedTable DROP COLUMN ${ctx.sql.quote(column)};", swapRisk(dataLossPossible = true))
             ctx.emit(

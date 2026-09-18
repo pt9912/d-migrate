@@ -394,6 +394,10 @@ Besonderheiten:
 - `identifier` → `INT NOT NULL AUTO_INCREMENT`
 - `boolean` → `TINYINT(1)`, Defaults `true`/`false` → `1`/`0`
 - `json` → `JSON` (kein JSONB)
+- `array` → `JSON` + W162 (kein nativer Array-Typ): die Spalte verliert ihre
+  Array-Eigenschaft, ein Reverse liest `json` ohne Elementart zurück. Der
+  Verlust wird auf beiden Render-Pfaden gemeldet, `schema generate` als Note
+  und `schema migrate` als Diagnose, an jeder Stelle, die die Spalte schreibt
 - `enum` → inline `ENUM(...)` (kein separater Type)
 - `datetime` mit `timezone: true` → `DATETIME` + Warnung W100 (kein TZ-Support)
 - Immer `ENGINE=InnoDB` (FK-Support)
@@ -433,6 +437,11 @@ Besonderheiten:
 - `identifier` → `INTEGER PRIMARY KEY AUTOINCREMENT`
 - `boolean` → `INTEGER`, Defaults `true`/`false` → `1`/`0`
 - `json` → `TEXT` (JSON-Funktionen verfügbar ab 3.38)
+- `array` → `TEXT` + W162 (kein nativer Array-Typ): die Spalte verliert ihre
+  Array-Eigenschaft, ein Reverse liest `text` ohne Elementart zurück. Derselbe
+  Code wie auf MySQL (dieselbe Aussage, andere Zielform), gemeldet auf beiden
+  Render-Pfaden — `schema generate`, `ALTER TABLE ADD COLUMN` und der
+  Tabellen-Neubau
 - `datetime`, `date`, `time` → `TEXT` (ISO 8601 Format)
 - `decimal` → `REAL` + Warnung W200 (Präzisionsverlust)
 - `enum` → `TEXT` + benannter `CHECK` Constraint (`ck_<tabelle>_<spalte>`): ein

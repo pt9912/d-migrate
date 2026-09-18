@@ -108,6 +108,7 @@ internal class SqliteRebuildRenderer(
      * table, whose columns were already reported on the way up.
      *  - W134 (enum → bare TEXT, no native enum type)
      *  - W135 (identity column in a composite PK → AUTOINCREMENT dropped, [SqliteCompositePkIdentity])
+     *  - W162 (array → TEXT, no native array type, [SqliteArrayDegradation])
      */
     private fun warnRebuiltColumnDegradations(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
         if (ctx.direction != SqliteRenderDirection.UP) return
@@ -115,6 +116,7 @@ internal class SqliteRebuildRenderer(
         val solePrimaryKey = plan.newTable.primaryKey.singleOrNull()
         for ((colName, col) in plan.newTable.columns.inOrdinalOrder()) {
             SqliteEnumDegradation.warnIfEnum(op, ctx, colName, col)
+            SqliteArrayDegradation.warnIfArray(op, ctx, colName, col)
             if (SqliteCompositePkIdentity.isDroppedAutoincrement(col.type, solePrimaryKey == colName)) {
                 ctx.warning(op, SqliteCompositePkIdentity.message(colName), SqliteCompositePkIdentity.W_CODE)
             }

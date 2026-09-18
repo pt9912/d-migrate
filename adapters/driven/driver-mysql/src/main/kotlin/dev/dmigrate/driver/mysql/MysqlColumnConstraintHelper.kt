@@ -24,6 +24,21 @@ internal class MysqlColumnConstraintHelper(
         tableName: String,
         notes: MutableList<TransformationNote>,
         skipped: MutableList<SkippedObject>? = null,
+    ): String {
+        // Der Array-Verlust haengt am Typ, nicht am Zweig, der ihn rendert:
+        // eine berechnete Array-Spalte verliert ihre Elementart genauso wie
+        // eine gewoehnliche. Die Note entsteht deshalb vor der Auswahl.
+        MysqlArrayDegradation.noteFor(tableName, colName, col.type)?.let { notes += it }
+        return columnClause(colName, col, schema, tableName, notes, skipped)
+    }
+
+    private fun columnClause(
+        colName: String,
+        col: ColumnDefinition,
+        schema: SchemaDefinition,
+        tableName: String,
+        notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>?,
     ): String = when {
         // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
         // DEFAULT und AUTO_INCREMENT sind dort keine Frage. MySQL kennt beide

@@ -332,3 +332,23 @@ entries:
         path_type: production
       - source: "hexagon/ports-write/src/main/kotlin/dev/dmigrate/driver/data/TableImportSession.kt"
         path_type: production
+
+  # W162 — reader-treue: eine `array`-Spalte verliert auf MySQL und SQLite ihre
+  # Array-Eigenschaft (MySQL rendert `JSON`, SQLite `TEXT`), und ein Reverse
+  # liest `json` bzw. `text` ohne Elementart zurueck. Oracle (W149) und SQL
+  # Server (W137) melden denselben Verlust laengst; hier blieb er still.
+  # Ein Code fuer beide Dialekte, wie W132 beim Volltext-Verlust: die Aussage
+  # ist dieselbe, nur die Zielform unterscheidet sich.
+  - code: W162
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlArrayDegradationTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlArrayDegradation.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteArrayDegradation.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteArrayDegradationTest.kt"
+        path_type: test
+

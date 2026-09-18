@@ -1,9 +1,11 @@
 # Reader-Treue 2: Verluste werden gemeldet (P5, P10, P8, P9, P1, P3, S1–S3)
 
-> **Status:** Entwurf mit Scope (Schnitt 2026-09-17 aus dem ungeschnittenen
-> Reader-Slice; Befunde aus Plan-Review und Architektur-Prüfung eingearbeitet,
-> Anker gegen `90c6c234f` nachgemessen). Teil des Umbrellas
-> [`reader-treue.md`](../in-progress/reader-treue.md); dort stehen Nenner, Belegart, Regeln
+> **Status:** **In Arbeit seit 2026-09-18.** Schnitt 2026-09-17 aus dem
+> ungeschnittenen Reader-Slice; Befunde aus Plan-Review und
+> Architektur-Prüfung eingearbeitet, Anker gegen `90c6c234f` nachgemessen. Der
+> Bauabschnitt unten hält Nulllinie, Messungen, Sabotagen und Neu-Pins fest.
+> Teil des Umbrellas
+> [`reader-treue.md`](reader-treue.md); dort stehen Nenner, Belegart, Regeln
 > der Abnahme, Doku-Pflichten und die Code-Tabelle.
 > **Vorbedingung / Gate:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md) ist geliefert und graduiert
 > (2026-09-18) — die Matrix ist Abnahme, und
@@ -14,8 +16,8 @@
 > empfohlen: **E2** — S1 wird behoben; **E3** — S2 übernimmt Ursache 1, Ursache
 > 2 wird nur gemessen; **S3** — mit Anhebung des Fingerabdrucks (v16 → v17).
 > Keine Sperre mehr (Umbrella, „Offen").
-> **Aktivierung:** Move nach `../in-progress/` beim ersten
-> Implementierungs-Commit dieses Plans.
+> **Aktivierung:** mit dem ersten Implementierungs-Commit nach `in-progress/`
+> gewandert (2026-09-18); der Umbrella bleibt, wo er ist.
 > **Abhängigkeit:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md). Innerhalb: P10 nach P5 (dieselben Stellen); der
 > `json[]`-Teil von P8 nach S3; Plan 3 baut P4 auf P3 auf.
 
@@ -302,7 +304,7 @@ annimmt; der Modus `always` ist nicht durchgesetzt, ein Reverse liest
    3.5; `spec/cli-spec.md`, „Grenze — der Identity-Modus", nennt `W163` neben
    `W140`; Anwenderhandbuch 3.12 („Sequenzen/Autowerte korrekt mitnehmen")
    und der Compare-Abschnitt (Verweis auf den Code); CHANGELOG „Added". Im
-   [Toleranzprofil](compare-toleranzprofil.md) ist der Code Beleg für K2 —
+   [Toleranzprofil](../next/compare-toleranzprofil.md) ist der Code Beleg für K2 —
    dort nur ein Verweis.
 5. **Matrix:** `W163` erscheint in `GEN_CODES_POSTGRESQL_MYSQL` und
    `_SQLITE` (Seed) sowie in `GEN_CODES_MSSQL_MYSQL` und `_SQLITE` (Fixture,
@@ -571,6 +573,73 @@ invalidiert Rollback-Artefakte und Overlay-Pins); CHANGELOG „Fixed" und
 „Changed". **Matrix:** keine Zelle PostgreSQL → PostgreSQL; die Abnahme ist
 `:test:integration-postgresql`. **Sabotage:** Element wieder `TEXT` → Test rot.
 
+## Bau
+
+### Nulllinie der Integrationsmodule (2026-09-18, vor dem ersten Paket)
+
+`make integration INTEGRATION_TASKS=":test:integration-mysql:test
+:test:integration-sqlite:test :test:integration-postgresql:test
+:test:integration-oracle:test --continue"`: **`BUILD SUCCESSFUL` in 23 min 6 s,
+165 Tasks**. Die vier `:test`-Tasks stehen ohne `SKIPPED` und ohne
+`UP-TO-DATE` im Lauf — sie sind `executed`. Damit sind alle vier Zeilen des
+Umbrellas gemessen, und zwar in **einem** Lauf.
+
+**Keine Selbstüberspringung** in den vier Modulen: weder `assumeTrue`/
+`Assumptions` noch `@Disabled` oder `xtest` kommen dort vor (gesucht über alle
+vier Testquellbäume). Oracle fährt dabei beide Images — die schlanke Variante
+für die übrigen Specs, `TestImages.ORACLE_FULL` (`23-faststart`) für
+`OracleSpatialIntegrationTest`; beide liefen.
+
+**Eine Testzahl je Modul steht nicht im Lauf** (das Integrations-Image trägt
+das Repo als Kopie, die Reports bleiben im Container, und Gradle zählt in der
+Konsolenausgabe nichts). Gemessen ist der ausgeführte Task, nicht die Zahl —
+dieselbe Grenze wie in Plan 1.
+
+**Der PostGIS-Container in `:test:integration-postgresql` ist weiterhin neu**
+und von dieser Nulllinie nicht gedeckt; er wird vor P3 einmal leer gefahren
+(Umbrella).
+
+### Was gebaut ist, je Paket
+
+Die Reihenfolge des Plans (P5 → P10; P8 und P9; P1; P3; S1 bis S3) ist im
+**Bau** an zwei Stellen gedreht worden, beide Male aus einer Abhängigkeit, die
+der Plan selbst nennt: **S2 kommt vor P10** (erst mit ihm rendert der
+SQLite-Migrate-Pfad die Identity überhaupt, und nur dort lässt sich `W163`
+melden), und **S3 kommt vor P8** (erst mit ihm rendert ein `json[]` als
+`jsonb[]`, und vorher wäre die Aussage der Note falsch). Gebaut und committet
+ist deshalb: P5 → S2 → P10 → S3 → P8 und P9 → S1 → P1 → P3.
+
+**P8 und P9 teilen sich einen Commit.** Der Plan führt sie als einen Schritt
+(„P8 und P9"), und sie ändern dieselben Stellen in
+`PostgresTypeMapping.mapSpecialTypes`: die `json`-Note und die Note der
+Array-Elementart entstehen in derselben Funktion. Getrennt hätte der erste
+Commit einen Zwischenstand hinterlassen, in dem `mapArrayColumn` die eine Note
+kennt und die andere nicht.
+
+#### P5 — `W162` auf MySQL und SQLite
+
+Gebaut als je ein Objekt im Treiber (`MysqlArrayDegradation`,
+`SqliteArrayDegradation`), nach dem Muster von `SqliteEnumDegradation`: eine
+Meldung, zwei Aufrufformen — `noteFor` für die Notizliste des Generate-Pfads,
+`warnIfArray` für den Render-Kontext des Migrate-Pfads. So können die beiden
+Pfade nicht auseinanderlaufen.
+
+**Die Note hängt am Typ, nicht am Zweig.** Im Generate-Pfad entsteht sie
+**vor** der Auswahl des Render-Zweigs; sonst bliebe eine berechnete
+Array-Spalte still, weil der Computed-Zweig vorher zurückkehrt. Im
+Migrate-Pfad steht sie an **jeder** Stelle, die eine Spaltendeklaration
+schreibt: `CREATE TABLE`, `ADD COLUMN`, `MODIFY COLUMN` (Typwechsel und
+Ausdruckswechsel), der Spaltentausch (dort einmal je Operation, nicht je der
+fünf Anweisungen) und der SQLite-Tabellen-Neubau.
+
+**Die Elementart steht in der Meldung** (`element type 'text'`). Sie ist genau
+das, was verlorengeht — eine Meldung ohne sie sagte nur die Hälfte.
+
+**B2, die Grenze, ist gepinnt:** ein Test fährt `array(integer)` durch
+`MysqlTypeMapper.toSql` (`JSON`) und wieder zurück durch
+`MysqlTypeMapping.mapColumn` und hält fest, dass `json` herauskommt — kein
+Array mit verlorener Elementart, sondern gar kein Array mehr. Das ist der
+**erwartete** Ausgang, kein Defekt.
 ## Akzeptanzkriterien
 
 1. Der Array-Verlust ist auf MySQL und SQLite benannt, auf Generate und

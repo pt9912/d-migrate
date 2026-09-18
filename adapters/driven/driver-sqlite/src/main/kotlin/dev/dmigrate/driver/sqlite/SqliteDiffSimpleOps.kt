@@ -79,6 +79,7 @@ internal object SqliteDiffSimpleOps {
                 ctx.emit(op, SqliteSpatialDiffOps.addGeometryColumnSql(tableName, colName, col))
             }
             SqliteEnumDegradation.warnIfEnum(op, ctx, colName, col)
+            SqliteArrayDegradation.warnIfArray(op, ctx, colName, col)
         }
         for (idx in op.table.indices) {
             // ADR 0025 (Slice P4): a FULLTEXT index expands to an FTS5 virtual table + three sync
@@ -152,6 +153,7 @@ internal object SqliteDiffSimpleOps {
         }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(table, column, op.column)};")
         SqliteEnumDegradation.warnIfEnum(op, ctx, column, op.column)
+        SqliteArrayDegradation.warnIfArray(op, ctx, column, op.column)
         // 0.9.7 G5: when the new column carries SequenceNextVal,
         // emit the `_bi`/`_ai` trigger pair against the sequence
         // declared in the target schema. action_required mode is a

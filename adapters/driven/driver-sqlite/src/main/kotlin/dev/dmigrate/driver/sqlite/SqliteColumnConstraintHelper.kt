@@ -31,6 +31,11 @@ internal class SqliteColumnConstraintHelper(
     ): String {
         val type = col.type
 
+        // Der Array-Verlust haengt am Typ, nicht am Zweig, der ihn rendert:
+        // eine berechnete Array-Spalte verliert ihre Elementart genauso wie
+        // eine gewoehnliche. Die Note entsteht deshalb vor der Auswahl.
+        SqliteArrayDegradation.noteFor(tableName, colName, type)?.let { notes += it }
+
         // Eine berechnete Spalte bekommt ihren Wert aus dem Ausdruck; NOT NULL,
         // DEFAULT und UNIQUE sind dort keine Frage. SQLite kennt beide
         // Speicherformen und nimmt ohne Angabe die virtuelle.

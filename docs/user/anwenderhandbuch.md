@@ -351,6 +351,12 @@ CREATE TABLE "customers" (
 - Wenn der Bericht Codes wie `E056` (Sequenzen) oder Warnungen enthält, sehen
   Sie in [3.12](#312-sequenzenautowerte-korrekt-mitnehmen) bzw.
   [Anhang D](#anhang-d--fehler--und-warnungscodes) nach.
+- **Array-Spalten auf MySQL oder SQLite?** Beide Ziele haben keinen
+  Array-Typ. Die Spalte entsteht dort als `JSON` (MySQL) bzw. `TEXT`
+  (SQLite), und der Bericht nennt sie mit `W162`. Ein späteres
+  `schema reverse` des Ziels liest `json` bzw. `text` zurück — die Elementart
+  steht dann nirgends mehr. Behalten Sie die neutrale Schemadatei als Quelle
+  (siehe [Anhang C](#anhang-c--neutrales-typsystem)).
 
 #### Ihre LIST-Partitionierung kennt das Ziel nicht
 
@@ -3560,8 +3566,16 @@ nicht in der Datei stehen, werden nicht ergänzt.
 | `binary` | BYTEA | BLOB | BLOB | VARBINARY(MAX) |
 | `email` | VARCHAR(254) | VARCHAR(254) | TEXT | NVARCHAR(254) |
 | `enum` | CREATE TYPE … ENUM | ENUM(…) | TEXT + CHECK | NVARCHAR(n) + CHECK |
-| `array` | type[] | JSON | TEXT (JSON) | NVARCHAR(MAX) (JSON) |
+| `array` | type[] | JSON (**W162**) | TEXT (**W162**) | NVARCHAR(MAX) (JSON, **W137**) |
 | `geometry` | geometry(type, srid) | POINT / POLYGON / … | AddGeometryColumn() | geography (SRID 4000–4999) / geometry |
+
+Nur PostgreSQL trägt einen echten Array-Typ. MySQL, SQLite, SQL Server und
+Oracle haben keinen: die Spalte wird dort JSON bzw. Text, und ein späteres
+`schema reverse` liest `json` bzw. `text` zurück — die Elementart ist dann
+weg. Der Bericht sagt das je Spalte (**W162** auf MySQL und SQLite, **W137**
+auf SQL Server, **W149** auf Oracle). Zurückholen lässt sich die Array-Art
+nicht; wer sie braucht, hält die neutrale Schemadatei als Quelle und erzeugt
+das Ziel daraus neu, statt es zurückzulesen.
 
 Auf MS SQL Server tragen `NVARCHAR`/`NCHAR` höchstens 4000 Zeichen und
 `DECIMAL` höchstens Präzision 38; darüber weitet d-migrate auf `(MAX)` bzw.

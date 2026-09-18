@@ -3,7 +3,7 @@
 > **Status:** Vorabklärung / Modellfrage (2026-09-17)
 > **Trigger:** Eigner-Entscheidung vom 2026-09-17 zu Posten D2 des
 > Reader-Slices
-> ([`../next/reader-treue-2-meldungen.md`](../next/reader-treue-2-meldungen.md)):
+> ([`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md)):
 > `numeric` ohne Präzision wird im Reader-Slice **nur gemeldet** (Paket P9).
 > Ihn verlustfrei zu machen ist eine Modellerweiterung und liegt hier.
 > **Aktivierungsbedingung:** ein gemeldeter Fidelity-Bedarf, bei dem die
@@ -64,5 +64,5 @@ Meldungs-Plan des Reader-Slices (P9).
 ## Referenzen
 
 - Befund D2 und die Eigner-Entscheidung:
-  [`../next/reader-treue-2-meldungen.md`](../next/reader-treue-2-meldungen.md).
+  [`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md).
 - Muster: [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md).
