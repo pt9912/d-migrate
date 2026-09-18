@@ -26,7 +26,7 @@ package dev.dmigrate.driver
  * Ausdruckstext"). Fuer PostgreSQL, SQL Server und Oracle tut das heute
  * niemand — dort scheitert ein solcher Ausdruck am Server, laut und mit
  * dessen Meldung; der Posten steht in
- * `docs/planning/next/reader-treue-2-meldungen.md`.
+ * `docs/planning/open/nackte-reservierte-woerter-im-rohen-ausdruck.md`.
  */
 object NeutralExpressionIdentifier {
 
