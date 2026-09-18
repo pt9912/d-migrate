@@ -11,9 +11,9 @@ import io.kotest.matchers.string.shouldNotContain
 /**
  * P1 — der verlorene SRID einer Oracle-Geometriespalte wird gemeldet.
  *
- * Zwei Faelle, die sich ausschliessen: die Metadatensicht ist lesbar und eine
- * Zeile fehlt (`R370`, mit zwei Texten), oder sie ist gar nicht lesbar
- * (`R365`). Beide `WARNING`, beide ohne Block.
+ * Zwei Lagen, die sich ausschliessen: die Metadatensicht ist lesbar und der
+ * SRID fehlt trotzdem (`R370`, mit drei Texten), oder sie ist gar nicht
+ * lesbar (`R365`). Beide `WARNING`, beide ohne Block.
  */
 class OracleGeometryMetadataTest : FunSpec({
 
@@ -88,5 +88,29 @@ class OracleGeometryMetadataTest : FunSpec({
     test("nur die Spalte ohne Zeile wird gemeldet") {
         val notes = notesFor("PLACES", listOf("GEOM_A", "GEOM_B"), readable("GEOM_A" to 4326))
         notes.single().objectName shouldBe "PLACES.GEOM_B"
+    }
+
+    // L3: `USER_SDO_GEOM_METADATA.SRID` ist nullbar. Die Zeile kann also da
+    // sein und trotzdem kein Bezugssystem nennen — der Text sagte dann „hat
+    // keine Zeile" und riet, eine anzulegen, die es schon gibt.
+    test("die Zeile ist da, nennt aber keinen SRID: eigener Text, eigener Ausweg") {
+        val note = notesFor("PLACES", listOf("GEOM"), readable("GEOM" to null)).single()
+
+        note.code shouldBe "R370"
+        note.severity shouldBe SchemaReadSeverity.WARNING
+        note.objectName shouldBe "PLACES.GEOM"
+        note.message shouldContain "carries no SRID"
+        note.message shouldNotContain "no row for it"
+        note.hint!! shouldContain "Set the SRID in the existing"
+        // Eine zweite Zeile anzulegen ist hier kein Ausweg.
+        note.hint!! shouldNotContain "Register the row"
+    }
+
+    // Derselbe Fall an einer quotiert kleingeschriebenen Tabelle: die Zeile
+    // ist da (jemand hat sie so eingetragen), also zaehlt die Tatsache, nicht
+    // die Schreibweise des Namens.
+    test("die vorhandene Zeile schlaegt die Namensregel") {
+        notesFor("places", listOf("geom"), readable("geom" to null)).single()
+            .message shouldContain "carries no SRID"
     }
 })

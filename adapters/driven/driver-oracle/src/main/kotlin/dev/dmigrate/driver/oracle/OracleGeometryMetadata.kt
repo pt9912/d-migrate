@@ -19,8 +19,9 @@ import dev.dmigrate.driver.metadata.JdbcOperations
  * - die Sicht ist **nicht lesbar** (kein Oracle Spatial, kein Leserecht) —
  *   `R365`; ueber ihre Zeilen laesst sich dann nichts sagen, und ein
  *   zusaetzliches `R370` entstuende ins Blaue;
- * - die Sicht ist lesbar und eine **Zeile fehlt** — `R370`, mit zwei Texten
- *   je nachdem, ob es die Zeile ueberhaupt geben koennte.
+ * - die Sicht ist lesbar und der SRID fehlt trotzdem — `R370`, mit drei
+ *   Texten: die Zeile ist da und nennt keinen SRID, sie fehlt und koennte es
+ *   gar nicht geben, oder sie ist einfach nicht registriert.
  *
  * Beide sind `WARNING` und blocken nichts: die Spalte bleibt im Schema, nur
  * ohne Bezugssystem. Der Abgleich bleibt wortgetreu — ein toleranter
@@ -74,13 +75,22 @@ internal object OracleGeometryMetadata {
     fun sridOf(scan: Scan, column: String): Int? = (scan as? Scan.Readable)?.rows?.get(column)?.srid
 
     /**
-     * `R370` je Geometriespalte, deren Zeile fehlt — mit dem Text, der zum
+     * `R370` je Geometriespalte ohne gelesenen SRID — mit dem Text, der zum
      * Fall passt.
      *
-     * Der Reader unterscheidet beide Faelle **deterministisch am Namen**: ist
-     * Tabellen- oder Spaltenname nicht gleich seiner Grossschreibung, kann
-     * Oracle die Zeile gar nicht fuehren; sind beide grossgeschrieben, ist
-     * einfach keine registriert. Kein Text raet.
+     * Drei Faelle, unterschieden an **Tatsachen**, nicht am Gefuehl:
+     *
+     * - die Zeile ist **da** und nennt keinen SRID (`SRID IS NULL`) — dann ist
+     *   die Zeile der Ausweg, aber sie muss ergaenzt werden, nicht angelegt;
+     * - die Zeile **fehlt**, und es koennte sie gar nicht geben: Tabellen- oder
+     *   Spaltenname ist nicht gleich seiner Grossschreibung (quotiert klein-
+     *   oder gemischtgeschrieben), und Oracle schreibt den Namen in der
+     *   Metadatenzeile gross;
+     * - die Zeile **fehlt**, beide Namen sind grossgeschrieben — sie ist
+     *   einfach nicht registriert.
+     *
+     * Der erste Fall stand frueher im Text des dritten („hat keine Zeile") und
+     * riet, eine Zeile anzulegen, die es schon gibt. Kein Text raet.
      *
      * Im `R365`-Fall entsteht nichts: die Sicht ist dort nicht lesbar.
      */
@@ -92,14 +102,33 @@ internal object OracleGeometryMetadata {
     ) {
         val readable = scan as? Scan.Readable ?: return
         for (column in geometryColumns) {
-            if (readable.rows[column]?.srid != null) continue
-            notes += if (table == table.uppercase() && column == column.uppercase()) {
-                unregisteredRowNote(table, column)
-            } else {
-                unrepresentableRowNote(table, column)
+            val row = readable.rows[column]
+            if (row?.srid != null) continue
+            notes += when {
+                row != null -> rowWithoutSridNote(table, column)
+                table == table.uppercase() && column == column.uppercase() ->
+                    unregisteredRowNote(table, column)
+                else -> unrepresentableRowNote(table, column)
             }
         }
     }
+
+    /**
+     * Die Zeile **ist da**, nennt aber keinen SRID. Fuer diese Spalte ist
+     * kein Bezugssystem erklaert, obwohl ihre Ausdehnung beschrieben ist —
+     * `USER_SDO_GEOM_METADATA.SRID` ist nullbar. Der Ausweg ist, den Wert in
+     * der vorhandenen Zeile zu setzen, nicht eine zweite anzulegen.
+     */
+    private fun rowWithoutSridNote(table: String, column: String) = SchemaReadNote(
+        severity = SchemaReadSeverity.WARNING,
+        code = "R370",
+        objectName = "$table.$column",
+        message = "No coordinate system read for geometry column '$table.$column': its row in " +
+            "USER_SDO_GEOM_METADATA carries no SRID (the column is nullable), so no spatial reference " +
+            "system is declared. The column is read as geometry without an SRID.",
+        hint = "Set the SRID in the existing USER_SDO_GEOM_METADATA row for this column, or declare the " +
+            "SRID on the column in the schema file.",
+    )
 
     /**
      * Die Zeile **kann es nicht geben**: der Name ist quotiert klein- oder
@@ -120,7 +149,7 @@ internal object OracleGeometryMetadata {
     )
 
     /**
-     * Die Zeile **fehlt**: beide Namen sind grossgeschrieben, es ist nur
+     * Die Zeile **fehlt ganz**: beide Namen sind grossgeschrieben, es ist nur
      * keine registriert. Hier ist die Zeile der richtige, moegliche Ausweg.
      */
     private fun unregisteredRowNote(table: String, column: String) = SchemaReadNote(

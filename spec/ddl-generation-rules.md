@@ -2714,12 +2714,16 @@ CREATE TABLE "places" (
   passendem Tabellen- und Spaltennamen steht, sonst ohne SRID. Ein
   `MDSYS.SPATIAL_INDEX_V2`- oder `MDSYS.SPATIAL_INDEX`-Domain-Index kommt als
   `spatial` zurueck.
-- **Ein verlorener SRID bleibt nicht still.** Fehlt die Zeile zu einer
-  Geometriespalte, meldet der Reverse `R370` als `WARNING`, mit dem Ausweg,
-  der zum Fall passt: ist Tabellen- oder Spaltenname nicht gleich seiner
+- **Ein verlorener SRID bleibt nicht still.** Liest der Reverse zu einer
+  Geometriespalte keinen SRID, meldet er `R370` als `WARNING`, mit dem Ausweg,
+  der zum Fall passt — unterschieden an Tatsachen, nicht an Vermutungen:
+  steht die Zeile da und nennt keinen SRID (`SRID` ist nullbar), ist der Weg,
+  den Wert in **dieser** Zeile zu setzen; fehlt die Zeile und ist Tabellen-
+  oder Spaltenname nicht gleich seiner
   Grossschreibung, kann Oracle die Zeile gar nicht fuehren — dann ist der Weg,
   die SRID in der Schemadatei zu deklarieren oder die Tabelle unquotiert
-  anzulegen und ihre Zeile zu registrieren; sind beide grossgeschrieben,
+  anzulegen und ihre Zeile zu registrieren; fehlt sie und sind beide
+  grossgeschrieben,
   ist die Zeile in `USER_SDO_GEOM_METADATA` der richtige Ausweg. Die Zeile von
   Hand einzufuegen ist fuer eine quotiert kleingeschriebene Tabelle **kein**
   Ausweg: Oracle legte darin einen grossgeschriebenen Namen ab, und der
