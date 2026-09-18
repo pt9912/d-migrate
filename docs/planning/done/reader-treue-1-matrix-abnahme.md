@@ -44,7 +44,7 @@ Grenze, die der Plan bewusst zieht. Jeder hat einen Ort außerhalb; die Liste
 
 | Punkt | Ort |
 | --- | --- |
-| Nackte reservierte Wörter gegen PostgreSQL, SQL Server und Oracle (M1, zweite Hälfte — nur der MySQL-Generator quotiert zurück) | [`../open/nackte-reservierte-woerter-im-rohen-ausdruck.md`](../open/nackte-reservierte-woerter-im-rohen-ausdruck.md); als Posten in der Abgrenzung von [Plan 2](../next/reader-treue-2-meldungen.md) |
+| Nackte reservierte Wörter gegen PostgreSQL, SQL Server und Oracle (M1, zweite Hälfte — nur der MySQL-Generator quotiert zurück) **und die 17 Wörter, die auch auf MySQL nackt bleiben** (Abschluss-Verifikation, s. Nachtrag) | [`../open/nackte-reservierte-woerter-im-rohen-ausdruck.md`](../open/nackte-reservierte-woerter-im-rohen-ausdruck.md); als Posten in der Abgrenzung von [Plan 2](../next/reader-treue-2-meldungen.md) |
 | **L5 — die lautere Antwort** auf einen nicht abgrenzbaren Ausdruckstext: `E053` statt wortgleichem Rückfall. Entscheidung offen, kein Bau; sie bräuchte den Lexer an einer Stelle, die `RawSqlExpressionPortability` erreicht, und verwürfe dann auch Texte, die MySQL heute annimmt | [`../in-progress/reader-treue.md`](../in-progress/reader-treue.md), „Offen" → „Außerhalb der vier Pläne". Die heutige Grenze steht geschrieben (`spec/ddl-generation-rules.md`, 8.3, und die KDoc) |
 | Herkunftsdokument aus `--provenance-output` ist über `--migration-overlay` nicht rückführbar (gefunden bei Messung F5) | [`../open/provenance-overlay-nicht-rueckfuehrbar.md`](../open/provenance-overlay-nicht-rueckfuehrbar.md) |
 | SQLite-Generate verschweigt Typmarke und Länge, und `W200` trifft die berechnete Spalte nicht | [`../open/sqlite-generate-verschweigt-typmarke-und-laenge.md`](../open/sqlite-generate-verschweigt-typmarke-und-laenge.md) |
@@ -1350,7 +1350,7 @@ Plan-Prosa zum MySQL-Seed sagt „ein CHECK und der Berechnungsausdruck" statt
 
 | # | Kriterium | Stand |
 | --- | --- | --- |
-| 1 | MySQL-Reverse gültig und portabel, PostgreSQL ↔ MySQL meldet den CHECK nicht mehr, die MySQL-Zeile misst (P6) | erfüllt: `4`/`8`/`11` statt `INVALID`; Unit- und Integrationsfälle, Portabilität je Ziel geprüft. **Nachtrag aus der Review:** P6 nahm die Backticks, ließ aber ein kleingeschriebenes **reserviertes** Wort nackt — MySQL → MySQL endete damit am Server (`ERROR 1064`), und gegen PostgreSQL wurde aus einem übersprungenen Constraint ein DDL-Abbruch (M1). Behoben im Generator, mit Integrationsfall am Server |
+| 1 | MySQL-Reverse gültig und portabel, PostgreSQL ↔ MySQL meldet den CHECK nicht mehr, die MySQL-Zeile misst (P6) | erfüllt: `4`/`8`/`11` statt `INVALID`; Unit- und Integrationsfälle, Portabilität je Ziel geprüft. **Nachtrag aus der Review:** P6 nahm die Backticks, ließ aber ein kleingeschriebenes **reserviertes** Wort nackt — MySQL → MySQL endete damit am Server (`ERROR 1064`), und gegen PostgreSQL wurde aus einem übersprungenen Constraint ein DDL-Abbruch (M1). Behoben im Generator, mit Integrationsfall am Server — **aber nicht für jedes Wort**: die Korrekturrunde nahm 48 reservierte Wörter dauerhaft aus, und eine Spalte `` `default` ``, `` `mod` `` oder `` `match` `` lief MySQL → MySQL weiter in `ERROR 1064`. Die Abschluss-Verifikation hat die Ausnahme auf 17 Wörter verkleinert und die Regression des Typnamens hinter `AS` behoben; was bleibt, steht im [Nachtrag](#nachtrag-2026-09-18--abschluss-verifikation) |
 | 2 | Matrix fährt native Seeds und den Silent-Loss-Check mit vier Klassen; jeder stille Verlust ist benannt oder gelistet, `--update-expectations` pinnt keinen (P0) | erfüllt: vier Seeds, vier Klassen plus eine fünfte Selbstprüfung, 25 bekannte Befunde mit Paket, Sabotage (d) belegt den Pin-Schutz. **Zwei Nachträge aus der Review:** der Report-Leser nahm einen Report ohne `summary` an und las `code:` aus einem Meldungstext (L2, L3) — beides behoben und vorher/nachher direkt geprüft |
 | 3 | `schema migrate` gegen SQLite behält die FK-Aktionen, auch über einen Rebuild (S4) | erfüllt: gemessen vorher (`NO ACTION`, Exit 5) und nachher (`RESTRICT`/`CASCADE`, Exit 0) |
 | 4 | SQL-Server-Reverse ohne T-SQL-Quoting; SQL Server → PostgreSQL und → MySQL messen; keine Zelle rechnet still falsch (P12, E1) | erfüllt: `2` und `6` statt `APPLY-FAIL`; die PascalCase-Berechnung erreicht MySQL als `` `Menge`*`Preis` `` |
@@ -1416,7 +1416,9 @@ diesen Slice gehört:
 - **Nackte reservierte Wörter gegen PostgreSQL, SQL Server und Oracle** (M1,
   zweite Hälfte): gemessen, ohne Scope —
   [`../open/nackte-reservierte-woerter-im-rohen-ausdruck.md`](../open/nackte-reservierte-woerter-im-rohen-ausdruck.md),
-  benannt in der Abgrenzung von Plan 2.
+  benannt in der Abgrenzung von Plan 2. Dort steht seit der
+  Abschluss-Verifikation auch, was **auf MySQL** nackt bleibt (17 Wörter,
+  gemessen; s. [Nachtrag](#nachtrag-2026-09-18--abschluss-verifikation)).
 - **Die lautere Antwort auf den nicht abgrenzbaren Ausdruckstext** (L5):
   `E053` statt wortgleichem Rückfall. Sie braucht den Lexer an einer Stelle,
   die `RawSqlExpressionPortability` erreicht, und verwirft dann auch Texte, die
@@ -1630,8 +1632,9 @@ unter „Restflächen" einen Ort außerhalb. Der Umbrella
   in der Prüfung auf verlorene Spalten, und ein jq-Fehler des Erzeugers ging in
   `erzeuger | bewerter` unter. Ein Wächter, der nie anschlägt, sieht aus wie
   ein grüner Lauf.
-- **Abschluss-Verifikation:** läuft zur Graduation in einem eigenen Klon; ihr
-  Ergebnis wird hier nachgetragen.
+- **Abschluss-Verifikation:** in einem eigenen Klon gelaufen; ihre zwei
+  Befunde und deren Behebung stehen im
+  [Nachtrag](#nachtrag-2026-09-18--abschluss-verifikation) am Ende.
 
 **Was von diesem Plan lesenswert bleibt.** Zweimal hat eine Messung die
 Vorlage geschlagen: M2 („`information_schema` druckt unter `ANSI_QUOTES`
@@ -1640,3 +1643,115 @@ Stopp-Regeln von P12 und P11 haben beide **nicht** gegriffen — beides hätte
 man sonst gebaut oder beim Eigner angefragt. Und der teuerste Fund des Slices
 kam nicht aus einem Test, sondern aus einer Sabotage an einem Harness, der
 grün war: drei jq-Fallen, die still nichts prüften.
+
+## Nachtrag (2026-09-18) — Abschluss-Verifikation
+
+Die Abschluss-Verifikation im eigenen Klon (oben unter „Verifikation"
+angekündigt) hat **zwei Befunde** an derselben Stelle ergeben: der
+Rückquotierung reservierter Wörter aus der Korrekturrunde (M1),
+`MysqlRawExpressionText.wordOrNumber` mit `MysqlReservedWords`. Beide sind
+behoben; gemessen wurde jeder Fall an **MySQL 9.7.2 und 8.0.46**, je einmal
+nackt und einmal in der Schreibweise, die der Generator erzeugte.
+
+### Befund 1 — die Stellungsregel hinter `AS` war eine Regression
+
+„Hinter `AS` nicht quotieren" schützte nur das **unmittelbar** folgende Wort.
+Der Typname eines `CAST` ist aber mehrwortig, und seine Fortsetzungen sind
+selbst reserviert:
+
+| neutraler Text | erzeugt (vorher) | Server |
+| --- | --- | --- |
+| `cast(total as signed integer) > 0` | ``cast(total as signed `integer`) > 0`` | `ERROR 1064` |
+| `cast(note as char character set utf8mb4) <> 'x'` | ``cast(note as char `character` `set` utf8mb4) <> 'x'`` | `ERROR 1064` |
+| `cast(x as double precision) > 0` | ``cast(x as double `precision`) > 0`` | `ERROR 1064` |
+| `convert(total, unsigned) > 0` | ``convert(total, `unsigned`) > 0`` | `ERROR 1064` |
+
+Die nackten Formen nehmen beide Server an; **vor** M1 ging der Text
+unverändert durch. Die Form ist im Repo als legitimer neutraler Text belegt
+(`CheckExpressionColumnsTest`, „ein Typname hinter AS ist keine Spalte — auch
+mehrwortig").
+
+**Die Typgrammatik** kommt aus dem MySQL-Handbuch, „Cast Functions and
+Operators" (`CAST(expr AS type)`, `CONVERT(expr, type)`,
+`CONVERT(expr USING charset)`): `SIGNED [INTEGER]`, `UNSIGNED [INTEGER]`,
+`CHAR[(N)] [charset_info]` mit
+`charset_info: CHARACTER SET charset_name | ASCII | UNICODE`, dazu
+`BINARY[(N)]`, `NCHAR[(N)]`, `DECIMAL[(M[,D])]`, `FLOAT[(p)]`, `DOUBLE`
+(`PRECISION` als Zusatz, gemessen), `REAL`, `DATE`, `DATETIME[(M)]`,
+`TIME[(M)]`, `YEAR`, `JSON`, die Geometrietypen und den Zusatz `ARRAY`. Der
+Typname steht in beiden Formen als **letztes** Element vor der schließenden
+Klammer des Aufrufs; genau bis dorthin quotiert der Generator jetzt nicht
+mehr, und dahinter wieder — `cast(note as char) <> key` schreibt `` `key` ``
+(gemessen: ohne die Quotierung `ERROR 1064`). Die Grammatik steht in der KDoc
+von `MysqlRawExpressionText`.
+
+### Befund 2 — die Ausnahmeliste war zu groß, und sie ist kleiner geworden
+
+`EXPRESSION_SYNTAX` nahm **48** reservierte Wörter dauerhaft aus; KDoc, Spec
+und CHANGELOG nannten vier. Eine Spalte `` `default` ``, `` `mod` `` oder
+`` `match` `` lief MySQL → MySQL weiter in `ERROR 1064`.
+
+Die Ausnahme hängt jetzt an der **Stellung**, nicht am Wort: `a mod b` ist ein
+Operator, `mod > 0` ein Spaltenname. In **Operandenstellung** (Ausdrucksanfang,
+hinter `(`, `,`, einem Operatorzeichen und hinter einem Wort, auf das ein
+Operand folgt — `and`, `is`, `between`, `when` …) wird quotiert, in
+Operatorstellung nicht. Gemessen ist beides, je Wortklasse und auf beiden
+Serverversionen:
+
+- **22 Wörter** (`and`, `or`, `xor`, `is`, `between`, `when`, `then`, `else`,
+  `in`, `like`, `regexp`, `rlike`, `match`, `div`, `mod`, `collate`, `as`,
+  `using`, `separator`, `default`, `year_month`, `day_hour`, `minute_second`)
+  als Spaltenname geprüft: nackt `ERROR 1064`, quotiert angenommen — auf 9.7.2
+  und 8.0.46 gleich.
+- **29 Syntaxformen** in Operatorstellung geprüft (`a between 1 and 2`,
+  `a is not null`, `a not like 'x'`, `note like binary 'x'`,
+  `case a when 1 then 2 else 3 end`, `a div 2`, `a mod 2`,
+  `note collate utf8mb4_bin = 'x'`, `convert(note using utf8mb4)`,
+  `d + interval 1 year_month`, `group_concat(… separator ',')`,
+  `count(distinct a)` …): nackt angenommen, quotiert `ERROR 1064`.
+
+Damit schrumpft die dauerhafte Ausnahme von 48 auf **17** Wörter — die, die
+auch am **Anfang** eines Operanden Syntax sind (`not`, `case`, `binary`,
+`interval`, `distinct`, `null`, `true`, `false` und die neun Werte-Funktionen
+ohne Klammern). Sie bleiben, weil quotiert jede ihrer Syntaxrollen bricht
+(gemessen).
+
+### Was bleibt — und wo es steht
+
+- Die **17 Wörter** oben: eine Spalte dieses Namens scheitert weiter am
+  Server. Bei `null`, `true` und `false` **still**: MySQL liest das Literal,
+  nimmt `CHECK (null > 0)` an, und die verletzende Zeile wurde eingefügt
+  (gemessen). Mit der gemessenen Wortliste und der Messung in
+  [`../open/nackte-reservierte-woerter-im-rohen-ausdruck.md`](../open/nackte-reservierte-woerter-im-rohen-ausdruck.md),
+  Abschnitt „Was auf MySQL bleibt".
+- Ein Wort der Operatorklasse direkt **hinter einem Präfixoperator**
+  (`NOT default`, `CASE mod WHEN …`): dort wird die Operandenstellung nicht
+  erkannt, weil hinter `NOT` ebenso gut Syntax stehen kann (`a NOT LIKE 'x'`).
+  Ebenfalls im `open/`-Eintrag.
+- Nebenan aufgefallen (im Code geprüft): `CheckExpressionColumns` überspringt
+  einen Typnamen hinter `::` und `AS`, nicht hinter dem Komma eines
+  `CONVERT(` — ein CHECK `convert(total, unsigned) > 0` bekäme `E012` für
+  `unsigned`. Auch dort notiert.
+
+### Tests, Sabotage, Gates
+
+- **Unit** (`:adapters:driven:driver-mysql`): 42 neue Fälle in
+  `MysqlRawExpressionTextTest` (mehrwortige Typnamen für `CAST` und `CONVERT`,
+  Gegenproben hinter der Klammer, Operandenstellung je Wortklasse,
+  Operatorstellung als Gegenprobe) und 17 Pins der Restfläche.
+- **Server** (`:test:integration-mysql`): zwei Fälle in
+  `MysqlNeutralExpressionSpellingIntegrationTest` — der mehrwortige Typname
+  wird angelegt, der CHECK dahinter greift, und `` `key` `` bekommt seine
+  Backticks zurück; MySQL → MySQL über den Reverse mit
+  `` (`match` between 1 and 9) ``: derselbe Wortstamm einmal quotiert (Operand)
+  und einmal nackt (Syntax), am Server angenommen und wirksam.
+- **Sabotage 1** (Typname endet nach einem Wort): 8 von 977 Unit-Tests rot,
+  der Integrationsfall rot mit ``cast(total as signed `integer`)`` im Klartext.
+  **Sabotage 2** (die Stellung entscheidet nicht mit): 11 von 977 rot, der
+  zweite Integrationsfall rot. Beide Rücknahmen per Prüfsumme belegt, danach
+  grün.
+- **Gates:** `make docker-check MODULES=":adapters:driven:driver-mysql"`,
+  `make integration INTEGRATION_TASKS=":test:integration-mysql:test"`,
+  `make docs-check`, `make solid-suppression-gate` vor jedem Commit,
+  `make doc-immutable RANGE=origin/main..HEAD`. Kein `@Suppress`, kein neuer
+  W-/R-Code.
