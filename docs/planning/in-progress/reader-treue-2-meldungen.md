@@ -704,6 +704,31 @@ Typ). Eine `decimal`-Spalte mit erklärter Identity als alleiniger
 Primärschlüssel bekäme dort gar keinen Schlüssel. Der Fall ist über die
 Identity-Typprüfung der Validierung (`E130`) heute nicht erreichbar; der
 Diff-Pfad prüft seit S2 beides. Kein Paket dieses Plans trägt ihn.
+
+#### P10 — `W163` auf MySQL und SQLite
+
+Dieselbe Bauform wie P5 (`MysqlIdentityModeDegradation`,
+`SqliteIdentityModeDegradation`), und nur bei `mode: always`. Gemeldet wird
+dort, wo die Spalte wirklich als Autowert entsteht:
+
+- **MySQL:** Generate (`columnGeneratedIdentity`) und Migrate an allen
+  Render-Stellen — einschließlich `renderIdentityTransition`. Damit ist die
+  Frage aus DoD 3 beantwortet: ein **Wechsel** des Modus nach `always` meldet
+  `W163`; die Tabelle der Migrate-Änderungen in `ddl-generation-rules.md`
+  („MySQL kennt keinen Modus") bleibt, wie sie ist.
+- **SQLite:** Generate und — seit S2 — Migrate, aber nur als **alleiniger**
+  Primärschlüssel. Im zusammengesetzten Schlüssel entsteht gar kein Autowert;
+  dort sagt `W135` das Stärkere, und `W163` daneben wäre irreführend. Ein
+  Test pinnt beides. Eine Identity-**Änderung** blockt SQLite weiterhin
+  (`SQLITE_IDENTITY_IS_PART_OF_THE_TYPE`) — dort gibt es nichts zu melden.
+
+**Die Messung für SQLite** (dass `INTEGER PRIMARY KEY AUTOINCREMENT` einen
+ausdrücklich gesetzten Wert annimmt) ist nicht eigens gefahren worden: sie ist
+SQLites dokumentiertes Verhalten für jeden rowid-Alias, und der Reverse liest
+den Modus ohnehin nirgends zurück — `SqliteTypeMapping` setzt für eine
+AUTOINCREMENT-Spalte entweder `identifier` (ohne Modus) oder
+`biginteger` + `Identity()` mit dem Default `by_default`. Der Code-Befund ist
+damit an der Stelle bestätigt, an der er zählt.
 ## Akzeptanzkriterien
 
 1. Der Array-Verlust ist auf MySQL und SQLite benannt, auf Generate und

@@ -65,6 +65,11 @@ internal class SqliteColumnConstraintHelper(
             return generateCompositePkIdentityColumn(colName, col, type, tableName, notes)
         }
         if (isRowidIdentity) {
+            // `mode: always` hat auf SQLite keine Entsprechung: AUTOINCREMENT
+            // nimmt einen ausdruecklich gesetzten Wert an. Gemeldet nur hier,
+            // wo die Spalte wirklich als Autowert entsteht — im
+            // zusammengesetzten Schluessel sagt W135 oben das Staerkere.
+            SqliteIdentityModeDegradation.noteFor(tableName, colName, col)?.let { notes += it }
             return generateRowidIdentityColumn(colName, col)
         }
         if (isAutoIncrementIdentifier) {

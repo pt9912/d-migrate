@@ -392,6 +392,12 @@ CREATE TABLE `orders` (
 
 Besonderheiten:
 - `identifier` → `INT NOT NULL AUTO_INCREMENT`
+- `generation: identity` mit `mode: always` → `AUTO_INCREMENT` + W163: MySQL
+  kennt keinen Modus, und `AUTO_INCREMENT` nimmt einen ausdrücklich gesetzten
+  Wert an — die Zusage ist am Ziel nicht durchgesetzt, und ein Reverse liest
+  `by_default`. `mode: by_default` und der Typ `identifier` melden nichts (dort
+  geht nichts verloren). Gemeldet auf beiden Render-Pfaden; im Migrate-Pfad
+  auch für den **Wechsel** des Modus nach `always`
 - `boolean` → `TINYINT(1)`, Defaults `true`/`false` → `1`/`0`
 - `json` → `JSON` (kein JSONB)
 - `array` → `JSON` + W162 (kein nativer Array-Typ): die Spalte verliert ihre
@@ -440,6 +446,9 @@ Besonderheiten:
   Primärschlüssel bildet; sonst ein blankes `INTEGER` im
   Tabellen-`PRIMARY KEY` + W135. Beide Render-Pfade schreiben dieselbe Spalte —
   `schema generate` und `schema migrate`, einschließlich des Tabellen-Neubaus
+- `mode: always` → W163: SQLite kennt keinen Modus, und AUTOINCREMENT nimmt
+  einen ausdrücklich gesetzten Wert an. `mode: by_default` meldet nichts; im
+  zusammengesetzten Schlüssel sagt W135 das Stärkere, und W163 entfällt dort
 - `boolean` → `INTEGER`, Defaults `true`/`false` → `1`/`0`
 - `json` → `TEXT` (JSON-Funktionen verfügbar ab 3.38)
 - `array` → `TEXT` + W162 (kein nativer Array-Typ): die Spalte verliert ihre

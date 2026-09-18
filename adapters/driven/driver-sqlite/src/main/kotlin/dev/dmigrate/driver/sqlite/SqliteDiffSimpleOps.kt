@@ -62,6 +62,7 @@ internal object SqliteDiffSimpleOps {
             if (SqliteCompositePkIdentity.isDroppedAutoincrement(col, isSolePrimaryKey)) {
                 ctx.warning(op, SqliteCompositePkIdentity.message(colName), SqliteCompositePkIdentity.W_CODE)
             }
+            SqliteIdentityModeDegradation.warnIfAlways(op, ctx, colName, col, isSolePrimaryKey)
         }
         ctx.sql.primaryKeyClause(op.table)?.let { lines += "    $it" }
         for (c in op.table.constraints.sortedBy { it.name }) {
@@ -154,6 +155,9 @@ internal object SqliteDiffSimpleOps {
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(table, column, op.column)};")
         SqliteEnumDegradation.warnIfEnum(op, ctx, column, op.column)
         SqliteArrayDegradation.warnIfArray(op, ctx, column, op.column)
+        // `ADD COLUMN` legt nie den Primaerschluessel an (SQLite laesst das
+        // nicht zu); die Spalte entsteht dort also nicht als Autowert.
+        SqliteIdentityModeDegradation.warnIfAlways(op, ctx, column, op.column, isSolePrimaryKey = false)
         // 0.9.7 G5: when the new column carries SequenceNextVal,
         // emit the `_bi`/`_ai` trigger pair against the sequence
         // declared in the target schema. action_required mode is a

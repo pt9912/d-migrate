@@ -84,6 +84,7 @@ neuen Version.
 | W159 | Das Preserve-Fenster ist auf diesem Ziel serialisiert statt atomar: ein Fehlschlag darin laesst Angewandtes stehen (Oracle — jedes DDL committet implizit) |
 | W161 | `data transfer`: eine berechnete Zielspalte wird aus der Übertragung ausgelassen (nirgends schreibbar); das Ziel rechnet sie selbst |
 | W162 | Cross-Dialect: `array`-Spalte verliert ihre Array-Eigenschaft — MySQL rendert sie als `JSON`, SQLite als `TEXT`; ein Reverse liest `json` bzw. `text` ohne Elementart zurück |
+| W163 | Cross-Dialect: eine Identity-Spalte mit `mode: always` wird auf MySQL und SQLite als Autowert gerendert, der ausdrücklich gesetzte Werte annimmt — der Modus ist am Ziel nicht durchgesetzt (Schwesterfall von `W140` auf SQL Server) |
 
 Neue Codes werden am Ende des jeweiligen Bereichs angefuegt.
 Luecken (z.B. E021-E051) sind reservierte Bereiche fuer kuenftige

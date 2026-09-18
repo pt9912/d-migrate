@@ -681,7 +681,9 @@ nützlich in Skripten.
   eine Form kennt: SQL Server kennt kein `BY DEFAULT` und liest solche
   Spalten als `always`; MySQL (`BIGINT AUTO_INCREMENT`) und SQLite (nur mit
   der Breite `64`, sonst entsteht `identifier`) lesen ihre Autowert-Spalten
-  als `by_default`, auch wenn das Gegenstück `always` sagt. Enthält ein Ausdruck
+  als `by_default`, auch wenn das Gegenstück `always` sagt — beim Erzeugen
+  gegen MySQL oder SQLite sagt `W163` das vorher
+  ([3.12](#312-sequenzenautowerte-korrekt-mitnehmen)). Enthält ein Ausdruck
   einen Kommentar, Dollar-Quoting oder einen Backslash, vergleicht d-migrate
   ihn wortgleich.
 - **Über MCP gilt dasselbe:** `schema_compare` und der Job
@@ -1419,6 +1421,14 @@ Hilfsobjekte, die dasselbe Verhalten nachbilden.
   ([3.5](#35-eine-schemaänderung-ausrollen-und-zurücknehmen)) automatisch unter
   einer Sperre; auf SQLite müssen Sie zusätzlich
   `--sqlite-named-sequences helper_table` angeben.
+- **Haben Sie `generation: { type: identity, mode: always }` geschrieben?**
+  MySQL und SQLite kennen keinen Modus. Die Spalte entsteht dort als
+  `AUTO_INCREMENT` bzw. `INTEGER PRIMARY KEY AUTOINCREMENT`, und beide nehmen
+  einen ausdrücklich gesetzten Wert an — die Zusage „der Server vergibt den
+  Wert, niemand sonst" gilt am Ziel also nicht. Der Bericht sagt das mit
+  `W163`, beim Erzeugen und beim Ausrollen. `mode: by_default` verliert nichts.
+  Wollen Sie den Zwang, muss ihn die Anwendung durchsetzen; SQL Server meldet
+  den umgekehrten Fall (`by_default` ohne Entsprechung) mit `W140`.
 
 **Kurzmatrix:**
 

@@ -131,8 +131,10 @@ Ergebnis also dasselbe wie heute. Die Schlüsselnamen sind Vorschläge (E7).
   das ein Fund.** Dazu kommt: MySQL und SQLite setzen beim Lesen keinen Modus
   (`MysqlTypeMapping.kt:42`, `SqliteTypeMapping.kt:58`, also der Default
   `by_default`). Eine PostgreSQL-Spalte mit `always` erscheint dort
-  deshalb ebenfalls als `by_default`. Ob der Generator das meldet, ist hier nicht
-  geprüft. Oracle liest den Modus treu (`OracleTypeMapping.kt:82`).
+  deshalb ebenfalls als `by_default`. **Der Generator meldet das seit Plan 2 des
+  Reader-Umbrellas** (`W163`, MySQL und SQLite, Generate und Migrate) — der
+  Beleg dafür, dass der Modus dort eine Fähigkeitsgrenze ist und kein
+  Autorenunterschied. Oracle liest den Modus treu (`OracleTypeMapping.kt:82`).
 - **Semantik-Risiko:** Der Modus ist eine echte Eigenschaft. `always` weist
   explizite Werte ab (PostgreSQL: außer mit `OVERRIDING SYSTEM VALUE`),
   `by_default` nimmt sie an, und Import und Transfer verhalten sich

@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Der Rueckweg bleibt verloren: was im Ziel nicht mehr steht, kann kein Reader
   zurueckgewinnen — gemeldet ist der Hinweg.
 
+- **`mode: always` ohne Entsprechung ist benannt (`W163`).** MySQL und SQLite
+  kennen keinen Identity-Modus: eine Spalte mit `generation: { type: identity,
+  mode: always }` entsteht dort als `AUTO_INCREMENT` bzw. als
+  `INTEGER PRIMARY KEY AUTOINCREMENT`, und beide nehmen einen ausdruecklich
+  gesetzten Wert an — die Zusage ist am Ziel nicht durchgesetzt, und ein
+  Reverse liest `by_default`. `schema generate` und `schema migrate` melden das
+  jetzt, auch beim **Wechsel** des Modus nach `always` (MySQL). `by_default`
+  und der Typ `identifier` melden nichts; SQL Server meldet den umgekehrten
+  Fall seit jeher mit `W140`. Im zusammengesetzten SQLite-Schluessel bleibt es
+  bei `W135` — dort entsteht gar kein Autowert.
 
 - **`AUTO_INCREMENT` als `serial` oder als `identity` lesen.** MySQL traegt
   nicht, ob eine `BIGINT AUTO_INCREMENT`-Spalte als `SERIAL` oder als

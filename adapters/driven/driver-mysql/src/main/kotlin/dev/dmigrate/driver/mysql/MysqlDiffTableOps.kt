@@ -129,6 +129,7 @@ internal object MysqlDiffTableOps {
         for ((colName, col) in op.table.columns.inOrdinalOrder()) {
             warnIfDegradingEnum(op, ctx, colName, col)
             MysqlArrayDegradation.warnIfArray(op, ctx, colName, col)
+            MysqlIdentityModeDegradation.warnIfAlways(op, ctx, colName, col)
         }
         for (idx in op.table.indices) {
             // VA3: ein Index auf eine Geometriespalte → MySQL SPATIAL INDEX (statt
@@ -238,6 +239,7 @@ internal object MysqlDiffTableOps {
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
         warnIfDegradingEnum(op, ctx, column, op.column)
         MysqlArrayDegradation.warnIfArray(op, ctx, column, op.column)
+        MysqlIdentityModeDegradation.warnIfAlways(op, ctx, column, op.column)
         if (seqDefault != null) {
             MysqlDiffSequenceOps.emitSupportTriggerForColumn(
                 op, ctx, table, column, seqDefault.sequenceName,
@@ -319,6 +321,7 @@ internal object MysqlDiffTableOps {
         val line = ctx.sql.columnLine(column, effective)
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN $line;")
         MysqlArrayDegradation.warnIfArray(op, ctx, column, effective)
+        MysqlIdentityModeDegradation.warnIfAlways(op, ctx, column, effective)
     }
 
     /**
@@ -648,6 +651,7 @@ internal object MysqlDiffTableOps {
             "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN ${ctx.sql.quote(column)} " +
                 "${ctx.sql.toSql(definition.type)}$nullability$autoIncrement;",
         )
+        MysqlIdentityModeDegradation.warnIfAlways(op, ctx, column, definition.copy(generation = target))
     }
 
 }

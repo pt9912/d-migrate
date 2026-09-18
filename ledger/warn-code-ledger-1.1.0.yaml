@@ -352,3 +352,20 @@ entries:
       - source: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteArrayDegradationTest.kt"
         path_type: test
 
+  # W163 — reader-treue: `mode: always` hat auf MySQL und SQLite keine
+  # Entsprechung. Beide rendern die Spalte als Autowert, der einen
+  # ausdruecklich gesetzten Wert annimmt; die Zusage von `always` ist am Ziel
+  # nicht durchgesetzt, und ein Reverse liest `by_default`. SQL Server meldet
+  # den Schwesterfall (`BY DEFAULT` ohne Entsprechung) laengst mit W140.
+  - code: W163
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlIdentityModeDegradationTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIdentityModeDegradation.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteIdentityModeDegradation.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteIdentityModeDegradationTest.kt"
+        path_type: test
