@@ -720,7 +720,7 @@ Semantik-Aussagen von K2 und K4 werden dabei gegen PostgreSQL nachgemessen:
 - **Ob der Generator eine `always`-Spalte für MySQL und SQLite meldet.** Das ist
   beim Schnitt nicht geprüft worden. Es berührt K2 nur als Beleg. Für MySQL
   ist der stille Verlust im Konsumenten-Repro des Compare-Slices gemessen; der
-  Posten steht im [Reader-Slice](../in-progress/reader-treue-2-meldungen.md) als D4
+  Posten steht im [Reader-Slice](../done/reader-treue-2-meldungen.md) als D4
   (SQLite dort als offene Prüfung).
 - **Die veraltete KDoc und Spec-Zeile zu `RESTRICT`/`no_action`** (K4,
   Nebenbefunde). Sie werden mit T5 bzw. dem Spec-Schritt korrigiert, nicht

@@ -2,7 +2,7 @@
 
 > Status: **Draft (Trigger Watch)**
 > Trigger: Befund M2 der Korrekturrunde zu Plan 2 des Reader-Slices
-> ([`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md)).
+> ([`../done/reader-treue-2-meldungen.md`](../done/reader-treue-2-meldungen.md)).
 > Der Fix dort behebt eine **abgelehnte Anweisung**; was danach bleibt, ist
 > ein stiller Verlust.
 > Severity: **P3** (schmal — nur wer eine Spalte mit `generation: identity`
@@ -42,6 +42,22 @@ auch eine Identity-Spalte, die **gar nicht** im Schlüssel liegt. Auf dem
 `CREATE TABLE`-Pfad und im Tabellen-Neubau meldet sie deshalb heute schon
 `W135` mit dem Satz „is part of a composite primary key", der für sie nicht
 stimmt. Der Verlust ist benannt, der Grund falsch.
+
+## Nebenbefund am Generate-Pfad
+
+Beim Bau von S2 (Plan 2) gemeldet und nicht gebaut:
+`SqliteTableDdlSupport.skipPrimaryKey` sieht `col.generation` an, **nicht den
+Typ** — der Generate-Pfad lässt die Tabellen-`PRIMARY KEY`-Klausel damit für
+**jede** Spalte mit `generation: identity` weg, auch wenn ihr Typ gar kein
+rowid-Alias sein kann. Eine `decimal`-Spalte mit erklärter Identity als
+alleiniger Primärschlüssel bekäme dort gar keinen Schlüssel.
+
+Der Fall ist heute **nicht erreichbar**: die Identity-Typprüfung der
+Validierung (`E130`) lässt eine solche Spalte nicht bis zum Generator; der
+Diff-Pfad prüft seit S2 ohnehin beides (Typ **und** Erzeugung). Er wird
+erreichbar, sobald jemand `E130` lockert — das ist genau die Frage von **S5**
+und **S6** in [`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md).
+Wer sie beantwortet, prüft diese Stelle mit.
 
 ## Drei Wege (nicht entschieden)
 

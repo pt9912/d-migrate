@@ -1,13 +1,29 @@
 # Reader-Treue 2: Verluste werden gemeldet (P5, P10, P8, P9, P1, P3, S1–S3)
 
-> **Status:** **In Arbeit seit 2026-09-18.** Schnitt 2026-09-17 aus dem
+> **Status:** **Done — graduiert 2026-09-18.** Aktiv seit 2026-09-18; alle
+> neun Pakete geliefert (P5, S2, P10, S3, P8 und P9, S1, P1, P3), dazu fünf
+> Neu-Pins der Compare-Matrix und eine Korrekturrunde nach Review und
+> Verifikation. Noch nicht released: die Wirkung steht in `CHANGELOG.md` unter
+> `[Unreleased]` (Stand `main`, 1.8.0-SNAPSHOT). Schnitt 2026-09-17 aus dem
 > ungeschnittenen Reader-Slice; Befunde aus Plan-Review und
 > Architektur-Prüfung eingearbeitet, Anker gegen `90c6c234f` nachgemessen. Der
-> Bauabschnitt unten hält Nulllinie, Messungen, Sabotagen und Neu-Pins fest.
+> Bauabschnitt unten hält Nulllinie, Messungen, Sabotagen und Neu-Pins fest;
+> die Closure mit Paket → Commit steht am Ende, jeder verbliebene Punkt mit
+> seinem Ort unter „Restflächen" direkt unter diesem Kopf.
+>
+> **Commits** (in dieser Reihenfolge):
+> `e53543ca1` P5 · `98f99e48b` S2 · `d1b1936d0` P10 · `a9c9b4563` S3 ·
+> `ef346d77c` P8 und P9 · `14ec70888` S1 · `86f61b076` P1 · `90d8e38b7` P3 ·
+> Neu-Pins `8ae466421` (P5), `512f0b738` (P10), `4a79927a1` (P8/P9),
+> `a8a3a01bc` (S1), `781fac613` (P3) · `c085e4127` Plan ·
+> `9b12ca4c2` zwei Eigner-Entscheidungen · Korrekturrunde `93720f317`,
+> `580307637`, `858a0fab6`, `cc34d1241`, `109bc9fb7`, `bcc63ca3c` ·
+> `9685da681` Plan.
 > Teil des Umbrellas
-> [`reader-treue.md`](reader-treue.md); dort stehen Nenner, Belegart, Regeln
-> der Abnahme, Doku-Pflichten und die Code-Tabelle.
-> **Vorbedingung / Gate:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md) ist geliefert und graduiert
+> [`reader-treue.md`](../in-progress/reader-treue.md), der in `in-progress/`
+> **bleibt**, solange die Pläne 3 und 4 offen sind. Dort stehen Nenner,
+> Belegart, Regeln der Abnahme, Doku-Pflichten und die Code-Tabelle.
+> **Vorbedingung / Gate:** [Plan 1](reader-treue-1-matrix-abnahme.md) ist geliefert und graduiert
 > (2026-09-18) — die Matrix ist Abnahme, und
 > ihre Liste bekannter Befunde trägt die Einträge dieses Plans. F2 ist
 > entschieden
@@ -18,8 +34,40 @@
 > Keine Sperre mehr (Umbrella, „Offen").
 > **Aktivierung:** mit dem ersten Implementierungs-Commit nach `in-progress/`
 > gewandert (2026-09-18); der Umbrella bleibt, wo er ist.
-> **Abhängigkeit:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md). Innerhalb: P10 nach P5 (dieselben Stellen); der
-> `json[]`-Teil von P8 nach S3; Plan 3 baut P4 auf P3 auf.
+> **Graduiert** am 2026-09-18 (Move nach `../done/`); der Umbrella bleibt in
+> `../in-progress/`.
+> **Abhängigkeit:** [Plan 1](reader-treue-1-matrix-abnahme.md). Innerhalb: P10 nach P5 (dieselben Stellen); der
+> `json[]`-Teil von P8 nach S3; Plan 3 baut P4 auf P3 auf. **Im Bau gedreht:**
+> S2 kam vor P10 und S3 vor P8, beide Male aus einer Abhängigkeit, die der Plan
+> selbst nennt (Abschnitt „Was gebaut ist, je Paket").
+
+## Restflächen (2026-09-18)
+
+**Nichts davon ist Bauschuld dieses Plans.** Jeder Punkt ist eine
+Eigner-Entscheidung, ein beim Bauen sichtbar gewordener Befund oder eine
+Grenze, die der Plan bewusst zieht. Jeder hat einen Ort außerhalb; die Liste
+„Offen" weiter unten bleibt als Stand vor der Graduation stehen.
+
+| Punkt | Ort |
+| --- | --- |
+| **`smallint`-Identity als Primärschlüssel auf PostgreSQL** verliert den Modus weiter, ohne Code — H1 hält den S1-Zweig auf `integer` eng, damit das gelesene Schema erzeugbar bleibt. Dazu der ältere Nachbarfall: dieselbe Breite **ohne** Schlüssel liest `smallint` + `identity` und fällt bei `E130` | **S6** in [Plan 3](../next/reader-treue-3-spatial.md), **gemeinsam mit S5 zu entscheiden** (welche Breiten trägt der `identifier`-Vertrag); zwei Integrationsfälle halten den Zustand fest, bis die Antwort da ist |
+| **SQL Server: `int IDENTITY` als alleiniger Primärschlüssel** fällt auf `identifier` und verliert den Modus, ohne Code (`W140` meldet den umgekehrten Fall) | [`../open/mssql-integer-identity-pk-verliert-den-modus.md`](../open/mssql-integer-identity-pk-verliert-den-modus.md); als **S5** in [Plan 3](../next/reader-treue-3-spatial.md) geschnitten (Eigner, 2026-09-18) |
+| **SQLite `ADD COLUMN` einer Identity-Spalte verliert den Autowert still** (Rest aus M2): der Server kann einen rowid-Alias per `ALTER TABLE` nicht anlegen, `W163` setzt einen Autowert voraus, `W135` nennt einen zusammengesetzten Schlüssel als Grund, den es hier nicht gibt | [`../open/sqlite-add-column-identity-verliert-den-autowert.md`](../open/sqlite-add-column-identity-verliert-den-autowert.md); der Integrationsfall aus `580307637` ist sein Wächter |
+| **`W135` trifft schon heute eine Identity-Spalte ganz ohne Schlüssel** — mit dem Satz „is part of a composite primary key", der für sie nicht stimmt. Der Verlust ist benannt, der Grund falsch | derselbe Eintrag, Abschnitt „Nebenbefund am selben Prädikat" |
+| **Der SQLite-Generate-Pfad lässt die Tabellen-`PRIMARY KEY`-Klausel für jede Spalte mit `generation: identity` weg** (`SqliteTableDdlSupport.skipPrimaryKey` sieht die Erzeugung an, nicht den Typ) — eine `decimal`-Identity als alleiniger Schlüssel bekäme gar keinen. Heute über `E130` nicht erreichbar; der Diff-Pfad prüft seit S2 beides | derselbe Eintrag, Abschnitt „Nebenbefund am Generate-Pfad" |
+| **Ursache 2 des SQLite-Migrate-Eintrags** bleibt offen und ist breiter als beschrieben: der Post-Compare-Re-Read liest ohne Reverse-Präferenz, und der Fingerabdruck faltet die beiden Schreibweisen nur in `generation`, **nicht im Typ** | [`../open/sqlite-migrate-biginteger-identity-render-gap.md`](../open/sqlite-migrate-biginteger-identity-render-gap.md), Nachtrag 2026-09-18; ein Integrationsfall hält beide Ausgänge (gleiche DDL, Exit 0 gegen Exit 5) als Wächter über dem offenen Punkt |
+| **Die Matrix-Fixture trägt keine Anmerkungen** — der Silent-Loss-Check liest nur `fixtures/seeds/`, deshalb bewegte `cm_order.id` beim Pinnen von P10 zwei Zellen unbemerkt | [`../open/matrix-fixture-ohne-anmerkungen.md`](../open/matrix-fixture-ohne-anmerkungen.md) |
+| **Die sieben verbliebenen bekannten Befunde** des Silent-Loss-Checks (von 25; 18 sind mit diesem Plan weggefallen): **einer** ist der SQL-Server-Identity-Fall oben, **fünf** gehören dem SQLite-Generate-Eintrag, **einer** D1 | die Liste ist Code: `SILENT_LOSS_KNOWN` in [`examples/mcp-e2e/scripts/lib/silent-loss.sh`](../../../examples/mcp-e2e/scripts/lib/silent-loss.sh); die Orte sind [`../open/mssql-integer-identity-pk-verliert-den-modus.md`](../open/mssql-integer-identity-pk-verliert-den-modus.md), [`../open/sqlite-generate-verschweigt-typmarke-und-laenge.md`](../open/sqlite-generate-verschweigt-typmarke-und-laenge.md) und [Plan 4](../next/reader-treue-4-mssql-berechneter-typ.md) |
+| **Der `W137`-Doppelbeleg** und die R-Vergabe ohne Ledger (F4, N3) — dieser Plan hat sieben R-Codes vergeben und keinen davon in einem Ledger registriert, weil es für R-Codes keinen gibt | [`../open/warn-code-ledger-completeness.md`](../open/warn-code-ledger-completeness.md) |
+| **Nackte reservierte Wörter gegen PostgreSQL, SQL Server und Oracle** — der nächste Posten derselben Klasse, in der Abgrenzung dieses Plans benannt und nicht gebaut | [`../open/nackte-reservierte-woerter-im-rohen-ausdruck.md`](../open/nackte-reservierte-woerter-im-rohen-ausdruck.md) |
+| **Die Modellfrage hinter P9** — verlustfrei ginge `numeric` ohne Präzision nur mit einem neutralen `decimal` ohne Präzision und einer Render-Regel je Dialekt; P9 meldet nur (Eigner, 2026-09-17) | [`../open/decimal-ohne-praezision-verlustfrei.md`](../open/decimal-ohne-praezision-verlustfrei.md) |
+| **Die Overlay-Formulierung.** Die beiden Wege in die Ungültigkeit sind verschieden: ein **Rollback-Artefakt** trägt die **Algorithmus-Kennung** und fällt nach der Anhebung auf `v17` immer, auch ohne Array im Schema; eine **Overlay-Datei** kennt die Kennung gar nicht, bindet an den **Abdruckswert** und fällt nur, wenn das beschriebene Schema eine Array-Spalte trägt. Eine Algorithmus-Bindung für Overlays wäre eine eigene Entscheidung und ist hier nicht getroffen | die genaue Fassung steht im `CHANGELOG.md` unter `[Unreleased]`, „Changed" (Commit `bcc63ca3c`); das Anwenderhandbuch beschreibt im Abschnitt „Rollback oder Overlay bricht nach einem d-migrate-Update ab" weiter beide Artefaktarten gemeinsam |
+| **Oracle bleibt aus der Compare-Matrix** — P1 und P9 haben deshalb in `:test:integration-oracle` abgenommen, nicht in der Matrix | [`../open/mcp-e2e-oracle-nicht-gefahren.md`](../open/mcp-e2e-oracle-nicht-gefahren.md); die Regel steht im Umbrella, „Die Matrix" |
+| **B2 ist eine Grenze, kein Rest.** Die Kette PostgreSQL `integer[]` → MySQL `JSON` → Reverse → `json` ist unwiderruflich; sie ist als **erwarteter** Ausgang gepinnt, und `W162` meldet den Hinweg | in diesem Plan gepinnt (P5); im Troubleshooting-Leitfaden steht ausdrücklich, dass es dagegen nichts zu tun gibt |
+
+**Und die `Datei:Zeile`-Anker im Text sind Entwurfs- bzw. Bauabschnittsstand.**
+Wer einen Beleg nachfährt, sucht über den Symbolnamen; `resolveElementType`
+etwa heißt seit S3 `elementSql`.
 
 ## Befund
 
@@ -1236,3 +1284,218 @@ nicht in einen Commit gelaufen ist.
   `W135` einen zusammengesetzten Schlüssel als Grund nennt, den es hier nicht
   gibt. Mit Nebenbefund am Prädikat und drei Wegen in
   [`../open/sqlite-add-column-identity-verliert-den-autowert.md`](../open/sqlite-add-column-identity-verliert-den-autowert.md).
+
+## Closure
+
+**Graduiert 2026-09-18.** Alle neun Pakete sind gebaut (P5, S2, P10, S3, P8
+und P9, S1, P1, P3), dazu fünf Neu-Pins der Compare-Matrix und eine
+Korrekturrunde nach Review und Verifikation. Released ist es nicht: die
+Wirkung steht in `CHANGELOG.md` unter `[Unreleased]`. Offen bleibt in diesem
+Plan nichts; jeder verbliebene Punkt hat unter „Restflächen" einen Ort
+außerhalb. Der Umbrella
+[`reader-treue.md`](../in-progress/reader-treue.md) bleibt in
+`../in-progress/`, weil die Pläne 3 und 4 offen sind.
+
+**Woran „fertig" gemessen ist** — am Vertrag, nicht an diesem Plan:
+
+- [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004)
+  (Reverse-Engineering; PostgreSQL mit JSON/JSONB- und Array-Spalten,
+  Lastenheft Abschnitt 8.4): der Reverse **benennt**, was er aufgeben muss —
+  `json` gegen `jsonb` (`R402`), `numeric` ohne Präzision (`R404`), eine
+  Elementart und ein Feldtyp ohne neutralen Namen (`R301`), auf SQLite `R221`,
+  auf Oracle `R371` und der verlorene SRID (`R370`) —, und was er **nicht**
+  aufgeben muss, gibt er nicht mehr auf: ein
+  `integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY` behält seinen Modus (S1),
+  der SQLite-Migrate-Pfad legt den Autowert an (S2), und der
+  PostgreSQL-Generator schreibt die Elementart eines Arrays statt `TEXT[]`
+  (S3). Am Generator sagen `W162` und `W163`, was das Ziel nicht halten kann.
+- [`LN-016`](../../../spec/lastenheft-d-migrate.md#ln-016) (Meldungen
+  aussagekräftig und handlungsorientiert): jede neue Kennung nennt das
+  betroffene Objekt und, wo es einen gibt, den Ausweg — `R405` den
+  `search_path` (oder Subtyp und SRID in der Schemadatei), `R370` je nach
+  Tatsachenlage einen von drei Auswegen und nie den ausgeschlossenen, `W162`
+  ausdrücklich **keinen**, weil der Rückweg verloren ist. Kein Text rät: die
+  Oracle-Fälle werden am Namen und an der vorhandenen Zeile unterschieden,
+  nicht geschätzt.
+- [ADR 0058](../../adr/0058-verlorener-srid-beim-reverse-ist-warnung.md) ist
+  eingelöst: `R370` und `R365` sind `WARNING` und **blocken nichts** — kein
+  Pfad in `schema generate`, `schema migrate` oder `data transfer` wertet sie
+  aus, `OracleDataWriter` liest dieselbe Sicht unverändert, und die
+  `E057`-Zusicherungen sind unberührt. Der Abgleich bleibt wortgetreu. Den
+  Fall, den der ADR offenließ (unquotierte Tabelle ohne registrierte Zeile),
+  hat der Eigner am 2026-09-18 bestätigt. Entscheidung 1 desselben ADR trägt
+  auch die Severity von `R405`.
+- [ADR 0057](../../adr/0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md),
+  Abschnitt 2, Punkt 5, gilt unverändert: der Identity-Modus bleibt im
+  Vergleich ein **Fund**. Dieser Plan hat keine Toleranz gebaut, sondern den
+  Verlust am Generator benannt; `W163` ist damit der Beleg für Kandidat K2 im
+  [Toleranzprofil](../next/compare-toleranzprofil.md).
+- Die Abgrenzung von
+  [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md) ist gewahrt:
+  **keine Modellerweiterung**. `json` und `jsonb` bleiben ein neutraler Typ,
+  `numeric` ohne Präzision bleibt `float`, das Array trägt weiter nur den
+  **Namen** seiner Elementart. Gebaut sind Meldungen und drei Korrekturen am
+  Rand, kein neuer Typ.
+- Die Spec beschreibt das Gebaute:
+  [`spec/type-mapping.md`](../../../spec/type-mapping.md) 3.4 und 3.5
+  (PostgreSQL, Reverse- und Forward-Entscheidungen als Regel geschrieben), 5.2
+  (SQLite), 7.2 (Oracle, `NUMBER` und `SDO_GEOMETRY`) und Abschnitt 8
+  (der `else`-Rückfall gilt ausdrücklich auch für Array-Elemente und Felder
+  zusammengesetzter Typen);
+  [`spec/ddl-generation-rules.md`](../../../spec/ddl-generation-rules.md) 3.4
+  und 3.5 (Array- und Identity-Regel für MySQL und SQLite) sowie 16.10
+  (Oracle-Reverse-Regel);
+  [`spec/cli-spec.md`](../../../spec/cli-spec.md) (W-Tabelle und die „Grenze —
+  der Identity-Modus", die jetzt `W163` neben `W140` nennt);
+  [`spec/neutral-model-spec.md`](../../../spec/neutral-model-spec.md) (Zeilen
+  `array` und `json`). Die beiden neuen W-Codes stehen an allen fünf
+  Registrierungsorten, einschließlich Einzel- und Bereichszeile in
+  [`spec/ledger.md`](../../../spec/ledger.md) und
+  [`ledger/warn-code-ledger-1.1.0.yaml`](../../../ledger/warn-code-ledger-1.1.0.yaml);
+  die sieben R-Codes haben keinen Ledger (Umbrella, „Gemeinsame
+  Doku-Pflichten"). `docs/user/` beschreibt den Ist-Zustand: Anwenderhandbuch
+  3.2, 3.3, 3.4, 3.12, 3.16, die FAQ-Fragen zum Oracle-SRID und Anhang C,
+  Troubleshooting-Leitfaden Abschnitt 7.
+
+**Paket → Commit**
+
+| Abschnitt | Paket | Commit |
+| --- | --- | --- |
+| Bau | P5 — `W162` auf MySQL und SQLite, Generate und Migrate; B2 als Grenze gepinnt (Move nach `in-progress/`) | `e53543ca1` |
+| Bau | S2 — der SQLite-Migrate-Pfad rendert `generation: identity`; `isDroppedAutoincrement` mitgezogen | `98f99e48b` |
+| Bau | P10 — `W163` auf MySQL und SQLite, nur bei `mode: always` | `d1b1936d0` |
+| Bau | S3 — der PostgreSQL-Generator rendert die Elementart; Fingerabdruck `v16` → `v17` | `a9c9b4563` |
+| Bau | P8 und P9 — `R402`, `R404`, `R301`, `R221`, `R371` (ein Commit, dieselbe Funktion) | `ef346d77c` |
+| Bau | S1 — der `integer`-Identity-Primärschlüssel behält den Modus | `14ec70888` |
+| Bau | P1 — `R370`, `R365` als `WARNING`, `W120` je Fall | `86f61b076` |
+| Bau | P3 — `R405` nennt Grund und Ausweg; das Matrix-Bein | `90d8e38b7` |
+| Neu-Pin | P5 — `W162` in zwei Zellen, acht bekannte Befunde weg | `8ae466421` |
+| Neu-Pin | P10 — `W163` in vier Zellen, zwei bekannte Befunde weg | `512f0b738` |
+| Neu-Pin | P8/P9 — vier Reverse-Codes, vier bekannte Befunde weg | `4a79927a1` |
+| Neu-Pin | S1 — drei Zellzahlen, zweites `W163` je Zelle, vier bekannte Befunde weg | `a8a3a01bc` |
+| Neu-Pin | P3 — der Schlüssel des Matrix-Beins, Kopf der Erwartungsdatei nachgezogen | `781fac613` |
+| Plan | Matrix-Stand: Pins, weggefallene Befunde, Typ-Sensor | `c085e4127` |
+| Entscheidung | Zwei Eigner-Entscheidungen: der SQL-Server-Fall wird **S5** in Plan 3, P1 meldet weiter **beide** Fälle | `9b12ca4c2` |
+| Korrektur | H1 (S1 nur für `integer`), M3 (Spec sagt „im Primärschlüssel"), L2 (`R402` am Feld eines zusammengesetzten Typs) | `93720f317` |
+| Korrektur | M2 — SQLite `ADD COLUMN` erklärt keinen Primärschlüssel mehr | `580307637` |
+| Korrektur | L1 (`W163` prüft den Typ) und die vier ungepinnten Meldestellen | `858a0fab6` |
+| Korrektur | L3 — `R370` unterscheidet die Zeile **ohne** SRID von der fehlenden | `cc34d1241` |
+| Korrektur | tote KDoc-Verweise und eine Einrückung aus dem S3-Umbau | `109bc9fb7` |
+| Korrektur | Doku: `R365`-Anhebung, Betreiberfolge der Abdrucks-Anhebung, `W162`/`W163` im Troubleshooting, Zellzahlen im `mcp-e2e`-README | `bcc63ca3c` |
+| Korrektur | Plan — Korrekturrunde, Sabotage-Protokoll, zwei neue `open/`-Einträge | `9685da681` |
+| Graduation | Closure, Restflächen, Move nach `../done/`; Nachträge im Umbrella und in `open/` | der Move-Commit |
+
+**Was über den Entwurf hinausging**
+
+- **S1 gilt nur für `integer`** (H1, Eigner-Entscheidung 2026-09-18). Der
+  Zweig nahm zuerst jeden Typ, den `mapIntegerTypes` kennt, also auch
+  `smallint` — und genau diese Form trägt das eigene Modell nicht: die
+  Validierung lehnt sie mit `E130` ab, und der PostgreSQL-Generator rendert
+  sie nicht. Ein `schema generate` aus dem eigenen Reverse wäre abgebrochen;
+  aus einem verlustbehafteten, aber lauffähigen Weg wäre ein abbrechender
+  geworden. Der Rest der Frage ist als **S6** in
+  [Plan 3](../next/reader-treue-3-spatial.md) benannt statt still.
+- **`R402` auch am Feld eines zusammengesetzten Typs** (L2). `CREATE TYPE …
+  AS (…)` schreibt den Feldtyp durch denselben Mapper wie eine Spalte, das
+  Feld entsteht am Ziel also als `jsonb` — derselbe Verlust. Es zu vertagen
+  hätte die einzige `json`-Stelle still gelassen, die der Plan nicht schon
+  laut macht. Dafür bekam `readPostgresCustomTypes` überhaupt erst eine
+  Notizliste: an dieser Stelle gab es vorher **keinen Kanal**.
+- **`R370` hat drei Texte statt zwei** (L3). `USER_SDO_GEOM_METADATA.SRID` ist
+  nullbar: eine Zeile, die die Ausdehnung beschreibt, aber kein Bezugssystem
+  nennt, fiel in den Text „hat keine Zeile" — und der riet, eine anzulegen,
+  die es schon gibt. Die vorhandene Zeile schlägt jetzt die Namensregel, weil
+  sie eine Tatsache ist und die Schreibweise nur ein Indiz.
+- **Vier Meldestellen im MySQL-Migrate-Pfad waren ungepinnt** (S‑T und S‑U der
+  Verifikation blieben grün): `W163` beim **Wechsel** des Modus nach `always`
+  und `W162` beim Typwechsel, beim Ausdruckswechsel und beim Spaltentausch.
+  Die Meldungen standen im Code, kein Test hielt sie; jetzt je einer, je mit
+  Gegenprobe.
+- **Die Typprüfung liegt im Prädikat, nicht an der Aufrufstelle** (L1).
+  `MysqlIdentityModeDegradation.appliesTo` sah nur den Modus — eine
+  `decimal`-Spalte mit erklärter Identity hätte auf dem Migrate-Pfad „der
+  Modus ist nicht durchgesetzt" gemeldet, obwohl MySQL sie als gewöhnliche
+  Spalte schreibt. Einmal geprüft, für beide Pfade.
+- **Das `ADD COLUMN` erklärt keinen Primärschlüssel mehr** (M2). Der seit S2
+  neue Zweig griff über einen Default `isSolePrimaryKey = true` auf **jedem**
+  `ADD COLUMN` einer Identity-Spalte; SQLite lehnt das ab. Der Parameter hat
+  jetzt keinen Default — das ist die Lehre daraus: ein Default `true` macht an
+  dieser Stelle aus einer vergessenen Entscheidung eine falsche.
+- **S2 nahm einen zweiten Verlust mit.**
+  `SqliteCompositePkIdentity.isDroppedAutoincrement` prüfte den **Typ**, nicht
+  die Spalte; sobald `columnLine` auch `generation: identity` inline rendert,
+  hätte dieselbe Schreibweise im zusammengesetzten Schlüssel ihr
+  AUTOINCREMENT verloren, und `W135` hätte davon nichts gesagt.
+- **Zwei Zellen mit Quelle SQL Server waren nicht vorhergesehen** (P10-Pin).
+  `cm_order.id` der Matrix-Fixture ist `identity(by_default)`, SQL Server
+  rendert das als `IDENTITY(1,1)`, und sein Reverse liest daraus `always`
+  zurück — ab dem Reverse ist die Quelle eine ALWAYS-Identity. Der
+  Silent-Loss-Check sah den Fall nie, weil er nur `fixtures/seeds/` liest;
+  daraus der neue `open/`-Eintrag zur Fixture.
+
+**Abnahme**
+
+- **Compare-Matrix** (`make mcp-e2e-up`, `make mcp-e2e-compare-matrix` gegen
+  `d-migrate:dev`, 1.8.0-SNAPSHOT; PostgreSQL 18.6 mit PostGIS, MySQL 9.7.2,
+  SQL Server 2025, SQLite 3.45 vom Host, 42 angemerkte Seed-Spalten; Oracle
+  nicht gefahren). Der erste Lauf **ohne** `--update-expectations` zeigte
+  **13 Abweichungen und 18 weggefallene bekannte Befunde**. Gepinnt wurde
+  danach je Paket von Hand aus dem gelesenen Diff, in fünf eigenen Commits.
+  Die einzigen bewegten Zellzahlen sind die von S1: PostgreSQL → MySQL und
+  → SQL Server `11` → **`13`**, → SQLite `22` → **`24`** — der Verlust war
+  vorher unsichtbar, weil beide Seiten gleich verloren waren.
+  `SILENT_LOSS_KNOWN` geht von **25 auf 7** Einträge, und keiner der sieben
+  nennt noch ein Paket dieses Plans. **Dass die Pins beißen**, belegt eine
+  Sabotage am einzigen neuen Schlüssel (`R405` aus
+  `REPORT_CODES_POSTGRESQL_NOSEARCHPATH` entfernt → Lauf meldet die Abweichung
+  im Klartext, Exit 2, Rücknahme per Prüfsumme); danach zwei Läufe
+  hintereinander, beide Exit 0 und zeichenweise gleich. Nach der
+  Korrekturrunde noch einmal gefahren: Exit 0, **keine** Abweichung, kein
+  Neu-Pin nötig, dieselben sieben bekannten Befunde.
+- **Integration** (`make integration`). Nulllinie **vor** dem ersten Paket,
+  über alle vier Module in **einem** Lauf: `BUILD SUCCESSFUL` in 23 min 6 s,
+  165 Tasks, die vier `:test`-Tasks `executed` (nicht `SKIPPED`, nicht
+  `UP-TO-DATE`), keine Selbstüberspringung in den vier Testquellbäumen; Oracle
+  fuhr dabei beide Images. **Eine Testzahl je Modul steht nicht im Lauf** (das
+  Integrations-Image trägt das Repo als Kopie, die Reports bleiben im
+  Container) — gemessen ist der Task, nicht die Zahl; dieselbe Grenze wie in
+  [Plan 1](reader-treue-1-matrix-abnahme.md). Live gemessen wurden danach P1
+  gegen `TestImages.ORACLE_FULL` (Exit 0 über den echten Runner), P3 gegen
+  `TestImages.POSTGIS` (der Container ist in `:test:integration-postgresql`
+  neu und damit nicht mehr ungefahren), S1, S3, H1 und M3 gegen PostgreSQL 18
+  sowie S2 und M2 gegen SQLite 3.45.
+- **Unit und Gates.** `make docker-check` je berührtem Modul und **einmal ohne
+  `MODULES` über das ganze Repo: 12 435 Tests, 0 Fehler** — nötig, weil S3
+  `MigrationFingerprint` in `:hexagon:core` anhebt und `MODULES=` die
+  Integrationsmodule nicht einmal kompiliert. Dazu `make sample-db-types-smoke`
+  als Drift-Sensor der Typ-Kanonisierung nach S3: **alles grün** — 21 Typen je
+  Exit 0, UNIQUE- und FK-Folds, Konvergenz-Zweitlauf mit 0 Anweisungen,
+  Rebuild, der Rollback-Round-Trip über das v7-Artefakt, die
+  `schema compare`-Gegenprobe und die Kanten-Proben auf PostgreSQL und MySQL.
+  `make docs-check` nach jedem Spec-, Ledger- und Handbuch-Nachtrag,
+  `make solid-suppression-gate` vor jedem Commit,
+  `make doc-immutable RANGE=origin/main..HEAD` vor dem Push. Kein `@Suppress`,
+  kein Kern eines akzeptierten ADR angefasst.
+- **Sabotage-Protokoll, Bau:** je Paket eine Rücknahme, jede per Prüfsumme
+  belegt und danach grün — P5 9 Tests rot (MySQL 3, SQLite 4, zwei
+  DDL-Goldens), S2 4, P10 6 (MySQL 3, SQLite 3), S3 3 (Rendern,
+  Kanonisierer-Fixpunkt, Kantentabelle), P8/P9 9 (PostgreSQL 6, SQLite 2,
+  Oracle 1), S1 3, P1 4 (zwei `W120`-Fälle, die `R365`-Zusicherung, das
+  Oracle-Golden), P3 3 (Fehlfall und beide Gegenproben); dazu die Sabotage am
+  Matrix-Pin oben. **Korrekturrunde:** neun weitere Rücknahmen in zwei
+  Stapeln, darunter die Wiederholung von **S‑T** und **S‑U** aus der
+  Verifikation — dort blieben sie grün, jetzt sind sie rot. Zwei
+  Zwischenbefunde gehören dazu: eine Sabotage, die schon bei **Detekt** fällt,
+  belegt das Gate und nicht den Test; und eine Rücknahme per Textersetzung
+  traf ihr Muster nicht mehr — aufgefallen ist das nur am `md5sum -c`.
+- **Abschluss-Verifikation:** in einem eigenen Klon gelaufen; ihr Ergebnis
+  wird als Nachtrag am Ende dieses Plans nachgetragen.
+
+**Was von diesem Plan lesenswert bleibt.** Dreimal war „melden" die falsche
+Antwort: bei S1, S2 und S3 entsteht der Verlust auf dem Rückweg in **denselben**
+Dialekt, und eine Note wäre dort ein Platzhalter für den Fix gewesen — gebaut
+ist deshalb die Korrektur, und nur der Rest ist laut. Der teuerste Fund der
+Runde kam nicht aus einem Test, sondern aus einer **Sabotage an grünem Code**:
+an vier Stellen stand die Meldung im Code, und keine Zusicherung hielt sie. Und
+H1 zeigt die Gegenrichtung — ein Reader, der mehr liest, als das eigene Modell
+rendern kann, macht aus einem verlustbehafteten Weg einen abbrechenden.

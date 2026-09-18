@@ -8,7 +8,7 @@
 > Eintrag schliesst mit der Graduation von Plan 3; der Silent-Loss-Check verliert
 > damit seinen letzten Eintrag aus Plan 2.
 > **Trigger:** Beim Bau von **S1** in Plan 2 des Reader-Umbrellas
-> ([`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md)).
+> ([`../done/reader-treue-2-meldungen.md`](../done/reader-treue-2-meldungen.md)).
 > S1 hat den PostgreSQL-Fall behoben; derselbe Verlust bleibt auf SQL Server,
 > und der Silent-Loss-Check der Compare-Matrix zeigt ihn seither als
 > bekannten Befund mit diesem Ort.

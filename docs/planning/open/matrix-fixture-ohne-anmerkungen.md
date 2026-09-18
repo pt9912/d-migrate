@@ -2,7 +2,7 @@
 
 > Status: **Draft (Trigger Watch)**
 > Trigger: Beim Pinnen von P10 (Plan 2 des Reader-Slices,
-> [`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md))
+> [`../done/reader-treue-2-meldungen.md`](../done/reader-treue-2-meldungen.md))
 > bewegten sich **zwei Zellen, die niemand erwartet hatte** — die mit Quelle
 > SQL Server. Niemand hatte sie vorhergesagt, weil der Silent-Loss-Check der
 > Compare-Matrix nur `fixtures/seeds/` liest.

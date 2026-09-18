@@ -29,7 +29,7 @@ Reader-Slices, 2026-09-17): ein Array-Element unbekannten Typs (`inet[]`,
 `interval[]`) und ein unbekannter Feldtyp eines zusammengesetzten Typs kommen
 als `text` **ohne** `R301` an (`mapArrayElementType`,
 `mapCompositeFieldType`). Die Meldung zieht Paket P9 in
-[`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md)
+[`../done/reader-treue-2-meldungen.md`](../done/reader-treue-2-meldungen.md)
 nach; für die Kandidaten hier ändert das nichts, außer dass auch diese Wege
 danach laut sind.
 

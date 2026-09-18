@@ -8,7 +8,7 @@
 > als `jsonb`); `jsonb` meldet nichts. Die Regel steht in
 > [`spec/type-mapping.md`](../../../spec/type-mapping.md), Abschnitt 3.3.
 > Entschieden am 2026-09-16, gebaut als P8 in Plan 2 des Reader-Slices
-> ([`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md)).
+> ([`../done/reader-treue-2-meldungen.md`](../done/reader-treue-2-meldungen.md)).
 > Eine spätere Trennung in zwei neutrale JSON-Arten wäre eine neue
 > Modellfrage mit eigenem Eintrag; der Text unten bleibt als
 > Entscheidungsgrundlage stehen.
@@ -25,7 +25,7 @@
 > nur vier Element-Typen (Posten S3 desselben Plans). Die Note für `json[]`
 > kommt deshalb erst nach S3; vorher wäre ihre Aussage falsch.
 > **Trigger:** Konsumentenmessung gegen 1.7.1 (Posten B3 des Reader-Slices,
-> jetzt in [`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md)): eine PostgreSQL-`json`-Spalte kommt nach Reverse und erneuter
+> jetzt in [`../done/reader-treue-2-meldungen.md`](../done/reader-treue-2-meldungen.md)): eine PostgreSQL-`json`-Spalte kommt nach Reverse und erneuter
 > Renderung als `jsonb` zurueck. Der Vorgang ist **spec-konform** (s. u.) — die
 > Frage ist, ob er es bleiben soll.
 > **Aktivierungsbedingung:** erfüllt — der Eigner hat „gleichsetzen, aber
@@ -71,7 +71,7 @@ Unterscheidung gar nicht — es ist eine Modellfrage, keine Render-Luecke.
 ## Referenzen
 
 - Befund und Belege (im Slice als Posten B3 gefuehrt):
-  [`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md).
+  [`../done/reader-treue-2-meldungen.md`](../done/reader-treue-2-meldungen.md).
 - Soll-Tabelle des Modells: [`spec/neutral-model-spec.md`](../../../spec/neutral-model-spec.md).
 - Muster fuer eine solche Erweiterung:
   [`ADR 0015`](../../adr/0015-fulltext-tsvector-neutral-type.md) (`tsvector` → `fulltext`).

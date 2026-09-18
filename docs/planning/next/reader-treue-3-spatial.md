@@ -7,13 +7,16 @@
 > der Abnahme, Doku-Pflichten und die Code-Tabelle.
 > **Vorbedingung / Gate:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md) ist geliefert und graduiert
 > (2026-09-18; Matrix als Abnahme,
-> PostGIS-Dienst im eigenen Schema). P4 braucht P3 aus Plan 2 (der Hinweis
-> ohne `search_path`, den P4 auf `geography_columns` erweitert). Die
-> Eigner-Entscheidungen F1 (P4 nur Rückweg) und A6 (P7) stehen; keine offene
-> Frage sperrt diesen Plan.
+> PostGIS-Dienst im eigenen Schema), und
+> [Plan 2](../done/reader-treue-2-meldungen.md) ebenso (2026-09-18) — **P3
+> steht damit**, also auch die Grundlage, die P4 auf `geography_columns`
+> erweitert; der PostGIS-Container in `:test:integration-postgresql` ist seit
+> P3 gefahren. Die Eigner-Entscheidungen F1 (P4 nur Rückweg) und A6 (P7)
+> stehen; keine offene Frage sperrt diesen Plan.
 > **Aktivierung:** Move nach `../in-progress/` beim ersten
 > Implementierungs-Commit dieses Plans.
-> **Abhängigkeit:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md); für P4 zusätzlich P3 aus Plan 2. P7, P2a und P2b
+> **Abhängigkeit:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md) und, für P4, P3 aus
+> [Plan 2](../done/reader-treue-2-meldungen.md) — **beide geliefert**. P7, P2a und P2b
 > hängen an keinem anderen Paket und berühren die Matrix nicht.
 
 ## Befund

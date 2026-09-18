@@ -107,7 +107,7 @@ der Folge `BIGSERIAL` auf PostgreSQL.
 ## Nachtrag 2026-09-18 — Ursache 1 ist geschlossen
 
 Plan 2 des Reader-Umbrellas
-([`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md),
+([`../done/reader-treue-2-meldungen.md`](../done/reader-treue-2-meldungen.md),
 Paket S2) hat die **Render-Lücke** behoben: `SqliteDiffSqlBuilders.columnLine`
 rendert `generation: identity` auf `integer`/`biginteger` jetzt als
 `INTEGER PRIMARY KEY AUTOINCREMENT`, wenn die Spalte allein den
