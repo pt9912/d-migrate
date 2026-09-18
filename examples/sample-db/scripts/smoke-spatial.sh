@@ -363,6 +363,27 @@ grep -qi "CreateSpatialIndex('places', 'shape')" "$EXAMPLES_DIR/.cache/va4-lite.
     || { cat "$EXAMPLES_DIR/.cache/va4-lite.sql"; fail "[lite] DDL missing CreateSpatialIndex"; }
 log "[lite] generate OK — AddGeometryColumn(SRID 4326, POINT) + CreateSpatialIndex (VA4)"
 
+# ─── 5e: der Konsumentenfall — MySQL-Quelle mit NOT NULL-Geometrie ──
+# Bis P7 (Reader-Plan 3) verwarf `--spatial-profile spatialite` die GANZE Tabelle
+# mit E052, sobald eine Geometriespalte `required: true` trug; `geo_my_src.geo4326`
+# ist genau so gebaut (`g POINT SRID 4326 NOT NULL`). Jetzt traegt
+# `AddGeometryColumn` die Nullbarkeit selbst — sechstes Argument `1`. Gefahren
+# wird auf dem Reverse von oben, also auf dem Weg, den ein Konsument nimmt:
+# MySQL lesen, SQLite erzeugen.
+log "[lite] Konsumentenfall: MySQL-Reverse mit NOT NULL-Geometrie → SpatiaLite..."
+$COMPOSE run --rm dmigrate schema generate --source /work/.cache/geo-my.reverse.yaml \
+    --target sqlite --spatial-profile spatialite --deterministic \
+    --output /work/.cache/va4-notnull.sql \
+    --report /work/.cache/va4-notnull.report.yaml > /tmp/va4-notnull.log 2>&1 \
+    || { cat /tmp/va4-notnull.log; fail "[lite] generate aus dem MySQL-Reverse failed"; }
+grep -q "E052" "$EXAMPLES_DIR/.cache/va4-notnull.report.yaml" \
+    && { cat "$EXAMPLES_DIR/.cache/va4-notnull.report.yaml"; fail "[lite] E052 ist zurueck — NOT NULL-Geometrie blockt wieder die Tabelle"; }
+grep -qi "AddGeometryColumn('geo4326', 'g', 4326, 'POINT', 'XY', 1)" "$EXAMPLES_DIR/.cache/va4-notnull.sql" \
+    || { cat "$EXAMPLES_DIR/.cache/va4-notnull.sql"; fail "[lite] NOT NULL-Geometrie ohne sechstes Argument"; }
+grep -qi 'CREATE TABLE "geo4326"' "$EXAMPLES_DIR/.cache/va4-notnull.sql" \
+    || { cat "$EXAMPLES_DIR/.cache/va4-notnull.sql"; fail "[lite] die Tabelle geo4326 fehlt in der DDL"; }
+log "[lite] Konsumentenfall OK — NOT NULL-Geometrie als AddGeometryColumn(..., 1), kein E052 (P7)"
+
 # ─── 5d: voller SpatiaLite migrate --execute Round-Trip ────────────
 # Belegt 5d gegen eine ECHTE frische SpatiaLite-.db (kein Generate-only):
 #   Befund 1 — `InitSpatialMetaData()`-Bootstrap läuft vor dem ersten

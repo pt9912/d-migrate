@@ -72,7 +72,7 @@ internal class SqliteTableDdlSupport(
         val geometryColumnNames = geometryColumns.keys
         for ((columnName, column) in geometryColumns) {
             if (hasSpatialMetadataConflict(table, columnName, column)) {
-                return blockTableForSpatialMetadata(name, columnName, "required/unique/default/references/PK")
+                return blockTableForSpatialMetadata(name, columnName, "unique/default/references/PK")
             }
         }
         for (constraint in table.constraints) {
@@ -137,22 +137,7 @@ internal class SqliteTableDdlSupport(
         geometryColumns: Map<String, ColumnDefinition>,
     ): List<DdlStatement> =
         geometryColumns.map { (columnName, column) ->
-            val geometry = column.type as NeutralType.Geometry
-            val geometryType = geometry.geometryType.schemaName.uppercase()
-            val srid = geometry.srid ?: 0
-            DdlStatement(
-                buildString {
-                    append("SELECT AddGeometryColumn('")
-                    append(name.replace("'", "''"))
-                    append("', '")
-                    append(columnName.replace("'", "''"))
-                    append("', ")
-                    append(srid)
-                    append(", '")
-                    append(geometryType)
-                    append("', 'XY');")
-                }
-            )
+            DdlStatement(SqliteSpatialGeometryColumn.addSql(name, columnName, column))
         }
 
     private fun generateIndex(
@@ -333,13 +318,18 @@ internal class SqliteTableDdlSupport(
             )
         )
 
+    /**
+     * `required` steht hier **nicht** mehr: `AddGeometryColumn` traegt die
+     * Nullbarkeit selbst ([SqliteSpatialGeometryColumn]). Die uebrigen
+     * Eigenschaften kann die Metadaten-Funktion nicht ausdruecken, und eine
+     * Tabelle ohne sie waere eine andere als die gewuenschte.
+     */
     private fun hasSpatialMetadataConflict(
         table: TableDefinition,
         columnName: String,
         column: ColumnDefinition,
     ): Boolean =
-        column.required ||
-            column.unique ||
+        column.unique ||
             column.default != null ||
             column.references != null ||
             columnName in table.primaryKey

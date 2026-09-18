@@ -285,7 +285,12 @@ class SqliteSchemaReader : SchemaReader {
                 type = neutralType,
                 required = required,
                 unique = unique,
-                default = SqliteTypeMapping.parseDefault(col.columnDefault),
+                default = SqliteTypeMapping.parseDefault(
+                    SqliteSpatialDefault.userDefault(
+                        rawDefault = col.columnDefault,
+                        isRegisteredGeometry = geometryByColumn.containsKey(col.name.lowercase()),
+                    ),
+                ),
                 // reverse-preferences: 64-bit width preference carries an explicit
                 // Identity generation; IDENTIFIER (default) leaves it null.
                 generation = mapping.generation,

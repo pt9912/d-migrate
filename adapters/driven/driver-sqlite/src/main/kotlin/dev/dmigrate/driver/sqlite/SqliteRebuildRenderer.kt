@@ -9,6 +9,7 @@ import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.SqliteCastPreflightStatus
 import dev.dmigrate.driver.sqliteContext
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
@@ -90,6 +91,7 @@ internal class SqliteRebuildRenderer(
             emitMaterializedViewBlocker(plan, ctx)
             return
         }
+        if (emitGeometryBlockerIfAny(plan, ctx)) return
         if (plan.mapping.isBlocked) {
             emitBlockerDiagnostics(plan, ctx)
             return
@@ -332,6 +334,49 @@ internal class SqliteRebuildRenderer(
 
     private fun SqliteRebuildPlan.hasMaterializedDependentViews(): Boolean =
         (dependentViewsToDrop + dependentViewsToRecreate).any { it.definition.materialized }
+
+    /**
+     * M11 — ein Tabellen-Neubau an einer Geometriespalte **blockt**.
+     *
+     * Der Neubau schreibt die Zieltabelle ueber
+     * [SqliteDiffSqlBuilders.columnLine] neu ([buildCreateTempSql]); eine
+     * Geometriespalte entstuende dort **inline** als gewoehnliche Spalte, und
+     * damit ausserhalb der SpatiaLite-Registrierung: kein Eintrag in
+     * `geometry_columns`, keine Integritaets-Trigger, kein R*Tree. Die
+     * Anweisungsfolge liefe durch, die Tabelle saehe danach richtig aus, und
+     * die Geometrie waere still keine mehr.
+     *
+     * Die Registrierung mitzunehmen (`DiscardGeometryColumn` vor dem Ablegen,
+     * `AddGeometryColumn` und `CreateSpatialIndex` danach, samt Umschreiben
+     * der Kopierschritte) ist ein eigener Posten — der Neubau kennt die
+     * Metadaten heute an keiner Stelle. Bis dahin ist die laute Blockade die
+     * ehrlichere Antwort; `--spatial-profile` aendert daran nichts, denn auch
+     * mit Profil `spatialite` rendert der Neubau die Spalte inline.
+     *
+     * Geprueft werden **beide** Seiten: eine Geometriespalte, die der Neubau
+     * anlegt, waere unregistriert, und eine, die er kopiert, verloere ihre
+     * Registrierung mit dem `DROP TABLE`.
+     */
+    private fun emitGeometryBlockerIfAny(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext): Boolean {
+        val columns = (plan.newTable.columns.entries + plan.oldTable.columns.entries)
+            .filter { it.value.type is NeutralType.Geometry }
+            .map { it.key }
+            .distinct()
+            .sorted()
+        if (columns.isEmpty()) return false
+        val message = "RebuildTable for `${plan.originalTableName}` would recreate geometry column(s) " +
+            "${columns.joinToString(", ")} as plain inline columns: the SpatiaLite registration " +
+            "(geometry_columns, integrity triggers, spatial index) does not survive the " +
+            "DROP/RENAME sequence, so the rebuilt column would no longer be a registered geometry."
+        for (op in plan.bucketOperations) {
+            ctx.skip(op, message, code = "SPATIAL_METADATA_UNSUPPORTED")
+        }
+        ctx.addBlocker(
+            MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
+            operationIds = plan.sourceOperationIds,
+        )
+        return true
+    }
 
     private fun emitMaterializedViewBlocker(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
         val names = (plan.dependentViewsToDrop + plan.dependentViewsToRecreate)

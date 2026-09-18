@@ -363,6 +363,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Eine `NOT NULL`-Geometriespalte entsteht auf SpatiaLite, statt die ganze
+  Tabelle zu kosten.** `schema generate --target sqlite --spatial-profile
+  spatialite` verwarf eine Tabelle mit `E052`, sobald eine Geometriespalte
+  `required: true` trug — die Tabelle fehlte danach ganz. `AddGeometryColumn`
+  traegt die Nullbarkeit aber selbst: das sechste Argument (`not_null`) legt
+  die Spalte als `NOT NULL` an, und eine Zeile ohne Geometrie weist SpatiaLite
+  ab (gemessen an SpatiaLite 5.1.0). Generate und Migrate rendern jetzt beide
+  so, mit derselben Ausloeserliste fuer das, was weiter blockt: `unique`, ein
+  `default`, ein Fremdschluessel, die Spalte im Primaerschluessel und eine
+  tabellenweite Einschraenkung auf ihr. Der **Reverse** verwirft dabei
+  SpatiaLites Fuellwert `DEFAULT ''` an einer registrierten Geometriespalte —
+  sonst blockte der zweite `schema generate` genau die Tabelle, die der erste
+  angelegt hat.
+
+  **Zwei Faelle bleiben blockiert, und einer davon ist neu benannt:**
+  `ALTER TABLE … ADD COLUMN` einer `required`-Geometriespalte auf eine
+  bestehende Tabelle (SpatiaLite fuellt Bestandszeilen mit einem Wert, der
+  keine gueltige Geometrie ist), und **jeder Tabellen-Neubau** an einer
+  Tabelle mit Geometriespalte. Der Neubau schrieb sie bisher **inline** als
+  gewoehnliche Spalte neu — gueltiges DDL, angewandt, und die
+  SpatiaLite-Registrierung (`geometry_columns`, Trigger, R*Tree) war still
+  weg. Er blockt jetzt mit `SPATIAL_METADATA_UNSUPPORTED`.
+
 - **Der Datenpfad traegt PostGIS-`geography`-Werte.** Der PostgreSQL-Reader
   wrappte nur `geometry` mit `ST_AsBinary`, und die Import-Sitzung erkannte
   nur `geometry` als Geometrie-Zielspalte; ein `data export`, `data import`

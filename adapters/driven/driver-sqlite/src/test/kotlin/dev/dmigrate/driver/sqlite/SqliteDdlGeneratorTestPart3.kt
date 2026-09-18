@@ -514,23 +514,26 @@ class SqliteDdlGeneratorTestPart3 : FunSpec({
         (discardArea < dropTable) shouldBe true
     }
 
+    // P7: `required` blockt nicht mehr; geblieben sind `unique`, `default`,
+    // ein Fremdschluessel, der Primaerschluessel und eine tabellenweite
+    // Einschraenkung.
     test("spatialite metadata blocking adds SkippedObject") {
         val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
             "t" to TableDefinition(columns = mapOf(
                 "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
-                "loc" to ColumnDefinition(type = NeutralType.Geometry(), required = true),
+                "loc" to ColumnDefinition(type = NeutralType.Geometry(), unique = true),
             ), primaryKey = listOf("id"))
         ))
         val result = generator.generate(schema, DdlGenerationOptions(SpatialProfile.SPATIALITE))
         result.skippedObjects.any { it.code == "E052" && it.name == "t" } shouldBe true
     }
 
-    test("spatialite blocks table when geometry column has required metadata") {
+    test("spatialite blocks table when the geometry column is part of the primary key") {
         val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
             "t" to TableDefinition(columns = mapOf(
-                "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
                 "loc" to ColumnDefinition(type = NeutralType.Geometry(), required = true),
-            ), primaryKey = listOf("id"))
+                "id" to ColumnDefinition(type = NeutralType.Integer),
+            ), primaryKey = listOf("loc"))
         ))
         val result = generator.generate(schema, DdlGenerationOptions(SpatialProfile.SPATIALITE))
         result.notes.any { it.code == "E052" } shouldBe true

@@ -1,9 +1,20 @@
 # Vertragsfrage: E052 verwirft die ganze Tabelle (SpatiaLite-Profil)
 
-> **Status:** Entschieden (2026-09-16); wird als P7 in Plan 3 des
-> Reader-Slices gebaut
-> ([`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md),
-> Schnitt 2026-09-17). Dieser Eintrag schließt mit der Lieferung von P7.
+> **Status:** **Geschlossen (2026-09-18)** — P7 in Plan 3 des Reader-Slices ist
+> gebaut ([`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md)).
+> `required` an einer Geometriespalte geht jetzt nativ über das sechste
+> Argument von `AddGeometryColumn`, in **beiden** Pfaden (Generate und
+> Migrate); der Reverse verwirft SpatiaLites Füllwert `DEFAULT ''`. Was weiter
+> mit `E052` blockiert, steht erstmals in
+> [`spec/ddl-generation-rules.md`](../../../spec/ddl-generation-rules.md)
+> (Spatial, SQLite): `unique`, ein `default`, ein Fremdschlüssel, die Spalte im
+> Primärschlüssel und eine tabellenweite Einschränkung auf ihr. Dazu zwei
+> Fälle, die der Bau neu benannt hat und die blockiert bleiben: `ADD COLUMN`
+> einer `required`-Geometriespalte auf eine **bestehende** Tabelle (gemessen:
+> SpatiaLite füllt Bestandszeilen mit `''`, also keiner gültigen Geometrie) und
+> jeder **Tabellen-Neubau** an einer Tabelle mit Geometriespalte — er schrieb
+> sie bisher inline und damit ohne SpatiaLite-Registrierung. Der Text unten
+> bleibt als Entscheidungsgrundlage stehen.
 > **Eigner-Entscheidung: NOT NULL nativ.** Gemessen im Tooling-Image
 > (SpatiaLite 5.1.0): `AddGeometryColumn('t','geom',4326,'POINT','XY',1)` legt die
 > Spalte als `"geom" POINT NOT NULL DEFAULT ''` an, eine Zeile ohne Geometrie wird

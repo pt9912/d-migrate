@@ -242,6 +242,27 @@ Länge/Precision. Unbekannte Typen fallen auf `Text()`.
 | `BLOB` | `binary` | — |
 | `NUMERIC`/`DECIMAL` ohne Präzision | `float` | `R221`: das neutrale Modell trägt keine ungebundene Dezimalzahl, und die Spalte rendert als `REAL` zurück. Der Schwesterfall ist beim Erzeugen laut (`W200`, `decimal(p,s)` → `REAL`); mit Präzision und Skala bleibt es `decimal(p,s)` und meldet nichts |
 
+### 5.2b SpatiaLites Füllwert ist kein Anwender-Default
+
+`SELECT AddGeometryColumn(…, not_null = 1)` legt eine Geometriespalte als
+`"<spalte>" <TYP> NOT NULL DEFAULT ''` an; `PRAGMA table_info` meldet dafür
+`dflt_value = ''`. Dieser Default gehört **SpatiaLite**, nicht dem Anwender —
+die Metadaten-Funktion braucht ihn, um die Spalte einer bestehenden Zeile
+überhaupt anlegen zu können.
+
+**Regel:** an einer Spalte, die in `geometry_columns` registriert ist,
+verwirft der Reverse ein leeres Zeichenkettenliteral als Default; die Spalte
+kommt mit `required: true` und **ohne** `default` ins Modell. An jeder anderen
+Spalte bleibt `DEFAULT ''` ein Anwender-Default und kommt unverändert mit,
+ebenso jeder andere Default an einer registrierten Geometriespalte — nur das
+leere Literal kann dort von SpatiaLite stammen.
+
+Ohne diese Ausnahme trüge das Reverse `default: ""`, und ein Default an einer
+Geometriespalte ist selbst ein `E052`-Auslöser
+([`ddl-generation-rules.md`](./ddl-generation-rules.md), Spatial, SQLite): der
+zweite `schema generate` blockierte genau die Tabelle, die der erste angelegt
+hat.
+
 ### 5.2a Constraint-Namen: aus dem DDL-Text, sonst gebildet
 
 SQLite führt Constraint-Namen **nicht im Katalog**: `PRAGMA foreign_key_list`

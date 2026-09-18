@@ -55,13 +55,41 @@ internal object SqliteSpatialDiffOps {
         return null
     }
 
+    /**
+     * Die Eigenschaften, die `AddGeometryColumn` **nicht** ausdruecken kann.
+     *
+     * `required` steht hier nicht mehr: das sechste Argument traegt die
+     * Nullbarkeit ([SqliteSpatialGeometryColumn]). Fuer `ADD COLUMN` auf eine
+     * bestehende Tabelle gilt es weiter — dort blockt
+     * [addColumnRequiredBlock].
+     */
     fun geometryColumnMetadataBlock(columnName: String, column: ColumnDefinition): String? = when {
-        column.required -> "geometry column `$columnName` is NOT NULL"
         column.unique -> "geometry column `$columnName` is UNIQUE"
         column.default != null -> "geometry column `$columnName` has a DEFAULT"
         column.references != null -> "geometry column `$columnName` has a foreign key reference"
         else -> null
     }
+
+    /**
+     * `ADD COLUMN` auf eine **bestehende** Tabelle: eine `NOT NULL`-Geometrie
+     * bleibt blockiert.
+     *
+     * Gemessen an SpatiaLite 5.1.0: `AddGeometryColumn(…, 1)` gelingt auch auf
+     * einer gefuellten Tabelle und setzt in jede Bestandszeile den Fuellwert
+     * `''` — also **keine** gueltige Geometrie. Genau diesen Wert wiese der
+     * Geometrie-Trigger beim Einfuegen ab („violates Geometry constraint").
+     * SpatiaLite unterscheidet leer und gefuellt nicht; eine Anweisung, die
+     * Zeilen mit einem Wert zuruecklaesst, den dieselbe Tabelle nicht
+     * annaehme, ist kein Fortschritt gegenueber der Blockade — dieselbe Regel
+     * wie fuer jede `NOT NULL`-Spalte ohne Default.
+     */
+    fun addColumnRequiredBlock(columnName: String, column: ColumnDefinition): String? =
+        if (column.required) {
+            "geometry column `$columnName` is NOT NULL and cannot be added to an existing table: " +
+                "AddGeometryColumn fills existing rows with the empty placeholder, which is not a valid geometry"
+        } else {
+            null
+        }
 
     private fun List<ConstraintDefinition>.firstConstraintGeometryColumn(geometryColumnNames: Set<String>): String? =
         firstNotNullOfOrNull { constraint -> constraint.columns.orEmpty().firstOrNull { it in geometryColumnNames } }
@@ -137,15 +165,11 @@ internal object SqliteSpatialDiffOps {
         ctx.spatialMetadataBootstrapEmitted = true
     }
 
-    fun addGeometryColumnSql(table: String, column: String, definition: ColumnDefinition): String {
-        val geometry = definition.type as NeutralType.Geometry
-        val geometryType = geometry.geometryType.schemaName.uppercase()
-        val srid = geometry.srid ?: 0
-        return "SELECT AddGeometryColumn('${table.sqlString()}', '${column.sqlString()}', $srid, '$geometryType', 'XY');"
-    }
+    fun addGeometryColumnSql(table: String, column: String, definition: ColumnDefinition): String =
+        SqliteSpatialGeometryColumn.addSql(table, column, definition)
 
     fun discardGeometryColumnSql(table: String, column: String): String =
-        "SELECT DiscardGeometryColumn('${table.sqlString()}', '${column.sqlString()}');"
+        SqliteSpatialGeometryColumn.discardSql(table, column)
 
     private fun String.sqlString(): String = replace("'", "''")
 }

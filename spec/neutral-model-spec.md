@@ -1491,7 +1491,7 @@ Generator-/Report-Regeln, keine Modellvalidierung:
 
 | Code | Regel                                                                                                            | Ebene     |
 | ---- | ---------------------------------------------------------------------------------------------------------------- | --------- |
-| E052 | Spatial-Objekt kann mit dem gewaehlten Profil nicht generiert werden (z.B. `geometry` bei `--spatial-profile none`) | Generator |
+| E052 | Spatial-Objekt kann mit dem gewaehlten Profil nicht generiert werden (z.B. `geometry` bei `--spatial-profile none`) | Generator, Migrate |
 | E053 | Dialektspezifischer SQL-Inhalt (View-Query, Routine- oder Trigger-Body) erfordert manuelle Transformation oder Implementierung | Generator |
 | E054 | Objekttyp wird im Zieldialekt nicht unterstuetzt | Generator |
 | E055 | Partitionierung wird im Zieldialekt nicht unterstuetzt | Generator |
@@ -1500,8 +1500,12 @@ Generator-/Report-Regeln, keine Modellvalidierung:
 | W120 | SRID-Metadaten konnten nicht vollstaendig in den Zieldialekt uebertragen werden                                  | Generator |
 
 Wichtig: `E020`/`E120`/`E121` werden von `schema validate` gemeldet.
-`E052`-`E056`/`W113`/`W120` werden nur von `schema generate` gemeldet und sind Teil
-des bestehenden `action_required`- bzw. Warning-Report-Vertrags.
+`E052`-`E056`/`W113`/`W120` kommen aus dem Generatorpfad und sind Teil des
+bestehenden `action_required`- bzw. Warning-Report-Vertrags. **`E052` meldet
+auch `schema migrate`**: der Migrate-Pfad rendert dieselben Spatial-Regeln, und
+ein Plan, der eine Geometriespalte einfuehrt oder aendert, die das Profil nicht
+tragen kann, blockt dort mit demselben Code
+([`cli-spec.md`](./cli-spec.md), `--spatial-profile` bei `schema migrate`).
 
 Die Codes `E052`-`E056` beschreiben dabei **die Ursache** eines
 `action_required`-Falls, nicht automatisch dessen Reichweite. Ob der

@@ -2605,15 +2605,54 @@ CREATE TABLE "places" (
 SELECT AddGeometryColumn('places', 'location', 4326, 'POINT', 'XY');
 ```
 
-`AddGeometryColumn`-Signatur: `(table_name, column_name, srid, type, coord_dimension)`
+`AddGeometryColumn`-Signatur:
+`(table_name, column_name, srid, type, coord_dimension [, not_null])`
 
 - `srid`: Der Wert aus dem neutralen Modell; fehlt `srid`, wird `0` verwendet.
 - `type`: `geometry_type` in Grossbuchstaben (z.B. `POINT`, `POLYGON`).
 - `coord_dimension`: Immer `'XY'` (Z/M werden nicht modelliert).
+- `not_null`: `1` fuer eine Spalte mit `required: true`. Eine nullbare Spalte
+  bekommt das Argument **nicht** — sie behaelt die fuenfstellige Form.
+  SpatiaLite legt die Spalte mit `1` als `"<spalte>" <TYP> NOT NULL DEFAULT ''`
+  an; der Default ist SpatiaLites Fuellwert und **kein** Anwender-Default
+  (`type-mapping.md`, SQLite).
 
 **Rollback**: Das Rollback-Statement fuer `AddGeometryColumn` ist
 `SELECT DiscardGeometryColumn('<table>', '<column>');`. Fuer die zugehoerige
 Tabelle gilt das normale `DROP TABLE IF EXISTS`.
+
+#### Was weiter mit `E052` blockiert
+
+`AddGeometryColumn` kann ausser der Nullbarkeit keine Spalteneigenschaft
+ausdruecken. Traegt eine Geometriespalte eine der folgenden, wird die
+**ganze** Tabelle blockiert — keine partielle DDL, wie beim Profil `none`:
+
+| Ausloeser | Grund |
+|---|---|
+| `unique: true` | die Metadaten-Funktion legt keinen Unique-Index an |
+| ein `default` | sie nimmt keinen Default entgegen |
+| ein Fremdschluessel an der Spalte | sie schreibt keine `REFERENCES`-Klausel |
+| die Spalte gehoert zum Primaerschluessel | die Spalte entsteht erst **nach** dem `CREATE TABLE` |
+| eine tabellenweite Einschraenkung auf der Spalte | dieselbe Ursache: sie stuende im `CREATE TABLE`, in dem es die Spalte noch nicht gibt |
+
+**Dieselbe Liste gilt fuer `schema generate` und fuer `schema migrate`.** Der
+Migrate-Pfad meldet den einzelnen Grund, der Generate-Pfad buendelt sie; die
+Ausloeser sind dieselben.
+
+Zwei Faelle des Migrate-Pfads kommen hinzu:
+
+- **`ALTER TABLE … ADD COLUMN` auf eine bestehende Tabelle** blockiert eine
+  `required`-Geometriespalte weiter. `AddGeometryColumn(…, 1)` gelingt dort
+  zwar, setzt aber in jede Bestandszeile den Fuellwert `''` — keine gueltige
+  Geometrie, und genau den Wert weist der Geometrie-Trigger beim Einfuegen ab.
+  Dieselbe Regel gilt fuer jede `NOT NULL`-Spalte ohne Default.
+- **Ein Tabellen-Neubau** (SQLites Weg fuer jede Spaltenaenderung, Abschnitt 3.7) an
+  einer Tabelle mit Geometriespalte blockiert **immer**. Der Neubau schreibt
+  die Zieltabelle als `CREATE TABLE … AS` neu; eine Geometriespalte entstuende
+  dort inline und damit ausserhalb der SpatiaLite-Registrierung — ohne Eintrag
+  in `geometry_columns`, ohne Integritaets-Trigger, ohne R*Tree. Die Folge
+  liefe durch, und die Spalte waere hinterher keine registrierte Geometrie
+  mehr.
 
 ### 16.6 SQLite / SpatiaLite (Profil: `none`)
 
@@ -2773,14 +2812,16 @@ CREATE TABLE "places" (
 
 Diese Codes ergaenzen die allgemeinen Codes aus §4. Die Codes E020, E120 und E121
 entstehen bei `schema validate` (Schema-/Modellregeln); E052 bis E057 sowie W113 und W120
-entstehen bei `schema generate` (Generator-/Report-Regeln).
+entstehen bei `schema generate` (Generator-/Report-Regeln). **`E052` entsteht auch
+bei `schema migrate`** — derselbe Ausloeser, dort als Blocker des Plans
+(`cli-spec.md`, `--spatial-profile` bei `schema migrate`).
 
 | Code | Typ | Ebene | Meldung |
 |---|---|---|---|
 | E120 | Validierungsfehler | `schema validate` | Unknown `geometry_type` value |
 | E121 | Validierungsfehler | `schema validate` | `srid` must be greater than 0 |
 | E020 | Validierungsfehler | `schema validate` | Declared view dependency references non-existent view |
-| E052 | action_required | `schema generate` | Spatial object cannot be generated with the chosen spatial profile |
+| E052 | action_required | `schema generate`, `schema migrate` | Spatial object cannot be generated with the chosen spatial profile |
 | E053 | action_required | `schema generate` | Dialect-specific SQL content requires manual transformation or implementation |
 | E054 | action_required | `schema generate` | Object type is not supported in the target dialect |
 | E055 | action_required | `schema generate` | Partitioning is not supported in the target dialect |
@@ -2822,6 +2863,10 @@ im neutralen Schema nicht existiert.
 **E052 (Spatial)**: Wird erzeugt, wenn ein Spatial-Objekt mit dem gewählten
 Spatial-Profil nicht generiert werden kann. Die gesamte betroffene Tabelle
 wird blockiert — partielle DDL ohne die Spatial-Spalte wird nicht erzeugt.
+Die Ausloeser fuer das Profil `spatialite` stehen in Abschnitt 16.5 und gelten fuer
+`schema generate` und `schema migrate` gleich; im Migrationspfad blockt
+`E052` den **ganzen** Plan (`primaryBlockedReason = MANUAL_ACTION_REQUIRED`),
+nicht nur die betroffene Tabelle.
 
 **E053 (Dialekt-Transformation)**: Wird erzeugt, wenn View-Query,
 Function-/Procedure-Body oder Trigger-Body nicht automatisch zwischen

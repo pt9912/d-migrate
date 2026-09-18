@@ -143,7 +143,12 @@ internal object SqliteDiffSimpleOps {
             return
         }
         if (op.column.type is NeutralType.Geometry) {
-            val blocked = SqliteSpatialDiffOps.geometryColumnMetadataBlock(column, op.column)
+            // `required` blockt hier weiter, anders als beim `CreateTable`:
+            // die Tabelle steht schon, und SpatiaLite fuellt Bestandszeilen
+            // mit einem Wert, der keine gueltige Geometrie ist
+            // ([SqliteSpatialDiffOps.addColumnRequiredBlock]).
+            val blocked = SqliteSpatialDiffOps.addColumnRequiredBlock(column, op.column)
+                ?: SqliteSpatialDiffOps.geometryColumnMetadataBlock(column, op.column)
             if (blocked != null) {
                 SqliteSpatialDiffOps.blockSpatialMetadata(op, ctx, table, blocked)
                 return

@@ -641,6 +641,74 @@ gegenüber der Blockade. Zweitens: der **Reverse** muss den Default `''`
 verwerfen — er ist SpatiaLites Füllwert, kein Anwender-Default, und ein
 Default ist selbst ein `E052`-Auslöser.
 
+#### P2a — was Oracle Spatial an Sequenzen anlegt (Oracle 23 `ORACLE_FULL`, gemessen 2026-09-18)
+
+Gemessen an einem eigenen Container: Tabelle mit `SDO_GEOMETRY`, Zeile in
+`USER_SDO_GEOM_METADATA`, eine Zeile Daten, dann
+`CREATE INDEX … INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2`.
+
+**Ein Nebenbefund auf dem Weg:** der Index braucht **Daten**. Auf der leeren
+Tabelle scheitert er mit `ORA-13199: Table is empty; cannot determine SRID`
+— genau der Grund, aus dem das Anwenderhandbuch für Oracle
+`--split pre-post` empfiehlt.
+
+| Objekt | `ALL_OBJECTS.SECONDARY` | `GENERATED` | `ORACLE_MAINTAINED` |
+| --- | --- | --- | --- |
+| `MDRS_11E5A$` (Sequenz, vom Spatial-Index angelegt) | **`Y`** | `N` | `N` |
+| `MDRT_11E5A$` (Tabelle, dieselbe Herkunft) | `Y` | — | — |
+| `ISEQ$$_73303` (Identity-Sequenz) | `N` | `Y` | `N` |
+| `SDO_ORDER_SEQ` (Anwendersequenz) | `N` | `N` | `N` |
+
+**Das Kriterium kommt aus dem Katalog** — dasselbe, das der Tabellenpfad schon
+benutzt (`o.secondary = 'Y'`). Die erste Regel des Pakets greift damit, und es
+braucht weder einen Namensfilter noch einen neuen Code. Gegengeprüft mit der
+fertigen Abfrage: `MDRS_11E5A$` fällt weg, `SDO_ORDER_SEQ` bleibt, und eine
+eigens angelegte Anwendersequenz `MDRS_KUNDE$` bleibt ebenfalls — ein
+Präfixfilter hätte beide versteckt.
+
+### P7 — SpatiaLite: `NOT NULL` nativ (2026-09-18)
+
+**Gebaut an vier Stellen**, mit dem `AddGeometryColumn`-Aufruf **einmal** in
+`SqliteSpatialGeometryColumn`: Generate und Migrate schrieben ihn je selbst,
+und seit die Signatur ein siebtes Stück trägt, wäre das die Art Abweichung,
+die erst an einem echten Server auffiele.
+
+1. **Generate** — `required` fällt aus `hasSpatialMetadataConflict`; der
+   Aufruf bekommt `, 1`. Eine nullbare Spalte behält die fünfstellige Form,
+   und die DDL-Goldens bewegen sich nicht (`:adapters:driven:formats:check`
+   grün, kein Golden neu erzeugt).
+2. **Migrate, `CreateTable`** — `geometryColumnMetadataBlock` verliert den
+   `required`-Zweig; die übrigen Auslöser bleiben, und beide Pfade nennen
+   jetzt dieselben.
+3. **Migrate, `ADD COLUMN`** — eigener Block (`addColumnRequiredBlock`) nach
+   der Messung: eine `required`-Geometriespalte an eine bestehende Tabelle
+   bleibt blockiert, mit dem Grund in der Meldung.
+4. **Migrate, Tabellen-Neubau** — **blockt**, wie empfohlen. Die Begründung
+   steht im Code und in der Spec: der Neubau schreibt die Zieltabelle über
+   `columnLine` neu, eine Geometriespalte entstünde dort inline und damit
+   ohne Eintrag in `geometry_columns`, ohne Integritäts-Trigger und ohne
+   R\*Tree. Die Anweisungsfolge liefe durch, die Tabelle sähe richtig aus, und
+   die Geometrie wäre still keine mehr. Geprüft werden **beide** Seiten des
+   Plans — eine Spalte, die der Neubau anlegt, wäre unregistriert, eine, die
+   er kopiert, verlöre ihre Registrierung mit dem `DROP TABLE`. Die
+   Registrierung mitzunehmen ist ein eigener Posten.
+5. **Reverse** — `SqliteSpatialDefault` verwirft das leere Literal **nur** an
+   einer in `geometry_columns` registrierten Spalte. An jeder anderen bleibt
+   `DEFAULT ''` ein Anwender-Default; ein anderer Default an einer
+   Geometriespalte bleibt ebenso.
+
+**Die zwei Tests, die kippen mussten**, sind gekippt: `required` als Blockade
+stand zweimal (`SqliteDdlGeneratorSpatialTest` und, wortgleich kopiert,
+`SqliteDdlGeneratorTestPart3`). Sie stehen jetzt auf Auslösern, die bleiben
+(`unique`, `default`, Primärschlüssel); dazu ein Fall, der `required` → `, 1`
+pinnt, und eine Gegenprobe auf die fünfstellige Form.
+
+**Die Migrate-Seite hatte keinen einzigen Test** (M11). Neu ist
+`SqliteDiffSpatialMetadataTest` mit zehn Fällen: je Auslöser einer, `AddColumn`
+in beiden Ausgängen und der Neubau mit Gegenprobe. Dass die Spec wirklich
+läuft, ist mit einer absichtlich falschen Zusicherung geprüft (rot), danach
+entfernt.
+
 ## Akzeptanzkriterien
 
 1. `geography` liest als Geometrie mit SRID, benannt mit `R403`; die vier
