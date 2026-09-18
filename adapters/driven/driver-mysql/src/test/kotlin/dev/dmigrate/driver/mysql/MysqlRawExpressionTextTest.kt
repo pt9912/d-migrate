@@ -74,6 +74,62 @@ class MysqlRawExpressionTextTest : FunSpec({
             "left(nm, 1) <> ''" to "left(nm, 1) <> ''",
             "cast(nm as char) <> ''" to "cast(nm as char) <> ''",
             "cast(nm as decimal(10,2)) > 0" to "cast(nm as decimal(10,2)) > 0",
+            // Der Typname ist mehrwortig (MySQL-Handbuch, „Cast Functions and
+            // Operators"): `signed integer`, `character set <name>`, `double
+            // precision`. Nur das erste Wort freizulassen, ergab
+            // `cast(total as signed `integer`)` — ERROR 1064 auf 9.7.2 und
+            // 8.0.46. Nackt nehmen beide Server jede dieser Formen an.
+            "cast(total as signed integer) > 0" to "cast(total as signed integer) > 0",
+            "cast(total as unsigned integer) > 0" to "cast(total as unsigned integer) > 0",
+            "cast(note as char character set utf8mb4) <> 'x'" to "cast(note as char character set utf8mb4) <> 'x'",
+            "cast(x as double precision) > 0" to "cast(x as double precision) > 0",
+            "cast(note as char character set utf8mb4 binary) <> 'x'" to
+                "cast(note as char character set utf8mb4 binary) <> 'x'",
+            "cast(note as char charset utf8mb4) <> 'x'" to "cast(note as char charset utf8mb4) <> 'x'",
+            "cast(note as nchar(5)) <> 'x'" to "cast(note as nchar(5)) <> 'x'",
+            "cast(j as unsigned array) > 0" to "cast(j as unsigned array) > 0",
+            // Dieselbe Typgrammatik traegt `CONVERT(expr, type)`.
+            "convert(total, unsigned) > 0" to "convert(total, unsigned) > 0",
+            "convert(total, signed integer) > 0" to "convert(total, signed integer) > 0",
+            "convert(note, char character set utf8mb4) <> 'x'" to "convert(note, char character set utf8mb4) <> 'x'",
+            "convert(note, decimal(10,2)) > 0" to "convert(note, decimal(10,2)) > 0",
+            "convert(note using utf8mb4) = 'x'" to "convert(note using utf8mb4) = 'x'",
+            "cast(convert(total, unsigned) as char) <> ''" to "cast(convert(total, unsigned) as char) <> ''",
+            // Gegenprobe: mit der schliessenden Klammer des Aufrufs greift die
+            // Quotierung wieder (`cast(x as char) = key` ist sonst ERROR 1064).
+            "cast(nm as char) = key" to "cast(nm as char) = `key`",
+            "convert(nm, char) = key" to "convert(nm, char) = `key`",
+            "cast(total as signed integer) + key > 0" to "cast(total as signed integer) + `key` > 0",
+            "cast(total as decimal(10,2)) > 0 and key > 0" to "cast(total as decimal(10,2)) > 0 and `key` > 0",
+            // Ein Wort in **Operandenstellung** ist ein Bezeichner, auch wenn
+            // es in Operatorstellung Syntax waere (gemessen auf 9.7.2 und
+            // 8.0.46: `CHECK (mod > 0)` ist ERROR 1064, `CHECK (`mod` > 0)`
+            // wird angenommen).
+            "mod > 0" to "`mod` > 0",
+            "default > 0" to "`default` > 0",
+            "match > 0" to "`match` > 0",
+            "is > 0" to "`is` > 0",
+            "year_month > 0" to "`year_month` > 0",
+            "separator > 0" to "`separator` > 0",
+            "t.default > 0" to "t.`default` > 0",
+            "a > 0 and mod > 0" to "a > 0 and `mod` > 0",
+            "case when default > 0 then 1 else 0 end" to "case when `default` > 0 then 1 else 0 end",
+            "(default + mod) > 0" to "(`default` + `mod`) > 0",
+            "match between 1 and 9" to "`match` between 1 and 9",
+            // Gegenprobe: dieselben Woerter in Operatorstellung bleiben nackt.
+            "total mod 2 = 0" to "total mod 2 = 0",
+            "total div 2 > 0" to "total div 2 > 0",
+            "nm like 'x%'" to "nm like 'x%'",
+            "nm not like 'x%'" to "nm not like 'x%'",
+            "nm like binary 'x%'" to "nm like binary 'x%'",
+            "a between 1 and 2" to "a between 1 and 2",
+            "a not between 1 and 2" to "a not between 1 and 2",
+            "a is not null" to "a is not null",
+            "a in (1,2)" to "a in (1,2)",
+            "a not in (1,2)" to "a not in (1,2)",
+            "not (a > 0)" to "not (a > 0)",
+            "group_concat(nm separator ',')" to "group_concat(nm separator ',')",
+            "count(distinct a)" to "count(distinct a)",
             // Ein reserviertes Wort in einem Literal oder Kommentar bleibt Text.
             "note <> 'order'" to "note <> 'order'",
             "a > 0 -- order\nAND b > 0" to "a > 0 -- order\nAND b > 0",
@@ -86,6 +142,23 @@ class MysqlRawExpressionTextTest : FunSpec({
         ).forEachIndexed { index, (input, expected) ->
             test("rewrite #$index: $input") {
                 MysqlRawExpressionText.toMysql(input) shouldBe expected
+            }
+        }
+
+        // Die Restflaeche, als Pin. Diese Woerter sind auch am Anfang eines
+        // Operanden Syntax; quotiert braeche jedes davon die Anweisung
+        // (gemessen auf 9.7.2 und 8.0.46). Eine Spalte dieses Namens bleibt
+        // deshalb nackt und scheitert weiter am Server — bei `null`, `true`
+        // und `false` sogar still, weil MySQL das Literal liest.
+        // `docs/planning/open/nackte-reservierte-woerter-im-rohen-ausdruck.md`
+        listOf(
+            "not", "case", "binary", "interval", "distinct",
+            "null", "true", "false",
+            "current_date", "current_time", "current_timestamp", "current_user",
+            "localtime", "localtimestamp", "utc_date", "utc_time", "utc_timestamp",
+        ).forEach { word ->
+            test("still bare, the server decides: $word") {
+                MysqlRawExpressionText.toMysql("$word > 0") shouldBe "$word > 0"
             }
         }
 

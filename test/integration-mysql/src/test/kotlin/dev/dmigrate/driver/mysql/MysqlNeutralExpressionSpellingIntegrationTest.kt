@@ -217,6 +217,163 @@ class MysqlNeutralExpressionSpellingIntegrationTest : FunSpec({
     }
 
     /**
+     * Der Typname eines `CAST` ist mehrwortig (MySQL-Handbuch, „Cast Functions
+     * and Operators"). Schuetzte die Stellungsregel nur das **unmittelbar**
+     * folgende Wort, schrieb der Generator `cast(total as signed \`integer\`)`
+     * — `ERROR 1064` auf 9.7.2 und 8.0.46. Hinter der schliessenden Klammer
+     * des Aufrufs muss die Quotierung wieder greifen, sonst faellt
+     * `cast(note as char) <> key` am selben Fehler.
+     */
+    test("a multi-word CAST type stays bare, and behind it the quoting resumes") {
+        val typed = SchemaDefinition(
+            name = "casts", version = "1",
+            tables = mapOf(
+                "Metering" to TableDefinition(
+                    columns = linkedMapOf(
+                        "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                        "total" to ColumnDefinition(NeutralType.Integer, required = true),
+                        "note" to ColumnDefinition(NeutralType.Text(maxLength = 40)),
+                        "ratio" to ColumnDefinition(NeutralType.Float()),
+                        // Ein reserviertes Wort als Spaltenname — der Fall aus M1.
+                        "key" to ColumnDefinition(NeutralType.Integer),
+                    ),
+                    primaryKey = listOf("id"),
+                    constraints = listOf(
+                        ConstraintDefinition(
+                            name = "ck_cast_signed", type = ConstraintType.CHECK,
+                            expression = "cast(total as signed integer) > 0",
+                        ),
+                        ConstraintDefinition(
+                            name = "ck_cast_charset", type = ConstraintType.CHECK,
+                            expression = "cast(note as char character set utf8mb4) <> 'x'",
+                        ),
+                        ConstraintDefinition(
+                            name = "ck_cast_double", type = ConstraintType.CHECK,
+                            expression = "cast(ratio as double precision) > 0",
+                        ),
+                        ConstraintDefinition(
+                            name = "ck_cast_key", type = ConstraintType.CHECK,
+                            expression = "length(cast(note as char)) <> key",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        // Der neutrale Text ist gueltig: ein Typname hinter `AS` ist keine
+        // Spalte, auch mehrwortig (`CheckExpressionColumns`).
+        val validation = SchemaValidator().validate(typed)
+        withClue(validation.errors.map { "${it.code}: ${it.message}" }.toString()) {
+            validation.errors.filter { it.code == "E012" }.shouldBeEmpty()
+        }
+
+        val ddl = MysqlDdlGenerator().generate(typed)
+        ddl.render() shouldContain "cast(total as signed integer)"
+        ddl.render() shouldContain "cast(note as char character set utf8mb4)"
+        ddl.render() shouldContain "cast(ratio as double precision)"
+        withClue("hinter der Klammer des CAST greift die Quotierung wieder") {
+            ddl.render() shouldContain "length(cast(note as char)) <> `key`"
+        }
+
+        pool!!.borrow().asJdbc().use { c ->
+            c.createStatement().use { s -> s.execute("DROP TABLE IF EXISTS Metering") }
+            c.apply(ddl.statements)
+
+            fun insert(id: Int, total: Int, note: String, key: Int) = runCatching {
+                c.prepareStatement("INSERT INTO Metering (id, total, note, ratio, `key`) VALUES (?, ?, ?, 1.5, ?)")
+                    .use { ps ->
+                        ps.setInt(1, id)
+                        ps.setInt(2, total)
+                        ps.setString(3, note)
+                        ps.setInt(4, key)
+                        ps.executeUpdate()
+                    }
+                Unit
+            }
+
+            insert(1, 5, "abc", 7).isSuccess shouldBe true
+            withClue("der CHECK mit dem mehrwortigen Typnamen greift nicht") {
+                (insert(2, 0, "abc", 7).exceptionOrNull()?.message ?: "") shouldContain "ck_cast_signed"
+            }
+            withClue("der CHECK hinter dem Typnamen greift nicht") {
+                (insert(3, 5, "abc", 3).exceptionOrNull()?.message ?: "") shouldContain "ck_cast_key"
+            }
+        }
+    }
+
+    /**
+     * Dasselbe Wort, zwei Stellungen: `` `match` `` ist als Operand ein
+     * Spaltenname und braucht Backticks, `between` daneben ist Syntax und
+     * darf keine bekommen. Beides in **einem** Ausdruck, ueber den Reverse
+     * zurueck an denselben Server — vorher endete das in `ERROR 1064`.
+     */
+    test("MySQL to MySQL: the operand gets its backticks, the syntax next to it keeps none") {
+        val active = pool!!
+        active.borrow().asJdbc().use { c ->
+            c.createStatement().use { s ->
+                s.execute("DROP TABLE IF EXISTS Operand_Source")
+                s.execute(
+                    """CREATE TABLE Operand_Source (
+                         id INT PRIMARY KEY,
+                         `default` INT NOT NULL,
+                         `mod` INT NOT NULL,
+                         `match` INT NOT NULL,
+                         total INT GENERATED ALWAYS AS (`default` + `mod`) STORED,
+                         CONSTRAINT ck_operand_default CHECK (`default` > 0),
+                         CONSTRAINT ck_operand_match CHECK (`match` between 1 and 9))""",
+                )
+            }
+        }
+
+        val source = MysqlSchemaReader().read(active).schema.tables.getValue("Operand_Source")
+        withClue("der neutrale Text traegt die Woerter nackt") {
+            source.constraints.first { it.name == "ck_operand_default" }.expression shouldBe "(default > 0)"
+            source.constraints.first { it.name == "ck_operand_match" }.expression shouldBe
+                "(match between 1 and 9)"
+            (source.columns.getValue("total").generation as ColumnGeneration.Computed).expression shouldBe
+                "(default + mod)"
+        }
+
+        val ddl = MysqlDdlGenerator().generate(
+            SchemaDefinition(name = "operand", version = "1", tables = mapOf("Operand_Target" to source)),
+        )
+        ddl.render() shouldContain "CHECK ((`default` > 0))"
+        withClue("`between` ist Syntax und darf keine Backticks bekommen") {
+            ddl.render() shouldContain "CHECK ((`match` between 1 and 9))"
+        }
+        ddl.render() shouldContain "(`default` + `mod`)"
+
+        active.borrow().asJdbc().use { c ->
+            c.createStatement().use { s ->
+                s.execute("DROP TABLE IF EXISTS Operand_Target")
+                // MySQL verlangt CHECK-Namen schemaweit eindeutig.
+                s.execute("DROP TABLE IF EXISTS Operand_Source")
+            }
+            c.apply(ddl.statements)
+            withClue("der CHECK auf `default` greift nicht") {
+                val failure = runCatching {
+                    c.createStatement().use { s ->
+                        s.executeUpdate(
+                            "INSERT INTO Operand_Target (id, `default`, `mod`, `match`) VALUES (1, 0, 1, 5)",
+                        )
+                    }
+                }.exceptionOrNull()?.message ?: ""
+                failure shouldContain "ck_operand_default"
+            }
+            withClue("der CHECK auf `match` greift nicht") {
+                val failure = runCatching {
+                    c.createStatement().use { s ->
+                        s.executeUpdate(
+                            "INSERT INTO Operand_Target (id, `default`, `mod`, `match`) VALUES (2, 1, 1, 99)",
+                        )
+                    }
+                }.exceptionOrNull()?.message ?: ""
+                failure shouldContain "ck_operand_match"
+            }
+        }
+    }
+
+    /**
      * M1: derselbe Reverse, zurueck an denselben Server. Der neutrale Text
      * traegt das reservierte Wort **nackt** (`key > 0`), und genau so
      * geschrieben lehnt MySQL die Anweisung ab (`ERROR 1064`, an 9.7.2

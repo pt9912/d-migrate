@@ -24,53 +24,97 @@ package dev.dmigrate.driver.mysql
  * **Quotiert wird nur, was hier kein Bezeichner sein kann.** Die vier Felder,
  * um die es geht (CHECK, Berechnungsausdruck, Index-Praedikat,
  * Index-Ausdruck), tragen einen **skalaren** Ausdruck: keine Unterabfrage,
- * keine Aggregation, kein Fensterausdruck. Die reservierten Woerter, die dort
- * trotzdem als **Syntax** vorkommen, stehen unten in [EXPRESSION_SYNTAX] und
- * bleiben nackt — `` `and` `` waere kein Operator mehr. Zwei weitere
- * Stellungen entscheidet der Scanner strukturell statt ueber eine Liste: ein
- * Wort unmittelbar vor `(` ist ein Funktionsaufruf (`left(x,1)`, `char(65)`),
- * und ein Wort unmittelbar hinter `AS` ist ein Typname (`cast(x as signed)`).
+ * keine Aggregation, kein Fensterausdruck. Welches reservierte Wort dort
+ * trotzdem Syntax ist, haengt an seiner **Stellung**, nicht am Wort allein:
+ * `a mod b` ist ein Operator, `mod > 0` ein Spaltenname. Die Trennlinie ist
+ * die Operandenstellung.
  *
- * **Was bleibt:** ein Wort, das beides sein kann — `binary`, `interval`,
- * `char`, `collate` sind Operator **und** moeglicher Spaltenname. Sie bleiben
- * nackt; eine Spalte dieses Namens in einem CHECK scheitert weiter am Server,
- * laut und mit der Meldung des Servers. Ohne Parser ist die Stellung nicht zu
- * entscheiden, und ein falsch gesetztes Quoting waere schlimmer als ein
- * fehlendes.
+ * - In **Operandenstellung** beginnt ein Operand: am Ausdrucksanfang, hinter
+ *   `(`, hinter `,`, hinter einem Operatorzeichen und hinter einem Wort, auf
+ *   das ein Operand folgt ([OPERAND_OPENERS] — `and`, `is`, `when` …). Dort
+ *   ist [OPERATOR_SYNTAX] ein Bezeichner und wird quotiert.
+ * - In **Operatorstellung** bleibt [OPERATOR_SYNTAX] nackt; `` `and` `` waere
+ *   dort kein Operator mehr.
+ *
+ * Zwei weitere Stellungen entscheidet der Scanner strukturell: ein Wort
+ * unmittelbar vor `(` ist ein Funktionsaufruf (`left(x,1)`, `char(65)`), und
+ * der **Typname** eines `CAST`/`CONVERT` laeuft bis zur schliessenden Klammer
+ * des Aufrufs (`MysqlRawExpressionText`).
+ *
+ * **Was bleibt:** [OPERAND_SYNTAX] — die Woerter, die auch am Anfang eines
+ * Operanden Syntax sind. Sie bleiben in jeder Stellung nackt, und eine Spalte
+ * dieses Namens scheitert weiter am Server, laut und mit dessen Meldung; bei
+ * `null`, `true` und `false` sogar still (MySQL liest das Literal und nimmt
+ * die Anweisung an). Die Grenze steht in
+ * `docs/planning/open/nackte-reservierte-woerter-im-rohen-ausdruck.md`.
  */
 internal object MysqlReservedWords {
 
     /**
      * Ob [word] in einem skalaren Ausdruck quotiert werden muss, damit MySQL
-     * es als Bezeichner liest. Die Stellung (vor `(`, hinter `AS`) prueft der
-     * Aufrufer.
+     * es als Bezeichner liest. [operandPosition] sagt, ob an dieser Stelle ein
+     * Operand beginnt; die uebrigen Stellungen (vor `(`, im Typnamen) prueft
+     * der Aufrufer strukturell.
      */
-    fun mustQuoteAsIdentifier(word: String): Boolean {
+    fun mustQuoteAsIdentifier(word: String, operandPosition: Boolean): Boolean {
         val lower = word.lowercase()
-        return lower in RESERVED && lower !in EXPRESSION_SYNTAX
+        if (lower !in RESERVED || lower in OPERAND_SYNTAX) return false
+        return operandPosition || lower !in OPERATOR_SYNTAX
     }
 
+    /** Ob hinter dem nackt gebliebenen [word] ein Operand beginnt. */
+    fun opensOperand(word: String): Boolean = word.lowercase() in OPERAND_OPENERS
+
     /**
-     * Die Woerter, die ein **skalarer** MySQL-Ausdruck als Syntax traegt:
-     * Operatoren und Praedikate, die Werte-Funktionen ohne Klammern, die
-     * Zeiteinheiten hinter `INTERVAL` und die Wortbestandteile einer
-     * Typangabe. Funktionsnamen fehlen absichtlich — sie stehen vor `(` und
-     * werden dort erkannt.
+     * Was auch **am Anfang eines Operanden** Syntax ist: die Praefixoperatoren
+     * (`not x`, `binary x`, `interval 1 year_month`), der `CASE`-Ausdruck, die
+     * Literale, `distinct` hinter der Klammer eines Aggregats und die
+     * Werte-Funktionen ohne Klammern. Quotiert bricht jedes davon die
+     * Anweisung (gemessen auf 9.7.2 und 8.0.46: `` `binary` note = 'x' ``,
+     * `` a is `null` ``, `` d + `interval` 1 year_month ``, `` count(`distinct` a) ``
+     * und `` `current_timestamp` `` je `ERROR 1064` bzw. `1054`).
      */
-    private val EXPRESSION_SYNTAX = setOf(
-        // Operatoren, Praedikate, Literale
-        "and", "or", "xor", "not", "is", "null", "true", "false",
-        "between", "case", "when", "then", "else",
-        "in", "like", "regexp", "rlike", "match", "div", "mod",
-        "binary", "collate", "interval", "distinct", "default", "as", "using", "separator",
-        // Werte ohne Klammern
+    private val OPERAND_SYNTAX = setOf(
+        "not", "binary", "interval", "case", "distinct",
+        "null", "true", "false",
         "current_date", "current_time", "current_timestamp", "current_user",
         "localtime", "localtimestamp", "utc_date", "utc_time", "utc_timestamp",
-        // Zeiteinheiten hinter INTERVAL (nur die reservierten; `day`, `hour`,
-        // `month`, `second`, `year` sind in MySQL nicht reserviert)
+    )
+
+    /**
+     * Was **nur in Operatorstellung** Syntax ist: die Infix-Operatoren und
+     * -Praedikate, die Fortsetzungen von `CASE`, die Woerter, hinter denen ein
+     * Name statt eines Operanden steht (`collate`, `using`, `as`,
+     * `separator`), `default` (nur als `default(col)` moeglich, und das steht
+     * vor `(`), `match` (nur als `match(…) against(…)`) und die Zeiteinheiten
+     * hinter `INTERVAL`. In Operandenstellung ist jedes davon ein Spaltenname
+     * — gemessen auf 9.7.2 und 8.0.46: `CHECK (mod > 0)` ist `ERROR 1064`,
+     * ``CHECK (`mod` > 0)`` wird angenommen, und umgekehrt bricht
+     * `` a > 0 `and` b > 0 `` die Anweisung.
+     *
+     * Die Zeiteinheiten sind nur die reservierten; `day`, `hour`, `month`,
+     * `second` und `year` sind in MySQL nicht reserviert.
+     */
+    private val OPERATOR_SYNTAX = setOf(
+        "and", "or", "xor", "is", "between", "when", "then", "else",
+        "in", "like", "regexp", "rlike", "match", "div", "mod",
+        "as", "collate", "using", "separator", "default",
         "day_hour", "day_microsecond", "day_minute", "day_second",
         "hour_microsecond", "hour_minute", "hour_second",
         "minute_microsecond", "minute_second", "second_microsecond", "year_month",
+    )
+
+    /**
+     * Die Teilmenge von [OPERATOR_SYNTAX], hinter der ein **Operand** folgt.
+     * Nicht dabei sind die Woerter, hinter denen ein Name oder ein Typ steht
+     * (`collate utf8mb4_bin`, `using utf8mb4`, `as signed`, `separator ','`),
+     * `match` und `default` (beide stehen vor `(`) — und vor allem `not`:
+     * hinter ihm kann ebenso gut Syntax stehen (`a not like 'x'`,
+     * `a not between 1 and 2`), die quotiert braeche.
+     */
+    private val OPERAND_OPENERS = setOf(
+        "and", "or", "xor", "is", "between", "when", "then", "else",
+        "in", "like", "regexp", "rlike", "div", "mod",
     )
 
     private val RESERVED = setOf(

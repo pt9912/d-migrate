@@ -26,6 +26,29 @@ import dev.dmigrate.driver.renderKey
  *   kaeme sonst als `key` zurueck an den Server: `CHECK (key > 0)` ist dort
  *   `ERROR 1064` (gemessen, 9.7.2).
  *
+ * **Drei Stellungen entscheidet der Scanner, nicht die Wortliste.** Ein Wort
+ * unmittelbar vor `(` ist ein Funktionsaufruf. Ein Wort in Operatorstellung
+ * kann Syntax sein und bleibt dann nackt; in **Operandenstellung** (am
+ * Ausdrucksanfang, hinter `(`, `,`, einem Operatorzeichen oder einem Wort, auf
+ * das ein Operand folgt) ist dasselbe Wort ein Bezeichner
+ * ([MysqlReservedWords]). Und hinter `AS` bzw. hinter dem Komma eines
+ * `CONVERT(` steht ein **Typname**, der bis zur schliessenden Klammer des
+ * Aufrufs laeuft.
+ *
+ * **Der Typname ist mehrwortig.** Das MySQL-Handbuch („Cast Functions and
+ * Operators", `CAST(expr AS type)`, `CONVERT(expr, type)`,
+ * `CONVERT(expr USING charset)`) schreibt fuer `type` unter anderem
+ * `SIGNED [INTEGER]`, `UNSIGNED [INTEGER]`, `CHAR[(N)] [charset_info]` mit
+ * `charset_info: CHARACTER SET charset_name | ASCII | UNICODE`, dazu
+ * `BINARY[(N)]`, `NCHAR[(N)]`, `DECIMAL[(M[,D])]`, `FLOAT[(p)]`, `DOUBLE`
+ * (mit `PRECISION` als Zusatz), `REAL`, `DATE`, `DATETIME[(M)]`, `TIME[(M)]`,
+ * `YEAR`, `JSON`, die Geometrietypen und den Zusatz `ARRAY`. Darin sind
+ * `integer`, `precision`, `character` und `set` reserviert — nur das erste
+ * Wort freizulassen, erzeugte `cast(total as signed \`integer\`)` und damit
+ * `ERROR 1064` (gemessen auf 9.7.2 und 8.0.46; nackt nehmen beide Server
+ * jede dieser Formen an). Der Typname endet deshalb erst mit der Klammer des
+ * Aufrufs: `cast(x as char) = key` quotiert `key` wieder.
+ *
  * Alles andere bleibt wortgleich: Backtick-Bezeichner, Kommentare und der
  * Inhalt eines Literals (bis auf den Backslash). Kann der Scanner den Text
  * nicht sicher abgrenzen (eine nicht geschlossene Quotierung oder ein nicht
@@ -54,27 +77,38 @@ internal object MysqlRawExpressionText {
         private var position = 0
 
         /**
-         * Das zuletzt gelesene Wort, solange nur Leerraum dazwischenstand —
-         * die Stellung „unmittelbar hinter `AS`" (Typname eines `CAST`).
+         * Ob an [position] ein **Operand** beginnt. Am Ausdrucksanfang tut er
+         * das; sonst setzen die Klammer, das Komma, ein Operatorzeichen und
+         * ein Wort aus `MysqlReservedWords.opensOperand` die Stellung.
          */
-        private var previousWord: String? = null
+        private var operandPosition = true
+
+        /** Wie viele Klammern an [position] offen sind. */
+        private var depth = 0
+
+        /**
+         * Die Klammertiefe des `CAST`/`CONVERT`, dessen **Typname** gerade
+         * laeuft, oder `null`. Im Typnamen wird nichts quotiert.
+         */
+        private var typeNameDepth: Int? = null
+
+        /** Je offener Klammer: ist es die eines `CONVERT(`? */
+        private val openCalls = ArrayDeque<Boolean>()
+
+        /** Das Wort unmittelbar vor der naechsten `(`, sonst `null`. */
+        private var callName: String? = null
 
         fun render(): String? {
             while (position < sql.length) {
                 val char = sql[position]
                 val ok = when {
-                    char == '\'' -> forgetWord { literal() }
-                    char == '"' -> forgetWord { doubleQuotedIdentifier() }
-                    char == '`' -> forgetWord { verbatimUntilClosing('`') }
+                    char == '\'' -> afterOperand { literal() }
+                    char == '"' -> afterOperand { doubleQuotedIdentifier() }
+                    char == '`' -> afterOperand { verbatimUntilClosing('`') }
                     sql.startsWith("--", position) -> lineComment()
                     sql.startsWith("/*", position) -> blockComment()
                     isWordStart(char) || char.isDigit() -> wordOrNumber(char)
-                    else -> {
-                        if (!char.isWhitespace()) previousWord = null
-                        out.append(char)
-                        position++
-                        true
-                    }
+                    else -> punctuation(char)
                 }
                 if (!ok) return null
             }
@@ -84,25 +118,67 @@ internal object MysqlRawExpressionText {
         /**
          * Ein Wort- oder Zahlenlauf. Quotiert wird nur ein Wort, das MySQL
          * reserviert und das hier kein Bezeichner sein kann: nicht vor `(`
-         * (Funktionsaufruf) und nicht hinter `AS` (Typname).
+         * (Funktionsaufruf), nicht im Typnamen eines `CAST`/`CONVERT` und
+         * nicht in einer Stellung, in der es Syntax waere.
          */
         private fun wordOrNumber(first: Char): Boolean {
             var end = position
             while (end < sql.length && isWordPart(sql[end])) end++
             val word = sql.substring(position, end)
             position = end
-            val quote = isWordStart(first) &&
-                previousWord?.lowercase() != "as" &&
-                nextCodeChar() != '(' &&
-                MysqlReservedWords.mustQuoteAsIdentifier(word)
+            val call = nextCodeChar() == '('
+            val quote = isWordStart(first) && !call && typeNameDepth == null &&
+                MysqlReservedWords.mustQuoteAsIdentifier(word, operandPosition)
             out.append(if (quote) SqlIdentifiers.quoteIdentifier(word, DatabaseDialect.MYSQL) else word)
-            previousWord = word
+            callName = word.takeIf { call }
+            operandPosition = !quote && MysqlReservedWords.opensOperand(word)
+            if (!quote && typeNameDepth == null && word.equals("as", ignoreCase = true)) typeNameDepth = depth
             return true
         }
 
-        /** Ein Token, hinter dem kein `AS` mehr steht. */
-        private inline fun forgetWord(read: () -> Boolean): Boolean {
-            previousWord = null
+        /** Alles, was weder Wort noch Zahl, Literal oder Kommentar ist. */
+        private fun punctuation(char: Char): Boolean {
+            when {
+                char == '(' -> openParenthesis()
+                char == ')' -> closeParenthesis()
+                char == ',' -> comma()
+                // Ein Operatorzeichen: dahinter beginnt ein Operand, und ein
+                // Typname traegt nur Woerter, Zahlen, Klammern und Kommas —
+                // ein Operatorzeichen beendet ihn also auch ohne Klammer.
+                !char.isWhitespace() -> {
+                    operandPosition = true
+                    typeNameDepth = null
+                }
+            }
+            out.append(char)
+            position++
+            return true
+        }
+
+        private fun openParenthesis() {
+            openCalls.addLast(callName.equals("convert", ignoreCase = true))
+            callName = null
+            depth++
+            operandPosition = true
+        }
+
+        /** Mit der Klammer des Aufrufs endet der Typname. */
+        private fun closeParenthesis() {
+            openCalls.removeLastOrNull()
+            depth--
+            operandPosition = false
+            typeNameDepth?.let { if (depth < it) typeNameDepth = null }
+        }
+
+        /** Hinter dem Komma eines `CONVERT(` steht der Typname. */
+        private fun comma() {
+            operandPosition = true
+            if (typeNameDepth == null && openCalls.lastOrNull() == true) typeNameDepth = depth
+        }
+
+        /** Ein Token, das einen Operanden abschliesst. */
+        private inline fun afterOperand(read: () -> Boolean): Boolean {
+            operandPosition = false
             return read()
         }
 
