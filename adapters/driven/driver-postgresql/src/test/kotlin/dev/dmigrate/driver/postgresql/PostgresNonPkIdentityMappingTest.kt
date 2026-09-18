@@ -53,8 +53,20 @@ class PostgresNonPkIdentityMappingTest : FunSpec({
         (mapped.generation as? ColumnGeneration.Identity)?.mode shouldBe IdentityMode.ALWAYS
     }
 
-    test("the PK keeps the folded spelling in the type") {
+    // S1 (Reader-Plan 2): `ALWAYS` im Primaerschluessel faltet **nicht** mehr
+    // auf `identifier`. Der Typ traegt keinen Modus und rendert als `SERIAL`,
+    // das gesetzte Werte annimmt — der Verlust waere schon PostgreSQL →
+    // PostgreSQL entstanden, und kein Vergleich zweier Reverses saehe ihn.
+    test("the PK with ALWAYS keeps its base type and its mode") {
         val mapped = map("integer", "int4", isPk = true, mode = "ALWAYS")
+        mapped.type shouldBe NeutralType.Integer
+        (mapped.generation as? ColumnGeneration.Identity)?.mode shouldBe IdentityMode.ALWAYS
+    }
+
+    // Gegenprobe: `BY DEFAULT` behaelt den `identifier`-Vertrag — dort
+    // verspricht das Modell nichts, was das Rendern bricht.
+    test("the PK with BY DEFAULT keeps the folded spelling in the type") {
+        val mapped = map("integer", "int4", isPk = true, mode = "BY DEFAULT")
         mapped.type.shouldBeInstanceOf<NeutralType.Identifier>()
         mapped.generation shouldBe null
     }

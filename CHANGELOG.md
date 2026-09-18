@@ -83,6 +83,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OVERLAY_STALE_*_FINGERPRINT`). Erzeugen Sie sie mit der neuen Version neu;
   bereits ausgerollte Migrationen sind nicht betroffen.
 
+- **Eine PostgreSQL-`integer`-Identity mit `ALWAYS` als alleiniger
+  Primaerschluessel kommt anders zurueck.** Sie las als `identifier` **ohne**
+  Modus, und der PostgreSQL-Generator machte daraus `SERIAL` — eine Spalte,
+  die einen ausdruecklich gesetzten Wert annimmt. Der Verlust traf damit auch
+  PostgreSQL → PostgreSQL, und kein Vergleich zweier Reverses sah ihn. Jetzt
+  liest sie als `integer` (bzw. `smallint`) mit `generation: { type: identity,
+  mode: always }`, wie es der Zweig fuer Nicht-Schluesselspalten seit jeher
+  tut. `BY DEFAULT` und `serial` behalten den `identifier`-Vertrag.
+  **Folge:** ein Reverse derselben Datenbank liefert fuer diese Spalten eine
+  andere Datei als vorher.
 
 - **Ein SQLite-Reverse liefert Constraint-Namen aus der Quelle, und gebildete
   Namen sind schemaweit eindeutig.** SQLite fuehrt die Namen nicht im Katalog;

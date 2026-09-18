@@ -144,6 +144,25 @@ class PostgresReverseLossNoteIntegrationTest : FunSpec({
         notes.forObject("loss_addr.amount").single { it.code == "R404" }
         notes.forObject("loss_addr.extra").single { it.code == "R301" }
     }
+
+    test("S1: integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY behaelt den Modus") {
+        val tables = read().schema.tables
+
+        val always = tables.getValue("loss_identity_int").columns.getValue("id")
+        always.type shouldBe NeutralType.Integer
+        (always.generation as ColumnGeneration.Identity).mode shouldBe IdentityMode.ALWAYS
+
+        // Gegenprobe: `BY DEFAULT` und `serial` behalten den
+        // `identifier`-Vertrag.
+        val byDefault = tables.getValue("loss_identity_default").columns.getValue("id")
+        byDefault.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        byDefault.generation.shouldBeNull()
+
+        val serial = tables.getValue("loss_identity_serial").columns.getValue("id")
+        serial.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        serial.generation.shouldBeNull()
+    }
+
     /**
      * S3, die Kette, die kein Unit-Test schliesst: der Reverse liest die
      * Elementart, der Generator rendert sie, der Server nimmt die DDL an, und

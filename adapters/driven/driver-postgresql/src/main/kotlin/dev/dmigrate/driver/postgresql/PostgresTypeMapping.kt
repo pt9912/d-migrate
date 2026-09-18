@@ -50,13 +50,24 @@ internal object PostgresTypeMapping {
             )
         }
 
-        // Legacy 32-bit serial/identity PKs keep the existing Identifier contract.
+        // Legacy 32-bit serial/identity PKs keep the existing Identifier contract —
+        // **ausser** einer echten IDENTITY-Spalte mit `ALWAYS`.
+        //
+        // `identifier` traegt keinen Modus; der PostgreSQL-Generator rendert ihn
+        // als `SERIAL`, und `SERIAL` nimmt einen ausdruecklich gesetzten Wert an.
+        // `integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY` wurde damit schon
+        // PostgreSQL → PostgreSQL zu `SERIAL`, und kein Vergleich zweier Reverses
+        // sah es — der Verlust war still und auf dem Rueckweg in denselben
+        // Dialekt vermeidbar. Eine solche Spalte liest deshalb wie der Zweig fuer
+        // Nicht-Schluesselspalten: ihr Basistyp plus `generation: identity`.
+        //
+        // `BY DEFAULT` und `serial` behalten den `identifier`-Vertrag: dort
+        // verspricht das Modell nichts, was das Rendern bricht.
         if (input.isPkCol && isGenerated) {
-            return when {
-                udt == "int4" || udt == "int2" || dt == "integer" || dt == "smallint" ->
-                    MappingResult(NeutralType.Identifier(autoIncrement = true))
-                else -> MappingResult(NeutralType.Identifier(autoIncrement = true))
+            if (isAlwaysIdentity(input)) {
+                mapIntegerTypes(dt)?.let { return it.copy(generation = identityGeneration(input)) }
             }
+            return MappingResult(NeutralType.Identifier(autoIncrement = true))
         }
 
         // Eine Identity-Spalte, die **nicht** im Primaerschluessel liegt und
@@ -85,6 +96,13 @@ internal object PostgresTypeMapping {
                 ),
             )
     }
+
+    /**
+     * Eine echte `GENERATED ALWAYS AS IDENTITY`-Spalte. Ein `serial` traegt
+     * `identity_generation = null` und faellt damit nicht darunter.
+     */
+    private fun isAlwaysIdentity(input: ColumnInput): Boolean =
+        input.isIdentity && input.identityGeneration?.equals("always", ignoreCase = true) == true
 
     private fun identityGeneration(input: ColumnInput): ColumnGeneration.Identity =
         ColumnGeneration.Identity(

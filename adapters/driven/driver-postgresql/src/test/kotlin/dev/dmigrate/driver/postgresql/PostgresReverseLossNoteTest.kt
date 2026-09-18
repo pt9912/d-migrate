@@ -128,4 +128,43 @@ class PostgresReverseLossNoteTest : FunSpec({
         field.type shouldBe NeutralType.Text()
         field.note!!.code shouldBe "R301"
     }
+
+    // ── S1 ────────────────────────────────────────────────────
+
+    test("integer GENERATED ALWAYS AS IDENTITY als alleiniger PK behaelt den Modus") {
+        val result = column(
+            "integer", udtName = "int4", isPkCol = true, isIdentity = true, identityGeneration = "ALWAYS",
+        )
+        result.type shouldBe NeutralType.Integer
+        (result.generation as ColumnGeneration.Identity).mode shouldBe IdentityMode.ALWAYS
+    }
+
+    // Gegenprobe: `BY DEFAULT` und `serial` behalten den `identifier`-Vertrag —
+    // dort verspricht das Modell nichts, was das Rendern bricht.
+    test("BY DEFAULT und serial bleiben identifier") {
+        column("integer", udtName = "int4", isPkCol = true, isIdentity = true, identityGeneration = "BY DEFAULT")
+            .type shouldBe NeutralType.Identifier(autoIncrement = true)
+
+        val serial = column(
+            "integer", udtName = "int4", isPkCol = true, colDefault = "nextval('t_c_seq'::regclass)",
+        )
+        serial.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        serial.generation.shouldBeNull()
+    }
+
+    test("smallint mit ALWAYS als alleiniger PK ebenso") {
+        val result = column(
+            "smallint", udtName = "int2", isPkCol = true, isIdentity = true, identityGeneration = "ALWAYS",
+        )
+        result.type shouldBe NeutralType.SmallInt
+        (result.generation as ColumnGeneration.Identity).mode shouldBe IdentityMode.ALWAYS
+    }
+
+    // Der Fingerabdruck-Kanonisierer ruft `mapColumn` ohne PK- und
+    // Identity-Kontext; seine Projektion von `identifier(auto)` bleibt
+    // unberuehrt (er traegt dafuer ohnehin eine eigene Ausnahme).
+    test("der Kanonisierer sieht identifier(auto) unveraendert") {
+        PostgresNeutralTypeCanonicalizer.canonicalize(NeutralType.Identifier(autoIncrement = true)) shouldBe
+            NeutralType.Identifier(autoIncrement = true)
+    }
 })
