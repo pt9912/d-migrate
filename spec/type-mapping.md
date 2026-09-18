@@ -499,7 +499,7 @@ Oracle-Default (keine Klausel) und werden ohne Notiz weggelassen,
 | `RAWTOHEX(SYS_GUID())` (Default) | `gen_uuid` | |
 | `<seq>.NEXTVAL` (Default) | `sequence_nextval` | |
 | `NUMBER` (kein Precision/Scale), nicht identity | `decimal(38,10)` + `R371` | konservativ, und der Verlust wird benannt: mehr als zehn Nachkomma- und mehr als 28 Vorkommastellen gehen auf dem Rückweg verloren. Eine `NUMBER`-Identity ohne Präzision liest `biginteger` und meldet nichts |
-| `SDO_GEOMETRY` | `geometry` ohne Subtyp | SRID aus `ALL_SDO_GEOM_METADATA`, sofern eine Zeile mit exakt passendem Tabellen- und Spaltennamen existiert; sonst ohne SRID (R365, wenn die Sicht nicht lesbar ist) |
+| `SDO_GEOMETRY` | `geometry` ohne Subtyp | SRID aus `ALL_SDO_GEOM_METADATA`, sofern eine Zeile mit exakt passendem Tabellen- und Spaltennamen existiert; der Abgleich ist wortgetreu. Fehlt die Zeile, ist die Spalte `geometry` **ohne** SRID und der Verlust wird gemeldet: `R370` (`WARNING`), wenn die Sicht lesbar ist, `R365` (`WARNING`) an einer Tabelle mit Geometriespalte, wenn sie es nicht ist. Die beiden schließen sich aus, und beide blocken nichts |
 
 **Datenpfad (`data export`/`import`/`transfer`)**: Oracle-JDBC liefert
 `CLOB`/`BLOB`-Spalten über `getObject()` als live `java.sql.Clob`/

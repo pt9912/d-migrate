@@ -2714,6 +2714,25 @@ CREATE TABLE "places" (
   passendem Tabellen- und Spaltennamen steht, sonst ohne SRID. Ein
   `MDSYS.SPATIAL_INDEX_V2`- oder `MDSYS.SPATIAL_INDEX`-Domain-Index kommt als
   `spatial` zurueck.
+- **Ein verlorener SRID bleibt nicht still.** Fehlt die Zeile zu einer
+  Geometriespalte, meldet der Reverse `R370` als `WARNING`, mit dem Ausweg,
+  der zum Fall passt: ist Tabellen- oder Spaltenname nicht gleich seiner
+  Grossschreibung, kann Oracle die Zeile gar nicht fuehren — dann ist der Weg,
+  die SRID in der Schemadatei zu deklarieren oder die Tabelle unquotiert
+  anzulegen und ihre Zeile zu registrieren; sind beide grossgeschrieben,
+  ist die Zeile in `USER_SDO_GEOM_METADATA` der richtige Ausweg. Die Zeile von
+  Hand einzufuegen ist fuer eine quotiert kleingeschriebene Tabelle **kein**
+  Ausweg: Oracle legte darin einen grossgeschriebenen Namen ab, und der
+  benennte eine andere Tabelle. Ist die Metadatensicht gar nicht lesbar
+  (kein Oracle Spatial, kein Leserecht), meldet `R365` das — ebenfalls als
+  `WARNING`, und nur an Tabellen **mit** Geometriespalte; dort entsteht kein
+  zusaetzliches `R370`, weil ueber die Zeilen einer unlesbaren Sicht nichts
+  bekannt ist. Der Abgleich bleibt wortgetreu: ein toleranter Abgleich wertete
+  die Zeile einer anderen Tabelle aus, und dieselbe Abfrage speist den
+  Datenpfad. Keine der beiden Notizen blockt; die Spalte bleibt im Schema.
+- Der Hinweis von `W120` haengt an derselben Unterscheidung: fuer eine
+  grossgeschriebene Tabelle nennt er die Metadatenzeile, sonst den
+  grossgeschriebenen Namen in der Schemadatei.
 - Der Typwechsel einer Spalte **in** `SDO_GEOMETRY` hinein oder aus ihm
   heraus ist in Oracle nicht moeglich (ORA-22858/ORA-22859, auch auf leerer
   Tabelle); `schema migrate` blockt ihn benannt statt DDL zu emittieren, die

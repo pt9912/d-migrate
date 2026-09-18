@@ -23,6 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`decimal(38,10)`; mehr als zehn Nachkomma- und mehr als 28 Vorkommastellen
   gehen verloren). Alle sind `WARNING` und blocken nichts.
 
+- **Ein beim Oracle-Reverse verlorener SRID ist benannt (`R370`).** Oracle
+  fuehrt den SRID einer Geometriespalte in einer Zeile von
+  `USER_SDO_GEOM_METADATA` und schreibt Tabellen- und Spaltenname dort
+  bedingungslos gross. Zu einer quotiert kleingeschriebenen Tabelle — so legt
+  d-migrate sie an — kann es deshalb keine solche Zeile geben, und der Reverse
+  verlor den SRID **ohne jede Meldung**. Jetzt meldet er ihn mit zwei Texten:
+  kann es die Zeile nicht geben, ist der Ausweg die SRID in der Schemadatei
+  oder eine unquotierte Tabelle; fehlt sie nur, ist die Zeile selbst der
+  richtige Weg. Die Zeile fuer eine kleingeschriebene Tabelle von Hand
+  einzufuegen ist **kein** Ausweg und wird nicht mehr empfohlen (auch nicht
+  von `W120` beim Erzeugen). `schema reverse` endet weiter mit Exit `0`
+  (gemessen gegen Oracle 23).
+
 - **Der Array-Verlust auf MySQL und SQLite ist benannt (`W162`).** Beide Ziele
   haben keinen Array-Typ: MySQL rendert eine `array`-Spalte als `JSON`, SQLite
   als `TEXT`, und ein spaeteres `schema reverse` des Ziels liest `json` bzw.

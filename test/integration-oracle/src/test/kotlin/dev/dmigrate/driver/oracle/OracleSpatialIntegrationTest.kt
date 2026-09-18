@@ -14,11 +14,14 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlStatement
+import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.cli.commands.SchemaReverseRequest
+import dev.dmigrate.cli.commands.SchemaReverseRunner
 import dev.dmigrate.cli.commands.TransferExecutionContext
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.test.images.TestImages
@@ -386,6 +389,139 @@ class OracleSpatialIntegrationTest : FunSpec({
         } shouldBe "keine"
 
         queryOne("""SELECT t."GEOM".SDO_SRID FROM "tgt_places" t""") { it.getInt(1) } shouldBe 4326
+    }
+
+    // ── P1: der verlorene SRID wird gemeldet ────────────────────
+
+    /**
+     * Der Fall, den d-migrate selbst erzeugt: eine quotiert kleingeschriebene
+     * Tabelle mit Geometriespalte. Oracle schreibt Namen in
+     * `USER_SDO_GEOM_METADATA` bedingungslos gross — zu dieser Tabelle kann es
+     * also keine Zeile geben, die sie beschreibt. Der Reverse las sie bis
+     * hierher **ohne jede Meldung** als Geometrie ohne SRID.
+     */
+    test("R370: eine quotiert kleingeschriebene Tabelle meldet den verlorenen SRID, mit dem richtigen Ausweg") {
+        dropTable("srid_lower")
+        exec("""CREATE TABLE "srid_lower" ("id" NUMBER(9) PRIMARY KEY, "geom" SDO_GEOMETRY)""")
+
+        val result = OracleSchemaReader().read(pool)
+        val notes = result.notes.filter { it.objectName == "srid_lower.geom" }
+
+        withClue(result.notes.joinToString("\n") { "${it.code} ${it.objectName}: ${it.message}" }) {
+            notes.size shouldBe 1
+        }
+        notes.single().code shouldBe "R370"
+        notes.single().severity shouldBe SchemaReadSeverity.WARNING
+        notes.single().message shouldContain "upper-cases"
+        notes.single().hint!! shouldContain "Do not insert the row by hand"
+
+        // Die Spalte bleibt im Schema — sie ist vollstaendig lesbar, nur ohne
+        // Bezugssystem.
+        val column = result.schema.tables.getValue("srid_lower").columns.getValue("geom")
+        (column.type as NeutralType.Geometry).srid shouldBe null
+
+        // Kein Block: kein uebersprungenes Objekt, also Exit 0.
+        result.skippedObjects.filter { it.name.contains("srid_lower") }.shouldBeEmpty()
+    }
+
+    test("R370: eine grossgeschriebene Tabelle ohne registrierte Zeile bekommt den zweiten Text") {
+        exec("BEGIN EXECUTE IMMEDIATE 'DROP TABLE SRID_UPPER PURGE'; EXCEPTION WHEN OTHERS THEN NULL; END;")
+        exec(
+            "DELETE FROM user_sdo_geom_metadata WHERE table_name = 'SRID_UPPER'",
+            "COMMIT",
+            "CREATE TABLE SRID_UPPER (ID NUMBER(9) PRIMARY KEY, GEOM SDO_GEOMETRY)",
+        )
+
+        val note = OracleSchemaReader().read(pool).notes.single { it.objectName == "SRID_UPPER.GEOM" }
+
+        note.code shouldBe "R370"
+        note.severity shouldBe SchemaReadSeverity.WARNING
+        note.message shouldContain "no row for it"
+        // Hier ist die Zeile von Hand der richtige, moegliche Ausweg.
+        note.hint!! shouldContain "Register the row in USER_SDO_GEOM_METADATA"
+    }
+
+    /**
+     * Gegenprobe: eine registrierte Zeile liest den SRID, und es entsteht
+     * **weder** `R370` **noch** `R365`. Und eine Tabelle ohne Geometriespalte
+     * meldet gar nichts zum SRID — frueher stand `R365` an jeder Tabelle.
+     */
+    test("Gegenprobe: registrierte Zeile und Tabellen ohne Geometrie melden nichts") {
+        exec("BEGIN EXECUTE IMMEDIATE 'DROP TABLE SRID_OK PURGE'; EXCEPTION WHEN OTHERS THEN NULL; END;")
+        dropTable("srid_plain")
+        exec(
+            "DELETE FROM user_sdo_geom_metadata WHERE table_name = 'SRID_OK'",
+            "COMMIT",
+            "CREATE TABLE SRID_OK (ID NUMBER(9) PRIMARY KEY, GEOM SDO_GEOMETRY)",
+            """
+            INSERT INTO user_sdo_geom_metadata (table_name, column_name, diminfo, srid) VALUES (
+                'SRID_OK', 'GEOM',
+                SDO_DIM_ARRAY(SDO_DIM_ELEMENT('X', -180, 180, 0.005), SDO_DIM_ELEMENT('Y', -90, 90, 0.005)),
+                4326)
+            """.trimIndent(),
+            "COMMIT",
+            """CREATE TABLE "srid_plain" ("id" NUMBER(9) PRIMARY KEY, "label" VARCHAR2(20))""",
+        )
+
+        val result = OracleSchemaReader().read(pool)
+
+        (result.schema.tables.getValue("SRID_OK").columns.getValue("GEOM").type as NeutralType.Geometry)
+            .srid shouldBe 4326
+        result.notes.filter { it.objectName == "SRID_OK.GEOM" && it.code in setOf("R370", "R365") }
+            .shouldBeEmpty()
+        result.notes.filter { it.objectName == "srid_plain" || it.objectName == "SRID_OK" }
+            .filter { it.code in setOf("R370", "R365") }
+            .shouldBeEmpty()
+    }
+
+    /**
+     * Die Live-Abnahme aus ADR 0058: `schema reverse` laeuft ueber denselben
+     * Weg wie die CLI und endet mit **Exit 0** — die Note aendert den Ausgang
+     * nicht.
+     */
+    test("schema reverse endet mit Exit 0, obwohl R370 entsteht") {
+        dropTable("srid_exit")
+        exec("""CREATE TABLE "srid_exit" ("id" NUMBER(9) PRIMARY KEY, "geom" SDO_GEOMETRY)""")
+
+        val out = kotlin.io.path.createTempDirectory("oracle-srid-exit")
+        try {
+            val exit = SchemaReverseRunner(
+                sourceResolver = { src, _ -> src },
+                urlParser = {
+                    ConnectionConfig(
+                        dialect = DatabaseDialect.ORACLE,
+                        host = container.host, port = container.oraclePort,
+                        database = container.databaseName,
+                        user = container.username, password = container.password,
+                    )
+                },
+                poolFactory = { pool },
+                driverLookup = { OracleDriver() },
+                schemaWriter = { _, _, _ -> },
+                reportWriter = { _, _ -> },
+                sidecarPath = { p, suffix -> p.parent.resolve(p.fileName.toString() + suffix) },
+                formatValidator = { _, _ -> },
+                printError = { _, _ -> },
+                stdout = { },
+                stderr = { },
+            ).execute(
+                SchemaReverseRequest(
+                    source = "oracle://ignored",
+                    output = out.resolve("reverse.yaml"),
+                    format = "yaml",
+                    report = null,
+                    outputFormat = "plain",
+                    quiet = true,
+                    verbose = false,
+                    includeAll = false,
+                    schemaName = null,
+                    schemaVersion = null,
+                ),
+            )
+            exit shouldBe 0
+        } finally {
+            out.toFile().deleteRecursively()
+        }
     }
 })
 

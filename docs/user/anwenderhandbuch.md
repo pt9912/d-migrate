@@ -3171,10 +3171,33 @@ nie stillschweigend:
 | `R362` | Ein `UPDATE OF spalte`-Trigger — er wird gelesen, feuert nach dem Wiederanlegen aber bei **jeder** Änderung |
 | `R363` | `PARALLEL_ENABLE` oder `RESULT_CACHE`; die Routine wird gelesen, läuft neu erzeugt aber ohne diese Angabe |
 | `R368` | Ein Parametertyp, den der neutrale Name nicht unterscheiden kann (`VARCHAR2` → `CLOB`, `DATE` → `TIMESTAMP`, `BINARY_FLOAT` → `BINARY_DOUBLE`, `RAW` → `BLOB`, …); die Notiz nennt Vorher und Nachher je Parameter |
-| `R365` | `ALL_SDO_GEOM_METADATA` ist nicht lesbar (Oracle Spatial fehlt oder das Recht darauf); Geometriespalten kommen ohne Koordinatensystem zurück |
+| `R365` | `ALL_SDO_GEOM_METADATA` ist nicht lesbar (Oracle Spatial fehlt oder das Recht darauf); die Geometriespalten dieser Tabelle kommen ohne Koordinatensystem zurück. Steht nur an Tabellen **mit** Geometriespalte — anderswo geht nichts verloren |
+| `R370` | Die Metadatensicht ist lesbar, aber zu dieser Geometriespalte fehlt die Zeile: die Spalte kommt ohne Koordinatensystem zurück. Zwei Fälle, mit je eigenem Ausweg — s. unten |
 
 PL/SQL-**Packages** bleiben ganz außen vor (`R342`): das neutrale Modell führt
 Routinen einzeln und kennt keine Gruppierung.
+
+**Warum verliert mein Oracle-Reverse die SRID meiner Geometriespalte?**
+Oracle führt die SRID nicht an der Spalte, sondern in einer Zeile von
+`USER_SDO_GEOM_METADATA` — und schreibt Tabellen- und Spaltenname dort
+**immer groß**. Der Bericht sagt Ihnen mit `R370`, welcher der beiden Fälle
+vorliegt:
+
+- **Die Tabelle ist quotiert klein- oder gemischtgeschrieben** (so legt
+  d-migrate Tabellen an). Dann kann es zu ihr gar keine Zeile geben; eine mit
+  dem großgeschriebenen Namen benennt eine **andere** Tabelle. Fügen Sie die
+  Zeile deshalb **nicht** von Hand ein. Zwei Wege führen zum Ziel: die SRID in
+  der Schemadatei an der Spalte deklarieren (`srid: 4326` — dann trägt sie
+  jedes Ziel, das sie an der Spalte führt), oder die Tabelle großgeschrieben
+  anlegen und ihre Zeile registrieren.
+- **Tabelle und Spalte sind großgeschrieben, die Zeile fehlt nur.** Dann ist
+  die Zeile in `USER_SDO_GEOM_METADATA` der richtige Weg — oder wieder die
+  Deklaration in der Schemadatei.
+
+Beides ist eine Warnung, kein Abbruch: `schema reverse` nimmt die Spalte samt
+Werten mit und endet mit Exit `0`. Übersehen Sie sie, merken Sie den Verlust
+erst am Ziel — auf SQL Server wird ohne geodätische SRID planares `geometry`
+daraus, und der räumliche Index entfällt (`E057`).
 
 **Kann ich einen Index über einem Ausdruck beschreiben?**
 Ja. Ein Indexschlüssel ist entweder eine Spalte oder ein Ausdruck:

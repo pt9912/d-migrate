@@ -246,7 +246,13 @@ class OracleSchemaReaderTest : FunSpec({
             NeutralType.Geometry(GeometryType.GEOMETRY, srid = null)
         val note = result.notes.single { it.code == "R365" }
         note.objectName shouldBe "PLACES"
-        note.severity shouldBe SchemaReadSeverity.INFO
+        // ADR 0058: ein beim Reverse verlorener SRID ist eine `WARNING` —
+        // `INFO` blendet die Klartext-Ausgabe ohne `--verbose` aus, und der
+        // Verlust kostet auf SQL Server einen raeumlichen Index.
+        note.severity shouldBe SchemaReadSeverity.WARNING
+        // Und die unlesbare Sicht erzeugt kein zusaetzliches `R370`: ueber
+        // ihre Zeilen laesst sich nichts sagen.
+        result.notes.none { it.code == "R370" } shouldBe true
     }
 
     test("a UNIQUE expression index stays an index instead of being lifted or lost") {

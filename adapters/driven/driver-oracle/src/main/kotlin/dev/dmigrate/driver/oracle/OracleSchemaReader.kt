@@ -98,7 +98,16 @@ class OracleSchemaReader(
         val foreignKeys = OracleConstraintQueries.listForeignKeys(session, schema, table)
         val indexScan = OracleMetadataQueries.scanIndexes(session, schema, table)
         val checks = OracleConstraintQueries.listCheckConstraints(session, schema, table)
-        val geometry = geometryMetadata(session, schema, table, notes)
+        // Nur Tabellen mit Geometriespalte fragen die Metadatensicht: an einer
+        // Tabelle ohne geht kein SRID verloren, und `R365` stand dort frueher
+        // an **jeder** Tabelle (eine Abfrage je Tabelle dazu).
+        val geometryColumns = columnRows.filter { OracleTypeMapping.isGeometryTypeName(it.typeName) }.map { it.name }
+        val geometry = if (geometryColumns.isEmpty()) {
+            OracleGeometryMetadata.NONE
+        } else {
+            OracleGeometryMetadata.read(session, schema, table, notes)
+        }
+        OracleGeometryMetadata.noteMissingSrids(table, geometryColumns, geometry, notes)
 
         val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indexScan.indices)
         // Der Name kommt aus `all_constraints`, nicht aus der Indexliste: nur
@@ -121,7 +130,7 @@ class OracleSchemaReader(
                     isIdentity = row.isIdentity,
                     identityGeneration = row.identityGeneration,
                     identitySequenceName = row.identitySequenceName,
-                    geometrySrid = geometry[row.name]?.srid,
+                    geometrySrid = OracleGeometryMetadata.sridOf(geometry, row.name),
                 ),
             )
             mapping.note?.let { notes += it }
@@ -193,33 +202,6 @@ class OracleSchemaReader(
             constraints = constraints,
             partitioning = partitioning?.config,
         )
-    }
-
-    /**
-     * Ohne installiertes Oracle Spatial gibt es `ALL_SDO_GEOM_METADATA`
-     * nicht — die Abfrage scheitert dann mit ORA-00942. Eine Datenbank ohne
-     * Spatial hat auch keine Geometriespalten, der leere Fall ist also der
-     * richtige; er wird trotzdem gemeldet, damit ein fehlendes Spatial bei
-     * einer Datenbank, die welche haette, nicht still als „keine SRID"
-     * durchgeht.
-     */
-    private fun geometryMetadata(
-        session: JdbcOperations,
-        schema: String,
-        table: String,
-        notes: MutableList<SchemaReadNote>,
-    ): Map<String, OracleMetadataQueries.GeometryMetadataRow> = try {
-        OracleMetadataQueries.listGeometryMetadata(session, schema, table).associateBy { it.column }
-    } catch (e: Exception) {
-        notes += SchemaReadNote(
-            severity = SchemaReadSeverity.INFO,
-            code = "R365",
-            objectName = table,
-            message = "ALL_SDO_GEOM_METADATA is not readable (${e.message?.lineSequence()?.firstOrNull()}); " +
-                "geometry columns are read without a coordinate system.",
-            hint = "Install Oracle Spatial, or grant SELECT on the metadata view.",
-        )
-        emptyMap()
     }
 
     /**

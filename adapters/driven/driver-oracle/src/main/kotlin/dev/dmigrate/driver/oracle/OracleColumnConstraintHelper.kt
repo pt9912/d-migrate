@@ -307,15 +307,7 @@ internal class OracleColumnConstraintHelper(
             )
         }
         if (type is NeutralType.Geometry && (type.geometryType != GeometryType.GEOMETRY || type.srid != null)) {
-            notes += TransformationNote(
-                type = NoteType.WARNING, code = "W120", objectName = objectName,
-                message = "Geometry column '$colName' is rendered as SDO_GEOMETRY: Oracle carries neither the " +
-                    "subtype ('${type.geometryType}') nor the SRID (${type.srid ?: "none"}) on the column. The " +
-                    "SRID would live in USER_SDO_GEOM_METADATA, and Oracle upper-cases the table and column name " +
-                    "in that row, so it cannot describe a quoted lower-case table like '$tableName'.",
-                hint = "Insert the USER_SDO_GEOM_METADATA row manually if the coordinate system must be declared; " +
-                    "the spatial index and spatial queries work without it.",
-            )
+            notes += geometryMetadataNote(tableName, colName, objectName, type)
         }
         if (typeMapper.isPrecisionClamped(type)) {
             notes += TransformationNote(
@@ -325,6 +317,48 @@ internal class OracleColumnConstraintHelper(
             )
         }
         return notes
+    }
+
+    /**
+     * `W120` — Oracle traegt weder Subtyp noch SRID an der Spalte.
+     *
+     * Der **Ausweg haengt am Namen**: eine Metadatenzeile fuehrt Oracle
+     * bedingungslos grossgeschrieben. Ist der Tabellenname bereits seine
+     * eigene Grossschreibung, ist die Zeile von Hand der richtige Weg; ist er
+     * quotiert klein- oder gemischtgeschrieben — so legt d-migrate Tabellen an
+     * —, kann Oracle zu dieser Tabelle gar keine Zeile fuehren, und die Zeile
+     * von Hand beschriebe eine **andere** Tabelle. Der Hinweis nannte frueher
+     * fuer jede Tabelle diesen ausgeschlossenen Ausweg.
+     */
+    private fun geometryMetadataNote(
+        tableName: String,
+        colName: String,
+        objectName: String,
+        type: NeutralType.Geometry,
+    ): TransformationNote {
+        val carriesRow = tableName == tableName.uppercase() && colName == colName.uppercase()
+        val where = if (carriesRow) {
+            "The SRID would live in a USER_SDO_GEOM_METADATA row for '$tableName.$colName'."
+        } else {
+            "The SRID would live in USER_SDO_GEOM_METADATA, and Oracle upper-cases the table and column " +
+                "name in that row, so no row can describe a quoted lower- or mixed-case name like " +
+                "'$tableName.$colName'."
+        }
+        val hint = if (carriesRow) {
+            "Insert the USER_SDO_GEOM_METADATA row manually if the coordinate system must be declared; " +
+                "the spatial index and spatial queries work without it."
+        } else {
+            "Use an upper-case table and column name in the schema file and register the metadata row, " +
+                "if the coordinate system must be declared; the spatial index and spatial queries work " +
+                "without it. Do not insert the row by hand for this table — Oracle would store an " +
+                "upper-case name, which names a different table."
+        }
+        return TransformationNote(
+            type = NoteType.WARNING, code = "W120", objectName = objectName,
+            message = "Geometry column '$colName' is rendered as SDO_GEOMETRY: Oracle carries neither the " +
+                "subtype ('${type.geometryType}') nor the SRID (${type.srid ?: "none"}) on the column. $where",
+            hint = hint,
+        )
     }
 
     /**

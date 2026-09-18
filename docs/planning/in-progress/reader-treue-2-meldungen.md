@@ -796,6 +796,41 @@ Der Zweig gilt für den Basistyp, den `mapIntegerTypes` kennt (`integer` und
 **Der Fingerabdruck-Kanonisierer ist geprüft und unberührt:** er ruft
 `mapColumn` ohne Primärschlüssel- und Identity-Kontext, und für
 `identifier(auto)` trägt er ohnehin eine eigene Ausnahme. Ein Test pinnt das.
+
+#### P1 — der verlorene Oracle-SRID wird gemeldet
+
+Gebaut als eigenes Objekt `OracleGeometryMetadata`: es liest die
+Metadatenzeilen, unterscheidet **lesbar** von **nicht lesbar** (bisher war
+beides eine leere Map) und vergibt die Notizen.
+
+1. **Gefragt wird nur noch für Tabellen mit Geometriespalte.** Das spart eine
+   Abfrage je Tabelle — und nimmt `R365` von jeder rein numerischen Tabelle
+   weg, an der kein SRID verlorengehen kann.
+2. **`R365` ist `WARNING`** (ADR 0058, Entscheidung 1) und entsteht nur an
+   einer Tabelle mit Geometriespalte. Im `R365`-Fall entsteht **kein**
+   zusätzliches `R370`: über die Zeilen einer unlesbaren Sicht ist nichts
+   bekannt.
+3. **`R370` mit zwei Texten**, unterschieden **deterministisch am Namen**: ist
+   Tabellen- oder Spaltenname nicht gleich seiner Großschreibung, kann Oracle
+   die Zeile gar nicht führen (Ausweg: SRID in der Schemadatei oder eine
+   unquotierte Tabelle, ausdrücklich **nicht** die Zeile von Hand); sind beide
+   großgeschrieben, fehlt sie nur (Ausweg: die Zeile registrieren). Kein Text
+   rät.
+4. **`W120` sagt je Fall das Richtige.** Der Hinweis empfahl bisher für
+   **jede** Tabelle die Zeile von Hand — auch für die, für die ADR 0058 genau
+   das ausschließt.
+
+**Live gemessen** (`TestImages.ORACLE_FULL`, `:test:integration-oracle`): eine
+quotiert kleingeschriebene Tabelle mit Geometriespalte erzeugt genau ein
+`R370` (`WARNING`), die Spalte bleibt als `geometry` ohne SRID im Schema, und
+`schema reverse` endet über den echten `SchemaReverseRunner` mit **Exit 0**.
+Eine großgeschriebene Tabelle ohne Zeile bekommt den zweiten Text; eine mit
+registrierter Zeile liest den SRID und meldet weder `R370` noch `R365`; eine
+Tabelle ohne Geometriespalte meldet gar nichts.
+
+**Kein Block:** die Notizen werden von keinem Pfad in `schema generate`,
+`schema migrate` oder `data transfer` ausgewertet; `OracleDataWriter` liest
+dieselbe Sicht unverändert weiter. Die `E057`-Zusicherungen sind unberührt.
 ## Akzeptanzkriterien
 
 1. Der Array-Verlust ist auf MySQL und SQLite benannt, auf Generate und
