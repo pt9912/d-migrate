@@ -709,7 +709,120 @@ in beiden Ausgängen und der Neubau mit Gegenprobe. Dass die Spec wirklich
 läuft, ist mit einer absichtlich falschen Zusicherung geprüft (rot), danach
 entfernt.
 
-## Akzeptanzkriterien
+### S6 — `smallint`-Identity: melden statt Modell erweitern (2026-09-18)
+
+**Gebaut nach der Eigner-Entscheidung (Weg 1).** Zwei Stellen in
+`PostgresTypeMapping`:
+
+1. **Der Schluessel-Zweig** bleibt eng und meldet jetzt: `smallint` + `ALWAYS`
+   wird weiter `identifier`, und `smallintIdentityNote` erzeugt `R406`
+   (`WARNING`, `t.<spalte>`) mit Grund und Folge — der Modus geht verloren,
+   weil `identifier` als `SERIAL` rendert und `SERIAL` gesetzte Werte annimmt.
+2. **Der Zweig ohne Schluessel zieht auf `integer`/`biginteger` zusammen.**
+   Er lieferte bis hierher `smallint` + `identity` — eine Form, die `E130`
+   ablehnt, aus der sich also gar nicht erzeugen liess (der Waechter-Test in
+   `PostgresIdentityShapeIntegrationTest` hielt genau das fest und ist jetzt
+   auf die neue Erwartung umgestellt: `identifier` **und** validierbar).
+
+`BY DEFAULT` meldet nichts — dort ist `SERIAL` die richtige Entsprechung —,
+und ein `smallserial` traegt gar keine Erzeugungsangabe.
+
+**Die Messung ueber die fuenf Generatoren** steht als
+`SmallIntIdentityRenderTest` (`:adapters:driven:formats`, drei Faelle) und
+begruendet die Entscheidung: PostgreSQL, MySQL und SQLite **verlieren** die
+Erzeugung an einer `smallint`-Identity still — PostgreSQL und MySQL ganz ohne
+Meldung —, SQL Server und Oracle rendern sie. Verlustfrei waere nur eine
+Modellerweiterung, und die drei stillen Faelle blieben trotzdem.
+
+**Sabotagen** (beide rot, Ruecknahme per Pruefsumme): die Meldung entfernt →
+drei Faelle fallen; die Zweig-Verengung zurueckgenommen → zwei Faelle fallen.
+
+**Spec und Doku:** `spec/type-mapping.md` 3.4 trennt die Regel jetzt nach
+Breite (die `smallint`-Zeile nennt `R406`, die `BY DEFAULT`-Zeile sagt, warum
+dort nichts gemeldet wird); Anwenderhandbuch und CHANGELOG nennen `R406` mit
+Grund und Gegenprobe.
+
+### S5 — SQL Server: `int IDENTITY` traegt den Modus (2026-09-18)
+
+**Gebaut.** `MssqlTypeMapping.mapIdentity` liest `int` IDENTITY jetzt wie
+`bigint`: Basistyp `integer` + `generation: identity (ALWAYS)`, statt auf
+`identifier` zu falten. T-SQL kennt keinen `BY DEFAULT`-Modus, und
+`identifier` traegt keinen — der Verlust fiel beim Rundweg ueber einen anderen
+Dialekt auf.
+
+**Eine Folge, die mitmusste:** `MssqlNeutralTypeCanonicalizer` ist als
+`reverse(toSql(t))` gebaut und zog die Aenderung automatisch nach — damit fiel
+`Identifier(autoIncrement = true)` auf `Integer` zusammen, und die
+Identitaets-Faltung des Comparators (`identitySpelledDifferently`, die genau
+dieses Paar ueber `foldsAutoIncrementOntoIdentity` gleichsetzt) verlor ihren
+Anker: links `Integer` ohne Erzeugung, rechts `Integer` mit `ALWAYS` — ein
+Fehlalarm im Migrate-Pfad auf einer Spalte, die der Lauf selbst so angelegt
+hat. Der Kanonisierer laesst die Autowert-Schreibweise deshalb stehen; ein
+Test pinnt das.
+
+**Geprueft:** `:adapters:driven:driver-mssql` gruen; drei Bestandstests auf die
+neue Lesart umgestellt (`MssqlTypeMappingTest`, `MssqlSchemaReaderTest`,
+`MssqlNeutralTypeCanonicalizerTest`); voller `docker-check` gruen (12 000+
+Tests).
+
+**Die Matrix bewegt fuenf Zellen — und der Eigner hat das entschieden.**
+Gemessen gegen ein frisch gebautes Image (s. die Lehre unten):
+
+| Zelle | vorher | nachher |
+| ----- | -----: | ------: |
+| PostgreSQL → SQL Server | 14 | 16 |
+| MySQL → SQL Server | 8 | 14 |
+| SQL Server → PostgreSQL | 2 | 2 |
+| SQL Server → MySQL | 6 | 12 |
+| SQL Server → SQLite | 11 | 17 |
+| SQLite → SQL Server | 6 | 16 |
+
+Dazu `GEN_CODES_MSSQL_MYSQL` und `_SQLITE` je `W163:1` → `W163:4`: die
+MSSQL-Seite sagt jetzt `ALWAYS`, und MySQL wie SQLite koennen das nicht
+ausdruecken.
+
+**Was die Zunahme ist.** Je `identifier`-Spalte meldet der Vergleich **zwei**
+Funde — `type changed from identifier(auto) to integer` und `generation
+changed from null to identity(mode=always)`. Es ist dieselbe Spalte in zwei
+Schreibweisen; `schema compare` hat keine Zielseite, an der es sie ausgleichen
+koennte (der Migrate-Pfad tut das ueber
+`foldsAutoIncrementOntoIdentity`). Der Eigner hat am 2026-09-18 entschieden:
+**behalten und bewusst pinnen** — die Modus-Funde bleiben sichtbar und sind
+der K2-Kandidat im Toleranzprofil. Die Alternative (S5 zuruecknehmen und
+`identifier` behalten) haette den Verlust still gelassen.
+
+**Die Anmerkungen der Seeds mussten mit**, und das ist der eigentliche
+Aufwand: sechs Zeilen, deren Ziel oder Quelle SQL Server ist, beschreiben
+jetzt `integer | generation: identity(always)` statt `identifier(auto)`. Die
+Anmerkungen sind **bewusst nicht pinnbar** — sie sind die Aussage „so liest
+der Dialekt diese Spalte", und wer sie automatisch nachzoege, pinnte jeden
+Fehler mit. Also von Hand aus den Artefakten gelesen.
+
+**Und der Harness brauchte eine Schreibweise-Gleichheit.** Die Pruefung
+„Degradierung ohne Code" wertete `identifier(auto)` → `integer` +
+`identity(always)` als Verlust und verlangte einen Code — fuer eine Spalte,
+die verlustfrei angekommen ist. `silent-loss.sh` kennt jetzt `same_spelling`:
+die Autowert-Schreibweise und eine ausdrueckliche Identitaet sind dieselbe
+Spalte, dieselbe Gleichheit, die der Comparator kennt. Der Eintrag
+`sl_pg_identity_int` faellt aus `SILENT_LOSS_KNOWN` (25 → 24); die Liste ist
+Code, und ein Eintrag, der nicht mehr auftritt, ist ein Fehlschlag — genau
+so hat sie es gemeldet.
+
+**Doku:** `spec/type-mapping.md` 6.2 (die `int IDENTITY`-Zeile), CHANGELOG
+(mit der Zell-Folge), Anwenderhandbuch (neue FAQ: „Eine IDENTITY-Spalte aus
+SQL Server erscheint gegen andere Dialekte als geaendert?") und die
+Matrix-Tabelle in `examples/mcp-e2e/README.md`.
+
+### Die Matrix laeuft gegen ein **vorgebautes Image** (Lehre, 2026-09-18)
+
+Ein Matrixlauf nach einer Quellaenderung ist **gruen und wertlos**, solange
+`d-migrate:dev` nicht neu gebaut wurde: der Harness startet den MCP-Server aus
+dem Image, nicht aus dem Baum. Aufgefallen ist das am Artefakt — der
+MSSQL-Reverse trug weiter `identifier`, obwohl der Code laengst `integer`
+liest. **Vor jedem Matrixlauf also `make docker-build`**, und den Beweis am
+`out/compare-matrix/<dialekt>/reversed.yaml` fuehren, nicht am Exit-Code.
+
+
 
 1. `geography` liest als Geometrie mit SRID, benannt mit `R403`; die vier
    Gegenproben halten; PostgreSQL rendert vorwärts unverändert `geometry`;
