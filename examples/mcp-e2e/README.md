@@ -269,7 +269,10 @@ Ein Reverse **neben** der Matrix: keine Zelle, kein Ziel. Er laeuft gegen eine
 (`MCP_E2E_PG_NOSP_DB`, der Lauf legt sie selbst an), in der PostGIS im Schema
 `postgis` liegt und der `search_path` es **nicht** nennt. Dann loest
 `geometry_columns` nicht auf, und jede Geometriespalte kommt ohne Subtyp und
-ohne SRID zurueck — der Reverse meldet das mit `R405`.
+ohne SRID zurueck — der Reverse meldet das mit `R405`. Dieselbe Tabelle traegt
+eine `geography`-Spalte: ihre Angaben stehen in `geography_columns`, hinter
+derselben Huerde, und `R403` sagt daneben, dass ein PostgreSQL-Ziel sie als
+`geometry` renderte.
 
 Die Verbindung (`mcp_e2e_pg_nosp`) steht **nur** in der Server-Konfiguration,
 die der Lauf selbst schreibt (`out/compare-matrix/server.d-migrate.yaml`),
@@ -294,7 +297,9 @@ Silent-Loss-Check (`scripts/lib/silent-loss.sh`) fragt deshalb etwas anderes:
 nach der Fixture an; sie geht in den Reverse der Quelle ein und traegt, was nur
 dieser Dialekt so zurueckgibt. Heute: `postgresql.sql` (Arrays, `json`/`jsonb`,
 `numeric` ohne Praezision, `varchar` ohne Laenge, `interval`, zwei
-IDENTITY-Spalten mit `ALWAYS`), `mysql.sql` (CHECK und Berechnungsausdruck mit
+IDENTITY-Spalten mit `ALWAYS`, eine PostGIS-`geography`-Spalte in eigener
+Tabelle — SQLite blockt sie ohne Spatial-Profil mit `E052`, deshalb nennt ihre
+Anmerkung dieses Ziel nicht), `mysql.sql` (CHECK und Berechnungsausdruck mit
 Zeichenkette, eine nicht kleingeschriebene Spalte), `sqlite.sql` (benannte und
 unbenannte Fremdschluessel, ein Fremdschluessel **ohne** Spaltenliste, eine
 Tabelle mit Kommentar im `CREATE TABLE`-Text, zweimal dieselbe unbenannte

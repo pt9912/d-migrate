@@ -128,11 +128,16 @@ class PostgresDataWriter(
     ): List<TargetColumn> = dev.dmigrate.driver.data.loadTargetColumns(conn, table.quotedPath())
 
     /**
-     * VA2 (Spatial): reichert Geometrie-Zielspalten mit ihrer SRID aus dem
-     * PostGIS-`geometry_columns`-View an, damit der Import WKB als
+     * VA2 (Spatial): reichert Geometrie-Zielspalten mit ihrer SRID aus den
+     * PostGIS-Registriersichten an, damit der Import WKB als
      * `ST_GeomFromWKB(?, srid)` bindet statt SRID 0 zu erzwingen. SRID 0
-     * (= keine SRID) bleibt `null`. Ohne PostGIS/View liefert die Query leer
+     * (= keine SRID) bleibt `null`. Ohne PostGIS/Sicht liefert die Query leer
      * → die Spalten bleiben unverändert.
+     *
+     * `geography_columns` zaehlt mit: eine `geography`-Spalte mit
+     * Typmodifikator erzwingt ihren SRID, und ein ohne ihn konstruierter Wert
+     * faellt beim Einfuegen mit „Geometry SRID does not match column SRID"
+     * heraus.
      */
     private fun enrichGeometrySrid(
         jdbc: JdbcOperations,
@@ -141,12 +146,9 @@ class PostgresDataWriter(
         columns: List<TargetColumn>,
     ): List<TargetColumn> {
         val schema = table.schemaOrCurrent(conn)
-        val sridByColumn = PostgresMetadataQueries.listGeometryColumns(jdbc, schema, table.table).rows
-            .mapNotNull { row ->
-                val name = row["f_geometry_column"] as? String ?: return@mapNotNull null
-                val srid = (row["srid"] as? Number)?.toInt()?.takeIf { it != 0 } ?: return@mapNotNull null
-                name to srid
-            }.toMap()
+        val sridByColumn = PostgresMetadataQueries.listPostgisColumns(jdbc, schema, table.table).columns
+            .mapNotNull { (name, postgis) -> postgis.srid?.let { name to it } }
+            .toMap()
         if (sridByColumn.isEmpty()) return columns
         return columns.map { col -> sridByColumn[col.name]?.let { col.copy(srid = it) } ?: col }
     }

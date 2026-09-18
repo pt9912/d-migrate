@@ -49,7 +49,7 @@ internal object PostgresTableMetadataQueries {
     fun listColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> {
         return session.queryList(
             """
-            SELECT column_name, data_type, udt_name, is_nullable,
+            SELECT column_name, data_type, udt_name, udt_schema, is_nullable,
                    column_default, ordinal_position,
                    character_maximum_length, numeric_precision, numeric_scale,
                    is_identity, identity_generation,
@@ -75,40 +75,90 @@ internal object PostgresTableMetadataQueries {
         )
     }
 
-    /**
-     * Was `geometry_columns` zu einer Tabelle sagt — oder dass die Sicht gar
-     * nicht erreichbar ist.
-     *
-     * Der Unterschied traegt eine Meldung: liegt PostGIS in einem eigenen
-     * Schema, das **nicht** im `search_path` steht, loest `geometry_columns`
-     * nicht auf, und jede Geometriespalte kommt ohne Subtyp und ohne SRID
-     * zurueck. Eine leere Liste sah frueher genauso aus wie „diese Tabelle hat
-     * keine Geometriespalte" — der Grund war an der Abfrage bekannt und ging
-     * dort verloren.
-     */
-    data class GeometryColumnsScan(val reachable: Boolean, val rows: List<Map<String, Any?>>)
+    /** Subtyp und SRID einer PostGIS-Spalte, aus der Registriersicht gelesen. */
+    data class PostgisColumn(val column: String, val subtype: String?, val srid: Int?)
 
     /**
-     * VA2 (Spatial): PostGIS-Geometriespalten der Tabelle mit Subtyp + SRID aus
-     * dem `geometry_columns`-View. Der `to_regclass`-Guard vermeidet das Werfen
-     * (das die Lese-Transaktion abbraeche), wenn PostGIS/der View fehlt — und
-     * meldet die Unerreichbarkeit statt sie zu verschweigen.
+     * Was die PostGIS-Registriersichten zu einer Tabelle sagen — oder dass sie
+     * gar nicht erreichbar sind.
+     *
+     * Der Unterschied traegt eine Meldung: liegt PostGIS in einem eigenen
+     * Schema, das **nicht** im `search_path` steht, loesen `geometry_columns`
+     * und `geography_columns` nicht auf, und jede PostGIS-Spalte kommt ohne
+     * Subtyp und ohne SRID zurueck. Eine leere Liste sah frueher genauso aus
+     * wie „diese Tabelle hat keine Geometriespalte" — der Grund war an der
+     * Abfrage bekannt und ging dort verloren.
+     *
+     * **Beide Sichten gehoeren derselben Extension** und entstehen mit ihr;
+     * sie sind deshalb gemeinsam erreichbar oder gemeinsam nicht. Der Scan
+     * fuehrt trotzdem beide Proben, statt von der einen auf die andere zu
+     * schliessen.
      */
-    fun listGeometryColumns(session: JdbcOperations, schemaName: String, table: String): GeometryColumnsScan {
-        val viewPresent = session.queryList("SELECT to_regclass('geometry_columns') AS r")
-            .firstOrNull()?.get("r") != null
-        if (!viewPresent) return GeometryColumnsScan(reachable = false, rows = emptyList())
-        return GeometryColumnsScan(
+    data class PostgisColumnsScan(val reachable: Boolean, val columns: Map<String, PostgisColumn>)
+
+    /**
+     * VA2 (Spatial): PostGIS-Spalten der Tabelle mit Subtyp + SRID aus den
+     * Registriersichten. Der `to_regclass`-Guard vermeidet das Werfen (das die
+     * Lese-Transaktion abbraeche), wenn PostGIS/die Sicht fehlt — und meldet
+     * die Unerreichbarkeit statt sie zu verschweigen.
+     *
+     * `geometry_columns` fuehrt den Subtyp gross (`POINT`),
+     * `geography_columns` gemischt (`Point`); beide Schreibweisen faltet
+     * [dev.dmigrate.core.model.GeometryType.of]. `geography` **ohne**
+     * Typmodifikator steht dort mit SRID `0` und Subtyp `Geometry`
+     * (gemessen an PostGIS 3.6) — dieselbe Form, die eine `geometry`-Spalte
+     * ohne Modifikator traegt.
+     */
+    fun listPostgisColumns(session: JdbcOperations, schemaName: String, table: String): PostgisColumnsScan {
+        val views = session.queryList(
+            "SELECT to_regclass('geometry_columns') AS geom, to_regclass('geography_columns') AS geog",
+        ).firstOrNull()
+        val reachable = views?.get("geom") != null && views["geog"] != null
+        if (!reachable) return PostgisColumnsScan(reachable = false, columns = emptyMap())
+        val rows = session.queryList(
+            """
+            SELECT f_geometry_column AS postgis_column, type, srid
+            FROM geometry_columns
+            WHERE f_table_schema = ? AND f_table_name = ?
+            UNION ALL
+            SELECT f_geography_column AS postgis_column, type, srid
+            FROM geography_columns
+            WHERE f_table_schema = ? AND f_table_name = ?
+            """.trimIndent(), schemaName, table, schemaName, table,
+        )
+        return PostgisColumnsScan(
             reachable = true,
-            rows = session.queryList(
-                """
-                SELECT f_geometry_column, type, srid
-                FROM geometry_columns
-                WHERE f_table_schema = ? AND f_table_name = ?
-                """.trimIndent(), schemaName, table,
-            ),
+            columns = rows.mapNotNull { row ->
+                val name = row["postgis_column"] as? String ?: return@mapNotNull null
+                name to PostgisColumn(
+                    column = name,
+                    subtype = row["type"] as? String,
+                    // srid 0 heisst „kein Bezugssystem"; im Modell ist das `null`.
+                    srid = (row["srid"] as? Number)?.toInt()?.takeIf { it != 0 },
+                )
+            }.toMap(),
         )
     }
+
+    /**
+     * Das Schema, in dem die PostGIS-Extension liegt — oder `null`, wenn sie
+     * nicht installiert ist.
+     *
+     * Daran haengt die Frage, ob ein benutzerdefinierter Typ namens `geometry`
+     * oder `geography` wirklich PostGIS gehoert: `information_schema.columns`
+     * fuehrt mit `udt_schema` das Schema des Typs, und ein Anwendertyp
+     * gleichen Namens in einem anderen Schema ist kein PostGIS-Typ. Ueber den
+     * Namen allein liesse er sich nicht unterscheiden.
+     */
+    fun postgisSchema(session: JdbcOperations): String? =
+        session.queryList(
+            """
+            SELECT n.nspname AS schema_name
+            FROM pg_extension e
+            JOIN pg_namespace n ON n.oid = e.extnamespace
+            WHERE e.extname = 'postgis'
+            """.trimIndent(),
+        ).firstOrNull()?.get("schema_name") as? String
 
     fun listPrimaryKeyColumns(session: JdbcOperations, schemaName: String, table: String): List<String> {
         return session.queryList(

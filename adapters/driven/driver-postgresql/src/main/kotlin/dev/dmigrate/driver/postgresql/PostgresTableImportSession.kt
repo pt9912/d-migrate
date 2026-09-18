@@ -60,10 +60,21 @@ internal class PostgresTableImportSession(
     // VA1c: PostGIS-Geometriespalten beim INSERT aus WKB konstruieren.
     // ST_GeomFromWKB akzeptiert plain WKB (von ST_AsBinary, VA1b) — auch das von
     // einer MySQL-Quelle gelesene WKB; SRID 0 (SRID-Erhalt via VA2).
+    //
+    // Derselbe Konstruktor traegt auch eine `geography`-Zielspalte: PostGIS
+    // erklaert den Weg von `geometry` nach `geography` als Zuweisungs-Cast,
+    // und `INSERT INTO t(g) VALUES (ST_GeomFromWKB(?, 4326))` in eine
+    // `geography(Point,4326)`-Spalte laeuft durch (gemessen an PostGIS 3.6).
+    // `ST_GeogFromWKB` gibt es nur einstellig und legte den SRID auf 4326
+    // fest — damit fiele eine Spalte mit einem anderen geodaetischen SRID
+    // (etwa 4258) beim Einfuegen mit „Geometry SRID does not match column
+    // SRID" heraus.
     override val geometryBindConstructor: String? = "ST_GeomFromWKB"
 
-    // Nur PostGIS-`geometry` (NICHT die nativen PG-Typen point/polygon/…).
-    override fun isGeometryTypeName(typeNameLower: String): Boolean = typeNameLower == "geometry"
+    // Die PostGIS-Typen `geometry` und `geography` (NICHT die nativen
+    // PG-Typen point/polygon/…).
+    override fun isGeometryTypeName(typeNameLower: String): Boolean =
+        typeNameLower == "geometry" || typeNameLower == "geography"
 
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         val overridingSystemValue = if (importedTargetColumns.any { it.name in generatedAlwaysColumns }) {

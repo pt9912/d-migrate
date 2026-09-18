@@ -12,9 +12,13 @@ internal fun readPostgresTables(
     notes: MutableList<SchemaReadNote>,
 ): Map<String, TableDefinition> {
     val tableRefs = PostgresMetadataQueries.listTableRefs(session, schema)
+    // Einmal je Lesevorgang: an diesem Schema haengt, ob ein Typ namens
+    // `geometry`/`geography` wirklich PostGIS gehoert (siehe
+    // [PostgresTableMetadataQueries.postgisSchema]).
+    val postgisSchema = PostgresMetadataQueries.postgisSchema(session)
     val result = LinkedHashMap<String, TableDefinition>()
     for (ref in tableRefs) {
-        result[ref.name] = readPostgresTable(session, schema, ref.name, notes)
+        result[ref.name] = readPostgresTable(session, schema, ref.name, postgisSchema, notes)
     }
     return result
 }
@@ -23,6 +27,7 @@ private fun readPostgresTable(
     session: JdbcOperations,
     schema: String,
     tableName: String,
+    postgisSchema: String?,
     notes: MutableList<SchemaReadNote>,
 ): TableDefinition {
     val columnRows = PostgresMetadataQueries.listColumns(session, schema, tableName)
@@ -37,17 +42,12 @@ private fun readPostgresTable(
     // Constraint laesst sich als Constraint abbauen.
     val singleColumnUniqueNames = SchemaReaderUtils.singleColumnUniqueNamesFromConstraints(uniqueConstraints)
 
-    // VA2 (Spatial): PostGIS-Subtyp + SRID je Geometriespalte (leer ohne PostGIS).
-    // srid 0 (= keine SRID) → null, damit das Modell sauber bleibt.
-    val geometryScan = PostgresMetadataQueries.listGeometryColumns(session, schema, tableName)
-    val geometryColumns = geometryScan.rows
-        .associate { gc ->
-            (gc["f_geometry_column"] as String) to Pair(
-                gc["type"] as? String,
-                (gc["srid"] as? Number)?.toInt()?.takeIf { it != 0 },
-            )
-        }
-    notePostgisOutOfReach(tableName, columnRows, geometryScan, notes)
+    // VA2 (Spatial): PostGIS-Subtyp + SRID je Geometrie- und Geographiespalte
+    // (leer ohne PostGIS). srid 0 (= keine SRID) → null, damit das Modell
+    // sauber bleibt.
+    val postgisScan = PostgresMetadataQueries.listPostgisColumns(session, schema, tableName)
+    val postgisColumns = postgisScan.columns
+    notePostgisOutOfReach(tableName, columnRows, postgisScan, postgisSchema, notes)
 
     val columns = LinkedHashMap<String, ColumnDefinition>()
     for (row in columnRows) {
@@ -72,6 +72,8 @@ private fun readPostgresTable(
             PostgresTypeMapping.ColumnInput(
                 dataType = row["data_type"] as String,
                 udtName = (row["udt_name"] as? String) ?: (row["data_type"] as String),
+                udtSchema = row["udt_schema"] as? String,
+                postgisSchema = postgisSchema,
                 isPkCol = isPrimaryKeyColumn,
                 isIdentity = isIdentity,
                 identityGeneration = row["identity_generation"] as? String,
@@ -82,8 +84,8 @@ private fun readPostgresTable(
                 numScale = (row["numeric_scale"] as? Number)?.toInt(),
                 tableName = tableName,
                 colName = columnName,
-                geometrySubtype = geometryColumns[columnName]?.first,
-                geometrySrid = geometryColumns[columnName]?.second,
+                geometrySubtype = postgisColumns[columnName]?.subtype,
+                geometrySrid = postgisColumns[columnName]?.srid,
             )
         )
         if (mapping.note != null) notes += mapping.note
@@ -207,40 +209,55 @@ private fun readPartitionLocalIndices(
 }
 
 /**
- * `R405` — die Tabelle traegt eine PostGIS-Geometriespalte, aber
- * `geometry_columns` ist nicht erreichbar.
+ * `R405` — die Tabelle traegt eine PostGIS-Spalte, aber die Registriersichten
+ * sind nicht erreichbar.
  *
  * Der haeufige Grund: PostGIS liegt in einem eigenen Schema, das nicht im
- * `search_path` steht. Dann loest die Sicht nicht auf, und jede Spalte kommt
- * als `geometry` **ohne Subtyp und ohne SRID** zurueck. `R401` steht daneben
- * (je Spalte, `INFO`), nennt aber weder Ursache noch Ausweg; ohne diese Note
- * sah eine unerreichbare Sicht aus wie eine Geometrie, die einfach keinen
- * SRID deklariert.
+ * `search_path` steht. Dann loesen `geometry_columns` und `geography_columns`
+ * nicht auf, und jede Spalte kommt als `geometry` **ohne Subtyp und ohne
+ * SRID** zurueck. `R401` steht daneben (je `geometry`-Spalte, `INFO`), nennt
+ * aber weder Ursache noch Ausweg; ohne diese Note sah eine unerreichbare
+ * Sicht aus wie eine Geometrie, die einfach keinen SRID deklariert.
  *
  * Severity `WARNING`: ein SRID geht verloren, und die Folge zeigt sich erst
  * am Ziel (SQL Server waehlt ohne geodaetischen SRID planares `geometry`, und
  * ein raeumlicher Index entfaellt dort mit `E057`).
  *
- * Eine Tabelle ohne Geometriespalte meldet nichts — dort geht nichts
+ * **Eine `geography`-Spalte zaehlt mit.** Ihr Subtyp und ihr SRID stehen in
+ * `geography_columns`, also in derselben Extension und hinter derselben
+ * Huerde; ohne die Sicht kommt sie genauso ohne beides zurueck.
+ *
+ * Gezaehlt wird dabei nach Name **und** Schema, wie beim Lesen des Typs
+ * selbst: ein Anwendertyp namens `geography` verliert nichts, wenn die
+ * Registriersichten fehlen.
+ *
+ * Eine Tabelle ohne PostGIS-Spalte meldet nichts — dort geht nichts
  * verloren; ohne PostGIS hat eine Datenbank ohnehin keine.
  */
 internal fun notePostgisOutOfReach(
     tableName: String,
     columnRows: List<Map<String, Any?>>,
-    scan: PostgresTableMetadataQueries.GeometryColumnsScan,
+    scan: PostgresTableMetadataQueries.PostgisColumnsScan,
+    postgisSchema: String?,
     notes: MutableList<SchemaReadNote>,
 ) {
     if (scan.reachable) return
-    val geometryColumns = columnRows
-        .filter { (it["udt_name"] as? String)?.lowercase() == "geometry" }
+    val postgisColumns = columnRows
+        .filter {
+            PostgresPostgisType.isOwnedByPostgis(
+                it["udt_name"] as? String,
+                it["udt_schema"] as? String,
+                postgisSchema,
+            )
+        }
         .mapNotNull { it["column_name"] as? String }
-    if (geometryColumns.isEmpty()) return
+    if (postgisColumns.isEmpty()) return
     notes += SchemaReadNote(
         severity = SchemaReadSeverity.WARNING,
         code = "R405",
         objectName = tableName,
         message = "The geometry_columns view is not reachable, so the PostGIS columns of '$tableName' " +
-            "(${geometryColumns.joinToString(", ")}) are read as plain geometry — without subtype and " +
+            "(${postgisColumns.joinToString(", ")}) are read as plain geometry — without subtype and " +
             "without SRID.",
         hint = "Add the schema that holds the PostGIS extension to the search_path of the connection " +
             "or of the database (ALTER DATABASE … SET search_path = public, postgis), or declare the " +

@@ -1,7 +1,7 @@
 # SQL Server: ein `integer`-Identity-Primärschlüssel verliert den Modus
 
 > **Status:** Entschieden (2026-09-18) — wird in Plan 3 des Reader-Umbrellas
-> gebaut ([`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md)).
+> gebaut ([`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md)).
 > **Eigner-Entscheidung:** wie S1 bei PostgreSQL beheben — eine `int IDENTITY`-Spalte,
 > die allein den Primärschlüssel bildet, liest als `integer` mit
 > `generation: identity` (Modus bleibt), statt auf `identifier` zu fallen. Der

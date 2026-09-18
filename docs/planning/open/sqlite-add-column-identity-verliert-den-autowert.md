@@ -56,7 +56,7 @@ Der Fall ist heute **nicht erreichbar**: die Identity-Typprüfung der
 Validierung (`E130`) lässt eine solche Spalte nicht bis zum Generator; der
 Diff-Pfad prüft seit S2 ohnehin beides (Typ **und** Erzeugung). Er wird
 erreichbar, sobald jemand `E130` lockert — das ist genau die Frage von **S5**
-und **S6** in [`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md).
+und **S6** in [`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md).
 Wer sie beantwortet, prüft diese Stelle mit.
 
 ## Drei Wege (nicht entschieden)

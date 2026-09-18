@@ -19,14 +19,18 @@ import io.kotest.matchers.string.shouldContain
 class PostgresGeometryColumnsReachTest : FunSpec({
 
     fun scan(reachable: Boolean) =
-        PostgresTableMetadataQueries.GeometryColumnsScan(reachable = reachable, rows = emptyList())
+        PostgresTableMetadataQueries.PostgisColumnsScan(reachable = reachable, columns = emptyMap())
 
+    // Die Spalten liegen im PostGIS-Schema, solange nichts anderes dasteht —
+    // der Normalfall, in dem die Extension in `public` installiert ist.
     fun columns(vararg udt: Pair<String, String>): List<Map<String, Any?>> =
-        udt.map { (name, type) -> mapOf("column_name" to name, "udt_name" to type) }
+        udt.map { (name, type) ->
+            mapOf("column_name" to name, "udt_name" to type, "udt_schema" to "public")
+        }
 
     fun notesFor(reachable: Boolean, vararg cols: Pair<String, String>): List<SchemaReadNote> {
         val notes = mutableListOf<SchemaReadNote>()
-        notePostgisOutOfReach("places", columns(*cols), scan(reachable), notes)
+        notePostgisOutOfReach("places", columns(*cols), scan(reachable), "public", notes)
         return notes
     }
 
@@ -57,5 +61,30 @@ class PostgresGeometryColumnsReachTest : FunSpec({
     test("mehrere Geometriespalten stehen in einer Note") {
         val note = notesFor(false, "a" to "geometry", "b" to "geometry").single()
         note.message shouldContain "a, b"
+    }
+
+    // P4: Subtyp und SRID einer `geography`-Spalte stehen in
+    // `geography_columns` — derselben Extension, derselben Huerde. Ohne die
+    // Sicht kommt sie genauso ohne beides zurueck und zaehlt deshalb mit.
+    test("eine geography-Spalte zaehlt zur R405-Meldung") {
+        val note = notesFor(false, "id" to "int4", "area" to "geography").single()
+
+        note.code shouldBe "R405"
+        note.message shouldContain "area"
+    }
+
+    // Gegenprobe 3: ein Anwendertyp namens `geography` in einem anderen
+    // Schema verliert nichts, wenn die Registriersichten fehlen — er hat dort
+    // nie einen Eintrag gehabt.
+    test("ein Anwendertyp namens geography in einem anderen Schema zaehlt nicht") {
+        val notes = mutableListOf<SchemaReadNote>()
+        notePostgisOutOfReach(
+            "places",
+            listOf(mapOf("column_name" to "kind", "udt_name" to "geography", "udt_schema" to "app")),
+            scan(reachable = false),
+            "public",
+            notes,
+        )
+        notes.shouldBeEmpty()
     }
 })

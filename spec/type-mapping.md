@@ -67,42 +67,36 @@ dann `Text()` ohne Länge.
 
 ## 3. PostgreSQL: Bekannte Lücken
 
-### 3.1 Extension-Typen (citext, ltree, hstore, etc.)
+### 3.1 Benutzerdefinierte Typen (`data_type = "USER-DEFINED"`)
 
-PostgreSQL liefert für Extension-Typen:
-- `data_type = "USER-DEFINED"`
-- `udt_name = "citext"` (oder `"ltree"`, `"hstore"`, etc.)
+PostgreSQL meldet jeden Typ, der nicht zum Sprachkern gehört, mit
+`data_type = "USER-DEFINED"`; den Typ selbst nennen `udt_schema` und
+`udt_name`. Darunter fallen Extension-Typen (`citext`, `ltree`, `hstore`)
+ebenso wie Anwendertypen (ein Enum, ein Domain, ein zusammengesetzter Typ).
 
-**Aktuelles Verhalten**: `mapUserDefined()` erkennt nur `geometry`
-(PostGIS). Alle anderen `USER-DEFINED`-Typen werden als
-`Enum(refType = udtName)` gemappt — das ist **falsch** für
-text-artige Extensions wie `citext`.
+**Die Regel je Typ:**
 
-**Betroffene Typen**:
+| `udt_name` | Neutral | Bedingung und Begründung |
+|---|---|---|
+| `geometry` | `geometry` mit Subtyp und SRID aus `geometry_columns`, Note `R401` | nur, wenn `udt_schema` das Schema der PostGIS-Extension ist |
+| `geography` | `geometry` mit Subtyp und SRID aus `geography_columns`, Note `R403` | nur, wenn `udt_schema` das Schema der PostGIS-Extension ist. Das neutrale Modell kennt **eine** Geometrie; ein PostgreSQL-Ziel rendert die Spalte als `geometry` mit demselben SRID, und Abstände und Flächen rechnen dort planar statt auf dem Ellipsoid. Die Note benennt genau das |
+| `tsvector` | `fulltext` | eigener neutraler Typ, kein Umweg über `text` — die Spalte ist parameterlos, die Text-Search-Konfiguration gehört zum befüllenden Trigger, nicht zum Spaltentyp |
+| jeder andere | `enum` mit `ref_type = udt_name` | der Anwendertyp bleibt benannt; sein Wertevorrat bzw. seine Definition steht unter `custom_types`, sofern er im gelesenen Schema liegt |
 
-| Extension | udt_name | Korrektes Mapping | Aktuell |
-|-----------|----------|-------------------|---------|
-| citext | `citext` | `Text()` | `Enum(refType="citext")` ❌ |
-| ltree | `ltree` | `Text()` | `Enum(refType="ltree")` ❌ |
-| hstore | `hstore` | `Json` oder `Text()` | `Enum(refType="hstore")` ❌ |
-| tsvector | `tsvector` | `Text()` + Note | `Enum(refType="tsvector")` ❌ |
+**Die Schema-Prüfung ist Teil der Regel.** `geometry` und `geography` sind
+gewöhnliche Typnamen; ein Anwendertyp darf so heißen, solange er in einem
+anderen Schema liegt. Über den Namen allein wären die beiden nicht zu
+unterscheiden — deshalb entscheidet `udt_schema` gegen das Schema, in dem die
+PostGIS-Extension installiert ist. Ist PostGIS nicht installiert, kann es
+keine PostGIS-Spalte geben, und jeder Typ dieses Namens bleibt ein
+Anwendertyp.
 
-**Empfehlung**: In `mapUserDefined()` eine Allowlist bekannter
-Extension-Typen einführen:
-
-```kotlin
-fun mapUserDefined(udtName: String, ...): MappingResult = when (udtName) {
-    "geometry" -> MappingResult(NeutralType.Geometry(), ...)
-    "citext" -> MappingResult(NeutralType.Text(), infoNote("citext mapped to Text"))
-    "ltree" -> MappingResult(NeutralType.Text(), infoNote("ltree mapped to Text"))
-    "hstore" -> MappingResult(NeutralType.Json, infoNote("hstore mapped to Json"))
-    "tsvector" -> MappingResult(NeutralType.Text(), actionNote("tsvector has no neutral equivalent"))
-    else -> MappingResult(NeutralType.Enum(refType = udtName))
-}
-```
-
-**Priorität**: P2 — betrifft nur Reverse-Engineering von Datenbanken
-mit Extensions. Dateibasierte Schemas sind nicht betroffen.
+**Text-artige Extension-Typen bleiben `enum` mit `ref_type`.** Für `citext`,
+`ltree` und `hstore` wäre `text` bzw. `json` die nähere Entsprechung; solange
+das Reverse sie nicht kennt, ist der benannte Verweis die ehrlichere Form —
+er sagt, welcher Typ dastand. Die Modellfrage dazu ist offen und betrifft nur
+das Reverse-Engineering von Datenbanken mit Extensions; dateibasierte Schemas
+sind nicht betroffen.
 
 ### 3.2 Interne PG-Typen (name, oid, regclass, etc.)
 
@@ -449,6 +443,15 @@ Konsequenzen:
   Der Spalten-Default (0 für `geometry`, 4326 für `geography`) gilt nur noch,
   wo die Quelle gar keine Angabe hat — bei `data import` aus einer Datei, die
   kein Quellschema mitführt.
+
+**Nachbarregel PostgreSQL.** PostGIS hat dieselben zwei Typen, und auch dort
+liest der Reverse beide als neutrale `geometry` — `geography` mit `R403`
+(Abschnitt 3.1). Der Unterschied liegt im Hinweg: SQL Server **wählt** den
+Typ nach dem SRID, PostgreSQL rendert immer `geometry`
+(`ddl-generation-rules.md`, Abschnitt Spatial, PostgreSQL). Eine
+PostGIS-`geography`-Spalte erreicht SQL Server über ihren geodätischen SRID
+also wieder als `geography`, PostgreSQL dagegen als `geometry`. Die Konstante
+`MssqlTypeMapper.GEODETIC_SRID_RANGE` betrifft nur SQL Server.
 
 ---
 

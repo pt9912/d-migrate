@@ -49,10 +49,16 @@ class PostgresDataReader(fetchSizeOverride: Int? = null) : AbstractJdbcDataReade
     override fun geometryReadExpression(quotedColumn: String): String = "ST_AsBinary($quotedColumn)"
 
     /**
-     * Nur das PostGIS-`geometry` ist WKB-fähig. Die **nativen** PG-Typen
-     * `point`/`polygon`/`line`/`box`/`path`/`circle`/`lseg` heißen wie
-     * OGC-Subtypen, sind aber kein WKB — sie dürfen NICHT mit `ST_AsBinary`
-     * gewrappt werden. (`geography` bleibt vorerst außen vor: eigener Konstruktor.)
+     * Nur die PostGIS-Typen `geometry` und `geography` sind WKB-fähig. Die
+     * **nativen** PG-Typen `point`/`polygon`/`line`/`box`/`path`/`circle`/
+     * `lseg` heißen wie OGC-Subtypen, sind aber kein WKB — sie dürfen NICHT
+     * mit `ST_AsBinary` gewrappt werden.
+     *
+     * `geography` gehört dazu: `ST_AsBinary` gilt für beide und liefert
+     * dasselbe kanonische WKB (gemessen an PostGIS 3.6). Ohne diese Zeile las
+     * der Transfer eine `geography`-Spalte als undurchsichtiges Objekt statt
+     * als Geometrie.
      */
-    override fun isGeometryTypeName(typeNameLower: String): Boolean = typeNameLower == "geometry"
+    override fun isGeometryTypeName(typeNameLower: String): Boolean =
+        typeNameLower == "geometry" || typeNameLower == "geography"
 }

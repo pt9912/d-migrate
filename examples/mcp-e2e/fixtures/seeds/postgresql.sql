@@ -116,3 +116,20 @@ CREATE TABLE sl_pg_identity_int (
   id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   label text NOT NULL
 );
+
+-- P4: eine PostGIS-`geography`-Spalte. Eigene Tabelle, weil SQLite ohne
+-- `--spatial-profile spatialite` die **ganze** Tabelle mit E052 blockt (der
+-- Matrix-Lauf generiert ohne Profil); der Generate-Report nennt sie dann
+-- unter `skipped_objects`, und der Check erwartet sie im SQLite-Ziel nicht.
+-- Deshalb steht hier auch keine `ziel sqlite`-Zeile.
+--
+-- seed: sl_pg_geography.id | paket: P4 | quelle: integer
+--   ziel mysql: integer | code: keinen
+--   ziel mssql: integer | code: keinen
+-- seed: sl_pg_geography.area | paket: P4 | quelle: geometry(srid=4326) | code: R403
+--   ziel mysql: geometry(srid=4326) | code: keinen
+--   ziel mssql: geometry(srid=4326) | code: keinen
+CREATE TABLE sl_pg_geography (
+  id integer PRIMARY KEY,
+  area geography(Point, 4326)
+);

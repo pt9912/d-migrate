@@ -43,7 +43,9 @@
 #             Reverse.
 #   verloren  Eine Spalte fehlt: im Reverse der Quelle gegenueber der
 #             Anmerkung, oder im Reverse des Ziels gegenueber dem der Quelle,
-#             ohne dass der Generate-Schritt sie in `skipped_objects` nennt.
+#             ohne dass der Generate-Schritt sie in `skipped_objects` nennt —
+#             als Spalte oder als ganze Tabelle (ein Spatial-Profil blockt
+#             mit E052 die Tabelle, nicht die einzelne Spalte).
 #   ziel      Der Reverse des Ziels verfehlt die angemerkte Form — oder er
 #             trifft sie, sie ist eine Degradierung, und der Generate-Report
 #             der Zelle nennt dafuer keinen Code (M1). Eine Degradierung, deren
@@ -377,7 +379,14 @@ silent_loss_target() {
       | ([ ($src | to_entries[]) as $entry
            | select(($tgt[$entry.key] // null) == null)
            | ($entry.key | split(".") | .[1]) as $column
-           | select((($skipped | index($entry.key)) == null) and (($skipped | index($column)) == null))
+           | ($entry.key | split(".") | .[0]) as $table
+           # Ein uebersprungenes Objekt nennt sich als `tabelle.spalte`, als
+           # blosser Spaltenname — oder als **Tabelle**: ein Spatial-Profil,
+           # das die Geometrie nicht rendern kann, blockt die ganze Tabelle
+           # (E052), und dann fehlt jede ihrer Spalten mit Ansage.
+           | select((($skipped | index($entry.key)) == null)
+                    and (($skipped | index($column)) == null)
+                    and (($skipped | index($table)) == null))
            | "verloren \($s)->\($t): \($entry.key): im Reverse des Ziels nicht vorhanden und nicht in skipped_objects" ])
         + ([ .[] | select(.dialect == $s) | . as $a
              | ($a.table + "." + $a.column) as $key

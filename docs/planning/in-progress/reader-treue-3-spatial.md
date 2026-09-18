@@ -1,10 +1,12 @@
 # Reader-Treue 3: Spatial-Treue (P4, P7, P2a, P2b)
 
-> **Status:** Entwurf mit Scope (Schnitt 2026-09-17 aus dem ungeschnittenen
-> Reader-Slice; Befunde aus Plan-Review und Architektur-Prüfung eingearbeitet,
-> Anker gegen `90c6c234f` nachgemessen). Teil des Umbrellas
-> [`reader-treue.md`](../in-progress/reader-treue.md); dort stehen Nenner, Belegart, Regeln
-> der Abnahme, Doku-Pflichten und die Code-Tabelle.
+> **Status:** **In Arbeit seit 2026-09-18.** Schnitt 2026-09-17 aus dem
+> ungeschnittenen Reader-Slice; Befunde aus Plan-Review und
+> Architektur-Prüfung eingearbeitet, Anker gegen `90c6c234f` nachgemessen.
+> Teil des Umbrellas
+> [`reader-treue.md`](reader-treue.md); dort stehen Nenner, Belegart, Regeln
+> der Abnahme, Doku-Pflichten und die Code-Tabelle. Der Bauabschnitt am Ende
+> hält Nulllinie, Messungen, Sabotagen und Neu-Pins fest.
 > **Vorbedingung / Gate:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md) ist geliefert und graduiert
 > (2026-09-18; Matrix als Abnahme,
 > PostGIS-Dienst im eigenen Schema), und
@@ -13,8 +15,8 @@
 > erweitert; der PostGIS-Container in `:test:integration-postgresql` ist seit
 > P3 gefahren. Die Eigner-Entscheidungen F1 (P4 nur Rückweg) und A6 (P7)
 > stehen; keine offene Frage sperrt diesen Plan.
-> **Aktivierung:** Move nach `../in-progress/` beim ersten
-> Implementierungs-Commit dieses Plans.
+> **Aktivierung:** mit dem ersten Implementierungs-Commit (P4) nach
+> `in-progress/` gewandert (2026-09-18); der Umbrella bleibt, wo er ist.
 > **Abhängigkeit:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md) und, für P4, P3 aus
 > [Plan 2](../done/reader-treue-2-meldungen.md) — **beide geliefert**. P7, P2a und P2b
 > hängen an keinem anderen Paket und berühren die Matrix nicht.
@@ -529,6 +531,115 @@ Index): welche Sequenzen Spatial anlegt, wie sie heißen und was der Katalog
 4. **Sabotage:** Kriterium weg → Test rot.
 
 **Abnahme:** `:test:integration-oracle` (`ORACLE_FULL`, Nulllinie gemessen).
+
+## Bau
+
+### Nulllinie der Integrationsmodule (2026-09-18, vor dem ersten Paket)
+
+`make integration INTEGRATION_TASKS=":test:integration-postgresql:test
+:test:integration-sqlite:test :test:integration-oracle:test
+:test:integration-mssql:test :test:e2e-cli:test --continue"`:
+**`BUILD SUCCESSFUL` in 23 min 1 s, 107 Tasks.** Alle **fünf** `:test`-Tasks
+stehen ohne `SKIPPED` und ohne `UP-TO-DATE` im Lauf — sie sind `executed`.
+Damit ist auch die letzte offene Zeile des Umbrellas gemessen:
+`:test:e2e-cli` läuft.
+
+**Eine Selbstüberspringung**, dieselbe wie in Plan 1:
+`MssqlFullTextEnvironmentIntegrationTest` überspringt sich (`xtest`), wenn das
+abgeleitete Volltext-Image fehlt. Auf dem Messhost liegt
+`d-migrate-mssql-fts:local`, die Spec lief also mit. In den vier anderen
+Testquellbäumen kommt weder `assumeTrue`/`Assumptions` noch `@Disabled` oder
+`xtest` vor (über alle fünf Bäume gesucht).
+
+**Eine Testzahl je Modul steht nicht im Lauf** — dieselbe Grenze wie in Plan 1
+und 2: das Integrations-Image trägt das Repo als Kopie, die Reports bleiben im
+Container, und Gradle zählt in der Konsolenausgabe nichts. Gemessen ist der
+ausgeführte Task, nicht die Zahl.
+
+### Messungen vor dem Bau
+
+#### P4 — was `geography_columns` führt (PostGIS 3.6, gemessen 2026-09-18)
+
+| Spalte | `type` | `srid` | `coord_dimension` |
+| --- | --- | --- | --- |
+| `geography(Point,4326)` | `Point` | 4326 | 2 |
+| `geography(LineString,4326)` | `LineString` | 4326 | 2 |
+| `geography(Point,4258)` | `Point` | 4258 | 2 |
+| `geography` **ohne** Typmodifikator | `Geometry` | **0** | `NULL` |
+
+**Die Schreibweise unterscheidet sich von `geometry_columns`**: dort steht der
+Subtyp groß (`POINT`), hier gemischt (`Point`). `GeometryType.of` faltet
+beides (es kleinschreibt), also braucht es keine eigene Regel — gemessen,
+nicht angenommen.
+
+**`srid = 0` heißt „kein Bezugssystem"** und wird im Modell `null`, wie bei
+`geometry` schon.
+
+**Der Anwendertyp ist unterscheidbar.** Ein `CREATE TYPE app.geography AS
+ENUM (…)` erscheint in `information_schema.columns` mit
+`udt_schema = app, udt_name = geography`, die PostGIS-Spalte mit
+`udt_schema = public`. Über den Namen allein wären die beiden nicht zu
+trennen; `udt_schema` gegen das Schema der Extension
+(`pg_extension` ⋈ `pg_namespace`) trennt sie.
+
+#### P4 — welcher Schreibkonstruktor eine WKB-Eingabe in `geography` trägt
+
+| Form | Ergebnis |
+| --- | --- |
+| `ST_GeogFromWKB(bytea)` | existiert, **nur einstellig** (`pg_proc`); legt den SRID auf 4326 |
+| `ST_GeogFromWKB(?)` in `geography(Point,4258)` | **abgelehnt**: „Geometry SRID (4326) does not match column SRID (4258)" |
+| `ST_GeomFromWKB(?, 4326)` in `geography(Point,4326)` | angenommen, SRID 4326 |
+| `ST_GeomFromWKB(?, 4258)` in `geography(Point,4258)` | angenommen, SRID 4258 |
+| `ST_GeomFromWKB(?)` (SRID 0) in `geography` ohne Modifikator | angenommen, kommt als 4326 an |
+
+**Gebaut wird deshalb mit dem vorhandenen `ST_GeomFromWKB`**: PostGIS erklärt
+den Weg von `geometry` nach `geography` als Zuweisungs-Cast, und die
+zweistellige Form trägt den SRID, den `ST_GeogFromWKB` nicht nehmen kann. Der
+Datenpfad braucht damit **keinen** zweiten Konstruktor und keine neue Naht in
+`driver-common` — nur `isGeometryTypeName` und die SRID-Anreicherung müssen
+`geography` kennen. Das Lesen ist ohnehin gemeinsam: `ST_AsBinary` gilt für
+beide Typen und liefert dasselbe kanonische WKB.
+
+#### P2b — was PostGIS in `public` an Objekten mitbringt (PostGIS 3.6)
+
+| Gegenstand | Zahl in `public` | davon extension-eigen (`pg_depend.deptype = 'e'`) |
+| --- | --- | --- |
+| Funktionen (`pg_proc`) | 787 | **787** |
+| davon über die heutige Abfrage (`information_schema.routines`, `routine_name NOT LIKE 'pg_%'`) | 758 | — |
+| Aggregate (`pg_aggregate`) | 22 | **22** |
+| Sichten (`relkind IN ('v','m')`) | 2 (`geometry_columns`, `geography_columns`) | **2** |
+| Prozeduren | 0 | — |
+
+Die Messung lief gegen ein Image mit PostGIS **und** `fuzzystrmatch` in
+`public`; kein einziges dieser Objekte gehört einem Anwender. Der
+`deptype = 'e'`-Filter nimmt also genau die Flut und lässt nichts übrig — das
+ist der Beleg, dass er nicht zu viel filtert, wenn kein Anwenderobjekt da ist.
+Die Gegenprobe (eine Anwenderfunktion, die PostGIS benutzt, und eine
+Anwendersicht über eine Geometriespalte) steht im Integrationsfall.
+
+#### P7 — `AddGeometryColumn` mit `not_null` (SpatiaLite 5.1.0, gemessen 2026-09-18)
+
+Gemessen im Integrations-Image über eine echte Datei mit geladener Extension
+(`?spatialite=true`), als Wegwerf-Spec mit absichtlich rotem Abschluss, damit
+die Werte in der Ausgabe stehen.
+
+| Fall | Ergebnis |
+| --- | --- |
+| `AddGeometryColumn('t','geom',4326,'POINT','XY',1)` auf **leerer** Tabelle | Rückgabe `1`; die Spalte entsteht als `"geom" POINT NOT NULL DEFAULT ''` (`PRAGMA table_info`: `notnull=1`, `dflt_value=''`) |
+| Zeile **ohne** Geometrie danach | abgewiesen — und zwar vom **Geometrie-Trigger**, nicht vom `NOT NULL`: `SQLITE_CONSTRAINT_TRIGGER`, „t.geom violates Geometry constraint [geom-type or SRID not allowed]" |
+| Zeile **mit** Geometrie | angenommen |
+| derselbe Aufruf auf einer **gefüllten** Tabelle | **gelingt** (Rückgabe `1`). Die Bestandszeile trägt danach `geom = ''` (`typeof` = `text`, nicht `NULL`) — also den Füllwert, keine gültige Geometrie |
+| fünfstellige Form (nullable) | `"geom" POINT`, `notnull=0`, **kein** Default |
+
+**Zwei Entscheidungen folgen daraus.** Erstens: `AddColumn` auf eine
+bestehende Tabelle bleibt mit `required` **blockiert**. SpatiaLite
+unterscheidet leer und gefüllt nicht und lehnt die gefüllte nicht ab; es füllt
+still mit `''`, und dieser Wert hätte beim Einfügen gerade der
+Geometrie-Trigger abgewiesen. Eine Anweisung, die Bestandszeilen mit einem
+Wert zurücklässt, den dieselbe Tabelle nicht annähme, ist kein Fortschritt
+gegenüber der Blockade. Zweitens: der **Reverse** muss den Default `''`
+verwerfen — er ist SpatiaLites Füllwert, kein Anwender-Default, und ein
+Default ist selbst ein `E052`-Auslöser.
 
 ## Akzeptanzkriterien
 

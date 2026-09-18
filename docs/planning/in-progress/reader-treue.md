@@ -1,8 +1,9 @@
 # Reader-Treue: stille Verluste und Fremdes im Reverse und am Generator (Umbrella)
 
 > **Status:** **In Arbeit seit 2026-09-17** (die Pläne 1 und 2 sind geliefert
-> und am 2026-09-18 nach [`../done/`](../done/) graduiert; die Pläne 3 und 4
-> stehen weiter in [`../next/`](../next/)), **Umbrella über vier Pläne**
+> und am 2026-09-18 nach [`../done/`](../done/) graduiert; Plan 3 ist seit
+> 2026-09-18 in Arbeit, Plan 4 steht weiter in [`../next/`](../next/)),
+> **Umbrella über vier Pläne**
 > (Schnitt 2026-09-17, Eigner-Entscheidung „E-Schnitt"). Eingearbeitet sind die Befunde
 > aus Plan-Review und Architektur-Prüfung (gegen `da29034b1`); die Anker sind
 > gegen `90c6c234f` nachgemessen. Der Umbrella ersetzt den ungeschnittenen
@@ -33,7 +34,7 @@ Die Reihenfolge ist Eigner-Entscheidung: 1 → 2 → 3 → 4.
 | --- | --- | --- | --- |
 | [1 — Matrix als Abnahme](../done/reader-treue-1-matrix-abnahme.md) — **geliefert, graduiert 2026-09-18 (`../done/`)** | P6 (MySQL-Server-Text), P0 (Seeds und Silent-Loss-Check), S4 (SQLite-Migrate verliert FK-Aktionen), P12 (T-SQL-Quoting im Berechnungsausdruck), P11 (SQLite-Constraint-Namen); dazu der E1-Bauteil | Compare-Matrix, `:test:integration-mysql`, `:test:integration-sqlite`, `:test:integration-mssql` | — |
 | [2 — Meldungen](../done/reader-treue-2-meldungen.md) — **geliefert, graduiert 2026-09-18 (`../done/`)** | P5 (Array-Verlust MySQL und SQLite), P10 (`ALWAYS` ohne Entsprechung), P8 (`json`), P9 (ungebundene Zahl, unbekanntes Array-Element), P1 (Oracle-SRID), P3 (`search_path`); dazu S1 bis S3, gemessen und behoben statt gemeldet. Gebaut in der Reihenfolge P5 → S2 → P10 → S3 → P8/P9 → S1 → P1 → P3 | Matrix, Integrationsmodule je Dialekt | [Plan 1](../done/reader-treue-1-matrix-abnahme.md) |
-| [3 — Spatial-Treue](../next/reader-treue-3-spatial.md) | P4 (PostgreSQL `geography`, nur Rückweg, samt Datenpfad), P7 (SpatiaLite `NOT NULL`), P2a/P2b (Oracle- und PostGIS-Systemobjekte); dazu S5 und S6 (nachgetragen 2026-09-18, gemeinsam zu entscheiden) | `:test:integration-postgresql` mit PostGIS, `:test:integration-sqlite`, `:test:integration-oracle`, `:test:e2e-cli`, Matrix | [Plan 1](../done/reader-treue-1-matrix-abnahme.md); P4 auf P3 aus [Plan 2](../done/reader-treue-2-meldungen.md) — **beide geliefert**, keine Vorbedingung mehr offen |
+| [3 — Spatial-Treue](reader-treue-3-spatial.md) — **in Arbeit seit 2026-09-18** | P4 (PostgreSQL `geography`, nur Rückweg, samt Datenpfad), P7 (SpatiaLite `NOT NULL`), P2a/P2b (Oracle- und PostGIS-Systemobjekte); dazu S5 und S6 (nachgetragen 2026-09-18, gemeinsam zu entscheiden) | `:test:integration-postgresql` mit PostGIS, `:test:integration-sqlite`, `:test:integration-oracle`, `:test:e2e-cli`, Matrix | [Plan 1](../done/reader-treue-1-matrix-abnahme.md); P4 auf P3 aus [Plan 2](../done/reader-treue-2-meldungen.md) — **beide geliefert**, keine Vorbedingung mehr offen |
 | [4 — Typ berechneter SQL-Server-Spalten](../next/reader-treue-4-mssql-berechneter-typ.md) | P13 (erst messen, dann nach der entschiedenen Regel) | `:test:integration-mssql`, Roundtrip-Harness, Matrix | P12 aus [Plan 1](../done/reader-treue-1-matrix-abnahme.md) |
 
 ## Der gemeinsame Nenner
@@ -198,7 +199,7 @@ nur dann etwas, wenn vorher feststand, dass das Modul läuft.
 | `:test:integration-mysql` | gemessen 2026-09-17 (Plan 1): `executed`, keine Selbstüberspringung; erneut 2026-09-18 (Plan 2) | Plan 1 (P6) **geliefert**, Plan 2 (P5, P10) **geliefert** |
 | `:test:integration-sqlite` | gemessen 2026-09-17 (Plan 1): `executed`, keine Selbstüberspringung; erneut 2026-09-18 (Plan 2) | Plan 1 (S4, P11) **geliefert**, Plan 2 (P5, P9, P10, S2) **geliefert**, Plan 3 (P7) |
 | `:test:integration-mssql` | gemessen 2026-09-17 (Plan 1): `executed`; **eine** Selbstüberspringung, s. unten | Plan 1 (P12) **geliefert**, Plan 4 (P13) |
-| `:test:e2e-cli` | **nicht gemessen** | Plan 3 (P4, Datenpfad) |
+| `:test:e2e-cli` | gemessen 2026-09-18 (Plan 3): `executed`, keine Selbstüberspringung | Plan 3 (P4, Datenpfad) |
 
 Die drei Zeilen von Plan 1 stammen aus **einem** Lauf über alle drei Module
 (`--continue`): `BUILD SUCCESSFUL`, 55 Tasks, alle `executed`. **Eine Testzahl
@@ -297,7 +298,7 @@ den Ledger-Eintrag.
 | `R370` | 2, P1 | `WARNING` ([ADR 0058](../../adr/0058-verlorener-srid-beim-reverse-ist-warnung.md)) | **gebaut** (drei Texte, s. Plan 2) |
 | `R371` | 2, P9 (Oracle `NUMBER`) | `WARNING` | **gebaut** |
 | `R402` | 2, P8 | `WARNING` (die Daten ändern sich beim Übertragen) | **gebaut** (Spalte, Array-Element, Feld eines zusammengesetzten Typs) |
-| `R403` | 3, P4 | `WARNING` (Begründung in Plan 3) | reserviert |
+| `R403` | 3, P4 | `WARNING` (Begründung in Plan 3) | **gebaut** |
 | `R404` | 2, P9 (PostgreSQL) | `WARNING` | **gebaut** |
 | `R405` | 2, P3 | `WARNING` (ADR 0058, Entscheidung 1: ein verlorener SRID) | **gebaut** |
 | `R221` | 2, P9 (SQLite) | `WARNING` | **gebaut** |

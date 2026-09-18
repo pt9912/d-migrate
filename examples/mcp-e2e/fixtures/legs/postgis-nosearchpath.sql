@@ -26,9 +26,15 @@ DROP EXTENSION IF EXISTS postgis CASCADE;
 CREATE SCHEMA IF NOT EXISTS postgis;
 CREATE EXTENSION postgis SCHEMA postgis;
 
+-- P4: die `geography`-Spalte liegt hinter derselben Huerde — ihr Subtyp und
+-- ihr SRID stehen in `geography_columns`, also in derselben Extension. Ohne
+-- den `search_path` kommt sie genauso ohne beides zurueck und steht in
+-- derselben `R405`-Meldung; `R403` sagt daneben, dass ein PostgreSQL-Ziel sie
+-- als `geometry` rendern wuerde.
 CREATE TABLE sl_pg_nosp_places (
   id integer PRIMARY KEY,
-  location postgis.geometry(Point, 4326) NOT NULL
+  location postgis.geometry(Point, 4326) NOT NULL,
+  area postgis.geography(Point, 4326)
 );
 
 -- Gegenprobe im selben Bein: eine Tabelle ohne Geometriespalte verliert

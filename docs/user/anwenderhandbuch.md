@@ -2034,6 +2034,21 @@ SELECT AddGeometryColumn('places', 'area', 4326, 'POLYGON', 'XY');
   den verlorenen SRID mit `R370` und nennt den Ausweg, der zum Fall passt
   (siehe den Oracle-Abschnitt unter „Warum verliert mein Oracle-Reverse die
   SRID meiner Geometriespalte?").
+- **Eine PostGIS-`geography`-Spalte kommt als `geometry` zurück** — mit ihrem
+  Untertyp und ihrem SRID aus `geography_columns`, und mit `R403` im Bericht.
+  d-migrates Modell kennt nur **eine** Geometrie. Was das für Sie heißt, hängt
+  am Ziel:
+
+  | Ziel | Ergebnis |
+  |---|---|
+  | PostgreSQL | `geometry(Point, 4326)` — Abstände und Flächen rechnen dort **planar**, nicht auf dem Ellipsoid |
+  | SQL Server | `geography` — der Typ wird dort über den SRID gewählt (4000–4999 ⇒ geodätisch) |
+  | MySQL, SQLite, Oracle | der jeweilige Geometrietyp; keiner der drei unterscheidet planar von geodätisch am Spaltentyp |
+
+  Brauchen Sie auf einem PostgreSQL-Ziel wieder `geography`, ändern Sie den
+  Spaltentyp dort nach dem Einspielen von Hand. Die **Werte** überträgt
+  `data transfer` in beiden Richtungen: aus einer `geography`-Spalte gelesen
+  und in eine `geography`-Spalte geschrieben, mit ihrem SRID.
 - Erlaubte `geometry_type`-Werte und die Grenzen stehen in
   [Anhang F.4](#f4-spatial-typen); Profil-Details in
   [Anhang A.4](#a4-schema-generate).
@@ -3665,9 +3680,13 @@ das Ziel daraus neu, statt es zurückzulesen.
 Auf MS SQL Server tragen `NVARCHAR`/`NCHAR` höchstens 4000 Zeichen und
 `DECIMAL` höchstens Präzision 38; darüber weitet d-migrate auf `(MAX)` bzw.
 kappt auf 38 und meldet das im Transformationsbericht (**W136**, **W139**).
-Ob eine Geometriespalte `geography` oder `geometry` wird, entscheidet die
-SRID (siehe
+Ob eine Geometriespalte **auf SQL Server** `geography` oder `geometry` wird,
+entscheidet die SRID (siehe
 [Typ-Mapping](../../spec/type-mapping.md#64-spatial-geometry-vs-geography)).
+Auf PostgreSQL entsteht immer `geometry`, auch bei einer geodätischen SRID.
+In der Gegenrichtung liest `schema reverse` eine PostGIS-`geography`-Spalte
+als `geometry` mit ihrem Untertyp und ihrer SRID und meldet das mit `R403`
+([3.16](#316-geodaten-spatial-modellieren-und-übertragen)).
 
 `identifier` ist der 32-bit-Auto-Increment-Vertrag; SQLites
 `INTEGER PRIMARY KEY AUTOINCREMENT` ist dagegen 64-bit — ein Cross-Dialect-

@@ -54,6 +54,11 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
         // Extensions
         every { jdbc.queryList(match { it.contains("pg_extension") }) } returns emptyList()
+        // P4: das Schema der PostGIS-Extension — ohne sie gibt es keins, und
+        // dann ist ein Typ namens `geometry` ein Anwendertyp.
+        every {
+            jdbc.queryList(match { it.contains("extnamespace") })
+        } returns emptyList()
         // Views, view→function deps, functions, procedures, triggers
         every { jdbc.queryList(match { it.contains("pg_get_viewdef") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("refobjsubid") }, any(), any()) } returns emptyList()
@@ -74,10 +79,12 @@ class PostgresSchemaReaderTest : FunSpec({
 
     fun stubTableQueries(columns: List<Map<String, Any?>>, pkColumns: List<String>) {
         every { jdbc.queryList(match { it.contains("information_schema.columns") }, any(), any()) } returns columns
-        // VA2: geometry_columns probe — no PostGIS view present by default.
+        // VA2/P4: die Probe auf die Registriersichten — ohne PostGIS loest
+        // keine von beiden auf.
         every { jdbc.queryList(match { it.contains("to_regclass('geometry_columns')") }) } returns
-            listOf(mapOf("r" to null))
-        every { jdbc.queryList(match { it.contains("FROM geometry_columns") }, any(), any()) } returns emptyList()
+            listOf(mapOf("geom" to null, "geog" to null))
+        every { jdbc.queryList(match { it.contains("FROM geometry_columns") }, any(), any(), any(), any()) } returns
+            emptyList()
         every { jdbc.queryList(match { it.contains("contype = 'p'") }, any(), any()) } returns
             pkColumns.map { mapOf("column_name" to it) }
         every { jdbc.queryList(match { it.contains("contype = 'f'") }, any(), any()) } returns emptyList()
@@ -190,6 +197,11 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("pg_extension") }) } returns listOf(
             mapOf("extname" to "postgis"),
         )
+        // P4: PostGIS liegt hier in `public`; daran haengt, ob der Typ
+        // `geometry` der Extension gehoert.
+        every { jdbc.queryList(match { it.contains("extnamespace") }) } returns listOf(
+            mapOf("schema_name" to "public"),
+        )
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
             mapOf("table_name" to "places", "table_schema" to "public", "table_type" to "BASE TABLE"),
         )
@@ -199,6 +211,7 @@ class PostgresSchemaReaderTest : FunSpec({
                     "column_name" to "shape",
                     "data_type" to "user-defined",
                     "udt_name" to "geometry",
+                    "udt_schema" to "public",
                     "is_nullable" to "YES",
                     "column_default" to null,
                     "ordinal_position" to 1,
@@ -216,7 +229,7 @@ class PostgresSchemaReaderTest : FunSpec({
         // Fall, den `R405` meldet (PostGIS ausserhalb des `search_path`), und
         // dieser Test fragt nach den Extension-Notes.
         every { jdbc.queryList(match { it.contains("to_regclass('geometry_columns')") }) } returns
-            listOf(mapOf("r" to "geometry_columns"))
+            listOf(mapOf("geom" to "geometry_columns", "geog" to "geography_columns"))
 
         val result = reader.read(pool, SchemaReadOptions(includeViews = false,
             includeFunctions = false, includeProcedures = false, includeTriggers = false))

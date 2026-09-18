@@ -2434,8 +2434,11 @@ git add adapters/driven/formats/src/test/resources/fixtures/ddl/
 Dieser Abschnitt beschreibt verbindlich, wie `schema generate` Spalten mit
 `type: geometry` in datenbankspezifisches DDL ueberfuehrt.
 
-Nicht Teil dieses Abschnitts: `type: geography`, `z`, `m`, Spatial-Indizes
-und automatische Erkennung oder Installation von Datenbankerweiterungen.
+Nicht Teil dieses Abschnitts: ein neutraler Typ `geography`, `z`, `m`,
+Spatial-Indizes und automatische Erkennung oder Installation von
+Datenbankerweiterungen. Das neutrale Modell fuehrt **eine** Geometrie; wo ein
+Dialekt zwei Typen kennt (SQL Server, PostGIS), sagt die Regel des Dialekts,
+welcher davon entsteht.
 
 ### 16.1 Spatial-Profil
 
@@ -2485,6 +2488,17 @@ nicht angegeben ist, gilt der Default `geometry` (lowercase im neutralen
 Modell, grossgeschrieben im PostGIS-Ausdruck: `Geometry`).
 
 Wenn `srid` nicht angegeben ist, wird `0` als Platzhalter verwendet.
+
+**`geometry` ist die einzige Renderform — auch fuer einen geodaetischen
+SRID.** PostGIS kennt daneben `geography`, und SQL Server waehlt zwischen
+beiden nach dem SRID (Abschnitt 16.9). PostgreSQL tut das nicht: eine Spalte
+mit `srid: 4326` wird `geometry(Point, 4326)`, nicht
+`geography(Point, 4326)`. Das neutrale Modell traegt kein Merkmal
+„geodaetisch", und aus dem SRID eines zu erschliessen hiesse, auf PostgreSQL
+den Rechenweg einer Spalte zu aendern, ohne dass die Eingabe das verlangt.
+Der Reverse benennt die Gegenrichtung: eine gelesene `geography`-Spalte
+traegt `R403` (`type-mapping.md`, PostgreSQL). Das ist eine Grenze, keine
+Luecke.
 
 **Beispiel**:
 

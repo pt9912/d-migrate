@@ -73,7 +73,11 @@ class PostgresPostgisSearchPathIntegrationTest : FunSpec({
                     """
                     CREATE TABLE gis_places (
                         id integer PRIMARY KEY,
-                        location postgis.geometry(Point, 4326) NOT NULL
+                        location postgis.geometry(Point, 4326) NOT NULL,
+                        -- P4: `geography_columns` liegt hinter derselben
+                        -- Huerde wie `geometry_columns`; ohne den `search_path`
+                        -- verliert auch diese Spalte Subtyp und SRID.
+                        area postgis.geography(Point, 4326)
                     )
                     """.trimIndent(),
                 )
@@ -106,12 +110,20 @@ class PostgresPostgisSearchPathIntegrationTest : FunSpec({
         note.objectName shouldBe "gis_places"
         note.message shouldContain "geometry_columns"
         note.message shouldContain "location"
+        // P4: die `geography`-Spalte steht in derselben Note.
+        note.message shouldContain "area"
         note.hint!! shouldContain "search_path"
 
-        val type = result.schema.tables.getValue("gis_places").columns.getValue("location").type
+        val columns = result.schema.tables.getValue("gis_places").columns
+        val type = columns.getValue("location").type
         withClue("gelesen wurde $type") {
             (type as NeutralType.Geometry).geometryType shouldBe GeometryType.GEOMETRY
             type.srid shouldBe null
+        }
+        val area = columns.getValue("area").type
+        withClue("gelesen wurde $area") {
+            (area as NeutralType.Geometry).geometryType shouldBe GeometryType.GEOMETRY
+            area.srid shouldBe null
         }
 
         // Gegenprobe im selben Lauf: die Tabelle ohne Geometriespalte meldet
@@ -132,11 +144,20 @@ class PostgresPostgisSearchPathIntegrationTest : FunSpec({
             val result = PostgresSchemaReader().read(fresh)
 
             result.notes.filter { it.code == "R405" }.shouldBeEmpty()
-            val type = result.schema.tables.getValue("gis_places").columns.getValue("location").type
+            val columns = result.schema.tables.getValue("gis_places").columns
+            val type = columns.getValue("location").type
             withClue("gelesen wurde $type") {
                 (type as NeutralType.Geometry).geometryType shouldBe GeometryType.of("point")
                 type.srid shouldBe 4326
             }
+            // P4: dieselbe Auskunft fuer die `geography`-Spalte, aus
+            // `geography_columns` — und `R403` daneben.
+            val area = columns.getValue("area").type
+            withClue("gelesen wurde $area") {
+                (area as NeutralType.Geometry).geometryType shouldBe GeometryType.of("point")
+                area.srid shouldBe 4326
+            }
+            result.notes.single { it.objectName == "gis_places.area" }.code shouldBe "R403"
         } finally {
             runCatching { fresh.close() }
             databaseSearchPath("public")

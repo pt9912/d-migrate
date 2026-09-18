@@ -50,8 +50,8 @@ Grenze, die der Plan bewusst zieht. Jeder hat einen Ort außerhalb; die Liste
 
 | Punkt | Ort |
 | --- | --- |
-| **`smallint`-Identity als Primärschlüssel auf PostgreSQL** verliert den Modus weiter, ohne Code — H1 hält den S1-Zweig auf `integer` eng, damit das gelesene Schema erzeugbar bleibt. Dazu der ältere Nachbarfall: dieselbe Breite **ohne** Schlüssel liest `smallint` + `identity` und fällt bei `E130` | **S6** in [Plan 3](../next/reader-treue-3-spatial.md), **gemeinsam mit S5 zu entscheiden** (welche Breiten trägt der `identifier`-Vertrag); zwei Integrationsfälle halten den Zustand fest, bis die Antwort da ist |
-| **SQL Server: `int IDENTITY` als alleiniger Primärschlüssel** fällt auf `identifier` und verliert den Modus, ohne Code (`W140` meldet den umgekehrten Fall) | [`../open/mssql-integer-identity-pk-verliert-den-modus.md`](../open/mssql-integer-identity-pk-verliert-den-modus.md); als **S5** in [Plan 3](../next/reader-treue-3-spatial.md) geschnitten (Eigner, 2026-09-18) |
+| **`smallint`-Identity als Primärschlüssel auf PostgreSQL** verliert den Modus weiter, ohne Code — H1 hält den S1-Zweig auf `integer` eng, damit das gelesene Schema erzeugbar bleibt. Dazu der ältere Nachbarfall: dieselbe Breite **ohne** Schlüssel liest `smallint` + `identity` und fällt bei `E130` | **S6** in [Plan 3](../in-progress/reader-treue-3-spatial.md), **gemeinsam mit S5 zu entscheiden** (welche Breiten trägt der `identifier`-Vertrag); zwei Integrationsfälle halten den Zustand fest, bis die Antwort da ist |
+| **SQL Server: `int IDENTITY` als alleiniger Primärschlüssel** fällt auf `identifier` und verliert den Modus, ohne Code (`W140` meldet den umgekehrten Fall) | [`../open/mssql-integer-identity-pk-verliert-den-modus.md`](../open/mssql-integer-identity-pk-verliert-den-modus.md); als **S5** in [Plan 3](../in-progress/reader-treue-3-spatial.md) geschnitten (Eigner, 2026-09-18) |
 | **SQLite `ADD COLUMN` einer Identity-Spalte verliert den Autowert still** (Rest aus M2): der Server kann einen rowid-Alias per `ALTER TABLE` nicht anlegen, `W163` setzt einen Autowert voraus, `W135` nennt einen zusammengesetzten Schlüssel als Grund, den es hier nicht gibt | [`../open/sqlite-add-column-identity-verliert-den-autowert.md`](../open/sqlite-add-column-identity-verliert-den-autowert.md); der Integrationsfall aus `580307637` ist sein Wächter |
 | **`W135` trifft schon heute eine Identity-Spalte ganz ohne Schlüssel** — mit dem Satz „is part of a composite primary key", der für sie nicht stimmt. Der Verlust ist benannt, der Grund falsch | derselbe Eintrag, Abschnitt „Nebenbefund am selben Prädikat" |
 | **Der SQLite-Generate-Pfad lässt die Tabellen-`PRIMARY KEY`-Klausel für jede Spalte mit `generation: identity` weg** (`SqliteTableDdlSupport.skipPrimaryKey` sieht die Erzeugung an, nicht den Typ) — eine `decimal`-Identity als alleiniger Schlüssel bekäme gar keinen. Heute über `E130` nicht erreichbar; der Diff-Pfad prüft seit S2 beides | derselbe Eintrag, Abschnitt „Nebenbefund am Generate-Pfad" |
@@ -1006,7 +1006,7 @@ verlustbehafteten, aber lauffähigen Weg wäre ein abbrechender geworden.
 
 Der Zweig prüft jetzt `dt == "integer"` (`bigint` läuft ohnehin durch den
 Zweig darüber). Der `smallint`-Fall verliert den Modus weiter, ohne Code —
-er ist als **S6** in [Plan 3](../next/reader-treue-3-spatial.md) eingetragen,
+er ist als **S6** in [Plan 3](../in-progress/reader-treue-3-spatial.md) eingetragen,
 zusammen mit dem dort schon geschnittenen **S5** (SQL Server, `int IDENTITY`)
 zu entscheiden: beide fragen, welche Breiten der `identifier`-Vertrag trägt.
 Ein Integrationsfall pinnt seitdem **beides** — die `identifier`-Lesart und
@@ -1276,7 +1276,7 @@ nicht in einen Commit gelaufen ist.
 - **Der `smallint`-Identity-Primärschlüssel auf PostgreSQL** — H1 hält den
   S1-Zweig eng, damit das gelesene Schema erzeugbar bleibt; der Modus geht
   dort weiter verloren, ohne Code. Als **S6** in
-  [Plan 3](../next/reader-treue-3-spatial.md) eingetragen, zusammen mit **S5**
+  [Plan 3](../in-progress/reader-treue-3-spatial.md) eingetragen, zusammen mit **S5**
   (SQL Server) zu entscheiden: welche Breiten trägt der `identifier`-Vertrag.
 - **`ADD COLUMN` einer Identity-Spalte auf SQLite verliert den Autowert still**
   (Rest aus M2). SQLite kann einen rowid-Alias per `ALTER TABLE` nicht
@@ -1394,7 +1394,7 @@ außerhalb. Der Umbrella
   sie nicht. Ein `schema generate` aus dem eigenen Reverse wäre abgebrochen;
   aus einem verlustbehafteten, aber lauffähigen Weg wäre ein abbrechender
   geworden. Der Rest der Frage ist als **S6** in
-  [Plan 3](../next/reader-treue-3-spatial.md) benannt statt still.
+  [Plan 3](../in-progress/reader-treue-3-spatial.md) benannt statt still.
 - **`R402` auch am Feld eines zusammengesetzten Typs** (L2). `CREATE TYPE …
   AS (…)` schreibt den Feldtyp durch denselben Mapper wie eine Spalte, das
   Feld entsteht am Ziel also als `jsonb` — derselbe Verlust. Es zu vertagen

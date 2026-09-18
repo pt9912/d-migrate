@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Eine PostGIS-`geography`-Spalte liest als Geometrie und ist benannt
+  (`R403`).** `mapUserDefined` kannte nur `geometry`; aus
+  `geography(Point,4326)` wurde `type: enum, ref_type: geography`, und das
+  gelesene Schema war mit `E007` **ungueltig** — aus einer PostGIS-Datenbank
+  mit `geography`-Spalte liess sich nichts erzeugen. Jetzt kommt sie als
+  `geometry` mit ihrem Subtyp und ihrem SRID aus `geography_columns`, und
+  `R403` sagt, was dabei offen bleibt: ein PostgreSQL-Ziel rendert sie als
+  `geometry` mit demselben SRID, und Abstaende und Flaechen rechnen dort
+  planar statt auf dem Ellipsoid. SQL Server waehlt aus dem geodaetischen
+  SRID wieder `geography`. Vorwaerts aendert sich nichts: PostgreSQL rendert
+  weiterhin `geometry`, auch bei SRID 4326. Erkannt wird PostGIS dabei an
+  Name **und** Schema (`udt_schema` gegen das Schema der Extension) — ein
+  Anwendertyp namens `geography` in einem anderen Schema bleibt ein
+  Anwendertyp.
+
 - **Der PostgreSQL-Reverse benennt vier Verluste, die er bisher verschwieg.**
   `json` kommt weiter als neutrales `json` und rendert als `jsonb` zurueck —
   dabei aendert sich der gespeicherte Text (Schluesselreihenfolge, doppelte
@@ -347,6 +362,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Sortierrichtung und Praefixlaenge.
 
 ### Fixed
+
+- **Der Datenpfad traegt PostGIS-`geography`-Werte.** Der PostgreSQL-Reader
+  wrappte nur `geometry` mit `ST_AsBinary`, und die Import-Sitzung erkannte
+  nur `geometry` als Geometrie-Zielspalte; ein `data export`, `data import`
+  oder `data transfer` aus oder in eine `geography`-Spalte bewegte damit
+  nicht das WKB, sondern das, was der Treiber sonst lieferte. Beide Wege
+  kennen jetzt beide Typen, und die SRID kommt aus `geography_columns` wie
+  bisher aus `geometry_columns`. Gebunden wird mit demselben
+  `ST_GeomFromWKB(?, srid)`: PostGIS erklaert den Weg von `geometry` nach
+  `geography` als Zuweisungs-Cast, und `ST_GeogFromWKB` gibt es nur
+  einstellig — es legte den SRID auf 4326 fest und verwuerfe damit eine
+  Spalte mit einem anderen geodaetischen Bezugssystem.
 
 - **Der PostgreSQL-Generator rendert die Elementart eines Arrays.** Er kannte
   nur `text`, `integer`, `boolean` und `uuid`; `bigint[]`,

@@ -6,6 +6,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.types.shouldBeInstanceOf
 
 class PostgresTypeMappingTest : FunSpec({
 
@@ -149,29 +150,105 @@ class PostgresTypeMappingTest : FunSpec({
 
     // ── User-defined ────────────────────────────
 
+    // P4: PostGIS erkennt der Reverse am Namen UND am Schema. Die Tests
+    // stellen beide auf `public`, wie das PostGIS-Standard-Setup.
+    fun userDefined(
+        udtName: String,
+        geometrySubtype: String? = null,
+        geometrySrid: Int? = null,
+        udtSchema: String? = "public",
+        postgisSchema: String? = "public",
+    ) = PostgresTypeMapping.mapUserDefined(
+        udtName = udtName,
+        tableName = "t",
+        colName = "c",
+        geometrySubtype = geometrySubtype,
+        geometrySrid = geometrySrid,
+        udtSchema = udtSchema,
+        postgisSchema = postgisSchema,
+    )
+
     test("geometry → Geometry with PostGIS note") {
-        val result = PostgresTypeMapping.mapUserDefined("geometry", "t", "c")
+        val result = userDefined("geometry")
         result.type shouldBe NeutralType.Geometry()
         result.note.shouldNotBeNull()
         result.note!!.code shouldBe "R401"
     }
 
     test("VA2: geometry subtype + SRID carried from geometry_columns") {
-        val result = PostgresTypeMapping.mapUserDefined("geometry", "t", "c", geometrySubtype = "Point", geometrySrid = 4326)
+        val result = userDefined("geometry", geometrySubtype = "Point", geometrySrid = 4326)
         val geom = result.type as NeutralType.Geometry
         geom.geometryType shouldBe GeometryType.of("point")
         geom.srid shouldBe 4326
     }
 
     test("VA2: geometry with no SRID defaults to GEOMETRY/null") {
-        val geom = PostgresTypeMapping.mapUserDefined("geometry", "t", "c").type as NeutralType.Geometry
+        val geom = userDefined("geometry").type as NeutralType.Geometry
         geom.geometryType shouldBe GeometryType.GEOMETRY
         geom.srid.shouldBeNull()
     }
 
     test("custom enum → Enum refType") {
-        val result = PostgresTypeMapping.mapUserDefined("order_status", "t", "c")
+        val result = userDefined("order_status")
         (result.type as NeutralType.Enum).refType shouldBe "order_status"
+    }
+
+    // ── P4: geography ───────────────────────────
+
+    test("P4: geography → Geometry mit Subtyp und SRID, gemeldet mit R403") {
+        val result = userDefined("geography", geometrySubtype = "Point", geometrySrid = 4326)
+
+        val geom = result.type as NeutralType.Geometry
+        geom.geometryType shouldBe GeometryType.of("point")
+        geom.srid shouldBe 4326
+        result.note.shouldNotBeNull()
+        result.note!!.code shouldBe "R403"
+        result.note!!.severity shouldBe SchemaReadSeverity.WARNING
+    }
+
+    // L4: ein geodaetischer SRID ungleich 4326 kommt unveraendert an.
+    test("P4: geography(Point,4258) behaelt seinen SRID") {
+        val geom = userDefined("geography", geometrySubtype = "Point", geometrySrid = 4258)
+            .type as NeutralType.Geometry
+        geom.srid shouldBe 4258
+    }
+
+    // L4: `geography` ohne Typmodifikator steht in `geography_columns` mit
+    // SRID 0 und Subtyp `Geometry` (gemessen an PostGIS 3.6); der Reader
+    // sieht davon `null` und `null`.
+    test("P4: geography ohne Typmodifikator liest GEOMETRY ohne SRID") {
+        val result = userDefined("geography")
+        val geom = result.type as NeutralType.Geometry
+        geom.geometryType shouldBe GeometryType.GEOMETRY
+        geom.srid.shouldBeNull()
+        result.note!!.code shouldBe "R403"
+    }
+
+    // L4: ein Anwendertyp namens `geography` in einem anderen Schema ist
+    // kein PostGIS-Typ — `udt_schema` unterscheidet die beiden.
+    test("P4: Anwendertyp namens geography in einem anderen Schema bleibt Enum") {
+        val result = userDefined("geography", udtSchema = "app", postgisSchema = "public")
+        (result.type as NeutralType.Enum).refType shouldBe "geography"
+        result.note.shouldBeNull()
+    }
+
+    test("P4: Anwendertyp namens geometry in einem anderen Schema bleibt Enum") {
+        val result = userDefined("geometry", udtSchema = "app", postgisSchema = "public")
+        (result.type as NeutralType.Enum).refType shouldBe "geometry"
+    }
+
+    // Ohne installiertes PostGIS kann es keine PostGIS-Spalte geben.
+    test("P4: ohne PostGIS bleibt ein Typ namens geometry ein Anwendertyp") {
+        val result = userDefined("geometry", postgisSchema = null)
+        (result.type as NeutralType.Enum).refType shouldBe "geometry"
+    }
+
+    // Gegenprobe zur Schema-Pruefung: PostGIS in einem eigenen Schema wird
+    // erkannt, solange der Typ dort liegt (der `search_path`-Fall aus P3).
+    test("P4: PostGIS in einem eigenen Schema wird erkannt") {
+        val result = userDefined("geography", udtSchema = "postgis", postgisSchema = "postgis")
+        result.type.shouldBeInstanceOf<NeutralType.Geometry>()
+        result.note!!.code shouldBe "R403"
     }
 
     // ── Unknown type ────────────────────────────

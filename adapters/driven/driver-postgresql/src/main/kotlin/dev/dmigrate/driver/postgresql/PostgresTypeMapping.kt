@@ -29,10 +29,14 @@ internal object PostgresTypeMapping {
         val numScale: Int?,
         val tableName: String,
         val colName: String,
-        // VA2 (Spatial): aus geometry_columns gelesener PostGIS-Subtyp (POINT/…)
-        // + SRID einer `geometry`-Spalte; null, wenn keine PostGIS-Geometrie.
+        // VA2 (Spatial): aus geometry_columns/geography_columns gelesener
+        // PostGIS-Subtyp (POINT/…) + SRID; null, wenn keine PostGIS-Spalte.
         val geometrySubtype: String? = null,
         val geometrySrid: Int? = null,
+        /** `information_schema.columns.udt_schema` — das Schema des Typs. */
+        val udtSchema: String? = null,
+        /** Das Schema, in dem die PostGIS-Extension liegt (null: nicht installiert). */
+        val postgisSchema: String? = null,
     )
 
     fun mapColumn(input: ColumnInput): MappingResult {
@@ -99,7 +103,7 @@ internal object PostgresTypeMapping {
             ?: mapStringTypes(dt, input.charMaxLen)
             ?: mapNumericTypes(dt, input.numPrecision, input.numScale, "${input.tableName}.${input.colName}")
             ?: mapTemporalTypes(dt)
-            ?: mapSpecialTypes(dt, udt, input.tableName, input.colName, input.geometrySubtype, input.geometrySrid)
+            ?: mapSpecialTypes(dt, udt, input)
             ?: MappingResult(
                 type = NeutralType.Text(),
                 note = SchemaReadNote(
@@ -187,24 +191,32 @@ internal object PostgresTypeMapping {
     private fun mapSpecialTypes(
         dt: String,
         udt: String,
-        tableName: String,
-        colName: String,
-        geometrySubtype: String?,
-        geometrySrid: Int?,
-    ): MappingResult? = when (dt) {
-        "uuid" -> MappingResult(NeutralType.Uuid)
-        // `json` und `jsonb` sind dasselbe neutrale `json`; nur `json` verliert
-        // dabei etwas (siehe [jsonTextualNote]).
-        "jsonb" -> MappingResult(NeutralType.Json)
-        "json" -> MappingResult(NeutralType.Json, note = jsonTextualNote("$tableName.$colName"))
-        "xml" -> MappingResult(NeutralType.Xml)
-        "bytea" -> MappingResult(NeutralType.Binary)
-        // ADR 0015: tsvector is a first-class neutral FullText type — captured
-        // faithfully instead of degrading to text (R301).
-        "tsvector" -> MappingResult(NeutralType.FullText)
-        "user-defined" -> mapUserDefined(udt, tableName, colName, geometrySubtype, geometrySrid)
-        "array" -> mapArrayColumn(udt, "$tableName.$colName")
-        else -> null
+        input: ColumnInput,
+    ): MappingResult? {
+        val objectName = "${input.tableName}.${input.colName}"
+        return when (dt) {
+            "uuid" -> MappingResult(NeutralType.Uuid)
+            // `json` und `jsonb` sind dasselbe neutrale `json`; nur `json` verliert
+            // dabei etwas (siehe [jsonTextualNote]).
+            "jsonb" -> MappingResult(NeutralType.Json)
+            "json" -> MappingResult(NeutralType.Json, note = jsonTextualNote(objectName))
+            "xml" -> MappingResult(NeutralType.Xml)
+            "bytea" -> MappingResult(NeutralType.Binary)
+            // ADR 0015: tsvector is a first-class neutral FullText type — captured
+            // faithfully instead of degrading to text (R301).
+            "tsvector" -> MappingResult(NeutralType.FullText)
+            "user-defined" -> mapUserDefined(
+                udtName = udt,
+                tableName = input.tableName,
+                colName = input.colName,
+                geometrySubtype = input.geometrySubtype,
+                geometrySrid = input.geometrySrid,
+                udtSchema = input.udtSchema,
+                postgisSchema = input.postgisSchema,
+            )
+            "array" -> mapArrayColumn(udt, objectName)
+            else -> null
+        }
     }
 
     /**
@@ -248,28 +260,31 @@ internal object PostgresTypeMapping {
         return MappingResult(NeutralType.Array(known ?: "text"), note = note)
     }
 
+    /**
+     * Ein benutzerdefinierter Typ: PostGIS-Spalte oder Anwendertyp.
+     *
+     * Welcher von beidem, entscheidet [PostgresPostgisType] — am Namen **und
+     * am Schema**, denn `geometry` und `geography` sind gewoehnliche
+     * Typnamen, die auch ein Anwendertyp tragen darf.
+     */
     fun mapUserDefined(
         udtName: String,
         tableName: String,
         colName: String,
         geometrySubtype: String? = null,
         geometrySrid: Int? = null,
+        udtSchema: String? = null,
+        postgisSchema: String? = null,
     ): MappingResult {
-        if (udtName == "geometry") return MappingResult(
-            // VA2: Subtyp + SRID aus geometry_columns (null → GEOMETRY / keine SRID).
-            type = NeutralType.Geometry(
-                geometryType = GeometryType.of(geometrySubtype),
-                srid = geometrySrid,
-            ),
-            note = SchemaReadNote(
-                severity = SchemaReadSeverity.INFO,
-                code = "R401",
-                objectName = "$tableName.$colName",
-                message = "PostGIS geometry column uses the PostGIS extension",
-                hint = "Extension installation is reported separately by reverse note R400",
-            ),
+        val postgis = PostgresPostgisType.mapColumn(
+            udtName = udtName,
+            udtSchema = udtSchema,
+            postgisSchema = postgisSchema,
+            objectName = "$tableName.$colName",
+            subtype = geometrySubtype,
+            srid = geometrySrid,
         )
-        return MappingResult(NeutralType.Enum(refType = udtName))
+        return postgis ?: MappingResult(NeutralType.Enum(refType = udtName))
     }
 
     fun mapArrayElementType(elementUdt: String): String = knownArrayElementType(elementUdt) ?: "text"

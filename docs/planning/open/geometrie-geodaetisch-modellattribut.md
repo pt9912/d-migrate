@@ -2,7 +2,7 @@
 
 > **Status:** Vorabklärung / Modellfrage (2026-09-17)
 > **Trigger:** Eigner-Entscheidung F1 beim Schnitt des Reader-Slices
-> ([`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md),
+> ([`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md),
 > Posten A5): PostgreSQL `geography` wird **nur auf dem Rückweg** als
 > Geometrie mit SRID gelesen, mit einer Note, dass PostgreSQL → PostgreSQL
 > daraus `geometry` wird. Vorwärts rendert PostgreSQL weiter `geometry`. Ein
@@ -77,7 +77,7 @@ die Gegenprobe (`geometry(Point,4326)` bleibt `geometry`).
 ## Referenzen
 
 - Befund und Entscheidung F1:
-  [`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md)
+  [`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md)
   (Posten A5).
 - Muster für eine Modellerweiterung:
   [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md).
