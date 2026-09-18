@@ -30,10 +30,10 @@ internal class MysqlColumnConstraintHelper(
         // eine gewoehnliche. Die Note entsteht deshalb vor der Auswahl.
         MysqlArrayDegradation.noteFor(tableName, colName, col.type)?.let { notes += it }
         // `mode: always` hat auf MySQL keine Entsprechung — gemeldet dort, wo
-        // die Spalte wirklich als AUTO_INCREMENT entsteht.
-        if (supportsIdentityGeneration(col.type)) {
-            MysqlIdentityModeDegradation.noteFor(tableName, colName, col)?.let { notes += it }
-        }
+        // die Spalte wirklich als AUTO_INCREMENT entsteht. Welche Typen das
+        // sind, entscheidet das Praedikat selbst; hier stand die Pruefung
+        // frueher ein zweites Mal, und der Migrate-Pfad hatte sie gar nicht.
+        MysqlIdentityModeDegradation.noteFor(tableName, colName, col)?.let { notes += it }
         return columnClause(colName, col, schema, tableName, notes, skipped)
     }
 

@@ -22,6 +22,15 @@ import dev.dmigrate.driver.TransformationNote
  *
  * **Nur bei `always`.** Eine `by_default`-Spalte verliert nichts, und der Typ
  * `identifier` nennt gar keinen Modus — beide melden nichts.
+ *
+ * **Und nur, wo MySQL die Identity ueberhaupt rendert.** `AUTO_INCREMENT`
+ * gibt es dort nur fuer `INT` und `BIGINT`
+ * ([MysqlPrimaryKeyOrdering.supportsIdentityGeneration]); auf jedem anderen
+ * Typ entsteht gar kein Autowert, und eine Meldung „der Modus ist nicht
+ * durchgesetzt" zeigte auf eine Spalte, die MySQL als gewoehnliche schreibt.
+ * Der Generate-Pfad prueft das seit jeher, der Migrate-Pfad sah nur den
+ * Modus — das Praedikat traegt die Pruefung deshalb selbst, damit die beiden
+ * Pfade nicht auseinanderlaufen koennen.
  */
 internal object MysqlIdentityModeDegradation {
 
@@ -36,9 +45,13 @@ internal object MysqlIdentityModeDegradation {
         "Remove explicit values for this column from writes against the target, or accept that MySQL " +
             "does not reject them; MySQL has no ALWAYS equivalent."
 
-    /** `true`, wenn die Spalte ihre Identity mit `mode: always` erklaert. */
+    /**
+     * `true`, wenn die Spalte ihre Identity mit `mode: always` erklaert
+     * **und** MySQL sie als `AUTO_INCREMENT` rendert.
+     */
     fun appliesTo(col: ColumnDefinition): Boolean =
-        (col.generation as? ColumnGeneration.Identity)?.mode == IdentityMode.ALWAYS
+        (col.generation as? ColumnGeneration.Identity)?.mode == IdentityMode.ALWAYS &&
+            MysqlPrimaryKeyOrdering.supportsIdentityGeneration(col.type)
 
     /** Die Generate-Note, oder `null`. */
     fun noteFor(tableName: String, colName: String, col: ColumnDefinition): TransformationNote? {

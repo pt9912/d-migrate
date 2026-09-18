@@ -1,10 +1,13 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.NamedTable
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
+import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -87,6 +90,102 @@ class MysqlArrayDegradationTest : FunSpec({
             ),
         )
         planAndUp(withoutArray).diagnostics.none { it.code == "W162" } shouldBe true
+    }
+
+    // M5/M6 (Abdeckungsluecken): die drei uebrigen Migrate-Stellen. Sie
+    // schreiben ebenfalls eine ganze Spaltendeklaration und meldeten W162,
+    // ohne dass ein Test es hielt — die Sabotagen blieben gruen.
+
+    fun computedArrayColumn(expression: String, stored: Boolean) = ColumnDefinition(
+        NeutralType.Array("text"),
+        generation = ColumnGeneration.Computed(expression = expression, stored = stored),
+        ordinal = 2,
+    )
+
+    fun schemaWithColumn(col: ColumnDefinition) = SchemaDefinition(
+        name = "App", version = "1",
+        tables = mapOf(
+            "t" to TableDefinition(
+                columns = linkedMapOf(
+                    "id" to ColumnDefinition(NeutralType.Identifier(true), ordinal = 1),
+                    "tags" to col,
+                ),
+                primaryKey = listOf("id"),
+            ),
+        ),
+    )
+
+    /**
+     * Der Typwechsel (`MODIFY COLUMN`). Der Planer erreicht die Stelle mit
+     * einer Array-Spalte nur, solange die Elementart gleich bleibt — ein
+     * Wechsel der Elementart ist kein sicherer Cast und wird vorher
+     * geblockt. Gepinnt ist deshalb die Stelle selbst: schreibt sie eine
+     * Array-Deklaration, meldet sie den Verlust.
+     */
+    test("migrate: der Typwechsel meldet W162") {
+        val col = ColumnDefinition(NeutralType.Array("text"), ordinal = 2)
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "t",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "tags", type = ValueChange(NeutralType.Array("text"), NeutralType.Array("text"))),
+                    ),
+                ),
+            ),
+        )
+        val schema = schemaWithColumn(col)
+        val r = diffGen.generateUp(planner.plan(schema, schema, diff), DdlGenerationOptions())
+
+        r.statements.map { it.sql }.first { it.contains("MODIFY COLUMN") } shouldContain "JSON"
+        r.diagnostics.single { it.code == "W162" }.message shouldContain "element type 'text'"
+    }
+
+    test("migrate: der Ausdruckswechsel einer berechneten Array-Spalte meldet W162") {
+        val before = computedArrayColumn("(json_array(`id`))", stored = true)
+        val after = computedArrayColumn("(json_array(`id`, `id`))", stored = true)
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "t",
+                    columnsChanged = listOf(
+                        ColumnDiff(
+                            name = "tags",
+                            generation = ValueChange(before.generation, after.generation),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val r = diffGen.generateUp(
+            planner.plan(schemaWithColumn(before), schemaWithColumn(after), diff),
+            DdlGenerationOptions(),
+        )
+
+        r.statements.map { it.sql }.first { it.contains("MODIFY COLUMN") } shouldContain "JSON"
+        r.diagnostics.single { it.code == "W162" }.message shouldContain "element type 'text'"
+    }
+
+    test("migrate: der Spaltentausch meldet W162 einmal je Operation") {
+        val plain = ColumnDefinition(NeutralType.Array("text"), ordinal = 2)
+        val computed = computedArrayColumn("(json_array(`id`))", stored = true)
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "t",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "tags", generation = ValueChange(null, computed.generation)),
+                    ),
+                ),
+            ),
+        )
+        val r = diffGen.generateUp(
+            planner.plan(schemaWithColumn(plain), schemaWithColumn(computed), diff),
+            DdlGenerationOptions(),
+        )
+
+        // Der Tausch schreibt mehrere Anweisungen; die Meldung steht einmal.
+        r.diagnostics.single { it.code == "W162" }.message shouldContain "element type 'text'"
     }
 
     // B2, die Grenze: was MySQL aus einem Array macht, kann kein Reader
