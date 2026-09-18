@@ -84,10 +84,15 @@ class MssqlTypeMappingTest : FunSpec({
         MssqlTypeMapping.mapColumn("t.c", input("int")).note.shouldBeNull()
     }
 
-    test("int identity is the 32-bit identifier contract") {
+    // S5 (Reader-Plan 3): `int IDENTITY` trug den Modus nicht — dieselbe
+    // Breite wie `bigint`, aber eine andere Lesart. Der Verlust fiel beim
+    // Rundweg ueber einen anderen Dialekt auf: eine PostgreSQL-Identity reist
+    // als `INT IDENTITY(1,1)` herueber und kam ohne Modus zurueck, sodass der
+    // Vergleich eine Aenderung meldete, die keine war.
+    test("int identity keeps Integer and carries ALWAYS identity generation") {
         val result = MssqlTypeMapping.mapColumn("t.id", input("int", identity = true))
-        result.type shouldBe NeutralType.Identifier(autoIncrement = true)
-        result.generation.shouldBeNull()
+        result.type shouldBe NeutralType.Integer
+        result.generation shouldBe ColumnGeneration.Identity(mode = IdentityMode.ALWAYS)
     }
 
     test("bigint identity keeps BigInteger and carries ALWAYS identity generation") {

@@ -62,12 +62,23 @@ internal object MssqlTypeMapping {
             null
         }
 
-    // int IDENTITY(1,1) ist der 32-bit-identifier-Vertrag; größere/abweichende
-    // Basistypen behalten ihren Typ und tragen die Erzeugung als
-    // Identity-Generation. T-SQL-IDENTITY erlaubt kein direktes INSERT ohne
-    // SET IDENTITY_INSERT → Modus ALWAYS.
+    // Der Basistyp bleibt, was er ist, und die Erzeugung reist als
+    // Identity-Generation mit. T-SQL-IDENTITY erlaubt kein direktes INSERT
+    // ohne SET IDENTITY_INSERT → Modus ALWAYS.
+    //
+    // **Auch `int` (S5, Reader-Plan 3).** Bis hierher faltete genau diese
+    // Breite auf `identifier` — und `identifier` traegt keinen Modus. Der
+    // Verlust fiel beim Rundweg ueber einen anderen Dialekt auf: eine
+    // PostgreSQL-`integer`-Identity reist als `INT IDENTITY(1,1)` nach
+    // SQL Server und kam als `identifier` **ohne** Modus zurueck, sodass der
+    // Vergleich eine Aenderung meldete, die keine war. `bigint` und
+    // `smallint` trugen den Modus laengst.
     private fun mapIdentity(input: ColumnInput): MappingResult = when (input.typeName.lowercase()) {
-        "int" -> MappingResult(NeutralType.Identifier(autoIncrement = true), generation = null, note = null)
+        "int" -> MappingResult(
+            NeutralType.Integer,
+            generation = ColumnGeneration.Identity(mode = IdentityMode.ALWAYS),
+            note = null,
+        )
         "bigint" -> MappingResult(
             NeutralType.BigInteger,
             generation = ColumnGeneration.Identity(mode = IdentityMode.ALWAYS),

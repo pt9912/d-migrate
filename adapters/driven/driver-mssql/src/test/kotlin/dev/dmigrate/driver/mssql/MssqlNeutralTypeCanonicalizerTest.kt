@@ -38,6 +38,8 @@ class MssqlNeutralTypeCanonicalizerTest : FunSpec({
         NeutralType.Decimal(10, 2) to NeutralType.Decimal(10, 2),
         NeutralType.Text(maxLength = 255) to NeutralType.Text(maxLength = 255),
         NeutralType.Char(length = 10) to NeutralType.Char(length = 10),
+        // Die Autowert-Schreibweise bleibt: sie ist der Anker der
+        // Identitaets-Faltung im Comparator (s. KDoc des Kanonisierers).
         NeutralType.Identifier(autoIncrement = true) to NeutralType.Identifier(autoIncrement = true),
 
         // Abflachungen — die Spalte traegt die Unterscheidung nicht.

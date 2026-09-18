@@ -158,7 +158,8 @@ class MssqlSchemaReaderTest : FunSpec({
 
         table.primaryKey shouldBe listOf("id")
         val id = table.columns.getValue("id")
-        id.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        id.type shouldBe NeutralType.Integer
+        id.generation shouldBe ColumnGeneration.Identity(mode = IdentityMode.ALWAYS)
         id.required shouldBe false
         id.unique shouldBe false
         id.default.shouldBeNull()
