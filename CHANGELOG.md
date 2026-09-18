@@ -36,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   von `W120` beim Erzeugen). `schema reverse` endet weiter mit Exit `0`
   (gemessen gegen Oracle 23).
 
+- **Die PostGIS-Degradierung ohne `search_path` nennt Grund und Ausweg
+  (`R405`).** Liegt PostGIS in einem eigenen Schema, das nicht im
+  `search_path` steht, loest `geometry_columns` nicht auf, und jede
+  Geometriespalte kommt ohne Subtyp und ohne SRID zurueck. Gemeldet wurde nur
+  `R401` (`INFO`, je Spalte), und das nennt weder Ursache noch Ausweg. `R405`
+  nennt beides, je Tabelle mit Geometriespalte; eine Tabelle ohne meldet
+  nichts.
+
 - **Der Array-Verlust auf MySQL und SQLite ist benannt (`W162`).** Beide Ziele
   haben keinen Array-Typ: MySQL rendert eine `array`-Spalte als `JSON`, SQLite
   als `TEXT`, und ein spaeteres `schema reverse` des Ziels liest `json` bzw.

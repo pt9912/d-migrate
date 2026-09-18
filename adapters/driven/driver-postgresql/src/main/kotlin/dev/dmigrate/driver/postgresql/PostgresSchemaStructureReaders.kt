@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadNote
+import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 
@@ -38,13 +39,15 @@ private fun readPostgresTable(
 
     // VA2 (Spatial): PostGIS-Subtyp + SRID je Geometriespalte (leer ohne PostGIS).
     // srid 0 (= keine SRID) → null, damit das Modell sauber bleibt.
-    val geometryColumns = PostgresMetadataQueries.listGeometryColumns(session, schema, tableName)
+    val geometryScan = PostgresMetadataQueries.listGeometryColumns(session, schema, tableName)
+    val geometryColumns = geometryScan.rows
         .associate { gc ->
             (gc["f_geometry_column"] as String) to Pair(
                 gc["type"] as? String,
                 (gc["srid"] as? Number)?.toInt()?.takeIf { it != 0 },
             )
         }
+    notePostgisOutOfReach(tableName, columnRows, geometryScan, notes)
 
     val columns = LinkedHashMap<String, ColumnDefinition>()
     for (row in columnRows) {
@@ -201,6 +204,48 @@ private fun readPartitionLocalIndices(
     val local = PostgresMetadataQueries.listIndices(session, schema, partitionName)
         .filter { it.name !in inherited }
     return mapPostgresIndices(local).sortedBy { it.name ?: "" }
+}
+
+/**
+ * `R405` — die Tabelle traegt eine PostGIS-Geometriespalte, aber
+ * `geometry_columns` ist nicht erreichbar.
+ *
+ * Der haeufige Grund: PostGIS liegt in einem eigenen Schema, das nicht im
+ * `search_path` steht. Dann loest die Sicht nicht auf, und jede Spalte kommt
+ * als `geometry` **ohne Subtyp und ohne SRID** zurueck. `R401` steht daneben
+ * (je Spalte, `INFO`), nennt aber weder Ursache noch Ausweg; ohne diese Note
+ * sah eine unerreichbare Sicht aus wie eine Geometrie, die einfach keinen
+ * SRID deklariert.
+ *
+ * Severity `WARNING`: ein SRID geht verloren, und die Folge zeigt sich erst
+ * am Ziel (SQL Server waehlt ohne geodaetischen SRID planares `geometry`, und
+ * ein raeumlicher Index entfaellt dort mit `E057`).
+ *
+ * Eine Tabelle ohne Geometriespalte meldet nichts — dort geht nichts
+ * verloren; ohne PostGIS hat eine Datenbank ohnehin keine.
+ */
+internal fun notePostgisOutOfReach(
+    tableName: String,
+    columnRows: List<Map<String, Any?>>,
+    scan: PostgresTableMetadataQueries.GeometryColumnsScan,
+    notes: MutableList<SchemaReadNote>,
+) {
+    if (scan.reachable) return
+    val geometryColumns = columnRows
+        .filter { (it["udt_name"] as? String)?.lowercase() == "geometry" }
+        .mapNotNull { it["column_name"] as? String }
+    if (geometryColumns.isEmpty()) return
+    notes += SchemaReadNote(
+        severity = SchemaReadSeverity.WARNING,
+        code = "R405",
+        objectName = tableName,
+        message = "The geometry_columns view is not reachable, so the PostGIS columns of '$tableName' " +
+            "(${geometryColumns.joinToString(", ")}) are read as plain geometry — without subtype and " +
+            "without SRID.",
+        hint = "Add the schema that holds the PostGIS extension to the search_path of the connection " +
+            "or of the database (ALTER DATABASE … SET search_path = public, postgis), or declare the " +
+            "subtype and SRID on the columns in the schema file.",
+    )
 }
 
 internal fun readPostgresSequences(

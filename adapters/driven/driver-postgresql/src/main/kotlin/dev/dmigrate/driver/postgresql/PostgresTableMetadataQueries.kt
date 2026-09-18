@@ -76,20 +76,37 @@ internal object PostgresTableMetadataQueries {
     }
 
     /**
-     * VA2 (Spatial): PostGIS-Geometriespalten der Tabelle mit Subtyp + SRID aus
-     * dem `geometry_columns`-View. Der `to_regclass`-Guard liefert leer (statt zu
-     * werfen + die Lese-Transaktion zu aborten), wenn PostGIS/der View fehlt.
+     * Was `geometry_columns` zu einer Tabelle sagt — oder dass die Sicht gar
+     * nicht erreichbar ist.
+     *
+     * Der Unterschied traegt eine Meldung: liegt PostGIS in einem eigenen
+     * Schema, das **nicht** im `search_path` steht, loest `geometry_columns`
+     * nicht auf, und jede Geometriespalte kommt ohne Subtyp und ohne SRID
+     * zurueck. Eine leere Liste sah frueher genauso aus wie „diese Tabelle hat
+     * keine Geometriespalte" — der Grund war an der Abfrage bekannt und ging
+     * dort verloren.
      */
-    fun listGeometryColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> {
+    data class GeometryColumnsScan(val reachable: Boolean, val rows: List<Map<String, Any?>>)
+
+    /**
+     * VA2 (Spatial): PostGIS-Geometriespalten der Tabelle mit Subtyp + SRID aus
+     * dem `geometry_columns`-View. Der `to_regclass`-Guard vermeidet das Werfen
+     * (das die Lese-Transaktion abbraeche), wenn PostGIS/der View fehlt — und
+     * meldet die Unerreichbarkeit statt sie zu verschweigen.
+     */
+    fun listGeometryColumns(session: JdbcOperations, schemaName: String, table: String): GeometryColumnsScan {
         val viewPresent = session.queryList("SELECT to_regclass('geometry_columns') AS r")
             .firstOrNull()?.get("r") != null
-        if (!viewPresent) return emptyList()
-        return session.queryList(
-            """
-            SELECT f_geometry_column, type, srid
-            FROM geometry_columns
-            WHERE f_table_schema = ? AND f_table_name = ?
-            """.trimIndent(), schemaName, table,
+        if (!viewPresent) return GeometryColumnsScan(reachable = false, rows = emptyList())
+        return GeometryColumnsScan(
+            reachable = true,
+            rows = session.queryList(
+                """
+                SELECT f_geometry_column, type, srid
+                FROM geometry_columns
+                WHERE f_table_schema = ? AND f_table_name = ?
+                """.trimIndent(), schemaName, table,
+            ),
         )
     }
 

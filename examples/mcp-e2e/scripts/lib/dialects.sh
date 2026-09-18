@@ -91,6 +91,47 @@ mcp_e2e_assert_postgis() {
     [ "$schema" = "postgis" ] || fail "PostGIS steht nicht im Schema postgis (gefunden: '${schema:-keine Extension}') - ein Volume von vor dem Image-Wechsel? 'make mcp-e2e-purge' und neu starten"
 }
 
+# --- Das Bein „PostGIS ausserhalb des search_path" --------------------
+#
+# Eine **zweite** Datenbank auf demselben PostgreSQL-Dienst. PostGIS liegt
+# dort im Schema `postgis`, und der `search_path` nennt es nicht — genau die
+# Lage, in der `geometry_columns` nicht aufloest und jede Geometriespalte ohne
+# Subtyp und ohne SRID zurueckkommt (`R405`).
+#
+# Sie steht **neben** der Matrix: keine Zelle, kein Ziel, nur ein Reverse je
+# Lauf. Der Hauptdienst bleibt unberuehrt — dort ist der `search_path` auf
+# Datenbankebene gesetzt, und ein Wechsel dort verstellte jede andere Zelle.
+
+# Der Name der zweiten Datenbank. **Als Funktion**, nicht als Variable beim
+# Laden: `.env` wird erst spaeter gelesen (mcp_e2e_env), und eine Zuweisung
+# hier haette den Default festgeschrieben.
+mcp_e2e_postgis_leg_db() { printf '%s\n' "${MCP_E2E_PG_NOSP_DB:-mcp_e2e_nosp}"; }
+
+# Die zweite Datenbank anlegen (wiederholbar) und mit dem Bein-Seed fuellen.
+# $1=Seed-Datei (Host, im gemounteten examples/-Baum)
+mcp_e2e_postgis_leg_setup() {
+    local seed="$1" container db
+    container="$(_container postgres)"
+    db="$(mcp_e2e_postgis_leg_db)"
+    docker exec -i "$container" psql -U "$MCP_E2E_PG_USER" -d "$MCP_E2E_PG_DB" -q \
+        -c "DROP DATABASE IF EXISTS \"$db\"" > /dev/null 2>&1 || return 1
+    docker exec -i "$container" psql -U "$MCP_E2E_PG_USER" -d "$MCP_E2E_PG_DB" -q \
+        -c "CREATE DATABASE \"$db\"" > /dev/null 2>&1 || return 1
+    docker exec -i "$container" psql -U "$MCP_E2E_PG_USER" -d "$db" -q -v ON_ERROR_STOP=1 \
+        < "$seed"
+}
+
+# Belegen, dass die Lage wirklich die ist, die das Bein messen soll:
+# `geometry_columns` darf **nicht** aufloesen. Ohne die Probe maesse ein
+# falsch aufgesetztes Bein still das Gegenteil und pinnte es.
+mcp_e2e_postgis_leg_assert_unreachable() {
+    local reg
+    reg="$(docker exec -i "$(_container postgres)" \
+        psql -U "$MCP_E2E_PG_USER" -d "$(mcp_e2e_postgis_leg_db)" -tAc \
+        "SELECT coalesce(to_regclass('geometry_columns')::text, 'unerreichbar')" 2> /dev/null | tr -d '\r')"
+    [ "$reg" = "unerreichbar" ]
+}
+
 # Die Datenbank des Dialekts leeren. Wiederholbar: ein zweiter Lauf faende
 # sonst das Schema des ersten, und die DDL scheiterte an „already exists".
 dialect_clean() {  # $1=Dialekt

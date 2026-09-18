@@ -141,7 +141,7 @@ class PostgresDataWriter(
         columns: List<TargetColumn>,
     ): List<TargetColumn> {
         val schema = table.schemaOrCurrent(conn)
-        val sridByColumn = PostgresMetadataQueries.listGeometryColumns(jdbc, schema, table.table)
+        val sridByColumn = PostgresMetadataQueries.listGeometryColumns(jdbc, schema, table.table).rows
             .mapNotNull { row ->
                 val name = row["f_geometry_column"] as? String ?: return@mapNotNull null
                 val srid = (row["srid"] as? Number)?.toInt()?.takeIf { it != 0 } ?: return@mapNotNull null

@@ -438,7 +438,7 @@ SILENT_LOSS_KNOWN=(
     "ziel postgresql->mysql: sl_pg_identity_int.id: Degradierung ohne W163 im Generate-Report|S1 und P10 (Plan 2)"
     "ziel postgresql->sqlite: sl_pg_identity_big.id: Degradierung ohne W163 im Generate-Report|P10 (Plan 2)"
     "ziel postgresql->sqlite: sl_pg_identity_int.id: Degradierung ohne W163 im Generate-Report|S1 und P10 (Plan 2)"
-    "ziel postgresql->mssql: sl_pg_identity_int.id: Degradierung integer/identity(always) -> identifier(auto)/- ohne Code (Anmerkung sagt keinen)|S1 (Plan 2) — die Zielseite auf SQL Server ist dort zu entscheiden"
+    "ziel postgresql->mssql: sl_pg_identity_int.id: Degradierung integer/identity(always) -> identifier(auto)/- ohne Code (Anmerkung sagt keinen)|Befund open/mssql-integer-identity-pk-verliert-den-modus.md — S1 hat den PostgreSQL-Fall behoben, die Zielseite auf SQL Server ist eine Typfrage"
     "ziel postgresql->sqlite: sl_pg_json.payload_json: Degradierung json/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
     "ziel postgresql->sqlite: sl_pg_json.payload_jsonb: Degradierung json/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
     "ziel mysql->sqlite: sl_my_expr.note: Degradierung text(40)/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"

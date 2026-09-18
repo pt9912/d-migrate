@@ -212,6 +212,11 @@ class PostgresSchemaReaderTest : FunSpec({
             ),
             pkColumns = emptyList(),
         )
+        // Die Sicht ist hier **erreichbar**: sonst beschriebe die Fixture den
+        // Fall, den `R405` meldet (PostGIS ausserhalb des `search_path`), und
+        // dieser Test fragt nach den Extension-Notes.
+        every { jdbc.queryList(match { it.contains("to_regclass('geometry_columns')") }) } returns
+            listOf(mapOf("r" to "geometry_columns"))
 
         val result = reader.read(pool, SchemaReadOptions(includeViews = false,
             includeFunctions = false, includeProcedures = false, includeTriggers = false))

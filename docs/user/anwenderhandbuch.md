@@ -2015,6 +2015,25 @@ SELECT AddGeometryColumn('places', 'area', 4326, 'POLYGON', 'XY');
 - PostGIS benötigt die PostGIS-Erweiterung in der Zieldatenbank (Hinweis
   `[I001]`); die SpatiaLite-`AddGeometryColumn()`-Aufrufe setzen die geladene
   SpatiaLite-Erweiterung voraus.
+- **Kommt Ihre PostGIS-Spalte beim `schema reverse` ohne Untertyp und ohne
+  SRID zurück?** Dann liegt PostGIS wahrscheinlich in einem eigenen Schema,
+  das nicht im `search_path` steht: d-migrate liest Untertyp und SRID aus der
+  Sicht `geometry_columns`, und die löst dort nicht auf. Der Bericht sagt das
+  mit `R405`. Nehmen Sie das PostGIS-Schema in den `search_path` auf — für die
+  Verbindung oder dauerhaft für die Datenbank:
+
+  ```sql
+  ALTER DATABASE meine_db SET search_path = public, postgis;
+  ```
+
+  Oder deklarieren Sie Untertyp und SRID an der Spalte in der Schemadatei.
+  Ohne beides entsteht auf dem Ziel eine Geometrie ohne Koordinatensystem —
+  auf SQL Server planares `geometry` statt `geography`, und der räumliche
+  Index entfällt dort (`E057`).
+- **Oracle:** fehlt die Zeile in `USER_SDO_GEOM_METADATA`, meldet der Reverse
+  den verlorenen SRID mit `R370` und nennt den Ausweg, der zum Fall passt
+  (siehe den Oracle-Abschnitt unter „Warum verliert mein Oracle-Reverse die
+  SRID meiner Geometriespalte?").
 - Erlaubte `geometry_type`-Werte und die Grenzen stehen in
   [Anhang F.4](#f4-spatial-typen); Profil-Details in
   [Anhang A.4](#a4-schema-generate).

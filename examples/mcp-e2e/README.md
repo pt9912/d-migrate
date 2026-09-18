@@ -262,6 +262,26 @@ gefahren):
 | SQLite → MySQL | `APPLY-FAIL` (`ERROR 1170`) | der SQLite-Reverse kennt keine Laenge; MySQL indiziert `TEXT` nicht ohne Praefix |
 | SQLite → SQL Server | 6: zwei UNIQUE-Klauseln entfallen, zwei CHECKs in anderer Schreibweise, die berechnete Spalte wird `NOT NULL`, `W137` | SQL Server nimmt eine unbegrenzte Textspalte nicht als Schluessel (`E057`), leitet Typ und Nullbarkeit einer berechneten Spalte ab |
 
+### Das Bein „PostGIS ausserhalb des `search_path`"
+
+Ein Reverse **neben** der Matrix: keine Zelle, kein Ziel. Er laeuft gegen eine
+**zweite** Datenbank desselben PostgreSQL-Dienstes
+(`MCP_E2E_PG_NOSP_DB`, der Lauf legt sie selbst an), in der PostGIS im Schema
+`postgis` liegt und der `search_path` es **nicht** nennt. Dann loest
+`geometry_columns` nicht auf, und jede Geometriespalte kommt ohne Subtyp und
+ohne SRID zurueck — der Reverse meldet das mit `R405`.
+
+Die Verbindung (`mcp_e2e_pg_nosp`) steht **nur** in der Server-Konfiguration,
+die der Lauf selbst schreibt (`out/compare-matrix/server.d-migrate.yaml`),
+nicht in der geteilten `.d-migrate.yaml`, die auch der Scope-Smoke liest. Der
+Seed liegt unter `fixtures/legs/postgis-nosearchpath.sql` — nicht unter
+`fixtures/seeds/`, wo der Silent-Loss-Check je Dialekt genau eine Datei liest.
+
+Gepinnt wird ein Schluessel: `REPORT_CODES_POSTGRESQL_NOSEARCHPATH`, die Codes
+des Reverse-Reports. **Nie gepinnt** und Voraussetzung des Beins: dass
+`geometry_columns` dort wirklich **nicht** aufloest — sonst maesse der Lauf
+still das Gegenteil und pinnte es als „kein Verlust".
+
 ### Native Typ-Seeds und der Silent-Loss-Check
 
 Die Zahlen oben zaehlen **Vergleichsfunde**. Ein **Verlust** faellt dabei nicht

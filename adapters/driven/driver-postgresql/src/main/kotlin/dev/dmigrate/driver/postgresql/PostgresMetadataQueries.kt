@@ -21,7 +21,11 @@ object PostgresMetadataQueries {
     fun listColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> =
         PostgresTableMetadataQueries.listColumns(session, schemaName, table)
 
-    fun listGeometryColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> =
+    internal fun listGeometryColumns(
+        session: JdbcOperations,
+        schemaName: String,
+        table: String,
+    ): PostgresTableMetadataQueries.GeometryColumnsScan =
         PostgresTableMetadataQueries.listGeometryColumns(session, schemaName, table)
 
     fun listPrimaryKeyColumns(session: JdbcOperations, schemaName: String, table: String): List<String> =

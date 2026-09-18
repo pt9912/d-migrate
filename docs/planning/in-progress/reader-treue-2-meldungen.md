@@ -831,6 +831,27 @@ Tabelle ohne Geometriespalte meldet gar nichts.
 **Kein Block:** die Notizen werden von keinem Pfad in `schema generate`,
 `schema migrate` oder `data transfer` ausgewertet; `OracleDataWriter` liest
 dieselbe Sicht unverändert weiter. Die `E057`-Zusicherungen sind unberührt.
+
+#### P3 — `R405` nennt Grund und Ausweg
+
+`PostgresTableMetadataQueries.listGeometryColumns` liefert jetzt eine
+**Auskunft** statt einer Liste: `reachable` sagt, ob `geometry_columns`
+auflöst. Eine leere Liste sah vorher genauso aus wie „diese Tabelle hat keine
+Geometriespalte" — der Grund war an der Abfrage bekannt und ging dort
+verloren.
+
+`R405` entsteht **je Tabelle**, die eine PostGIS-Spalte trägt (erkannt am
+`udt_name`), wenn die Sicht nicht erreichbar ist; die Meldung nennt die
+betroffenen Spalten, der Hinweis den `search_path` und die Alternative
+(Subtyp und SRID in der Schemadatei). `R401` bleibt unverändert daneben.
+
+**Live gemessen** (`TestImages.POSTGIS`, neu in `:test:integration-postgresql`):
+PostGIS im Schema `postgis`, `search_path` ohne es — die Spalte kommt als
+`geometry` ohne Subtyp und ohne SRID, `R405` steht im Report, und die Tabelle
+ohne Geometriespalte meldet nichts. Mit `postgis` im `search_path` (auf
+Datenbankebene gesetzt, gelesen über eine **neue** Sitzung) kommen Subtyp und
+SRID mit, und `R405` entsteht nicht.
+
 ## Akzeptanzkriterien
 
 1. Der Array-Verlust ist auf MySQL und SQLite benannt, auf Generate und

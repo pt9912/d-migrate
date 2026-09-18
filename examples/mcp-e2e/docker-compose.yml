@@ -138,6 +138,11 @@ services:
     # (Apply-Schritt); ein Lese-Open auf eine fehlende Datei scheitert sonst.
     environment:
       MCP_E2E_PG_URL: "postgresql://${MCP_E2E_PG_USER}:${MCP_E2E_PG_PASSWORD}@postgres:5432/${MCP_E2E_PG_DB}"
+      # Zweite Datenbank auf demselben Dienst: PostGIS liegt dort im Schema
+      # `postgis`, und der `search_path` nennt es **nicht**. Das Bein der
+      # Compare-Matrix fuer R405; der Default haelt ein bestehendes .env
+      # lauffaehig, das den Schluessel noch nicht kennt.
+      MCP_E2E_PG_NOSP_URL: "postgresql://${MCP_E2E_PG_USER}:${MCP_E2E_PG_PASSWORD}@postgres:5432/${MCP_E2E_PG_NOSP_DB:-mcp_e2e_nosp}"
       MCP_E2E_MY_URL: "mysql://${MCP_E2E_MY_USER}:${MCP_E2E_MY_PASSWORD}@mysql:3306/${MCP_E2E_MY_DB}"
       MCP_E2E_MS_URL: "mssql://sa:${MCP_E2E_MS_PASSWORD}@mssql:1433/${MCP_E2E_MS_DB}?encrypt=false"
       MCP_E2E_SQLITE_URL: "sqlite:/work/out/mcp-e2e.sqlite"

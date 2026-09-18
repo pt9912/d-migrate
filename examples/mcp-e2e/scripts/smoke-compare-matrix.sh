@@ -83,6 +83,12 @@ IMAGE="${MCP_E2E_DMIGRATE_IMAGE:-d-migrate:dev}"
 ADMIN_TOKEN="tok_mcp_e2e_admin_dev_only"
 TENANT="default"
 
+# Das Bein „PostGIS ausserhalb des search_path" (P3): eine zweite Verbindung
+# auf eine zweite Datenbank desselben Dienstes, ohne Zelle und ohne Ziel.
+PG_NOSP_CONNECTION="mcp_e2e_pg_nosp"
+PG_NOSP_SEED="fixtures/legs/postgis-nosearchpath.sql"
+PG_NOSP_KEY="REPORT_CODES_POSTGRESQL_NOSEARCHPATH"
+
 UPDATE=false
 case "${1:-}" in
     --update-expectations) UPDATE=true ;;
@@ -133,9 +139,19 @@ KNOWN_SEEN_FILE="$OUT/.known-seen"
 : > "$KNOWN_SEEN_FILE"
 
 # Die Server-Konfiguration (s. Kopf): die Verbindungen plus die Praeferenz.
+# Dazu die zweite PostgreSQL-Verbindung des Beins „PostGIS ausserhalb des
+# search_path" — **nur hier**, nicht in der geteilten .d-migrate.yaml, die
+# auch der Scope-Smoke liest.
 SERVER_CONFIG="$OUT/server.d-migrate.yaml"
 {
     cat "$EXAMPLES_DIR/.d-migrate.yaml"
+    # Die Datei endet mit dem letzten Verbindungsblock auf Einrueckung 4; der
+    # neue schliesst dort an, `reverse:` beginnt danach wieder auf 0.
+    printf '\n    %s:\n' "$PG_NOSP_CONNECTION"
+    printf '      displayName: "MCP E2E Postgres (PostGIS ausserhalb des search_path)"\n'
+    printf '      dialectId: postgresql\n'
+    printf '      sensitivity: NON_PRODUCTION\n'
+    printf '      credentialRef: "env:MCP_E2E_PG_NOSP_URL"\n'
     printf '\nreverse:\n  mysql:\n    autoincrement_syntax: identity\n'
 } > "$SERVER_CONFIG"
 
@@ -279,9 +295,17 @@ apply_error_class() {
 # $1=Dialekt $2=Zielverzeichnis -> stdout: der schemaRef des Reverse;
 # schreibt reversed.yaml und reverse-report.yaml nach $2
 mcp_reverse() {
-    local dialect="$1" dir="$2" conn start job job_uri status schema_uri report_uri schema_art report_art
+    mcp_reverse_connection "$(dialect_connection "$1")" "$2" "$1"
+}
+
+# Dasselbe ueber den **Verbindungsnamen**: das Bein „PostGIS ausserhalb des
+# search_path" hat keinen eigenen Dialekt, sondern eine zweite Verbindung auf
+# denselben Dialekt.
+# $1=Verbindungsname $2=Zielverzeichnis $3=Bezeichnung fuer Meldungen
+mcp_reverse_connection() {
+    local dialect="${3:-$1}" dir="$2" conn start job job_uri status schema_uri report_uri schema_art report_art
     local schema_id listing
-    conn="dmigrate://tenants/$TENANT/connections/$(dialect_connection "$dialect")"
+    conn="dmigrate://tenants/$TENANT/connections/$1"
     start="$(mcp_tool schema_reverse_start "$(jq -nc --arg c "$conn" --arg k "cm-$dialect-$RANDOM$RANDOM" \
         '{connectionId:$c,idempotencyKey:$k}')")" || { echo "$start" > "$dir/reverse-start.json"; return 1; }
     job="$(jq -r .jobId <<< "$start")"
@@ -627,6 +651,34 @@ for source in $DIALECTS; do
     done
     mcp_close
 done
+
+# --- Bein: PostGIS ausserhalb des search_path (P3) --------------------
+#
+# Kein Ziel, keine Zelle — ein Reverse gegen eine **zweite** Datenbank
+# desselben PostgreSQL-Dienstes, in der PostGIS im Schema `postgis` liegt und
+# der `search_path` es nicht nennt. Gepinnt werden die Codes des
+# Reverse-Reports; `R405` gehoert dort hinein.
+log "=== Bein: PostGIS ausserhalb des search_path ==="
+legdir="$OUT/postgis-nosearchpath"
+mkdir -p "$legdir"
+if ! mcp_e2e_postgis_leg_setup "$EXAMPLES_DIR/$PG_NOSP_SEED" > "$legdir/setup.log" 2>&1; then
+    note_failure "Bein PostGIS/search_path: die zweite Datenbank liess sich nicht aufsetzen ($legdir/setup.log)"
+elif ! mcp_e2e_postgis_leg_assert_unreachable; then
+    # Ohne diese Probe maesse ein falsch aufgesetztes Bein still das Gegenteil
+    # — geometry_columns erreichbar — und pinnte es als „kein Verlust".
+    note_failure "Bein PostGIS/search_path: geometry_columns ist erreichbar — das Bein misst nicht, was es soll"
+else
+    mcp_open
+    if ! leg_ref="$(mcp_reverse_connection "$PG_NOSP_CONNECTION" "$legdir")"; then
+        note_failure "Bein PostGIS/search_path: Reverse ueber MCP scheiterte ($legdir)"
+    elif ! leg_report="$(report_json "$legdir/reverse-report.yaml" 2> "$legdir/report.err")"; then
+        note_failure "Bein PostGIS/search_path: der Reverse-Report ist nicht lesbar: $(head -c 300 "$legdir/report.err")"
+    else
+        log "   Reverse: $leg_ref"
+        check_expect "$PG_NOSP_KEY" "$(report_codes "$leg_report")"
+    fi
+    mcp_close
+fi
 
 # --- Bericht ----------------------------------------------------------
 echo
