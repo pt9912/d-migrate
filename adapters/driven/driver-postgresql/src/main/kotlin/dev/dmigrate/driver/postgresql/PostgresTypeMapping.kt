@@ -63,9 +63,22 @@ internal object PostgresTypeMapping {
         //
         // `BY DEFAULT` und `serial` behalten den `identifier`-Vertrag: dort
         // verspricht das Modell nichts, was das Rendern bricht.
+        //
+        // **Nur `integer`** (`bigint` laeuft schon durch den Zweig darueber).
+        // Ein `smallint` bleibt `identifier`, obwohl derselbe Modus dort
+        // genauso verlorengeht: das Modell traegt eine Identity nur auf
+        // `integer` und `biginteger` (`E130`, `SchemaColumnValidationRules`
+        // im Hexagon), und der
+        // PostgreSQL-Generator rendert sie fuer keinen anderen Typ
+        // ([PostgresColumnConstraintHelper]). Eine als `smallint` +
+        // `identity(always)` gelesene Spalte liesse `schema generate` aus dem
+        // eigenen Reverse abbrechen — aus einem verlustbehafteten, aber
+        // lauffaehigen Weg wuerde ein abbrechender. Welche Breiten der
+        // `identifier`-Vertrag traegt, ist eine eigene Frage
+        // (`docs/planning/next/reader-treue-3-spatial.md`).
         if (input.isPkCol && isGenerated) {
-            if (isAlwaysIdentity(input)) {
-                mapIntegerTypes(dt)?.let { return it.copy(generation = identityGeneration(input)) }
+            if (isAlwaysIdentity(input) && dt == "integer") {
+                return MappingResult(NeutralType.Integer, generation = identityGeneration(input))
             }
             return MappingResult(NeutralType.Identifier(autoIncrement = true))
         }
@@ -265,7 +278,7 @@ internal object PostgresTypeMapping {
      * Die Elementart, **die der Reverse benennt** — oder `null`, wenn er sie
      * nicht kennt. Der Unterschied traegt zwei Entscheidungen: `null` ist der
      * `else`-Fallback und damit meldepflichtig (`R301`,
-     * [spec/type-mapping.md] Abschnitt 8), und der PostgreSQL-Generator
+     * `spec/type-mapping.md` Abschnitt 8), und der PostgreSQL-Generator
      * rendert genau diesen Satz in seinem Typ (`PostgresTypeMapper.elementSql`).
      */
     private fun knownArrayElementType(elementUdt: String): String? = when (elementUdt) {
@@ -355,9 +368,11 @@ internal object PostgresTypeMapping {
     /**
      * Das Feld eines zusammengesetzten Typs samt seiner Note.
      *
-     * Dieselben zwei stillen Rueckfaelle wie an einer Spalte, an derselben
-     * Klasse gemessen: `numeric` ohne Praezision wird Gleitkomma (`R404`),
-     * ein unbekannter Feldtyp wird `text` (`R301`). `spec/type-mapping.md`,
+     * Dieselben stillen Rueckfaelle wie an einer Spalte, an derselben Klasse
+     * gemessen: `numeric` ohne Praezision wird Gleitkomma (`R404`), ein
+     * unbekannter Feldtyp wird `text` (`R301`), und ein `json`-Feld rendert
+     * als `jsonb` zurueck (`R402`) — `CREATE TYPE … AS (…)` schreibt den
+     * Feldtyp durch denselben Mapper wie eine Spalte. `spec/type-mapping.md`,
      * Abschnitt 8, verlangt fuer den `else`-Fallback ohnehin eine Note; sie
      * fehlte hier.
      */
@@ -378,6 +393,9 @@ internal object PostgresTypeMapping {
                 ),
             )
             unbounded -> MappingResult(known, note = unboundedNumericNote(objectName))
+            // Wie an der Spalte: `json` verliert den gespeicherten Text, `jsonb`
+            // verliert nichts und meldet nichts.
+            lower == "json" -> MappingResult(known, note = jsonTextualNote(objectName))
             else -> MappingResult(known)
         }
     }

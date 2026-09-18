@@ -71,6 +71,30 @@ class PostgresNonPkIdentityMappingTest : FunSpec({
         mapped.generation shouldBe null
     }
 
+    // H1 (Eigner, 2026-09-18): der Zweig greift **nur** fuer `integer`.
+    // `smallint` + `identity` gibt es im Modell nicht (`E130`), und der
+    // PostgreSQL-Generator rendert es nicht — als `smallint` gelesen
+    // braeche `schema generate` aus dem eigenen Reverse ab. Der Verlust
+    // bleibt hier, ohne Code; die Frage nach den Breiten liegt in Plan 3.
+    test("a smallint PK with ALWAYS keeps the identifier contract") {
+        val mapped = map("smallint", "int2", isPk = true, mode = "ALWAYS")
+        mapped.type.shouldBeInstanceOf<NeutralType.Identifier>()
+        mapped.generation shouldBe null
+    }
+
+    // M3: der Reader unterscheidet nicht, ob die Spalte den Schluessel
+    // **allein** bildet — `isPkCol` sagt nur, dass sie zu ihm gehoert. Ein
+    // Mitglied eines mehrspaltigen Schluessels liest deshalb genauso.
+    // `spec/type-mapping.md` 3.4 traegt diese Lesart.
+    test("a member of a composite PK reads like a sole one") {
+        val always = map("integer", "int4", isPk = true, mode = "ALWAYS")
+        always.type shouldBe NeutralType.Integer
+        (always.generation as? ColumnGeneration.Identity)?.mode shouldBe IdentityMode.ALWAYS
+
+        val byDefault = map("integer", "int4", isPk = true, mode = "BY DEFAULT")
+        byDefault.type.shouldBeInstanceOf<NeutralType.Identifier>()
+    }
+
     test("a bigint identity was never affected — it kept its generation all along") {
         val mapped = map("bigint", "int8", isPk = false, mode = "ALWAYS")
         mapped.type shouldBe NeutralType.BigInteger

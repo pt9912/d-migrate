@@ -9,6 +9,7 @@ import dev.dmigrate.test.images.TestImages
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.validation.SchemaValidator
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -38,6 +39,13 @@ import org.testcontainers.postgresql.PostgreSQLContainer
  * gewesen, ohne dass ein Vergleich zweier Reverses es sieht. `BY DEFAULT` und
  * `serial` behalten den `identifier`-Vertrag -- dort verspricht das Modell
  * nichts, was das Rendern bricht.
+ *
+ * **Die Breite ist die Grenze (H1).** Der Zweig gilt nur fuer `int`. Ein
+ * `smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` bleibt `identifier`:
+ * das Modell traegt eine Identity nur auf `integer` und `biginteger`
+ * (`E130`), und eine als `smallint` + `identity` gelesene Datei liesse sich
+ * nicht mehr erzeugen. Der zweite Test misst genau das -- die gelesene Datei
+ * muss die eigene Validierung bestehen.
  */
 class PostgresIdentityShapeIntegrationTest : FunSpec({
 
@@ -91,6 +99,103 @@ class PostgresIdentityShapeIntegrationTest : FunSpec({
             // `serial` ist keine Identity, sondern ein Sequenz-Default.
             cols.getValue("serial_col").generation shouldBe null
             cols.getValue("serial_col").default.shouldNotBeNull()
+        }
+        pool.close()
+    }
+
+    /**
+     * H1 und M3, an einem Server gemessen.
+     *
+     * - `smallint` mit `ALWAYS` bleibt `identifier`, und die gelesene Datei
+     *   besteht die eigene Validierung. Mit `smallint` + `identity` truege sie
+     *   `E130` und `schema generate` braeche aus dem eigenen Reverse ab.
+     * - Ein Mitglied eines **mehrspaltigen** Schluessels liest wie ein
+     *   alleiniges: der Reader kennt nur „gehoert zum Schluessel".
+     */
+    test("H1: smallint keeps the identifier contract; M3: a composite PK member reads alike") {
+        val pool = HikariConnectionPoolFactory.create(
+            ConnectionConfig(
+                dialect = DatabaseDialect.POSTGRESQL,
+                host = container.host, port = container.firstMappedPort,
+                database = container.databaseName, user = container.username, password = container.password,
+            ),
+        )
+        pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use {
+                it.execute("CREATE TABLE small_key (id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY)")
+                it.execute(
+                    "CREATE TABLE composite_key (" +
+                        "id int GENERATED ALWAYS AS IDENTITY, " +
+                        "tenant int NOT NULL, " +
+                        "PRIMARY KEY (id, tenant))",
+                )
+            }
+        }
+
+        val schema = PostgresSchemaReader().read(pool).schema
+        val small = schema.tables.getValue("small_key").columns.getValue("id")
+        val composite = schema.tables.getValue("composite_key").columns.getValue("id")
+
+        withClue("$small / $composite") {
+            small.type shouldBe NeutralType.Identifier(autoIncrement = true)
+            small.generation shouldBe null
+
+            composite.type shouldBe NeutralType.Integer
+            (composite.generation as? ColumnGeneration.Identity)?.mode shouldBe IdentityMode.ALWAYS
+        }
+
+        // Der eigentliche Grund fuer H1: was der Reverse liefert, muss sich
+        // erzeugen lassen. `E130` laesst eine Identity nur auf `integer` und
+        // `biginteger` zu.
+        val validation = SchemaValidator().validate(schema)
+        withClue(validation.errors.joinToString { "${it.code} ${it.message}" }) {
+            validation.errors.none { it.code == "E130" } shouldBe true
+        }
+        pool.close()
+    }
+
+    /**
+     * **Ein Waechter, kein Fix.** Dieselbe Breite **ohne** Schluessel geht
+     * durch den Zweig fuer Nicht-Schluesselspalten, und der nimmt jeden Typ,
+     * den `mapIntegerTypes` kennt — `smallint` also mit. Der Reverse liefert
+     * dann `smallint` + `identity`, und genau diese Form lehnt die eigene
+     * Validierung mit `E130` ab: ein `schema generate` aus diesem Reverse
+     * braeche ab.
+     *
+     * Der Befund ist **aelter** als H1 (H1 hat nur den Schluessel-Zweig eng
+     * gezogen) und liegt als **S6** in
+     * `docs/planning/next/reader-treue-3-spatial.md` — dieselbe Frage wie
+     * S5: welche Breiten traegt das Modell. Wird sie beantwortet, wird dieser
+     * Test rot; das ist beabsichtigt.
+     */
+    test("Waechter: eine smallint-Identity ohne Schluessel liest als smallint + identity — und faellt bei E130") {
+        val pool = HikariConnectionPoolFactory.create(
+            ConnectionConfig(
+                dialect = DatabaseDialect.POSTGRESQL,
+                host = container.host, port = container.firstMappedPort,
+                database = container.databaseName, user = container.username, password = container.password,
+            ),
+        )
+        pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use {
+                it.execute(
+                    "CREATE TABLE small_plain (" +
+                        "id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, " +
+                        "counter smallint GENERATED BY DEFAULT AS IDENTITY)",
+                )
+            }
+        }
+        val schema = PostgresSchemaReader().read(pool).schema
+        val counter = schema.tables.getValue("small_plain").columns.getValue("counter")
+
+        withClue("$counter") {
+            counter.type shouldBe NeutralType.SmallInt
+            counter.generation.shouldNotBeNull()
+        }
+
+        val errors = SchemaValidator().validate(schema).errors
+        withClue(errors.joinToString { "${it.code} ${it.message}" }) {
+            errors.any { it.code == "E130" && it.objectPath.contains("counter") } shouldBe true
         }
         pool.close()
     }

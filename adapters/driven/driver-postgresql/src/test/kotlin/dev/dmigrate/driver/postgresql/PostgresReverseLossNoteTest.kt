@@ -85,6 +85,20 @@ class PostgresReverseLossNoteTest : FunSpec({
         column("array", udtName = "_jsonb").note.shouldBeNull()
     }
 
+    // L2: `CREATE TYPE … AS (…)` schreibt den Feldtyp durch denselben Mapper
+    // wie eine Spalte — ein `json`-Feld entsteht am Ziel also als `jsonb`,
+    // mit demselben Verlust. Es blieb als einzige json-Stelle still.
+    test("ein json-Feld eines zusammengesetzten Typs meldet R402, ein jsonb-Feld nicht") {
+        val field = PostgresTypeMapping.compositeField("json", "addr.payload")
+        field.type shouldBe NeutralType.Json
+        field.note!!.code shouldBe "R402"
+        field.note!!.severity shouldBe SchemaReadSeverity.WARNING
+        field.note!!.objectName shouldBe "addr.payload"
+        field.note!!.message shouldContain "key order"
+
+        PostgresTypeMapping.compositeField("jsonb", "addr.payload_b").note.shouldBeNull()
+    }
+
     // ── P9 ────────────────────────────────────────────────────
 
     test("numeric ohne Praezision meldet R404 und wird float") {
@@ -152,12 +166,18 @@ class PostgresReverseLossNoteTest : FunSpec({
         serial.generation.shouldBeNull()
     }
 
-    test("smallint mit ALWAYS als alleiniger PK ebenso") {
+    // H1 (Eigner, 2026-09-18): **nicht** `smallint`. Das neutrale Modell
+    // traegt eine Identity nur auf `integer` und `biginteger` (`E130`), und
+    // kein Generator rendert eine `smallint`-Identity — als `smallint` +
+    // `identity(always)` gelesen braeche `schema generate` aus dem eigenen
+    // Reverse ab. Der Modus bleibt dort verloren, ohne Code; die Frage nach
+    // den Breiten liegt in Plan 3.
+    test("smallint mit ALWAYS behaelt den identifier-Vertrag") {
         val result = column(
             "smallint", udtName = "int2", isPkCol = true, isIdentity = true, identityGeneration = "ALWAYS",
         )
-        result.type shouldBe NeutralType.SmallInt
-        (result.generation as ColumnGeneration.Identity).mode shouldBe IdentityMode.ALWAYS
+        result.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        result.generation.shouldBeNull()
     }
 
     // Der Fingerabdruck-Kanonisierer ruft `mapColumn` ohne PK- und
