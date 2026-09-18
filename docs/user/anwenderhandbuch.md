@@ -2976,15 +2976,19 @@ beabsichtigt, erlauben Sie sie gezielt mit `--allow-destructive`. Siehe
 ### Rollback oder Overlay bricht nach einem d-migrate-Update ab (Exit 8)
 
 **Ursache:** d-migrate erkennt den Zustand einer Datenbank über einen internen
-**Fingerabdruck**. Rollback-Artefakte und Overlay-Dateien pinnen den
-Fingerabdruck-Stand, mit dem sie erzeugt wurden. Aktualisiert sich d-migrate und
-ändert dabei das Fingerabdruck-Verfahren, passen ältere Artefakte nicht mehr —
-der Lauf bricht dann **bewusst laut** ab, statt einen falschen Vergleich zu
-ziehen:
+**Fingerabdruck**. Aktualisiert sich d-migrate und ändert dabei das
+Fingerabdruck-Verfahren, passen ältere Artefakte nicht mehr — der Lauf bricht
+dann **bewusst laut** ab, statt einen falschen Vergleich zu ziehen. Die beiden
+Artefaktarten merken das auf verschiedenen Wegen:
 
-- Rollback: **Exit 8**, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`.
-- Overlay: **Exit 8**, `OVERLAY_STALE_SOURCE_FINGERPRINT` bzw.
-  `OVERLAY_STALE_TARGET_FINGERPRINT`.
+- **Rollback:** Das Artefakt trägt die Kennung des Verfahrens. Ein Wechsel fällt
+  deshalb **immer** auf — **Exit 8**, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`.
+- **Overlay:** Die Datei trägt keine Kennung, sondern die gepinnten
+  Fingerabdrücke selbst. Sie fällt über den **Wertvergleich** auf, also nur,
+  wenn sich der Fingerabdruck des betroffenen Schemas tatsächlich ändert —
+  **Exit 8**, `OVERLAY_STALE_SOURCE_FINGERPRINT` bzw.
+  `OVERLAY_STALE_TARGET_FINGERPRINT`. Ein Verfahrenswechsel, der Ihr Schema
+  nicht berührt, lässt ein Overlay unberührt.
 
 **Lösung:** Erzeugen Sie das betroffene Artefakt mit der aktuellen Version neu:
 für ein Rücknahme-Skript den `migrate`-Lauf mit `--generate-rollback` erneut
