@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
 
 /**
@@ -21,13 +22,17 @@ internal object SqliteCompositePkIdentity {
     const val W_CODE = "W135"
 
     /**
-     * True when [type] is an auto-incrementing identifier that is only part of a composite
-     * primary key — i.e. its AUTOINCREMENT is dropped in the SQLite rendering (W135). The
-     * diff/rebuild `columnLine` renders inline AUTOINCREMENT only for [NeutralType.Identifier]
-     * (not for `ColumnGeneration.Identity`), so this predicate matches that emitter.
+     * True when [col] carries an auto-incrementing key that is only part of a composite
+     * primary key — i.e. its AUTOINCREMENT is dropped in the SQLite rendering (W135).
+     *
+     * **Beide Formen zaehlen**: der Typ [NeutralType.Identifier] und
+     * `integer`/`biginteger` mit `generation: identity` ([SqliteRowidIdentity]). Seit der
+     * Diff-Pfad auch die zweite inline rendert, verliert sie im zusammengesetzten
+     * Schluessel genau dasselbe wie die erste — das Praedikat deckt deshalb beide, sonst
+     * bliebe der Verlust fuer die zweite Form still.
      */
-    fun isDroppedAutoincrement(type: NeutralType, isSolePrimaryKey: Boolean): Boolean =
-        !isSolePrimaryKey && type is NeutralType.Identifier && type.autoIncrement
+    fun isDroppedAutoincrement(col: ColumnDefinition, isSolePrimaryKey: Boolean): Boolean =
+        !isSolePrimaryKey && SqliteRowidIdentity.inAnyForm(col)
 
     fun message(colName: String): String =
         "AUTOINCREMENT dropped for '$colName': SQLite AUTOINCREMENT requires a single-column " +

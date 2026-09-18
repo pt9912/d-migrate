@@ -104,6 +104,57 @@ Soll plant die wirkungslose Operation unabhängig von der Präferenz — wer es
 nur gegen MySQL einsetzt, trägt das Flag ein (letzte Zeile der Tabelle), mit
 der Folge `BIGSERIAL` auf PostgreSQL.
 
+## Nachtrag 2026-09-18 — Ursache 1 ist geschlossen
+
+Plan 2 des Reader-Umbrellas
+([`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md),
+Paket S2) hat die **Render-Lücke** behoben: `SqliteDiffSqlBuilders.columnLine`
+rendert `generation: identity` auf `integer`/`biginteger` jetzt als
+`INTEGER PRIMARY KEY AUTOINCREMENT`, wenn die Spalte allein den
+Primärschlüssel bildet, und `primaryKeyClause` lässt die zweite
+Primärschlüssel-Klausel dann weg. Beide `CREATE TABLE`-Emitter des
+Migrate-Pfads gehen darüber — der Diff-Renderer und der Tabellen-Neubau. Am
+Server gemessen (SQLite 3.45, `schema migrate --execute`): der gespeicherte
+Tabellentext trägt `AUTOINCREMENT`, und `sqlite_sequence` entsteht — die
+Tabelle, die es **nur** für eine solche Tabelle gibt.
+
+Mitgezogen: `SqliteCompositePkIdentity.isDroppedAutoincrement` prüft jetzt die
+Spalte statt nur ihren Typ. Sonst wäre mit dem Fix ein neuer stiller Verlust
+entstanden — im **zusammengesetzten** Schlüssel gibt es weiterhin kein
+AUTOINCREMENT, und `W135` hätte diese Schreibweise nicht gemeldet.
+
+**Ursache 2 bleibt offen — und sie ist breiter als bisher beschrieben.**
+Gemessen an SQLite 3.45, `schema migrate --execute` gegen ein leeres Ziel, mit
+zwei Sollformen derselben Spalte:
+
+| Soll | erzeugte DDL | Ausgang |
+| --- | --- | --- |
+| `identifier` mit `auto_increment` | `"id" INTEGER PRIMARY KEY AUTOINCREMENT` | Exit **0** |
+| `biginteger` + `generation: identity` | **dieselbe** DDL, Zeichen für Zeichen | Exit **5**, `POST_EXECUTE_DRIFT` |
+
+Es driftet also nicht die Datenbank, sondern die Schreibweise des Solls. Der
+bisherige Text nennt dafür das fehlende **Präferenz-Threading** (der Re-Read
+liest ohne `--sqlite-autoincrement-width 64` und `--sqlite-autoincrement-syntax
+identity` und liefert `identifier`). Dazu kommt ein zweiter Grund:
+
+**Der Fingerabdruck faltet die beiden Schreibweisen nur in `generation`, nicht
+im Typ.** `MigrationFingerprint.impliedGeneration` macht aus `identifier` mit
+`auto_increment` ein `identity(always)`, wo der Dialekt beide Formen gleich
+rendert; der **Typ** geht dagegen unverändert durch `canonicalizeType` —
+`identifier(auto)` bleibt `identifier(auto)`, `biginteger` wird `integer`. Der
+Post-Compare sieht deshalb zwei verschiedene Typen, während
+`TableComparator.identitySpelledDifferently` die Spalten längst
+zusammenfaltet. Wer Ursache 2 schneidet, entscheidet deshalb zwei Dinge: ob die
+Präferenz bis in den Re-Read gefädelt wird **und** ob der Abdruck die Faltung
+auch im Typ nachvollzieht — Letzteres ist eine Projektionsänderung mit
+Anhebung, also dieselbe Architektur-Frage, die der Nachtrag oben für MySQL
+aufwirft (ADR 0027, Entscheidung 3).
+
+**Gepinnt ist der Zustand**, nicht die Hoffnung: ein Integrationsfall
+(`SqliteIdentityGenerationMigrateIntegrationTest`) hält beide Ausgänge
+nebeneinander fest. Wird Ursache 2 geschlossen, wird er rot — er ist der
+Wächter über diesem Eintrag.
+
 ## Nicht-Scope
 
 - Der SQLite→PG/MySQL-**Transfer** (kein SQLite-Generate involviert) — der ist im

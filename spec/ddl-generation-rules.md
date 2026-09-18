@@ -435,6 +435,11 @@ CREATE TABLE "orders" (
 
 Besonderheiten:
 - `identifier` → `INTEGER PRIMARY KEY AUTOINCREMENT`
+- `generation: identity` auf `integer`/`biginteger` → derselbe
+  `INTEGER PRIMARY KEY AUTOINCREMENT`, wenn die Spalte **allein** den
+  Primärschlüssel bildet; sonst ein blankes `INTEGER` im
+  Tabellen-`PRIMARY KEY` + W135. Beide Render-Pfade schreiben dieselbe Spalte —
+  `schema generate` und `schema migrate`, einschließlich des Tabellen-Neubaus
 - `boolean` → `INTEGER`, Defaults `true`/`false` → `1`/`0`
 - `json` → `TEXT` (JSON-Funktionen verfügbar ab 3.38)
 - `array` → `TEXT` + W162 (kein nativer Array-Typ): die Spalte verliert ihre

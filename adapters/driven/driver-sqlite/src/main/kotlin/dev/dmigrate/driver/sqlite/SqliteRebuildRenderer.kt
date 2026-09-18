@@ -117,7 +117,7 @@ internal class SqliteRebuildRenderer(
         for ((colName, col) in plan.newTable.columns.inOrdinalOrder()) {
             SqliteEnumDegradation.warnIfEnum(op, ctx, colName, col)
             SqliteArrayDegradation.warnIfArray(op, ctx, colName, col)
-            if (SqliteCompositePkIdentity.isDroppedAutoincrement(col.type, solePrimaryKey == colName)) {
+            if (SqliteCompositePkIdentity.isDroppedAutoincrement(col, solePrimaryKey == colName)) {
                 ctx.warning(op, SqliteCompositePkIdentity.message(colName), SqliteCompositePkIdentity.W_CODE)
             }
         }

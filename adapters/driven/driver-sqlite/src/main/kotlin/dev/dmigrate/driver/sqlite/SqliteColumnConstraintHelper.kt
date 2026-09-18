@@ -97,11 +97,13 @@ internal class SqliteColumnConstraintHelper(
         return generateDefaultColumn(colName, col, schema, tableName, deferredFks)
     }
 
+    // Dieselbe Bedingung wie im Diff- und im Neubau-Pfad; sie liegt einmal in
+    // [SqliteRowidIdentity], damit die drei Emitter dieselbe Spalte schreiben.
     private fun supportsRowidIdentity(type: NeutralType): Boolean =
-        type is NeutralType.Integer || type is NeutralType.BigInteger
+        SqliteRowidIdentity.supportsType(type)
 
     private fun generateRowidIdentityColumn(colName: String, col: ColumnDefinition): String {
-        val parts = mutableListOf(quoteIdentifier(colName), "INTEGER PRIMARY KEY AUTOINCREMENT")
+        val parts = mutableListOf(quoteIdentifier(colName), SqliteRowidIdentity.CLAUSE)
         if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         return parts.joinToString(" ")
     }

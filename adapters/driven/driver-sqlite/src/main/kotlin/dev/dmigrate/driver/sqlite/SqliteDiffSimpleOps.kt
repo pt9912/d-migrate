@@ -59,7 +59,7 @@ internal object SqliteDiffSimpleOps {
         for ((colName, col) in effectiveColumns.inOrdinalOrder()) {
             val isSolePrimaryKey = solePrimaryKey == colName
             lines += "    " + ctx.sql.columnLine(tableName, colName, col, isSolePrimaryKey)
-            if (SqliteCompositePkIdentity.isDroppedAutoincrement(col.type, isSolePrimaryKey)) {
+            if (SqliteCompositePkIdentity.isDroppedAutoincrement(col, isSolePrimaryKey)) {
                 ctx.warning(op, SqliteCompositePkIdentity.message(colName), SqliteCompositePkIdentity.W_CODE)
             }
         }

@@ -640,6 +640,70 @@ das, was verlorengeht — eine Meldung ohne sie sagte nur die Hälfte.
 `MysqlTypeMapping.mapColumn` und hält fest, dass `json` herauskommt — kein
 Array mit verlorener Elementart, sondern gar kein Array mehr. Das ist der
 **erwartete** Ausgang, kein Defekt.
+
+#### S2 — der SQLite-Migrate-Pfad rendert `generation: identity`
+
+**Zuerst gemessen** (SQLite 3.45, `schema migrate --execute` über den
+Runner des Integrationsmoduls, eine `biginteger`-Spalte mit
+`generation: identity` als alleiniger Primärschlüssel):
+
+| Fall | vorher | nachher |
+| --- | --- | --- |
+| `CreateTable` | `"id" INTEGER NOT NULL` + `PRIMARY KEY ("id")`, **kein** `AUTOINCREMENT`, keine `sqlite_sequence`-Tabelle | `"id" INTEGER PRIMARY KEY AUTOINCREMENT`, `sqlite_sequence` vorhanden |
+| Tabellen-Neubau (Nullbarkeitswechsel) | nahm das AUTOINCREMENT wieder weg | behält es |
+
+`sqlite_sequence` ist der Beleg des **Servers**: diese Tabelle entsteht nur für
+eine Tabelle mit `AUTOINCREMENT`. Der gespeicherte Tabellentext allein könnte
+auch ein Kommentar sein.
+
+**Der Post-Compare driftet weiter — Ursache 2, gemessen.** Beide Läufe enden
+mit **Exit 5** (`POST_EXECUTE_DRIFT`), obwohl die Datenbank genau so steht, wie
+das Soll sie wollte. Der Re-Read liest ohne Reverse-Präferenz und liefert
+`identifier(auto)`; das Soll sagt `biginteger` + `generation: identity`.
+
+**Die Messung, die den Grund zeigt** (derselbe Lauf, zwei Sollformen): mit der
+Spalte als `identifier` entsteht **dieselbe** DDL — Zeichen für Zeichen — und
+der Lauf endet mit **Exit 0**. Es ist also nicht der Fix, der driftet, sondern
+die Schreibweise des Solls.
+
+**Und Ursache 2 ist breiter, als der `open/`-Eintrag sagte.** Er nennt das
+fehlende Präferenz-Threading. Dazu kommt: der **Fingerabdruck** faltet die
+beiden Schreibweisen nur in `generation`
+(`MigrationFingerprint.impliedGeneration` macht aus `identifier(auto)` ein
+`identity(always)`), **nicht im Typ** — `canonicalizeType` hält
+`identifier(auto)` fest und projiziert `biginteger` auf `integer`. Der
+Post-Compare sieht deshalb zwei verschiedene Typen, auch wo der Comparator die
+Spalten längst zusammenfaltet (`TableComparator.identitySpelledDifferently`).
+Mit der Präferenz (`--sqlite-autoincrement-width 64` **und**
+`--sqlite-autoincrement-syntax identity`) läse der Re-Read `biginteger` +
+`identity` und die Frage entfiele; ohne sie bleibt sie. Beides steht im
+Nachtrag des `open/`-Eintrags.
+
+**Der Zustand ist gepinnt, nicht weggelassen.** Ein Integrationsfall hält
+beide Ausgänge nebeneinander fest (gleiche DDL, Exit 0 gegen Exit 5). Wird
+Ursache 2 geschlossen, wird er rot — er ist der Wächter über dem offenen
+Punkt, nicht über dem Fix.
+
+**Ein zweiter Verlust wäre dabei entstanden und ist mitgenommen.**
+`SqliteCompositePkIdentity.isDroppedAutoincrement` prüfte den **Typ**
+(`identifier`), nicht die Spalte. Sobald `columnLine` auch
+`generation: identity` inline rendert, verliert dieselbe Schreibweise im
+**zusammengesetzten** Schlüssel ihr AUTOINCREMENT — und `W135` hätte davon
+nichts gesagt. Das Prädikat nimmt jetzt die Spalte und deckt beide Formen; die
+KDoc, die das Gegenteil behauptete, ist nachgezogen.
+
+**Nicht angefasst:** der Blocker `SQLITE_IDENTITY_IS_PART_OF_THE_TYPE`. Er
+betrifft den **Wechsel** einer Identity an einer bestehenden Spalte, nicht das
+Anlegen — SQLite kann das auch nach diesem Paket nicht in place.
+
+**Nebenbefund, gemeldet, nicht gebaut:** der Generate-Pfad lässt die
+Tabellen-`PRIMARY KEY`-Klausel für **jede** Spalte mit
+`generation: identity` weg, auch wenn ihr Typ kein rowid-Alias sein kann
+(`SqliteTableDdlSupport.skipPrimaryKey` sieht `col.generation` an, nicht den
+Typ). Eine `decimal`-Spalte mit erklärter Identity als alleiniger
+Primärschlüssel bekäme dort gar keinen Schlüssel. Der Fall ist über die
+Identity-Typprüfung der Validierung (`E130`) heute nicht erreichbar; der
+Diff-Pfad prüft seit S2 beides. Kein Paket dieses Plans trägt ihn.
 ## Akzeptanzkriterien
 
 1. Der Array-Verlust ist auf MySQL und SQLite benannt, auf Generate und

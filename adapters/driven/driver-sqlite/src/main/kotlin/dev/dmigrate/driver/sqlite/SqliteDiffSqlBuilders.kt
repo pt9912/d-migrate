@@ -58,6 +58,22 @@ internal class SqliteDiffSqlBuilders {
                 ComputedColumnClause.clause(computed, if (computed.stored) "STORED" else "VIRTUAL"),
             ).joinToString(" ")
         }
+        // Die zweite Form desselben Autowert-Schluessels: `integer`/`biginteger`
+        // mit `generation: identity`. Der Generate-Pfad rendert sie als
+        // `INTEGER PRIMARY KEY AUTOINCREMENT`
+        // ([SqliteColumnConstraintHelper.generateRowidIdentityColumn]); dieser
+        // Renderer sah `generation` gar nicht an und legte die Spalte als
+        // blankes `INTEGER` mit eigener `PRIMARY KEY`-Klausel an — gueltiges
+        // DDL, angewandt, und das AUTOINCREMENT still verloren. Nur als
+        // **alleiniger** Primaerschluessel; in einem zusammengesetzten
+        // Schluessel faellt es weg (W135, [SqliteCompositePkIdentity]).
+        if (isSolePrimaryKey && SqliteRowidIdentity.byGeneration(col)) {
+            return listOfNotNull(
+                quote(name),
+                SqliteRowidIdentity.CLAUSE,
+                "UNIQUE".takeIf { NamedUniqueConstraints.rendersInline(col) },
+            ).joinToString(" ")
+        }
         val parts = mutableListOf<String>()
         parts += quote(name)
         // SQLite renders an `identifier` column inline as `INTEGER PRIMARY KEY AUTOINCREMENT`
@@ -93,14 +109,18 @@ internal class SqliteDiffSqlBuilders {
      * Shared by **both** SQLite `CREATE TABLE` emitters — the diff renderer
      * ([SqliteDiffSimpleOps]) and the table-rebuild renderer
      * ([SqliteRebuildRenderer]) — so the dedup can never be forgotten on one
-     * path (the generate path [SqliteTableDdlSupport] carries its own, wider
-     * variant that also covers `ColumnGeneration.Identity`, which the diff
-     * `columnLine` does not render inline).
+     * path. Beide Formen des Autowert-Schluessels zaehlen dazu, der Typ
+     * `identifier` **und** `generation: identity` ([SqliteRowidIdentity]) —
+     * seit [columnLine] auch die zweite inline rendert, wuerde eine zusaetzliche
+     * Klausel hier die Tabelle mit zwei Primaerschluesseln beschreiben, und die
+     * lehnt SQLite ab.
      */
     fun primaryKeyClause(table: TableDefinition): String? {
         val pk = table.primaryKey
         if (pk.isEmpty()) return null
-        if (pk.size == 1 && table.columns[pk.single()]?.type is NeutralType.Identifier) return null
+        val soleColumn = pk.singleOrNull()?.let { table.columns[it] }
+        if (soleColumn != null && SqliteRowidIdentity.inAnyForm(soleColumn)) return null
+        if (pk.size == 1 && soleColumn?.type is NeutralType.Identifier) return null
         return "PRIMARY KEY (" + pk.joinToString(", ") { quote(it) } + ")"
     }
 

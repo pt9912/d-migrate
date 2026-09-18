@@ -249,6 +249,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Sortierrichtung und Praefixlaenge.
 
 ### Fixed
+- **`schema migrate` gegen SQLite legt eine Identity-Spalte wieder mit
+  `AUTOINCREMENT` an.** Der Diff- und Neubau-Pfad sah `generation: identity`
+  gar nicht an: eine `integer`/`biginteger`-Spalte mit erklaerter Identity
+  entstand dort als blankes `INTEGER` mit eigener `PRIMARY KEY`-Klausel —
+  gueltiges DDL, angewandt, und der Autowert still verloren (der
+  Voll-Generate-Pfad schrieb ihn korrekt). Beide Pfade schreiben jetzt dieselbe
+  Spalte, einschliesslich des Tabellen-Neubaus; die zweite Primaerschluessel-
+  Klausel entfaellt, die SQLite sonst zurueckwiese. In einem
+  **zusammengesetzten** Schluessel gibt es weiter kein AUTOINCREMENT — und
+  seit dieser Aenderung meldet `W135` auch diese Schreibweise, nicht nur den
+  Typ `identifier`. **Was bleibt:** der Post-Compare meldet fuer diese
+  Schreibweise weiter Drift (Exit 5), obwohl die Datenbank genau so steht, wie
+  das Soll sie wollte — dieselbe Spalte als `identifier` geschrieben erzeugt
+  dieselbe DDL und endet mit Exit 0. Der Grund liegt im Zurueck-Lesen und im
+  Abdruck, nicht im Rendern; er ist gemessen und festgehalten.
 
 - **`schema migrate` gegen SQLite behaelt die Aktionen eines
   Fremdschluessels.** Ein Fremdschluessel der Tabellenebene (`constraints`)
