@@ -149,7 +149,7 @@ class ColumnValueGenerator(private val random: Random, private val locale: SeedL
      * weil `hexagon:core` nicht von `formats` abhängen darf (AE-11).
      * `enum`/`array` als Elementtyp tragen keine ausreichenden Metadaten
      * (Wertevorrat bzw. Verschachtelung) — Fallback auf `Text`, analog
-     * `PostgresTypeMapper.resolveElementType`.
+     * `PostgresTypeMapper.elementSql`.
      *
      * Das Namensvokabular wird NICHT hier dupliziert: die Mitgliedschaft
      * wird gegen [SchemaValidator.ARRAY_ELEMENT_TYPE_NAMES] geprüft (das

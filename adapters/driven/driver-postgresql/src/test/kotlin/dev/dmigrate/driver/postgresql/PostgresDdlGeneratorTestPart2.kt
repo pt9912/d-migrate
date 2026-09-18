@@ -643,7 +643,7 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
         ddl shouldContain "INOUT \"b\" INTEGER"
     }
 
-    // ── Coverage gap: resolveElementType ──
+    // ── Coverage gap: elementSql ──
 
     test("array with integer element type") {
         val s = schema(tables = mapOf("t" to table(

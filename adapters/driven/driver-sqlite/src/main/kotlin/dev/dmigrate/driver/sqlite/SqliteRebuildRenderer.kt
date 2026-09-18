@@ -109,7 +109,7 @@ internal class SqliteRebuildRenderer(
      *  - W134 (enum → bare TEXT, no native enum type)
      *  - W135 (identity column in a composite PK → AUTOINCREMENT dropped, [SqliteCompositePkIdentity])
      *  - W162 (array → TEXT, no native array type, [SqliteArrayDegradation])
- *  - W163 (`mode: always` ohne Entsprechung, [SqliteIdentityModeDegradation])
+     *  - W163 (`mode: always` ohne Entsprechung, [SqliteIdentityModeDegradation])
      */
     private fun warnRebuiltColumnDegradations(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
         if (ctx.direction != SqliteRenderDirection.UP) return
