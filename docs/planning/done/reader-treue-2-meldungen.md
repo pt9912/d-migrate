@@ -1488,8 +1488,24 @@ außerhalb. Der Umbrella
   Zwischenbefunde gehören dazu: eine Sabotage, die schon bei **Detekt** fällt,
   belegt das Gate und nicht den Test; und eine Rücknahme per Textersetzung
   traf ihr Muster nicht mehr — aufgefallen ist das nur am `md5sum -c`.
-- **Abschluss-Verifikation:** in einem eigenen Klon gelaufen; ihr Ergebnis
-  wird als Nachtrag am Ende dieses Plans nachgetragen.
+- **Abschluss-Verifikation** (eigener Klon, 2026-09-18): **graduationsreif**.
+  Sie hat die fünf Fixes der Korrekturrunde selbst nachgemessen statt die Tests
+  zu lesen — H1 und M2 zusätzlich an echten Servern (PostgreSQL 18: `smallint`
+  liest wieder `identifier`, `integer` behält den Modus und der Generator
+  rendert ihn; SQLite: mit zurückgenommenem Fix lehnt der Server das
+  `ADD COLUMN` ab, `exitCode=5`) — und acht eigene Sabotagen gefahren, alle
+  rot, darunter **alle vier** MySQL-Migrate-Meldestellen einzeln. Ihre eigenen
+  Sonden hat sie vorab mit einer falschen Zusicherung geprüft, damit ein grüner
+  Lauf nicht „nicht ausgeführt" heißen kann. Zwei ihrer Beobachtungen sind
+  nachgezogen: der CHANGELOG-Satz zur Identity sagte „alleiniger
+  Primärschlüssel" und damit weniger, als M3 in der Spec festgehalten hat
+  (korrigiert); und `make doc-immutable RANGE=origin/main..HEAD` misst nichts,
+  wenn alles gepusht ist — der tragende Lauf ging über die ganze Plan-Range.
+  Offen bleiben zwei Beobachtungen ohne Nacharbeit: der dritte `R370`-Text ist
+  nur im Unit-Test gepinnt (die beiden anderen auch gegen einen echten Oracle),
+  und für eine `SmallInt`-Identity schweigt der MySQL-Migrate-Pfad seit L1 —
+  vertretbar, weil `E130` diese Form verbietet, erreichbar nur über den
+  Reverse-Ausgang, den **S6** verfolgt.
 
 **Was von diesem Plan lesenswert bleibt.** Dreimal war „melden" die falsche
 Antwort: bei S1, S2 und S3 entsteht der Verlust auf dem Rückweg in **denselben**

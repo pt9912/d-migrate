@@ -131,8 +131,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rein numerischen kann kein SRID verlorengehen, und dort stand er bisher
   trotzdem, je Tabelle einmal.
 
-- **Eine PostgreSQL-`integer`-Identity mit `ALWAYS` als alleiniger
-  Primaerschluessel kommt anders zurueck.** Sie las als `identifier` **ohne**
+- **Eine PostgreSQL-`integer`-Identity mit `ALWAYS` im Primaerschluessel kommt
+  anders zurueck** (auch als Mitglied eines mehrspaltigen Schluessels). Sie las als `identifier` **ohne**
   Modus, und der PostgreSQL-Generator machte daraus `SERIAL` — eine Spalte,
   die einen ausdruecklich gesetzten Wert annimmt. Der Verlust traf damit auch
   PostgreSQL → PostgreSQL, und kein Vergleich zweier Reverses sah ihn. Jetzt
