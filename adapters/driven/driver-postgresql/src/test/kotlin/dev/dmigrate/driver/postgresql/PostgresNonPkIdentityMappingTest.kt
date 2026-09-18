@@ -47,10 +47,26 @@ class PostgresNonPkIdentityMappingTest : FunSpec({
         identity.mode shouldBe IdentityMode.BY_DEFAULT
     }
 
+    // `bigint` traegt das Modell; `smallint` nicht (s. u.).
     test("the ALWAYS mode comes through as well") {
-        val mapped = map("smallint", "int2", isPk = false, mode = "ALWAYS")
-        mapped.type shouldBe NeutralType.SmallInt
+        val mapped = map("bigint", "int8", isPk = false, mode = "ALWAYS")
+        mapped.type shouldBe NeutralType.BigInteger
         (mapped.generation as? ColumnGeneration.Identity)?.mode shouldBe IdentityMode.ALWAYS
+    }
+
+    // S6 (Eigner, 2026-09-18): eine Breite, die das Modell nicht traegt
+    // (`E130` kennt `identity` nur fuer `integer` und `biginteger`), wird
+    // `identifier` — mit und ohne Schluessel. Als `smallint` + `identity`
+    // gelesen liesse sich die Datei gar nicht erzeugen; den verlorenen Modus
+    // benennt `R406`.
+    test("a smallint identity falls back to identifier in both roles") {
+        val withoutKey = map("smallint", "int2", isPk = false, mode = "ALWAYS")
+        withoutKey.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        withoutKey.note?.code shouldBe "R406"
+
+        val withKey = map("smallint", "int2", isPk = true, mode = "ALWAYS")
+        withKey.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        withKey.note?.code shouldBe "R406"
     }
 
     // S1 (Reader-Plan 2): `ALWAYS` im Primaerschluessel faltet **nicht** mehr

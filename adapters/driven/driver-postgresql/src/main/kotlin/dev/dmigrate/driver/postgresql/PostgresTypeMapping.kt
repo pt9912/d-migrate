@@ -69,22 +69,23 @@ internal object PostgresTypeMapping {
         // verspricht das Modell nichts, was das Rendern bricht.
         //
         // **Nur `integer`** (`bigint` laeuft schon durch den Zweig darueber).
-        // Ein `smallint` bleibt `identifier`, obwohl derselbe Modus dort
-        // genauso verlorengeht: das Modell traegt eine Identity nur auf
-        // `integer` und `biginteger` (`E130`, `SchemaColumnValidationRules`
-        // im Hexagon), und der
+        // Ein `smallint` bleibt `identifier` und meldet den verlorenen Modus
+        // mit `R406` (s. [smallIntIdentityNote]): das Modell traegt eine
+        // Identity nur auf `integer` und `biginteger` (`E130`,
+        // `SchemaColumnValidationRules` im Hexagon), und der
         // PostgreSQL-Generator rendert sie fuer keinen anderen Typ
         // ([PostgresColumnConstraintHelper]). Eine als `smallint` +
         // `identity(always)` gelesene Spalte liesse `schema generate` aus dem
         // eigenen Reverse abbrechen — aus einem verlustbehafteten, aber
-        // lauffaehigen Weg wuerde ein abbrechender. Welche Breiten der
-        // `identifier`-Vertrag traegt, ist eine eigene Frage
-        // (`docs/planning/next/reader-treue-3-spatial.md`).
+        // lauffaehigen Weg wuerde ein abbrechender.
         if (input.isPkCol && isGenerated) {
             if (isAlwaysIdentity(input) && dt == "integer") {
                 return MappingResult(NeutralType.Integer, generation = identityGeneration(input))
             }
-            return MappingResult(NeutralType.Identifier(autoIncrement = true))
+            return MappingResult(
+                NeutralType.Identifier(autoIncrement = true),
+                note = smallIntIdentityNote(input, dt),
+            )
         }
 
         // Eine Identity-Spalte, die **nicht** im Primaerschluessel liegt und
@@ -95,8 +96,25 @@ internal object PostgresTypeMapping {
         // `type=Integer, generation=null, default=null` zurueck, und ein
         // `schema generate` daraus erzeugte eine Spalte ohne Generator. Der Typ
         // bleibt, was er ist; die Identity gehoert ins Modell.
+        //
+        // **Die Breite entscheidet.** Traegt das Modell die Identity nicht
+        // (`smallint`, `E130`), wird die Spalte `identifier` — sonst liesse
+        // sich aus dem eigenen Reverse nicht generieren
+        // ([smallIntIdentityNote] nennt den Verlust mit `R406`). Dieselbe
+        // Grenze wie im Primaerschluessel-Zweig darueber, nur ohne Schluessel.
         if (isGenerated) {
-            mapIntegerTypes(dt)?.let { return it.copy(generation = identityGeneration(input)) }
+            val mapped = mapIntegerTypes(dt)
+            if (mapped != null) {
+                val carried = mapped.type is NeutralType.Integer || mapped.type is NeutralType.BigInteger
+                return if (carried) {
+                    mapped.copy(generation = identityGeneration(input))
+                } else {
+                    MappingResult(
+                        NeutralType.Identifier(autoIncrement = true),
+                        note = smallIntIdentityNote(input, dt),
+                    )
+                }
+            }
         }
 
         return mapIntegerTypes(dt)
@@ -120,6 +138,39 @@ internal object PostgresTypeMapping {
      */
     private fun isAlwaysIdentity(input: ColumnInput): Boolean =
         input.isIdentity && input.identityGeneration?.equals("always", ignoreCase = true) == true
+
+    /**
+     * `R406` — eine `ALWAYS`-Identity, deren **Breite** das Modell nicht traegt.
+     *
+     * Das Modell kennt `identity` nur fuer `integer` und `biginteger`
+     * (`E130`); eine `smallint GENERATED ALWAYS AS IDENTITY` liest deshalb als
+     * `identifier`. Der Modus geht dabei verloren: `identifier` rendert als
+     * `SERIAL`, und `SERIAL` **nimmt** einen ausdruecklich gesetzten Wert an,
+     * `ALWAYS` nicht.
+     *
+     * Verlustfrei waere nur eine Modellerweiterung. Der Eigner hat sie am
+     * 2026-09-18 abgelehnt (`reader-treue-3-spatial.md`, S6): drei der fuenf
+     * Generatoren kennen die Form ohnehin nicht und liessen die Erzeugung
+     * **still** fallen — dieselbe Messung steht in
+     * [dev.dmigrate.format.SmallIntIdentityRenderTest]. Gemeldet wird
+     * deshalb, statt das Modell zu weiten.
+     *
+     * `BY DEFAULT` meldet **nichts**: dort ist `SERIAL` die richtige
+     * Entsprechung, weil es ebenfalls ausdrueckliche Werte annimmt. Ein
+     * `smallserial` traegt `identity_generation = null` und ist damit kein
+     * Identity-Fall.
+     */
+    private fun smallIntIdentityNote(input: ColumnInput, dt: String): SchemaReadNote? {
+        if (!isAlwaysIdentity(input)) return null
+        if (mapIntegerTypes(dt)?.type !is NeutralType.SmallInt) return null
+        return SchemaReadNote(
+            severity = SchemaReadSeverity.WARNING,
+            code = "R406",
+            objectName = "${input.tableName}.${input.colName}",
+            message = "smallint identity column read as identifier: the ALWAYS mode is lost, " +
+                "the column may accept explicitly set values (PostgreSQL renders it as SERIAL)",
+        )
+    }
 
     private fun identityGeneration(input: ColumnInput): ColumnGeneration.Identity =
         ColumnGeneration.Identity(

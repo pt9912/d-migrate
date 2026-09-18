@@ -170,14 +170,51 @@ class PostgresReverseLossNoteTest : FunSpec({
     // traegt eine Identity nur auf `integer` und `biginteger` (`E130`), und
     // kein Generator rendert eine `smallint`-Identity — als `smallint` +
     // `identity(always)` gelesen braeche `schema generate` aus dem eigenen
-    // Reverse ab. Der Modus bleibt dort verloren, ohne Code; die Frage nach
-    // den Breiten liegt in Plan 3.
-    test("smallint mit ALWAYS behaelt den identifier-Vertrag") {
+    // Reverse ab.
+    //
+    // S6 (Eigner, 2026-09-18): Der Verlust bleibt, ist aber nicht mehr still —
+    // `R406` benennt ihn. Verlustfrei waere nur eine Modellerweiterung, und
+    // die hat der Eigner abgelehnt: drei der fuenf Generatoren kennen die Form
+    // ohnehin nicht (`SmallIntIdentityRenderTest`).
+    test("smallint mit ALWAYS behaelt den identifier-Vertrag und meldet R406") {
         val result = column(
             "smallint", udtName = "int2", isPkCol = true, isIdentity = true, identityGeneration = "ALWAYS",
         )
         result.type shouldBe NeutralType.Identifier(autoIncrement = true)
         result.generation.shouldBeNull()
+        result.note!!.pin("R406")
+    }
+
+    // Dieselbe Grenze **ohne** Schluessel. Hier lieferte der Zweig fuer
+    // Nicht-Schluesselspalten bis S6 `smallint` + `identity` — eine Form, die
+    // `E130` ablehnt, aus der sich also gar nicht generieren liess.
+    test("smallint mit ALWAYS ohne Schluessel wird identifier und meldet R406") {
+        val result = column("smallint", udtName = "int2", isIdentity = true, identityGeneration = "ALWAYS")
+        result.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        result.note!!.pin("R406")
+    }
+
+    // Gegenproben: `BY DEFAULT` verliert nichts, was das Modell verspricht —
+    // `SERIAL` nimmt ausdrueckliche Werte an, genau wie `BY DEFAULT`. Ein
+    // `smallserial` traegt gar keine Erzeugungsangabe.
+    test("smallint BY DEFAULT und smallserial melden nichts") {
+        column("smallint", udtName = "int2", isPkCol = true, isIdentity = true, identityGeneration = "BY DEFAULT")
+            .note.shouldBeNull()
+
+        val smallserial = column(
+            "smallint", udtName = "int2", isPkCol = true, colDefault = "nextval('t_c_seq'::regclass)",
+        )
+        smallserial.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        smallserial.note.shouldBeNull()
+    }
+
+    // Und die Breite ist die Grenze, nicht die Erzeugung: `integer` ohne
+    // Schluessel behaelt die Identity wie bisher.
+    test("integer ohne Schluessel behaelt die Identity") {
+        val result = column("integer", udtName = "int4", isIdentity = true, identityGeneration = "ALWAYS")
+        result.type shouldBe NeutralType.Integer
+        (result.generation as ColumnGeneration.Identity).mode shouldBe IdentityMode.ALWAYS
+        result.note.shouldBeNull()
     }
 
     // Der Fingerabdruck-Kanonisierer ruft `mapColumn` ohne PK- und
