@@ -54,7 +54,7 @@ class OracleSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("FROM all_views") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_mviews") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_dependencies") && it.contains("'VIEW'") }, any()) } returns emptyList()
-        every { jdbc.queryList(match { it.contains("FROM all_objects") && !it.contains("FROM all_tables") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { isPackageQuery(it) }, any()) } returns emptyList()
         stubEmptyRoutineQueries(jdbc)
     }
 
@@ -605,7 +605,7 @@ class OracleSchemaReaderTest : FunSpec({
     test("packages surface as skippedObjects plus an R342 note; routines do not") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
-        every { jdbc.queryList(match { it.contains("FROM all_objects") && !it.contains("FROM all_tables") }, "APP") } returns listOf(
+        every { jdbc.queryList(match { isPackageQuery(it) }, "APP") } returns listOf(
             mapOf("object_name" to "PKG_UTIL"),
         )
         val (reader, pool) = rig(jdbc)
@@ -622,7 +622,7 @@ class OracleSchemaReaderTest : FunSpec({
     test("the package note honours includeProcedures") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
-        every { jdbc.queryList(match { it.contains("FROM all_objects") && !it.contains("FROM all_tables") }, "APP") } returns listOf(
+        every { jdbc.queryList(match { isPackageQuery(it) }, "APP") } returns listOf(
             mapOf("object_name" to "PKG_UTIL"),
         )
         val (reader, pool) = rig(jdbc)
@@ -635,3 +635,17 @@ class OracleSchemaReaderTest : FunSpec({
         OracleDriver().schemaReader()::class.simpleName shouldBe "OracleSchemaReader"
     }
 })
+
+/**
+ * Die Paket-Abfrage aus `ALL_OBJECTS`.
+ *
+ * `ALL_OBJECTS` steht in mehreren Abfragen: im Tabellenpfad (als
+ * Sekundaerobjekt-Filter) und seit P2a auch im Sequenzpfad. Ein Matcher, der
+ * nur `FROM all_objects` prueft, faengt sie alle — und MockK nimmt die
+ * zuletzt registrierte Antwort, hier also Paketzeilen fuer eine
+ * Sequenzabfrage.
+ */
+private fun isPackageQuery(sql: String): Boolean =
+    sql.contains("FROM all_objects") &&
+        !sql.contains("FROM all_tables") &&
+        !sql.contains("FROM all_sequences")

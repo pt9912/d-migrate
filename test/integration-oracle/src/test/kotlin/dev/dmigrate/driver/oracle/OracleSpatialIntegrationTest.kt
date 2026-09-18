@@ -523,6 +523,74 @@ class OracleSpatialIntegrationTest : FunSpec({
             out.toFile().deleteRecursively()
         }
     }
+
+    /**
+     * P2a — Oracles Spatial-Sequenz gehoert nicht ins Modell.
+     *
+     * Ein raeumlicher Index legt eine Sequenz `MDRS_<hex>$` und eine Tabelle
+     * `MDRT_<hex>$` an; ungefiltert stand die Sequenz als Anwenderobjekt im
+     * Artefakt und ging als `CREATE SEQUENCE` in die Ziel-DDL. Das Kriterium
+     * kommt aus dem Katalog (`ALL_OBJECTS.SECONDARY = 'Y'`), nicht aus dem
+     * Namen — ein Praefixfilter versteckte eine Anwendersequenz gleichen
+     * Anfangs mit.
+     *
+     * Der Test setzt auf der Tabelle `places` auf, die der Fall darueber mit
+     * einem **gueltigen** Index hinterlaesst: auf einer leeren Tabelle kann
+     * Oracle die SRID nicht bestimmen, und ohne Index gaebe es die Sequenz
+     * nicht.
+     */
+    test("P2a: die Sequenz des Spatial-Index fehlt im Reverse, eine Anwendersequenz bleibt") {
+        // **Eigener Pool.** Der Test darueber reicht den gemeinsamen an einen
+        // Runner weiter, und der schliesst ihn (er besitzt ihn sonst selbst) —
+        // hier waere er danach zu. Der Fall braucht nur die Verbindung, nicht
+        // den geteilten Zustand.
+        val own = HikariConnectionPoolFactory.create(
+            ConnectionConfig(
+                dialect = DatabaseDialect.ORACLE,
+                host = container.host,
+                port = container.oraclePort,
+                database = container.databaseName,
+                user = container.username,
+                password = container.password,
+            ),
+        )
+        try {
+            fun run(vararg sqls: String) = own.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt -> sqls.forEach { stmt.execute(it) } }
+            }
+            fun countSecondarySequences(): Int? = own.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery(
+                        "SELECT COUNT(*) FROM all_objects WHERE owner = USER " +
+                            "AND object_type = 'SEQUENCE' AND secondary = 'Y'",
+                    ).use { rs -> if (rs.next()) rs.getInt(1) else null }
+                }
+            }
+
+            // Gegenprobe: zwei Anwendersequenzen, deren Namen ein Praefixfilter
+            // mitgenommen haette (`_` ist in `LIKE` ein Platzhalter).
+            run("BEGIN EXECUTE IMMEDIATE 'DROP SEQUENCE \"SDO_ORDER_SEQ\"'; EXCEPTION WHEN OTHERS THEN NULL; END;")
+            run("BEGIN EXECUTE IMMEDIATE 'DROP SEQUENCE \"MDRS_KUNDE$\"'; EXCEPTION WHEN OTHERS THEN NULL; END;")
+            run("CREATE SEQUENCE \"SDO_ORDER_SEQ\"", "CREATE SEQUENCE \"MDRS_KUNDE$\"")
+
+            // Der Server bestaetigt die Lage: die Sekundaersequenz ist da.
+            val secondary = countSecondarySequences()
+            withClue("kein Sekundaerobjekt vorhanden — der Spatial-Index fehlt, der Fall waere leer") {
+                (secondary ?: 0) shouldNotBe 0
+            }
+
+            val sequences = OracleSchemaReader().read(own).schema.sequences.keys
+
+            withClue("gelesen wurden $sequences") {
+                sequences.none { it.startsWith("MDRS_1") } shouldBe true
+                sequences.none { it.startsWith("ISEQ$") } shouldBe true
+                sequences.contains("SDO_ORDER_SEQ") shouldBe true
+                sequences.contains("MDRS_KUNDE$") shouldBe true
+            }
+        } finally {
+            runCatching { own.close() }
+        }
+    }
 })
 
 private fun NeutralType.shouldBeGeometry() {

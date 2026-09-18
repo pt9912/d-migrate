@@ -5,6 +5,53 @@ import dev.dmigrate.driver.metadata.JdbcOperations
 
 internal object PostgresProgrammabilityMetadataQueries {
 
+    /**
+     * Was einer **Extension** gehoert, gehoert nicht ins Modell.
+     *
+     * PostGIS in `public` bringt rund 800 Funktionen, 22 Aggregate und die
+     * zwei Sichten `geometry_columns`/`geography_columns` mit (gemessen an
+     * PostGIS 3.6). Sie stehen im Anwenderschema, sind aber Teil der
+     * Extension: ein Reverse, der sie aufnimmt, schreibt sie beim Erzeugen
+     * ins Ziel — und kollidiert dort mit derselben Extension.
+     *
+     * Das Kriterium kommt aus dem Katalog, nicht aus dem Namen:
+     * `pg_depend.deptype = 'e'` ist die Zugehoerigkeit zu einer Extension.
+     * Dieselbe Bedingung filtert seit 5a die Tabellen
+     * ([PostgresTableMetadataQueries.listTableRefs]) und die Typen
+     * ([PostgresTypeMetadataQueries]). Die **Abhaengigkeits**-Abfragen weiter
+     * unten fragen etwas anderes (`deptype IN ('n','a')`: wer benutzt wen) und
+     * bleiben, wie sie sind.
+     *
+     * Gefiltert wird **stumm**, wie bei Tabellen und Typen: ein
+     * extension-eigenes Objekt ist kein Anwenderobjekt, und ein Hinweis
+     * entstuende bei jedem Reverse einer PostGIS-Datenbank.
+     */
+    private const val NOT_EXTENSION_OWNED_CLASS = """
+        NOT EXISTS (
+            SELECT 1 FROM pg_depend d
+            WHERE d.classid = 'pg_class'::regclass
+              AND d.deptype = 'e'
+              AND d.objid = c.oid
+        )
+    """
+
+    /**
+     * Dasselbe fuer eine Routine aus `information_schema.routines`.
+     *
+     * `specific_name` ist der Routinename mit angehaengter OID
+     * (`nameconcatoid`); die Ziffernfolge am Ende ist die OID, ueber die
+     * `pg_depend` die Routine fuehrt. Ohne sie liesse sich eine ueberladene
+     * Routine nicht eindeutig zuordnen.
+     */
+    private const val NOT_EXTENSION_OWNED_ROUTINE = """
+        NOT EXISTS (
+            SELECT 1 FROM pg_depend d
+            WHERE d.classid = 'pg_proc'::regclass
+              AND d.deptype = 'e'
+              AND d.objid = substring(r.specific_name from '[0-9]+${'$'}')::oid
+        )
+    """
+
     fun listViews(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
@@ -15,6 +62,7 @@ internal object PostgresProgrammabilityMetadataQueries {
             JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname = ?
               AND c.relkind IN ('v', 'm')
+              AND $NOT_EXTENSION_OWNED_CLASS
             ORDER BY c.relname
             """.trimIndent(), schemaName,
         )
@@ -101,6 +149,7 @@ internal object PostgresProgrammabilityMetadataQueries {
               AND c.relkind IN ('v', 'm')
               AND a.attnum > 0
               AND NOT a.attisdropped
+              AND $NOT_EXTENSION_OWNED_CLASS
             ORDER BY c.relname, a.attnum
             """.trimIndent(), schemaName,
         )
@@ -125,6 +174,7 @@ internal object PostgresProgrammabilityMetadataQueries {
             WHERE r.routine_schema = ?
               AND r.routine_type = 'FUNCTION'
               AND r.routine_name NOT LIKE 'pg_%'
+              AND $NOT_EXTENSION_OWNED_ROUTINE
             ORDER BY r.specific_name
             """.trimIndent(), schemaName,
         )
@@ -148,6 +198,12 @@ internal object PostgresProgrammabilityMetadataQueries {
             JOIN pg_catalog.pg_proc tf ON tf.oid = a.aggtransfn
             LEFT JOIN pg_catalog.pg_proc ff ON ff.oid = a.aggfinalfn
             WHERE n.nspname = ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM pg_depend d
+                  WHERE d.classid = 'pg_proc'::regclass
+                    AND d.deptype = 'e'
+                    AND d.objid = p.oid
+              )
             ORDER BY p.proname
             """.trimIndent(), schemaName,
         )
@@ -161,6 +217,7 @@ internal object PostgresProgrammabilityMetadataQueries {
             FROM information_schema.routines r
             WHERE r.routine_schema = ?
               AND r.routine_type = 'PROCEDURE'
+              AND $NOT_EXTENSION_OWNED_ROUTINE
             ORDER BY r.specific_name
             """.trimIndent(), schemaName,
         )

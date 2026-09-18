@@ -428,6 +428,21 @@ internal object OracleMetadataQueries {
      *
      * PostgreSQL loest dasselbe ueber `pg_depend.deptype IN ('a','i')`; das
      * Oracle-Gegenstueck ist `ALL_TAB_IDENTITY_COLS.SEQUENCE_NAME`.
+     *
+     * **Und ohne die Sequenzen, die Oracle Spatial anlegt.** Ein raeumlicher
+     * Index (`MDSYS.SPATIAL_INDEX_V2`) bringt eine Sequenz `MDRS_<hex>$` und
+     * eine Tabelle `MDRT_<hex>$` mit; beide sind Sekundaerobjekte des Index,
+     * kein Anwenderobjekt. Ungefiltert stand die Sequenz im Artefakt und ging
+     * als `CREATE SEQUENCE` in die Ziel-DDL.
+     *
+     * Das Kriterium kommt aus dem Katalog, nicht aus dem Namen:
+     * `ALL_OBJECTS.SECONDARY = 'Y'` — dasselbe, mit dem der Tabellenpfad
+     * Oracles interne Token-Tabellen ausschliesst ([listTableRefs]). Gemessen
+     * an Oracle 23 mit Spatial: `MDRS_11E5A$` und `MDRT_11E5A$` tragen `Y`,
+     * eine Anwendersequenz `N`. Ein Namensfilter waere die schlechtere
+     * Loesung: `MDRS_` ist keine reservierte Zeichenfolge, `_` ist in `LIKE`
+     * ein Platzhalter, und eine Anwendersequenz `SDO_ORDER_SEQ` oder
+     * `MDRS_KUNDE$` verschwaende damit (beide gegengeprueft).
      */
     fun listSequences(session: JdbcOperations, schema: String): List<SequenceRow> =
         session.queryList(
@@ -439,6 +454,11 @@ internal object OracleMetadataQueries {
               AND NOT EXISTS (
                   SELECT 1 FROM all_tab_identity_cols i
                   WHERE i.owner = s.sequence_owner AND i.sequence_name = s.sequence_name
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM all_objects o
+                  WHERE o.owner = s.sequence_owner AND o.object_name = s.sequence_name
+                    AND o.object_type = 'SEQUENCE' AND o.secondary = 'Y'
               )
             ORDER BY s.sequence_name
             """.trimIndent(),
