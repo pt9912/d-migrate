@@ -1,7 +1,12 @@
 # SQL Server: ein `integer`-Identity-Primärschlüssel verliert den Modus
 
-> **Status:** Befund, gemessen (2026-09-18). Kein Scope, keine
-> Aktivierungsbedingung erfüllt.
+> **Status:** Entschieden (2026-09-18) — wird in Plan 3 des Reader-Umbrellas
+> gebaut ([`../next/reader-treue-3-spatial.md`](../next/reader-treue-3-spatial.md)).
+> **Eigner-Entscheidung:** wie S1 bei PostgreSQL beheben — eine `int IDENTITY`-Spalte,
+> die allein den Primärschlüssel bildet, liest als `integer` mit
+> `generation: identity` (Modus bleibt), statt auf `identifier` zu fallen. Der
+> Eintrag schliesst mit der Graduation von Plan 3; der Silent-Loss-Check verliert
+> damit seinen letzten Eintrag aus Plan 2.
 > **Trigger:** Beim Bau von **S1** in Plan 2 des Reader-Umbrellas
 > ([`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md)).
 > S1 hat den PostgreSQL-Fall behoben; derselbe Verlust bleibt auf SQL Server,

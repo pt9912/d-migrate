@@ -1001,8 +1001,9 @@ entfernt.
 
 - **E2** (S1) und **E3** (S2), Umbrella.
 - **Bestätigung der Fingerabdruck-Anhebung** (S3), Umbrella.
-- **P1, zweiter Fall** — im Paket entschieden; der Eigner kann ihn streichen,
-  dann entfällt DoD 2 und der zweite Text.
+- **P1, zweiter Fall** — vom Eigner am 2026-09-18 **bestätigt**: beide Fälle
+  melden, jeder mit dem Ausweg, der dort passt (ein verlorener SRID kostet in
+  beiden den Spatial-Index). DoD 2 und der zweite Text bleiben.
 - **Der SQL-Server-Fall aus S1** — `int IDENTITY` als alleiniger
   Primärschlüssel verliert weiter den Modus, und kein Code sagt es. Befund und
   die drei Wege stehen in

@@ -198,9 +198,34 @@ datenbankeigener Objekte; PostGIS als Spezial-Feature, Abschnitt 8.4).
 
 ## Arbeitspakete
 
-**Reihenfolge:** P4 (nach P3); P7; P2b; P2a. P7, P2a und P2b sind frei
-reihbar. P2a läuft im selben `:test:integration-oracle`-Lauf wie P1 aus
+**Reihenfolge:** P4 (nach P3); P7; P2b; P2a; **S5**. P7, P2a, P2b und S5 sind
+frei reihbar. P2a läuft im selben `:test:integration-oracle`-Lauf wie P1 aus
 Plan 2, wenn beide zeitlich zusammenfallen.
+
+### S5 — SQL Server: der `integer`-Identity-Primärschlüssel behält den Modus
+
+**Nachgetragen am 2026-09-18** (Eigner-Entscheidung). Beim Bau von S1 in Plan 2
+gemessen und in
+[`../open/mssql-integer-identity-pk-verliert-den-modus.md`](../open/mssql-integer-identity-pk-verliert-den-modus.md)
+festgehalten: der SQL-Server-Reverse faltet eine `int IDENTITY(1,1)`-Spalte, die
+**allein** den Primärschlüssel bildet, auf `identifier` mit `auto_increment` —
+und `identifier` trägt keinen Modus; `bigint IDENTITY` kommt dagegen als
+`biginteger` + `generation: identity` zurück. Das ist derselbe stille Verlust,
+den S1 für PostgreSQL behoben hat, und der letzte Eintrag aus Plan 2, der noch
+in `SILENT_LOSS_KNOWN` steht.
+
+**Gebaut wird** die Entsprechung zu S1: eine solche Spalte liest als `integer`
+mit `generation: identity` (Modus erhalten); `by_default` und die
+`identifier`-Zusage für Spalten ohne Modus bleiben, wie sie sind. Vor dem Bau
+prüfen, ob die SQL-Server-Seite dieselben Nachbarfälle kennt wie S1 (Identity
+ohne Primärschlüssel, mehrspaltiger Primärschlüssel, `smallint`), und ob der
+Generator die Rückrichtung unverändert rendert.
+
+**DoD:** Der Seed `sl_pg_identity_int` reist PostgreSQL → SQL Server → Reverse
+mit Modus; der Eintrag fällt aus `SILENT_LOSS_KNOWN`, die betroffene Zelle wird
+**einzeln** neu gepinnt; Gegenproben (`by_default`, ohne Primärschlüssel,
+mehrspaltig) bleiben unverändert; Sabotage je Zweig. Abnahme in
+`:test:integration-mssql` und in der Matrix.
 
 ### P4 — PostgreSQL `geography` liest als Geometrie (A5, F1, M3, L4, I6)
 
