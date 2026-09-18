@@ -533,6 +533,13 @@ triggers:
     oder tragen Sie sie in der Schemadatei nach.
   - Oracles `NUMBER` ohne Angabe wird `decimal(38,10)` (`R371`): mehr als zehn
     Nachkomma- und mehr als 28 Vorkommastellen gehen auf dem Rückweg verloren.
+  - Eine `smallint`-Spalte mit `GENERATED ALWAYS AS IDENTITY` liest als
+    `identifier` (`R406`). Das Modell führt eine Erzeugungsangabe nur für
+    `integer` und `bigint`; `identifier` rendert als `SERIAL`, und `SERIAL`
+    **nimmt** einen ausdrücklich gesetzten Wert an — die Zusicherung `ALWAYS`
+    geht damit verloren. Betroffen ist auch PostgreSQL gegen PostgreSQL. Eine
+    Breite höher (`integer`) bleibt der Modus erhalten; `BY DEFAULT` verliert
+    nichts und meldet deshalb nichts.
   - Eine PostgreSQL-`json`-Spalte kommt als neutrales `json` und entsteht auf
     dem Rückweg als `jsonb` (`R402`). Dabei ändert sich der **gespeicherte
     Text**: `jsonb` normalisiert, verwirft doppelte Schlüssel, ordnet die
@@ -690,6 +697,17 @@ nützlich in Skripten.
   `reverse.mysql.autoincrement_syntax: identity`, das auch `db:`-Operanden
   sehen) — dann entfällt der Unterschied. Unterscheidet sich zusätzlich der
   Modus (`always` gegen `by_default`), bleibt der gemeldet (siehe unten).
+- **Eine IDENTITY-Spalte aus SQL Server erscheint gegen andere Dialekte als
+  geändert?** Der SQL-Server-Reverse liest `int IDENTITY(1,1)` als `integer`
+  mit `generation: identity` (Modus `always`) — dieselbe Lesart wie bei
+  `bigint`. Die Gegenseite schreibt dieselbe Spalte häufig als
+  `identifier` mit `auto_increment`: das ist **dieselbe** Spalte in zwei
+  Schreibweisen, und `schema compare` meldet sie als Typ- und
+  Erzeugungsänderung, weil es keine Zielseite hat, an der es die Schreibweise
+  ausgleichen könnte. Zusätzlich meldet jedes Ziel, das `ALWAYS` nicht
+  ausdrücken kann (MySQL, SQLite), beim Erzeugen `W163`. Prüfen Sie, ob die
+  Spalte auf beiden Seiten dieselbe ist — dann ist der Fund ein
+  Schreibweise-Unterschied und kein Schema-Unterschied.
 - **Was trotzdem gemeldet wird:** eine anders formulierte Bedingung
   (`status IN ('A','B')` gegen `status = ANY (ARRAY['A','B'])`), die Groß-
   und Kleinschreibung von Schlüsselwörtern (`like` gegen `LIKE`), ein Cast an

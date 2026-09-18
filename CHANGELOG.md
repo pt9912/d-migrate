@@ -39,6 +39,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`decimal(38,10)`; mehr als zehn Nachkomma- und mehr als 28 Vorkommastellen
   gehen verloren). Alle sind `WARNING` und blocken nichts.
 
+- **Eine `smallint`-Identity verliert ihren Modus nicht mehr still (`R406`).**
+  Das neutrale Modell fuehrt eine Erzeugungsangabe nur fuer `integer` und
+  `bigint` (`E130`), also liest eine `smallint GENERATED ALWAYS AS IDENTITY`
+  als `identifier` — und `identifier` rendert als `SERIAL`, das einen
+  ausdruecklich gesetzten Wert **annimmt**. Der Verlust traf auch
+  PostgreSQL → PostgreSQL. `R406` benennt ihn jetzt; `BY DEFAULT` meldet
+  nichts, dort ist `SERIAL` die richtige Entsprechung. Dieselbe Breite
+  **ohne** Schluessel lieferte bis hierher `smallint` + `identity` — eine
+  Form, die der eigene Validator mit `E130` ablehnt, aus der sich also gar
+  nicht erzeugen liess; sie wird jetzt ebenfalls `identifier`. Die Frage, ob
+  das Modell stattdessen `smallint`-Identities tragen soll, ist damit
+  entschieden: es traegt sie nicht, und die drei Generatoren, die die Form
+  ohnehin nicht kennen, bleiben unberuehrt.
+
+- **SQL Server liest `int IDENTITY` mit seinem Modus.** Ein
+  `int IDENTITY(1,1)` fiel auf `identifier` — und `identifier` traegt keinen
+  Modus —, waehrend `bigint IDENTITY` laengst als `biginteger` +
+  `generation: identity (ALWAYS)` zurueckkam. Aufgefallen ist der Verlust beim
+  Rundweg ueber einen anderen Dialekt: eine PostgreSQL-`integer`-Identity
+  reist als `INT IDENTITY(1,1)` nach SQL Server und kam **ohne** Modus
+  zurueck, sodass der Vergleich eine Aenderung meldete, die keine war. `int`
+  liest jetzt wie `bigint`. **Folge:** ein MSSQL-Reverse derselben Datenbank
+  liefert an diesen Spalten eine andere Form als frueher, und der Vergleich
+  zweier Reverses meldet dort mehr als bisher — die Spalte ist dieselbe, aber
+  die eine Seite schreibt `identifier(auto)`, die andere
+  `integer` + `identity(ALWAYS)`. Die Modus-Funde bleiben bewusst sichtbar:
+  MySQL und SQLite koennen `ALWAYS` nicht ausdruecken und melden `W163`.
+
 - **Ein beim Oracle-Reverse verlorener SRID ist benannt (`R370`).** Oracle
   fuehrt den SRID einer Geometriespalte in einer Zeile von
   `USER_SDO_GEOM_METADATA` und schreibt Tabellen- und Spaltenname dort
