@@ -852,6 +852,94 @@ ohne Geometriespalte meldet nichts. Mit `postgis` im `search_path` (auf
 Datenbankebene gesetzt, gelesen über eine **neue** Sitzung) kommen Subtyp und
 SRID mit, und `R405` entsteht nicht.
 
+### Die Matrix: Neu-Pins und weggefallene Befunde
+
+Gefahren mit `make mcp-e2e-up` und `make mcp-e2e-compare-matrix` gegen
+`d-migrate:dev` (1.8.0-SNAPSHOT); PostgreSQL 18.6 (PostGIS-Image), MySQL
+9.7.2, SQL Server 2025, SQLite 3.45 (Host), 42 angemerkte Seed-Spalten. Oracle
+ist in der Matrix nicht gemessen (kein Opt-in).
+
+Der erste Lauf ging **ohne** `--update-expectations`: 13 Abweichungen und 18
+weggefallene bekannte Befunde. Gepinnt wurde danach je Paket von Hand aus dem
+gelesenen Diff, in einem eigenen Commit — nicht über alles mit
+`--update-expectations`, das den Zuwachs eines Pakets nicht von dem eines
+anderen trennt.
+
+| Paket | Schlüssel | Änderung |
+| --- | --- | --- |
+| P5 | `GEN_CODES_POSTGRESQL_MYSQL`, `GEN_CODES_POSTGRESQL_SQLITE` | je `+ W162:4` |
+| P10 | dieselben zwei | je `+ W163:1` |
+| P10 | `GEN_CODES_MSSQL_MYSQL`, `GEN_CODES_MSSQL_SQLITE` | je `+ W163:1` |
+| P8/P9 | `REPORT_CODES_POSTGRESQL` | `R301:1 R400:1` → `R301:2 R400:1 R402:1 R404:1` |
+| P8/P9 | `REPORT_CODES_SQLITE` | `R202:5` → `R202:5 R221:1` |
+| S1 | `CELL_POSTGRESQL_MYSQL`, `CELL_POSTGRESQL_MSSQL` | `11` → `13` |
+| S1 | `CELL_POSTGRESQL_SQLITE` | `22` → `24` |
+| S1 | `CODES_POSTGRESQL_MYSQL`, `_MSSQL`, `_SQLITE` | je `+1` Erzeugung und `+1` Typ |
+| S1 | `GEN_CODES_POSTGRESQL_MYSQL`, `_SQLITE` | `W163:1` → `W163:2` |
+| P3 | `REPORT_CODES_POSTGRESQL_NOSEARCHPATH` (neu) | `R400:1 R401:1 R405:1` |
+
+Die betroffenen Zellen einzeln:
+
+- **P5**, `W162:4`: die vier Array-Spalten von `sl_pg_array` (`tags`, `counts`,
+  `totals`, `due_dates`), je einmal je Zielzelle. Quelle PostgreSQL ist die
+  einzige, die ein Array liefert — andere Zellen ändern sich nicht.
+- **P10**, PostgreSQL: `sl_pg_identity_big.id`. **Nicht vorhergesehen** waren
+  die beiden Zellen mit Quelle SQL Server: `cm_order.id` der Matrix-Fixture ist
+  `identity(by_default)`, SQL Server rendert das als `IDENTITY(1,1)`, und sein
+  Reverse liest daraus Modus `always`. Ab dem Reverse ist die Quelle also eine
+  ALWAYS-Identity, und MySQL wie SQLite melden sie zurecht. Der
+  Silent-Loss-Check sah den Fall nie — `cm_order` trägt keine Anmerkung, der
+  Fall lebt nur in den Zellzahlen.
+- **P8/P9**: vier Vorkommen an vier Seed-Spalten (`sl_pg_array.due_dates` das
+  zweite `R301`, `sl_pg_json.payload_json` `R402`, `sl_pg_number.amount`
+  `R404`, `sl_sq_child.amount` `R221`). Das erste `R301` bleibt, wo es war
+  (`sl_pg_text.span`, Paket B4).
+- **S1** ist das einzige Paket, das eine **Zellzahl** bewegt, und das ist sein
+  Sinn: `sl_pg_identity_int.id` kommt jetzt als `integer` +
+  `identity(always)` statt als `identifier(auto)`, alle drei Ziele lesen sie
+  als `identifier(auto)` zurück — zwei Funde je Zelle, einer für den Typ,
+  einer für die Erzeugung. Vorher waren beide Seiten gleich verloren und die
+  Zelle schwieg.
+- **P3** pinnt das Bein, keine Zelle: genau eine Tabelle des Bein-Seeds trägt
+  eine Geometriespalte, `R405` steht einmal.
+
+**S2 und S3 bewegen keine Zelle.** S2 liegt auf dem Migrate-Pfad, den die
+Matrix nicht fährt (sie generiert und wendet an); S3 betrifft den
+PostgreSQL-**Generator**, und PostgreSQL ist in der Matrix nur Quelle — die
+drei Zellen mit Ziel PostgreSQL kommen aus Quellen ohne Array.
+
+**18 bekannte Befunde weggefallen**, `SILENT_LOSS_KNOWN` geht von 25 auf 7
+Einträge; keiner der sieben nennt noch ein Paket aus Plan 2. Die acht `W162`-
+und vier `W163`-Einträge waren je Spalte mal Ziel angelegt und traten alle
+nicht mehr auf; die vier der Klasse `quelle … nennt <Code> nicht` und die zwei
+zur Form von `sl_pg_identity_int.id` ebenso.
+
+**Stehen bleibt** der Eintrag `ziel postgresql->mssql: sl_pg_identity_int.id`.
+Er zeigt seit dem P3-Commit auf
+[`../open/mssql-integer-identity-pk-verliert-den-modus.md`](../open/mssql-integer-identity-pk-verliert-den-modus.md)
+statt auf Plan 2: S1 hat den PostgreSQL-Fall behoben, die Zielseite auf SQL
+Server ist eine Typfrage und braucht eine Eigner-Entscheidung.
+
+**Belegt, dass die Pins beißen:** der erste Lauf war mit genau diesen 13
+Abweichungen rot. Für den einzigen **neuen** Schlüssel zusätzlich eine
+Sabotage am Pin selbst — `R405` aus
+`REPORT_CODES_POSTGRESQL_NOSEARCHPATH` entfernt, der Lauf meldet
+`erwartet 'R400:1 R401:1', gemessen 'R400:1 R401:1 R405:1'` und endet mit
+Exit 2; Rücknahme per Prüfsumme belegt. Danach **zwei Läufe hintereinander**,
+beide Exit 0, Matrixblock und Liste der bekannten Befunde zeichenweise gleich.
+
+### Der Typ-Sensor nach S3
+
+`make sample-db-types-smoke` ist der Drift-Sensor der Typ-Kanonisierung und
+damit die Stelle, an der eine Änderung der Typprojektion auffiele. S3 ändert
+genau die: der PostgreSQL-Generator rendert die Elementart, und der
+Fingerabdruck steht auf `v17`. Gefahren nach der Matrix, mit gestoppter
+`mcp-e2e`-Umgebung (Speicher): **alles grün** — 21 Typen je Exit 0,
+UNIQUE-/FK-Folds, Konvergenz-Zweitlauf mit 0 Statements, Rebuild, der
+Rollback-Round-Trip über das v7-Artefakt, die `schema compare`-Gegenprobe und
+die Kanten-Proben auf PostgreSQL und MySQL. Die Wegwerf-Container sind danach
+entfernt.
+
 ## Akzeptanzkriterien
 
 1. Der Array-Verlust ist auf MySQL und SQLite benannt, auf Generate und
@@ -901,7 +989,8 @@ SRID mit, und `R405` entsteht nicht.
    Schlüsseln in der Nachricht (Umbrella). P5, P10, P8, P9 und S1 ändern
    `GEN_CODES_*` bzw. `REPORT_CODES_*` und streichen ihre Einträge aus der
    Liste bekannter Befunde; am Ende dieses Plans trägt die Liste keinen
-   Eintrag von Plan 2 mehr.
+   Eintrag von Plan 2 mehr. → gefahren, je Paket ein Commit; Zellen,
+   weggefallene Befunde und die Sabotage am Pin stehen im Bauabschnitt.
 4. **Gates:** Umbrella, „Gates je Commit". `make docs-check` nach jedem
    Spec-, Ledger- oder Handbuch-Nachtrag.
 5. **Was gemessen ist und was nicht:** B1, B3 (Code), D2, D4 (MySQL) und A1
@@ -914,3 +1003,15 @@ SRID mit, und `R405` entsteht nicht.
 - **Bestätigung der Fingerabdruck-Anhebung** (S3), Umbrella.
 - **P1, zweiter Fall** — im Paket entschieden; der Eigner kann ihn streichen,
   dann entfällt DoD 2 und der zweite Text.
+- **Der SQL-Server-Fall aus S1** — `int IDENTITY` als alleiniger
+  Primärschlüssel verliert weiter den Modus, und kein Code sagt es. Befund und
+  die drei Wege stehen in
+  [`../open/mssql-integer-identity-pk-verliert-den-modus.md`](../open/mssql-integer-identity-pk-verliert-den-modus.md);
+  ohne Entscheidung bleibt es der bekannte Befund, der als einziger aus diesem
+  Plan in der Liste stehen bleibt.
+- **Die Matrix-Fixture trägt keine Anmerkungen.** `cm_order.id` hat beim Pinnen
+  von P10 zwei Zellen bewegt, die niemand erwartet hatte, weil der
+  Silent-Loss-Check nur `fixtures/seeds/` liest. Das ist so gewollt (die
+  Fixture ist die Vergleichsgrundlage, kein Prüfobjekt), heißt aber: was nur
+  an ihr hängt, fällt erst in den Zellzahlen auf. Für einen Folgeplan die
+  Frage, ob die Fixture eine eigene, schmale Anmerkungsdatei bekommt.
