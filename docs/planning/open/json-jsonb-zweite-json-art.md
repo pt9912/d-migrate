@@ -1,9 +1,15 @@
 # Modellfrage: zweite JSON-Art (`json` gegen `jsonb`)
 
-> **Status:** Entschieden (2026-09-16); wird als P8 in Plan 2 des
-> Reader-Slices gebaut
-> ([`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md),
-> Schnitt 2026-09-17). Dieser Eintrag schließt mit der Lieferung von P8.
+> **Status:** **Geschlossen (2026-09-18) — P8 ist gebaut.** Der
+> PostgreSQL-Reverse meldet eine `json`-Spalte mit `R402` (`WARNING`), an der
+> Spalte **und** am Element eines `json[]` (der Generator rendert es seit S3
+> als `JSONB[]`); `jsonb` meldet nichts. Die Regel steht in
+> [`spec/type-mapping.md`](../../../spec/type-mapping.md), Abschnitt 3.3.
+> Entschieden am 2026-09-16, gebaut als P8 in Plan 2 des Reader-Slices
+> ([`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md)).
+> Eine spätere Trennung in zwei neutrale JSON-Arten wäre eine neue
+> Modellfrage mit eigenem Eintrag; der Text unten bleibt als
+> Entscheidungsgrundlage stehen.
 > **Eigner-Entscheidung: gleichsetzen, aber laut.** Das Modell behält **einen**
 > JSON-Typ (keine Modellerweiterung). Der PostgreSQL-Reverse meldet eine
 > `json`-Spalte mit eigenem Code: sie wird als `jsonb` gerendert, und was `json`

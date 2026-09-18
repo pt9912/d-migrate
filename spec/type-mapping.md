@@ -120,12 +120,21 @@ Das ist akzeptabel — Systemkataloge werden selten reversed.
 
 ### 3.3 Versionsspezifische Typen
 
-| Typ | Ab PG-Version | Status |
-|-----|---------------|--------|
-| `jsonb` | 9.4 | ✅ Gemappt als `Json` |
-| `uuid` | 8.3 (als Extension), nativ ab 13 | ✅ Gemappt als `Uuid` |
-| `generated always as (...)` | 12 | ❌ Nicht erkannt |
-| `multirange` | 14 | ❌ Nicht erkannt |
+| Typ | Ab PG-Version | Regel |
+|-----|---------------|-------|
+| `jsonb` | 9.4 | `json` |
+| `json` | — | `json`, mit `R402`: das neutrale `json` rendert als `jsonb` zurück, und `jsonb` normalisiert den gespeicherten Text (Schlüsselreihenfolge, doppelte Schlüssel und bedeutungsloser Leerraum gehen verloren). `jsonb` selbst verliert nichts und meldet nichts |
+| `uuid` | 8.3 (als Extension), nativ ab 13 | `uuid` |
+| `generated always as (...)` | 12 | berechnete Spalte (`generation: computed`); die Speicherform kommt aus `pg_attribute.attgenerated`, siehe 6.3 für die dialektübergreifende Regel |
+| `multirange` | 14 | kein neutraler Typ; `text` + `R301` (Abschnitt 8) |
+
+### 3.4 Reverse-Entscheidungen
+
+| PostgreSQL | Neutral | Regel |
+|---|---|---|
+| `numeric`/`decimal` **ohne** Präzision | `float` | `R404`: das neutrale Modell trägt keine ungebundene Dezimalzahl, und die Spalte rendert als `double precision` zurück — aus exakter wird binäre Arithmetik. Mit Präzision und Skala bleibt es `decimal(p,s)` und meldet nichts |
+| ein Feld eines zusammengesetzten Typs | wie die gleichnamige Spaltenregel | dieselben Codes an derselben Stelle: `R404` für `numeric` ohne Präzision, `R301` für einen unbekannten Feldtyp |
+| `<typ>[]` | `array` mit `element_type` | Die Elementart kommt aus dem Katalog-`udt_name`. Ein Element, für das es keinen neutralen Namen gibt (`date[]`, `inet[]`), liest `text` und meldet `R301` — derselbe `else`-Fallback wie an einer Spalte (Abschnitt 8). `json[]` trägt `R402` wie eine `json`-Spalte |
 
 ### 3.5 Forward-Entscheidungen
 
@@ -229,11 +238,11 @@ Länge/Precision. Unbekannte Typen fallen auf `Text()`.
 
 ### 5.2 Fehlende Typen
 
-| DDL-Typ | Aktuell | Korrekt |
-|---------|---------|---------|
-| `CLOB` | `Text()` ✅ | — |
-| `BLOB` | `Binary` ✅ | — |
-| `NUMERIC` ohne Precision | `Float()` | Akzeptabel |
+| DDL-Typ | Neutral | Regel |
+|---------|---------|-------|
+| `CLOB` | `text` | — |
+| `BLOB` | `binary` | — |
+| `NUMERIC`/`DECIMAL` ohne Präzision | `float` | `R221`: das neutrale Modell trägt keine ungebundene Dezimalzahl, und die Spalte rendert als `REAL` zurück. Der Schwesterfall ist beim Erzeugen laut (`W200`, `decimal(p,s)` → `REAL`); mit Präzision und Skala bleibt es `decimal(p,s)` und meldet nichts |
 
 ### 5.2a Constraint-Namen: aus dem DDL-Text, sonst gebildet
 
@@ -487,6 +496,7 @@ Oracle-Default (keine Klausel) und werden ohne Notiz weggelassen,
 | `TO_CHAR(SYSDATE, 'HH24:MI:SS')` (Default) | `current_time` | |
 | `RAWTOHEX(SYS_GUID())` (Default) | `gen_uuid` | |
 | `<seq>.NEXTVAL` (Default) | `sequence_nextval` | |
+| `NUMBER` (kein Precision/Scale), nicht identity | `decimal(38,10)` + `R371` | konservativ, und der Verlust wird benannt: mehr als zehn Nachkomma- und mehr als 28 Vorkommastellen gehen auf dem Rückweg verloren. Eine `NUMBER`-Identity ohne Präzision liest `biginteger` und meldet nichts |
 | `SDO_GEOMETRY` | `geometry` ohne Subtyp | SRID aus `ALL_SDO_GEOM_METADATA`, sofern eine Zeile mit exakt passendem Tabellen- und Spaltennamen existiert; sonst ohne SRID (R365, wenn die Sicht nicht lesbar ist) |
 
 **Datenpfad (`data export`/`import`/`transfer`)**: Oracle-JDBC liefert
@@ -553,6 +563,12 @@ Das ist **bewusst und fachlich nötig** — Datenbanken können beliebige
 Typ-Strings liefern (Extensions, benutzerdefinierte Typen, neue
 Versionsfeatures). Der Fallback erzeugt immer eine diagnostische
 Warning-Note damit der Nutzer die Zuordnung reviewen kann.
+
+Die Regel gilt **nicht nur an der Spalte**. Sie gilt an jeder Stelle, an der
+ein Typname auf einen neutralen Typ abgebildet wird und ein Rest übrig bleibt:
+für die **Elementart eines Arrays** und für den **Feldtyp eines
+zusammengesetzten Typs** genauso. Wo der Fallback greift, steht `text` im
+Modell, und der Bericht nennt die Stelle.
 
 ---
 

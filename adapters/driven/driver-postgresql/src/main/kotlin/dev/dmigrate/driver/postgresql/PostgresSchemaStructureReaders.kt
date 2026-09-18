@@ -232,6 +232,7 @@ private fun toLongOrNull(value: Any?): Long? = when (value) {
 internal fun readPostgresCustomTypes(
     session: JdbcOperations,
     schema: String,
+    notes: MutableList<SchemaReadNote>,
 ): Map<String, CustomTypeDefinition> {
     val result = LinkedHashMap<String, CustomTypeDefinition>()
 
@@ -259,8 +260,10 @@ internal fun readPostgresCustomTypes(
         for ((fieldIndex, fieldRow) in fieldRows.sortedBy { (it["attnum"] as Number).toInt() }.withIndex()) {
             val fieldName = fieldRow["attname"] as String
             val columnType = fieldRow["column_type"] as? String ?: "text"
+            val field = PostgresTypeMapping.compositeField(columnType, "$typeName.$fieldName")
+            field.note?.let { notes += it }
             fields[fieldName] = ColumnDefinition(
-                type = PostgresTypeMapping.mapCompositeFieldType(columnType),
+                type = field.type,
                 ordinal = fieldIndex + 1,
             )
         }

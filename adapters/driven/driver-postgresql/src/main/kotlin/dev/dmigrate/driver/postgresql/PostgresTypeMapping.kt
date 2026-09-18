@@ -73,7 +73,7 @@ internal object PostgresTypeMapping {
 
         return mapIntegerTypes(dt)
             ?: mapStringTypes(dt, input.charMaxLen)
-            ?: mapNumericTypes(dt, input.numPrecision, input.numScale)
+            ?: mapNumericTypes(dt, input.numPrecision, input.numScale, "${input.tableName}.${input.colName}")
             ?: mapTemporalTypes(dt)
             ?: mapSpecialTypes(dt, udt, input.tableName, input.colName, input.geometrySubtype, input.geometrySrid)
             ?: MappingResult(
@@ -111,16 +111,39 @@ internal object PostgresTypeMapping {
         else -> null
     }
 
-    private fun mapNumericTypes(dt: String, numPrecision: Int?, numScale: Int?): MappingResult? = when (dt) {
+    private fun mapNumericTypes(
+        dt: String,
+        numPrecision: Int?,
+        numScale: Int?,
+        objectName: String,
+    ): MappingResult? = when (dt) {
         "numeric", "decimal" -> if (numPrecision != null && numScale != null) {
             MappingResult(NeutralType.Decimal(numPrecision, numScale))
         } else {
-            MappingResult(NeutralType.Float())
+            MappingResult(NeutralType.Float(), note = unboundedNumericNote(objectName))
         }
         "real" -> MappingResult(NeutralType.Float(FloatPrecision.SINGLE))
         "double precision" -> MappingResult(NeutralType.Float(FloatPrecision.DOUBLE))
         else -> null
     }
+
+    /**
+     * `numeric` ohne Praezision wird Gleitkomma — auch auf dem Rueckweg in
+     * denselben Dialekt. PostgreSQL rechnet eine ungebundene `numeric` exakt,
+     * `double precision` binaer; der Unterschied ist keine Darstellungsfrage,
+     * sondern ein Rechenergebnis. Das neutrale Modell traegt keine
+     * ungebundene Dezimalzahl (die Modellfrage liegt woanders), der Verlust
+     * wird deshalb benannt statt behoben.
+     */
+    private fun unboundedNumericNote(objectName: String) = SchemaReadNote(
+        severity = SchemaReadSeverity.WARNING,
+        code = "R404",
+        objectName = objectName,
+        message = "PostgreSQL 'numeric' without precision mapped to float: the neutral model has no " +
+            "unbounded decimal, and a rendered column is binary floating point.",
+        hint = "Declare precision and scale on the source column, or fix them in the schema file, " +
+            "if exact decimal arithmetic must survive.",
+    )
 
     private fun mapTemporalTypes(dt: String): MappingResult? = when (dt) {
         "timestamp without time zone" -> MappingResult(NeutralType.DateTime(timezone = false))
@@ -139,15 +162,59 @@ internal object PostgresTypeMapping {
         geometrySrid: Int?,
     ): MappingResult? = when (dt) {
         "uuid" -> MappingResult(NeutralType.Uuid)
-        "json", "jsonb" -> MappingResult(NeutralType.Json)
+        // `json` und `jsonb` sind dasselbe neutrale `json`; nur `json` verliert
+        // dabei etwas (siehe [jsonTextualNote]).
+        "jsonb" -> MappingResult(NeutralType.Json)
+        "json" -> MappingResult(NeutralType.Json, note = jsonTextualNote("$tableName.$colName"))
         "xml" -> MappingResult(NeutralType.Xml)
         "bytea" -> MappingResult(NeutralType.Binary)
         // ADR 0015: tsvector is a first-class neutral FullText type — captured
         // faithfully instead of degrading to text (R301).
         "tsvector" -> MappingResult(NeutralType.FullText)
         "user-defined" -> mapUserDefined(udt, tableName, colName, geometrySubtype, geometrySrid)
-        "array" -> MappingResult(NeutralType.Array(mapArrayElementType(udt.removePrefix("_"))))
+        "array" -> mapArrayColumn(udt, "$tableName.$colName")
         else -> null
+    }
+
+    /**
+     * Eine `json`-Spalte kommt als neutrales `json` und wird auf dem Rueckweg
+     * `jsonb` gerendert. Beim Uebertragen aendern sich damit die **Daten**:
+     * `jsonb` normalisiert, verwirft doppelte Schluessel, ordnet die Schluessel
+     * um und entfernt bedeutungslosen Leerraum. `jsonb` selbst verliert
+     * nichts und meldet nichts.
+     */
+    private fun jsonTextualNote(objectName: String) = SchemaReadNote(
+        severity = SchemaReadSeverity.WARNING,
+        code = "R402",
+        objectName = objectName,
+        message = "PostgreSQL 'json' mapped to neutral 'json', which renders as 'jsonb': the stored text " +
+            "is normalised — key order, duplicate keys and insignificant whitespace are lost.",
+        hint = "Keep the column as text if the exact document text matters; 'jsonb' itself loses nothing.",
+    )
+
+    /**
+     * Eine Array-Spalte samt der Note ihrer Elementart.
+     *
+     * Zwei Faelle sind laut: ein Element, das der Reverse nicht benennt
+     * (`date[]`, `inet[]` — es liest `text`), meldet `R301` wie jeder andere
+     * `else`-Fallback; ein `json[]` meldet `R402`, weil sein Element denselben
+     * Weg nimmt wie eine `json`-Spalte.
+     */
+    private fun mapArrayColumn(udt: String, objectName: String): MappingResult {
+        val elementUdt = udt.removePrefix("_")
+        val known = knownArrayElementType(elementUdt)
+        val note = when {
+            known == null -> SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "R301",
+                objectName = objectName,
+                message = "Unknown PostgreSQL array element type '$elementUdt' mapped to text",
+                hint = "Review the column and adjust the element type in the schema file if needed.",
+            )
+            elementUdt == "json" -> jsonTextualNote(objectName)
+            else -> null
+        }
+        return MappingResult(NeutralType.Array(known ?: "text"), note = note)
     }
 
     fun mapUserDefined(
@@ -174,7 +241,16 @@ internal object PostgresTypeMapping {
         return MappingResult(NeutralType.Enum(refType = udtName))
     }
 
-    fun mapArrayElementType(elementUdt: String): String = when (elementUdt) {
+    fun mapArrayElementType(elementUdt: String): String = knownArrayElementType(elementUdt) ?: "text"
+
+    /**
+     * Die Elementart, **die der Reverse benennt** — oder `null`, wenn er sie
+     * nicht kennt. Der Unterschied traegt zwei Entscheidungen: `null` ist der
+     * `else`-Fallback und damit meldepflichtig (`R301`,
+     * [spec/type-mapping.md] Abschnitt 8), und der PostgreSQL-Generator
+     * rendert genau diesen Satz in seinem Typ (`PostgresTypeMapper.elementSql`).
+     */
+    private fun knownArrayElementType(elementUdt: String): String? = when (elementUdt) {
         "int4", "int2" -> "integer"
         "int8" -> "biginteger"
         "text", "varchar", "bpchar" -> "text"
@@ -183,7 +259,7 @@ internal object PostgresTypeMapping {
         "float4", "float8" -> "float"
         "numeric" -> "decimal"
         "json", "jsonb" -> "json"
-        else -> "text"
+        else -> null
     }
 
     fun isSerialDefault(default: String?): Boolean {
@@ -255,7 +331,40 @@ internal object PostgresTypeMapping {
         else -> pgType
     }
 
-    fun mapCompositeFieldType(pgType: String): NeutralType {
+    fun mapCompositeFieldType(pgType: String): NeutralType =
+        knownCompositeFieldType(pgType) ?: NeutralType.Text()
+
+    /**
+     * Das Feld eines zusammengesetzten Typs samt seiner Note.
+     *
+     * Dieselben zwei stillen Rueckfaelle wie an einer Spalte, an derselben
+     * Klasse gemessen: `numeric` ohne Praezision wird Gleitkomma (`R404`),
+     * ein unbekannter Feldtyp wird `text` (`R301`). `spec/type-mapping.md`,
+     * Abschnitt 8, verlangt fuer den `else`-Fallback ohnehin eine Note; sie
+     * fehlte hier.
+     */
+    fun compositeField(pgType: String, objectName: String): MappingResult {
+        val lower = pgType.lowercase().trim()
+        val known = knownCompositeFieldType(pgType)
+        val unbounded = (lower.startsWith("numeric") || lower.startsWith("decimal")) &&
+            Regex("\\((\\d+),(\\d+)\\)").find(lower) == null
+        return when {
+            known == null -> MappingResult(
+                NeutralType.Text(),
+                note = SchemaReadNote(
+                    severity = SchemaReadSeverity.WARNING,
+                    code = "R301",
+                    objectName = objectName,
+                    message = "Unknown PostgreSQL composite field type '$pgType' mapped to text",
+                    hint = "Review the field and adjust the type in the schema file if needed.",
+                ),
+            )
+            unbounded -> MappingResult(known, note = unboundedNumericNote(objectName))
+            else -> MappingResult(known)
+        }
+    }
+
+    private fun knownCompositeFieldType(pgType: String): NeutralType? {
         val lower = pgType.lowercase().trim()
         return when {
             lower == "integer" || lower == "int4" -> NeutralType.Integer
@@ -278,7 +387,7 @@ internal object PostgresTypeMapping {
             lower == "date" -> NeutralType.Date
             lower == "time" || lower.startsWith("time ") -> NeutralType.Time
             lower.startsWith("timestamp") -> NeutralType.DateTime(timezone = lower.contains("with time zone"))
-            else -> NeutralType.Text()
+            else -> null
         }
     }
 }

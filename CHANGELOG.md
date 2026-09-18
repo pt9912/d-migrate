@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- **Der PostgreSQL-Reverse benennt vier Verluste, die er bisher verschwieg.**
+  `json` kommt weiter als neutrales `json` und rendert als `jsonb` zurueck —
+  dabei aendert sich der gespeicherte Text (Schluesselreihenfolge, doppelte
+  Schluessel, Leerraum); das sagt jetzt **`R402`**, an der Spalte und am
+  Element eines `json[]`. `jsonb` selbst meldet nichts. **`R404`** nennt
+  `numeric` ohne Praezision, das `float` wird. **`R301`** nennt den
+  `else`-Rueckfall, der bisher nur an der Spalte laut war: die **Elementart
+  eines Arrays** (`date[]` liest `element_type: text`) und der **Feldtyp eines
+  zusammengesetzten Typs**. Dieselben Codes gelten im Feld eines
+  zusammengesetzten Typs. Auf SQLite meldet **`R221`** `NUMERIC`/`DECIMAL`
+  ohne Praezision, auf Oracle **`R371`** ein `NUMBER` ohne Angabe
+  (`decimal(38,10)`; mehr als zehn Nachkomma- und mehr als 28 Vorkommastellen
+  gehen verloren). Alle sind `WARNING` und blocken nichts.
+
 - **Der Array-Verlust auf MySQL und SQLite ist benannt (`W162`).** Beide Ziele
   haben keinen Array-Typ: MySQL rendert eine `array`-Spalte als `JSON`, SQLite
   als `TEXT`, und ein spaeteres `schema reverse` des Ziels liest `json` bzw.

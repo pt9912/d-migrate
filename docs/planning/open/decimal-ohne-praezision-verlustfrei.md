@@ -6,6 +6,10 @@
 > ([`../in-progress/reader-treue-2-meldungen.md`](../in-progress/reader-treue-2-meldungen.md)):
 > `numeric` ohne Präzision wird im Reader-Slice **nur gemeldet** (Paket P9).
 > Ihn verlustfrei zu machen ist eine Modellerweiterung und liegt hier.
+> **P9 ist gebaut (2026-09-18):** der Verlust ist jetzt benannt — `R404`
+> (PostgreSQL, Spalte und Feld eines zusammengesetzten Typs), `R221` (SQLite)
+> und `R371` (Oracles `NUMBER` ohne Angabe), alle `WARNING`. Damit ist er
+> sichtbar, aber nicht behoben; die Modellfrage bleibt offen.
 > **Aktivierungsbedingung:** ein gemeldeter Fidelity-Bedarf, bei dem die
 > Meldung nicht reicht — dieselbe Schwelle, die
 > [`pg-only-types-first-class-candidates.md`](pg-only-types-first-class-candidates.md)

@@ -45,7 +45,7 @@ class PostgresSchemaReader(
 
             val rawTables = readPostgresTables(session, schema, notes)
             val sequences = readPostgresSequences(session, schema)
-            val customTypes = readPostgresCustomTypes(session, schema)
+            val customTypes = readPostgresCustomTypes(session, schema, notes)
 
             readPostgresExtensionNotes(session, notes)
             val views = if (options.includeViews) readPostgresViews(session, schema) else emptyMap()

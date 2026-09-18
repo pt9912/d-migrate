@@ -524,6 +524,25 @@ triggers:
   DDL. **Folge:** ein Reverse derselben SQLite-Datenbank liefert jetzt andere
   Constraint-Namen als früher; ein Vergleich gegen eine ältere Reverse-Datei
   kann sie melden.
+- **Was der Bericht über verlorene Genauigkeit sagt.** Manche Typen haben im
+  neutralen Modell keine genaue Entsprechung; der Reverse nimmt dann die
+  nächstliegende und **sagt es**:
+  - `numeric`/`NUMERIC` **ohne** Präzision wird `float` — auf PostgreSQL mit
+    `R404`, auf SQLite mit `R221`. Aus exakter Dezimalarithmetik wird binäre
+    Gleitkommarechnung. Geben Sie Präzision und Skala an der Quellspalte an,
+    oder tragen Sie sie in der Schemadatei nach.
+  - Oracles `NUMBER` ohne Angabe wird `decimal(38,10)` (`R371`): mehr als zehn
+    Nachkomma- und mehr als 28 Vorkommastellen gehen auf dem Rückweg verloren.
+  - Eine PostgreSQL-`json`-Spalte kommt als neutrales `json` und entsteht auf
+    dem Rückweg als `jsonb` (`R402`). Dabei ändert sich der **gespeicherte
+    Text**: `jsonb` normalisiert, verwirft doppelte Schlüssel, ordnet die
+    Schlüssel um und entfernt bedeutungslosen Leerraum. Kommt es Ihnen auf den
+    genauen Text an, halten Sie die Spalte als Text. `jsonb` selbst verliert
+    nichts.
+  - Ein Typ, für den es keinen neutralen gibt, wird `text` und bekommt `R301`
+    — das gilt auch für die **Elementart eines Arrays** (`date[]` kommt als
+    `array` mit `element_type: text` zurück) und für ein **Feld eines
+    zusammengesetzten Typs**.
 - **SQLite-64-bit-Autowerte:** SQLites `AUTOINCREMENT`-Primärschlüssel ist 64-bit,
   wird aber standardmäßig als 32-bit-`identifier` zurückübersetzt (bei einem Transfer
   nach PostgreSQL/MySQL sonst `SERIAL`/`INT`). Brauchen Sie den vollen 64-bit-Bereich,

@@ -755,6 +755,30 @@ projiziert `array(<element>)` dialektneutral und lief unverändert durch.
 `numeric[]`, `jsonb[]` und `text[]` werden gelesen, mit dem Generator wieder
 als DDL geschrieben, vom Server angenommen und ein zweites Mal gelesen — mit
 derselben Elementart. Vorher entstand dort überall `text[]`.
+
+#### P8 und P9 — die stillen Rückfälle sind benannt
+
+| Code | Stelle | Fall |
+| --- | --- | --- |
+| `R402` | `PostgresTypeMapping.mapSpecialTypes` | eine `json`-Spalte, und das Element eines `json[]` (seit S3 rendert es als `jsonb[]`) |
+| `R404` | `mapNumericTypes` und `compositeField` | `numeric`/`decimal` ohne Präzision |
+| `R301` | `mapArrayColumn` und `compositeField` | eine Elementart bzw. ein Feldtyp, für den es keinen neutralen Namen gibt |
+| `R221` | `SqliteTypeMapping.mapNumericType` | `NUMERIC`/`DECIMAL` ohne Präzision |
+| `R371` | `OracleTypeMapping.mapColumn` | `NUMBER` ohne Präzision → `decimal(38,10)` |
+
+Alle `WARNING`, keiner blockt. `jsonb` meldet nichts, `numeric(12,2)` meldet
+nichts, ein bekanntes Array-Element meldet nichts, eine Oracle-Identity ohne
+Präzision meldet nichts — je eine Gegenprobe im Test.
+
+**Der Unterschied „benannt oder nicht" liegt jetzt im Code, nicht im
+Kommentar.** `mapArrayElementType` gibt weiter `text` zurück; darunter liegt
+`knownArrayElementType`, das für eine unbekannte Elementart `null` liefert —
+und genau dieses `null` ist die Meldepflicht aus `spec/type-mapping.md`,
+Abschnitt 8. Dieselbe Trennung bei `compositeField`/`knownCompositeFieldType`.
+
+**Die Felder zusammengesetzter Typen melden jetzt überhaupt.**
+`readPostgresCustomTypes` bekam dafür die Notizliste; vorher gab es an dieser
+Stelle keinen Kanal.
 ## Akzeptanzkriterien
 
 1. Der Array-Verlust ist auf MySQL und SQLite benannt, auf Generate und

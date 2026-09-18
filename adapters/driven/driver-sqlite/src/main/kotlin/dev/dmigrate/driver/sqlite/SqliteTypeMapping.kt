@@ -65,7 +65,7 @@ internal object SqliteTypeMapping {
         val maxLen = extractMaxLength(raw)
 
         return mapIntegerType(raw)
-            ?: mapNumericType(raw)
+            ?: mapNumericType(raw, "$tableName.$colName")
             ?: mapStringType(raw, maxLen)
             ?: mapTemporalType(raw)
             ?: mapSpecialType(raw)
@@ -148,16 +148,37 @@ internal object SqliteTypeMapping {
         else -> null
     }
 
-    private fun mapNumericType(raw: String): MappingResult? = when {
+    private fun mapNumericType(raw: String, objectName: String): MappingResult? = when {
         raw == "REAL" || raw == "DOUBLE" || raw == "FLOAT" -> MappingResult(NeutralType.Float())
         raw == "BOOLEAN" || raw == "TINYINT(1)" -> MappingResult(NeutralType.BooleanType)
         raw.startsWith("DECIMAL") || raw.startsWith("NUMERIC") -> {
             val (p, s) = extractPrecisionScale(raw)
-            if (p != null && s != null) MappingResult(NeutralType.Decimal(p, s))
-            else MappingResult(NeutralType.Float())
+            if (p != null && s != null) {
+                MappingResult(NeutralType.Decimal(p, s))
+            } else {
+                MappingResult(NeutralType.Float(), note = unboundedNumericNote(raw, objectName))
+            }
         }
         else -> null
     }
+
+    /**
+     * `DECIMAL`/`NUMERIC` ohne Praezision wird Gleitkomma — auch auf dem
+     * Rueckweg in denselben Dialekt. SQLite speichert eine solche Spalte in
+     * NUMERIC-Affinitaet und kann eine Ganzzahl exakt halten; das neutrale
+     * `float` sagt Binaer-Gleitkomma zu, und das Rendern macht daraus `REAL`.
+     * Der Schwesterfall mit Praezision ist beim Erzeugen laengst laut (`W200`);
+     * hier fehlte die Gegenrichtung.
+     */
+    private fun unboundedNumericNote(raw: String, objectName: String) = SchemaReadNote(
+        severity = SchemaReadSeverity.WARNING,
+        code = "R221",
+        objectName = objectName,
+        message = "SQLite '$raw' without precision mapped to float: the neutral model has no unbounded " +
+            "decimal, and the column renders back as REAL (binary floating point).",
+        hint = "Declare precision and scale on the source column, or fix them in the schema file, " +
+            "if exact decimal arithmetic must survive.",
+    )
 
     private fun mapStringType(raw: String, maxLen: Int?): MappingResult? = when {
         raw == "TEXT" -> MappingResult(NeutralType.Text())

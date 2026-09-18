@@ -74,7 +74,31 @@ internal object OracleTypeMapping {
         return MappingResult(
             type = mapBaseType(input),
             generation = null,
-            note = unknownTypeNote(columnName, input.typeName),
+            note = unboundedNumberNote(columnName, input) ?: unknownTypeNote(columnName, input.typeName),
+        )
+    }
+
+    /**
+     * `NUMBER` ohne Praezision und Skala wird still `decimal(38,10)`.
+     *
+     * Oracle laesst eine solche Spalte bis zu 38 signifikante Stellen an
+     * **beliebiger** Position tragen; die konservative Wahl legt zehn davon
+     * hinter das Komma. Was darueber hinausgeht, geht auf dem Rueckweg
+     * verloren: mehr als zehn Nachkomma- und mehr als 28 Vorkommastellen.
+     * Derselbe Verlust wie `numeric` ohne Praezision auf PostgreSQL und
+     * SQLite, nur mit einer anderen konservativen Wahl — und ebenso
+     * meldepflichtig.
+     */
+    private fun unboundedNumberNote(columnName: String, input: ColumnInput): SchemaReadNote? {
+        if (input.typeName.uppercase() != "NUMBER" || input.precision != null) return null
+        return SchemaReadNote(
+            severity = SchemaReadSeverity.WARNING,
+            code = "R371",
+            objectName = columnName,
+            message = "Oracle 'NUMBER' without precision and scale mapped to decimal(38,10): more than ten " +
+                "fractional digits and more than 28 integral digits are lost on the way back.",
+            hint = "Declare precision and scale on the source column, or fix them in the schema file, " +
+                "if the full NUMBER range must survive.",
         )
     }
 
