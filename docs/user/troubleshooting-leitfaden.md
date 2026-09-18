@@ -173,6 +173,18 @@ Round-Trip ist nicht zeichengleich.
   Enum ohne `CHECK` im migrate-Pfad). Das ist eine **gemeldete** Degradation, kein
   stiller Verlust — die zugehörige `W…`-Note benennt sie. Kuratierte Fallstrick-Liste:
   [Best-Practices-Leitfaden, Abschnitt 4](best-practices-leitfaden.md#4-cross-dialect-typ-fallstricke).
+- **Eine Array-Spalte kommt als `json` oder `text` zurück** (**W162**, MySQL und
+  SQLite; auf Oracle **W149**, auf SQL Server **W137**). Beide Ziele haben keinen
+  Array-Typ: MySQL schreibt `JSON`, SQLite `TEXT`, und ein späteres
+  `schema reverse` des Ziels liest genau das — die Elementart steht dann nirgends
+  mehr. Einen Ausweg gibt es nicht; was im Ziel nicht mehr steht, kann kein Reader
+  zurückgewinnen. Die Note nennt die Elementart, die verlorengeht — halten Sie die
+  Quelle fest, wenn Sie später zurück wollen.
+- **Eine Identity-Spalte nimmt im Ziel gesetzte Werte an, obwohl `mode: always`
+  erklärt ist** (**W163**, MySQL und SQLite). `AUTO_INCREMENT` bzw.
+  `INTEGER PRIMARY KEY AUTOINCREMENT` kennen keinen Modus. Nehmen Sie
+  ausdrückliche Werte für diese Spalte aus Ihren Schreibvorgängen heraus, oder
+  nehmen Sie hin, dass das Ziel sie nicht abweist.
 - **Round-Trip (Reverse → Generate → Reverse) ist nicht identisch.** Erwartbar, wenn
   der Zieldialekt eine Eigenschaft nur emuliert (z. B. SQLite-Sequenzen). Was stabil
   bleibt und was bewusst degradiert: [Migrations-Leitfaden, Abschnitt 6.6](migrations-leitfaden.md#66-round-trip-risiko-verstehen).

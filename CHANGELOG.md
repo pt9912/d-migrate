@@ -12,8 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Der PostgreSQL-Reverse benennt vier Verluste, die er bisher verschwieg.**
   `json` kommt weiter als neutrales `json` und rendert als `jsonb` zurueck —
   dabei aendert sich der gespeicherte Text (Schluesselreihenfolge, doppelte
-  Schluessel, Leerraum); das sagt jetzt **`R402`**, an der Spalte und am
-  Element eines `json[]`. `jsonb` selbst meldet nichts. **`R404`** nennt
+  Schluessel, Leerraum); das sagt jetzt **`R402`**, an der Spalte, am
+  Element eines `json[]` und am Feld eines zusammengesetzten Typs. `jsonb`
+  selbst meldet nichts. **`R404`** nennt
   `numeric` ohne Praezision, das `float` wird. **`R301`** nennt den
   `else`-Rueckfall, der bisher nur an der Spalte laut war: die **Elementart
   eines Arrays** (`date[]` liest `element_type: text`) und der **Feldtyp eines
@@ -98,22 +99,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   „Fixed"), und der Kanonisierer des Abdrucks ist die gelebte Zusammensetzung
   aus Rendern und Zuruecklesen — er projizierte `array(biginteger)` bisher auf
   `array(text)`. Derselbe unveraenderte Schemastand hasht damit anders.
-  **Folge:** vor dem Update erzeugte Rollback-Artefakte und Overlay-Dateien
-  passen nicht mehr und werden **laut** abgelehnt (Exit 8,
-  `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` bzw.
-  `OVERLAY_STALE_*_FINGERPRINT`). Erzeugen Sie sie mit der neuen Version neu;
-  bereits ausgerollte Migrationen sind nicht betroffen.
+  **Folge, und die beiden Wege dorthin sind verschieden:** ein vor dem Update
+  erzeugtes **Rollback-Artefakt** traegt die Kennung des Algorithmus und wird
+  deshalb **immer** abgelehnt (Exit 8,
+  `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`), auch wenn das Schema gar kein
+  Array enthaelt. Eine **Overlay-Datei** kennt die Kennung nicht: sie bindet
+  an den Abdruckswert, und der faellt genau dann auseinander, wenn das
+  beschriebene Schema eine Array-Spalte traegt (`OVERLAY_STALE_SOURCE_FINGERPRINT`
+  / `OVERLAY_STALE_TARGET_FINGERPRINT`). Erzeugen Sie beides mit der neuen
+  Version neu; bereits ausgerollte Migrationen sind nicht betroffen.
+
+  **Und eine Folge fuer den Betrieb, die nicht am Abdruck haengt:** ein
+  PostgreSQL-Ziel, das eine aeltere Version gebaut hat, traegt fuer jede
+  Array-Spalte `text[]`. Der naechste `schema migrate` gegen dasselbe Soll
+  plant deshalb je Spalte ein `TABLE_COLUMN_TYPE_CHANGED` von `text[]` auf
+  die jetzt richtige Elementart — und PostgreSQL braucht fuer diesen Cast
+  eine `USING`-Klausel, die der Planer nicht erfindet: ohne sie blockt der
+  Lauf mit `PG_USING_OVERLAY_MISSING` (`MANUAL_ACTION_REQUIRED`). Der
+  Ausdruck kommt aus einem `using-expression`-Overlay
+  (`schema migrate --overlay`, siehe Anwenderhandbuch). Wer das Ziel neu
+  aufbaut, hat die Frage nicht.
+
+- **`R365` ist `WARNING` statt `INFO`.** Die Note sagt, dass
+  `ALL_SDO_GEOM_METADATA` nicht lesbar ist und die Geometriespalten dieser
+  Tabelle deshalb ohne Koordinatensystem zurueckkommen — derselbe Verlust,
+  den `R370` benennt, und der hat dasselbe Gewicht
+  ([ADR 0058](docs/adr/0058-verlorener-srid-beim-reverse-ist-warnung.md)).
+  **Folge:** wer `INFO`-Notizen filtert, sieht ihn jetzt; wer auf `WARNING`
+  eskaliert, bekommt fuer ihn einen Ausschlag, den er bisher nicht hatte.
+  Dafuer steht `R365` nur noch an Tabellen **mit** Geometriespalte: an einer
+  rein numerischen kann kein SRID verlorengehen, und dort stand er bisher
+  trotzdem, je Tabelle einmal.
 
 - **Eine PostgreSQL-`integer`-Identity mit `ALWAYS` als alleiniger
   Primaerschluessel kommt anders zurueck.** Sie las als `identifier` **ohne**
   Modus, und der PostgreSQL-Generator machte daraus `SERIAL` — eine Spalte,
   die einen ausdruecklich gesetzten Wert annimmt. Der Verlust traf damit auch
   PostgreSQL → PostgreSQL, und kein Vergleich zweier Reverses sah ihn. Jetzt
-  liest sie als `integer` (bzw. `smallint`) mit `generation: { type: identity,
-  mode: always }`, wie es der Zweig fuer Nicht-Schluesselspalten seit jeher
-  tut. `BY DEFAULT` und `serial` behalten den `identifier`-Vertrag.
-  **Folge:** ein Reverse derselben Datenbank liefert fuer diese Spalten eine
-  andere Datei als vorher.
+  liest sie als `integer` mit `generation: { type: identity, mode: always }`,
+  wie es der Zweig fuer Nicht-Schluesselspalten seit jeher tut. `BY DEFAULT`
+  und `serial` behalten den `identifier`-Vertrag, und ein **`smallint`**
+  ebenso: das neutrale Modell traegt eine Identity nur auf `integer` und
+  `biginteger` (`E130`), und eine als `smallint` + `identity` gelesene Datei
+  liesse sich nicht mehr erzeugen — dort bleibt der Modus verloren, wie
+  bisher. **Folge:** ein Reverse derselben Datenbank liefert fuer eine
+  `integer`-Spalte dieser Form eine andere Datei als vorher.
 
 - **Ein SQLite-Reverse liefert Constraint-Namen aus der Quelle, und gebildete
   Namen sind schemaweit eindeutig.** SQLite fuehrt die Namen nicht im Katalog;

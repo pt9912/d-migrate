@@ -235,22 +235,22 @@ Zustand gepinnt — verschwindet der Zustand, ist die Erwartung neu zu pinnen:
 - `APPLY-FAIL` / `apply:<Fehlerklasse>`: das Ziel lehnt die aus dem Reverse
   der Quelle erzeugte DDL ab — ein Befund ueber Reader oder Generator.
 
-Gemessener Stand (2026-09-17, `d-migrate:dev` 1.8.0-SNAPSHOT mit der
+Gemessener Stand (2026-09-18, `d-migrate:dev` 1.8.0-SNAPSHOT mit der
 Server-Praeferenz `identity` fuer MySQL und den vier Seeds; Oracle nicht
 gefahren):
 
 | Quelle \ Ziel | PostgreSQL | MySQL | SQL Server | SQLite |
 | ------------- | ---------- | ----- | ---------- | ------ |
-| PostgreSQL | — | 11 | 11 | 22 |
+| PostgreSQL | — | 13 | 13 | 24 |
 | MySQL | 4 | — | 8 | 11 |
 | SQL Server | 2 | 6 | — | 11 |
 | SQLite | 3 | `APPLY-FAIL` | 6 | — |
 
 | Zelle | Funde bzw. Zustand | Grund |
 | ----- | ------------------ | ----- |
-| PostgreSQL → MySQL | 11: die 6 aus der Fixture (3 CHECKs und die Berechnung entfallen, Index-Praedikat entfaellt, CHECK mit `OR`/`IS NULL` in Kleinschreibung) und 5 aus dem Seed (vier Array-Spalten als `json`, der Identity-Modus `always`) | Generator rendert PostgreSQL-Casts nicht (`E053`), MySQL kennt kein Index-Praedikat (`E057`), kein Array und kein `ALWAYS`; Schluesselwort-Schreibweise |
-| PostgreSQL → SQL Server | 11: die 5 aus der Fixture, dazu vier Arrays und zwei `json`-Spalten als `text` (je `W137`) | Casts wie oben, `W140`, `W137` |
-| PostgreSQL → SQLite | 22: die 13 aus der Fixture, dazu vier Arrays, zwei `json`, `decimal` → `float` (`W200`) und die Identity | SQLite-Typaffinitaet, Casts wie oben |
+| PostgreSQL → MySQL | 13: die 6 aus der Fixture (3 CHECKs und die Berechnung entfallen, Index-Praedikat entfaellt, CHECK mit `OR`/`IS NULL` in Kleinschreibung) und 7 aus dem Seed (vier Array-Spalten als `json`, der Identity-Modus `always` der `bigint`-Spalte und **zwei** Funde an der `integer`-Identity: Typ und Erzeugung) | Generator rendert PostgreSQL-Casts nicht (`E053`), MySQL kennt kein Index-Praedikat (`E057`), kein Array und kein `ALWAYS`; Schluesselwort-Schreibweise |
+| PostgreSQL → SQL Server | 13: die 5 aus der Fixture, dazu vier Arrays, zwei `json`-Spalten als `text` (je `W137`) und zwei Funde an der `integer`-Identity (Typ und Erzeugung) | Casts wie oben, `W140`, `W137` |
+| PostgreSQL → SQLite | 24: die 13 aus der Fixture, dazu vier Arrays, zwei `json`, `decimal` → `float` (`W200`) und je **zwei** Funde an den beiden Identity-Spalten (Typ und Erzeugung — SQLite liest beide als `identifier(auto)` zurueck) | SQLite-Typaffinitaet, Casts wie oben |
 | MySQL → SQL Server / SQLite / PostgreSQL | 8 / 11 / 4 | s. oben, Zeile „MySQL" |
 | SQL Server → PostgreSQL | 2: zweimal `W137` | der Berechnungsausdruck ist ohne Herkunft nicht entscheidbar; sonst nichts — seit der Reverse ihn ohne T-SQL-Quoting liefert |
 | SQL Server → MySQL | 6: zwei CHECKs in MySQLs Schreibweise, Identity-Modus, Index-Praedikat entfaellt, zweimal `W137` | `E057`, Schluesselwort-Schreibweise, Darstellung der Werteliste; die PascalCase-Berechnung des Seeds rechnet dort richtig (der Generator setzt `"Menge"` in Backticks) |
