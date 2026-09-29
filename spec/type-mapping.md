@@ -372,7 +372,7 @@ String-Literale in Defaults werden als Unicode-Literal `N'…'` gerendert.
 | T-SQL | Neutral | Hinweis |
 |---|---|---|
 | `int` IDENTITY | `integer` + `generation: identity` (`ALWAYS`) | Dieselbe Lesart wie `bigint`: T-SQL kennt keinen `BY DEFAULT`-Modus, und `identifier` trägt **keinen** Modus — der Verlust fiel erst beim Rundweg über einen anderen Dialekt auf (eine PostgreSQL-Identity reist als `INT IDENTITY(1,1)` herüber und kam ohne Modus zurück) |
-| `bigint`/`smallint`/`tinyint`/`decimal` IDENTITY | Basistyp + `generation: identity` (`ALWAYS`) | T-SQL kennt keinen `BY DEFAULT`-Modus |
+| `bigint`/`smallint`/`tinyint`/`decimal` IDENTITY | Basistyp + `generation: identity` (`ALWAYS`) | T-SQL kennt keinen `BY DEFAULT`-Modus. Das neutrale Modell trägt eine Erzeugungsangabe nur auf `integer` und `biginteger` (`E130`) — `smallint`, `tinyint` und `decimal` lesen mit Basistyp und Erzeugungsangabe in eine Form, aus der kein Generator rendert |
 | `bit` | `boolean` | |
 | `money`/`smallmoney` | `decimal(19,4)`/`decimal(10,4)` | |
 | `datetime`, `datetime2`, `smalldatetime` | `datetime` | Präzisionsunterschiede werden nicht modelliert |

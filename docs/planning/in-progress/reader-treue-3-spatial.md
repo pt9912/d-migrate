@@ -301,7 +301,8 @@ Generatoren heute" bleibt Teil des Pakets — sie begründet den Meldetext.
 `smallint`-Identity tun (nicht nur PostgreSQL), und ob ein gelockertes `E130`
 irgendwo einen Pfad öffnet, der vorher geschlossen war.
 
-**DoD (nach der Entscheidung zu formulieren):** je nach Weg ein Code samt
+**DoD (nach der Entscheidung formuliert — die Umsetzung steht im
+Bauabschnitt unten):** je nach Weg ein Code samt
 Registrierungsorten oder eine Modelländerung samt Render-Regel je Dialekt;
 `spec/type-mapping.md` 3.4 trägt heute die enge Regel und zieht mit; Gegenprobe
 `BY DEFAULT` und `serial`; Sabotage je Zweig; die Matrix bewegt sich nur, wenn
@@ -821,6 +822,22 @@ so hat sie es gemeldet.
 SQL Server erscheint gegen andere Dialekte als geaendert?") und die
 Matrix-Tabelle in `examples/mcp-e2e/README.md`.
 
+**Offen geblieben — der planmandierte Nachbarfall (Review-Finding M1,
+2026-09-29).** Der Plan verlangte vor dem Bau, die S1-Nachbarfaelle zu
+pruefen („Identity ohne Primaerschluessel, mehrspaltiger Primaerschluessel,
+`smallint`"). Gemessen und gebaut wurde nur `int`:
+`smallint`/`tinyint`/`decimal` IDENTITY lesen als Basistyp +
+`identity(ALWAYS)` — und genau diese Form lehnt `E130` ab, aus dem
+SQL-Server-Reverse einer `SMALLINT IDENTITY`-Spalte liess sich nichts
+erzeugen. Derselbe Defekt, den S6 auf der PostgreSQL-Seite mit `R406`
+benannt hat, hier ohne den Code. Er bleibt als
+[`../open/mssql-narrow-identity-nicht-erzeugbar.md`](../open/mssql-narrow-identity-nicht-erzeugbar.md)
+stehen; die Spec-Zeile 6.2 traegt den `E130`-Vorbehalt.
+
+**Eine Zahl in der Commit-Nachricht ist falsch:** `ebc7306c6` nennt
+„25 → 24" fuer `SILENT_LOSS_KNOWN` — richtig sind 7 → 6 (der Artefaktzustand
+stimmt; die 25 stammt aus dem Umbrella-Kontext der Plan-2-Bewegung).
+
 ### Die Matrix laeuft gegen ein **vorgebautes Image** (Lehre, 2026-09-18)
 
 Ein Matrixlauf nach einer Quellaenderung ist **gruen und wertlos**, solange
@@ -873,12 +890,26 @@ liest. **Vor jedem Matrixlauf also `make docker-build`**, und den Beweis am
 
 ## Offen
 
-- **Der Bootstrap steht nicht in `spec/`** (ältere Lücke, s. Abgrenzung).
+> Stand vor der Graduation; drei der vier Punkte sind im Bauabschnitt
+> aufgelöst (nachgezogen 2026-09-29, nach Plan-2-Präzedenz bleibt die
+> Liste als damals beschlossener Stand dokumentiert).
+
+- **Der Bootstrap steht nicht in `spec/`** (ältere Lücke, s. Abgrenzung) —
+  **bleibt offen**.
 - **P2a, zweite Regel:** braucht einen reservierten Code, falls die Messung
-  kein Katalogkriterium findet.
+  kein Katalogkriterium findet. — **aufgelöst:** die Messung fand das
+  Katalogkriterium (`ALL_OBJECTS.SECONDARY = 'Y'`, Tabellenpfad-Vorbild);
+  es braucht weder einen Namensfilter noch einen neuen Code.
 - **P7, Rebuild:** die Empfehlung „blocken" ist im Paket zu begründen; ein
-  Rebuild, der die Registrierung mitnimmt, wäre ein eigener Posten.
+  Rebuild, der die Registrierung mitnimmt, wäre ein eigener Posten. —
+  **aufgelöst:** geblockt, begründet in Code und `spec/ddl-generation-rules.md`
+  16.5; die Registrierung mitzunehmen bleibt eigener Posten.
 - **S5 und S6 gemeinsam:** welche Breiten der `identifier`-Vertrag trägt. Ohne
   diese Entscheidung bleibt der SQL-Server-Fall der letzte Eintrag aus Plan 2
   in `SILENT_LOSS_KNOWN`, und der PostgreSQL-`smallint`-Fall bleibt ganz ohne
-  Code.
+  Code. — **aufgelöst:** entschieden (Weg 1, 2026-09-18) und gebaut; der
+  SQL-Server-Fall fällt aus `SILENT_LOSS_KNOWN`, der
+  PostgreSQL-`smallint`-Fall meldet `R406`. Der planmandierte
+  Nachbarfall (`smallint`/`tinyint`/`decimal` auf SQL Server) blieb offen und
+  steht in
+  [`../open/mssql-narrow-identity-nicht-erzeugbar.md`](../open/mssql-narrow-identity-nicht-erzeugbar.md).

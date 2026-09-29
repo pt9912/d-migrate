@@ -53,20 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entschieden: es traegt sie nicht, und die drei Generatoren, die die Form
   ohnehin nicht kennen, bleiben unberuehrt.
 
-- **SQL Server liest `int IDENTITY` mit seinem Modus.** Ein
-  `int IDENTITY(1,1)` fiel auf `identifier` — und `identifier` traegt keinen
-  Modus —, waehrend `bigint IDENTITY` laengst als `biginteger` +
-  `generation: identity (ALWAYS)` zurueckkam. Aufgefallen ist der Verlust beim
-  Rundweg ueber einen anderen Dialekt: eine PostgreSQL-`integer`-Identity
-  reist als `INT IDENTITY(1,1)` nach SQL Server und kam **ohne** Modus
-  zurueck, sodass der Vergleich eine Aenderung meldete, die keine war. `int`
-  liest jetzt wie `bigint`. **Folge:** ein MSSQL-Reverse derselben Datenbank
-  liefert an diesen Spalten eine andere Form als frueher, und der Vergleich
-  zweier Reverses meldet dort mehr als bisher — die Spalte ist dieselbe, aber
-  die eine Seite schreibt `identifier(auto)`, die andere
-  `integer` + `identity(ALWAYS)`. Die Modus-Funde bleiben bewusst sichtbar:
-  MySQL und SQLite koennen `ALWAYS` nicht ausdruecken und melden `W163`.
-
 - **Ein beim Oracle-Reverse verlorener SRID ist benannt (`R370`).** Oracle
   fuehrt den SRID einer Geometriespalte in einer Zeile von
   `USER_SDO_GEOM_METADATA` und schreibt Tabellen- und Spaltenname dort
@@ -136,6 +122,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `spec/cli-spec.md`.
 
 ### Changed
+
+- **Ein MSSQL-Reverse liest `int IDENTITY` mit seinem Modus.** Ein
+  `int IDENTITY(1,1)` fiel auf `identifier` — und `identifier` traegt keinen
+  Modus —, waehrend `bigint IDENTITY` laengst als `biginteger` +
+  `generation: identity (ALWAYS)` zurueckkam. Aufgefallen ist der Verlust beim
+  Rundweg ueber einen anderen Dialekt: eine PostgreSQL-`integer`-Identity
+  reist als `INT IDENTITY(1,1)` nach SQL Server und kam **ohne** Modus
+  zurueck, sodass der Vergleich eine Aenderung meldete, die keine war. `int`
+  liest jetzt wie `bigint`. **Folge:** ein MSSQL-Reverse derselben Datenbank
+  liefert an diesen Spalten eine andere Form als frueher, und der Vergleich
+  zweier Reverses meldet dort mehr als bisher — die Spalte ist dieselbe, aber
+  die eine Seite schreibt `identifier(auto)`, die andere
+  `integer` + `identity(ALWAYS)`. Die Modus-Funde bleiben bewusst sichtbar:
+  MySQL und SQLite koennen `ALWAYS` nicht ausdruecken und melden `W163`.
 
 - **Der Fingerabdruck steht auf `schema-fingerprint-v17`** (von `v16`). Der
   PostgreSQL-Generator rendert Array-Elemente jetzt in ihrem Typ (s. unter
