@@ -123,6 +123,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Der berechnete Ausdruck rendert für SQL Server mit `CAST` auf den
+  deklarierten Typ.** SQL Server leitet den Spaltentyp einer berechneten Spalte
+  aus dem Ausdruck ab — `decimal(23,2)` für `quantity * unit_price` über zwei
+  `decimal(12,2)`-Spalten —, und genau dieser abgeleitete Typ kam aus dem
+  Reverse zurück: der deklarierte Typ (`decimal(14,2)`) ging auf dem Weg über
+  SQL Server still verloren. Die erzeugte DDL hüllt den Ausdruck jetzt in
+  `CAST(… AS DECIMAL(14,2))`, und der Reverse führt genau diese Hülle beim
+  Lesen zurück, solange ihr Typ dem Spaltentyp entspricht und sie den ganzen
+  Ausdruck umschließt (Autorenhüllen auf andere Typen, `CONVERT` mit
+  Stilargument und innere Hüllen bleiben). **Folge:** eine generierte
+  SQL-Server-Datenbank liest mit dem deklarierten Typ zurück — der Rückweg
+  liefert an diesen Spalten einen anderen Text als früher —, und eine
+  SQL-Server-Datei erzeugt für ein anderes Ziel kein `CONVERT` mehr.
 - **Ein MSSQL-Reverse liest `int IDENTITY` mit seinem Modus.** Ein
   `int IDENTITY(1,1)` fiel auf `identifier` — und `identifier` traegt keinen
   Modus —, waehrend `bigint IDENTITY` laengst als `biginteger` +

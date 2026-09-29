@@ -408,6 +408,20 @@ Spaltenbezug (E012) und jedes andere Ziel scheitert am T-SQL-Quoting —
 gemessen: PostgreSQL mit `syntax error at or near "["`, MySQL mit
 `ERROR 1064`.
 
+Die **`CAST`-Hülle des Generators** fällt wieder: SQL Server legt
+`CAST(<ausdruck> AS <typ>)` als `CONVERT([typ],<ausdruck>)` ab, und der Reverse
+entfernt die äußerste `CONVERT`-Hülle auf dem normalisierten Text genau dann,
+wenn ihr Typ dem Spaltentyp entspricht (gegen denselben Katalog gelesen, aus
+`type_name`/`max_length`/`precision`/`scale`), genau zwei Argumente stehen und
+nach ihr nichts folgt — dieselbe typidentische Umwandlung, die PostgreSQL und
+MySQL als deklarierten Typ einer berechneten Spalte tragen. Auf dem **rohen**
+Katalogtext träfe den Vergleich nichts: der Typname liegt dort geklammert
+(`CONVERT([decimal](14,2),…)`). Alles andere bleibt: eine Hülle auf einen
+**anderen** Typ — sie bleibt als innere Hülle stehen, wenn die äußerste auf den
+Spaltentyp fällt —, ein **Stilargument**, das der Server eingeklammert als
+drittes Argument ablegt (`CONVERT(varchar(30),x,(126))`), und ein **typenloses**
+`varchar`, dessen Token den Spaltentyp nicht benennt (`varchar` ≠ `varchar(30)`).
+
 Die **Erkennung der Hash-Partitions-Emulation** liest denselben Katalogtext
 weiter in Serverform: sie hängt an der Abfrage, nicht am Modell.
 
@@ -418,7 +432,8 @@ weiter in Serverform: sie hängt an der Abfrage, nicht am Modell.
 - Computed Columns kommen als berechnete Spalten zurueck
   (`generation.type: computed`), in allen fuenf Dialekten und mit ihrer
   Speicherform. Der Ausdruck ist die **Serverform**, nicht der Autorentext — bis
-  auf die Dialekt-Anhaenge, die der Reverse entfernt (Abschnitt 6.2 fuer SQL
+  auf die Dialekt-Anhaenge und die `CAST`-Huelle auf den deklarierten Typ, die
+  der Reverse entfernt (Abschnitt 6.2 fuer SQL
   Server, 4.5 fuer MySQL) —, und wird deshalb nur unter den Bedingungen aus
   [`schema-reference.md`](schema-reference.md) verglichen.
   Gemeldet wird nur noch, was der Server nicht hergibt:

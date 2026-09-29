@@ -2678,6 +2678,14 @@ Zurücklesen wiederfinden.
   `` concat(_utf8mb4'x',`menge`) ``. Eine Spalte, die Anführungszeichen
   braucht, steht als `"Menge"` da. Damit lässt sich die zurückgelesene Datei
   auch gegen ein anderes Ziel erzeugen.
+- **SQL Server behält den deklarierten Typ.** Ohne Zusatz leitet SQL Server
+  den Spaltentyp aus dem Ausdruck ab — `decimal(23,2)` für
+  `quantity * unit_price` über zwei `decimal(12,2)`-Spalten. Die erzeugte DDL
+  hüllt den Ausdruck deshalb in `CAST(… AS DECIMAL(14,2))`, und der Reverse
+  führt genau diese Hülle beim Lesen zurück: die Spalte kommt mit dem
+  deklarierten Typ zurück, nicht mit dem abgeleiteten. Eine eigene Hülle auf
+  einen anderen Typ, ein `CONVERT` mit Stilargument und innere Hüllen bleiben
+  von der Rückführung unberührt.
 
 **Hinweise:**
 

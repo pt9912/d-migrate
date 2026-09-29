@@ -235,11 +235,11 @@ Rumpf ist ueber alle Dialekte derselbe, das Wort dahinter nicht:
 | MySQL | `VIRTUAL` | `STORED` |
 | SQLite | `VIRTUAL` | `STORED` |
 | Oracle | `VIRTUAL` | `MATERIALIZED` |
-| SQL Server | Vorgabe, **ohne** `GENERATED ALWAYS` und **ohne Typ** | `PERSISTED` |
+| SQL Server | Vorgabe, **ohne** `GENERATED ALWAYS`; der Ausdruck rendert in `CAST` auf den deklarierten Typ | `PERSISTED` |
 
 SQL Server faellt aus dem Muster: dort lautet die Spalte
-`<quoted_name> AS (<expression>) [PERSISTED]`; ein Typ davor ist ein
-Syntaxfehler, die Spalte bekommt ihn aus dem Ausdruck.
+`<quoted_name> AS (CAST(<expression> AS <type>)) [PERSISTED]`; ein Typ davor
+ist ein Syntaxfehler.
 
 **PostgreSQL ist als einziger versionsabhaengig** — gemessen an 18.6:
 `VIRTUAL` ist gueltig (`pg_attribute.attgenerated = 'v'`), und ohne Angabe
@@ -251,6 +251,19 @@ umgedeutet zu bekommen.
 
 `NOT NULL`, `DEFAULT` und `UNIQUE` entfallen an einer berechneten Spalte: ihr
 Wert kommt aus dem Ausdruck.
+
+**SQL Server: die `CAST`-Huelle auf den deklarierten Typ.** Ohne Huelle leitet
+SQL Server den Spaltentyp aus dem Ausdruck ab — `decimal(23,2)` fuer
+`quantity * unit_price` ueber zwei `decimal(12,2)`-Spalten — und der deklarierte
+Typ ginge auf dem Weg ueber SQL Server still verloren. PostgreSQL und MySQL
+**haben** den deklarierten Typ einer berechneten Spalte als implizite
+Umwandlung des Ausdrucks; die Huelle drueckt in SQL Server dieselbe Sache aus,
+und der Typ, auf den sie stellt, ist der deklarierte. Sekundenpraezisionen, die
+der Server ableitet aber katalogisiert, stehen deshalb explizit
+(`DATETIME2(7)`, nicht `DATETIME2`). Der SQL-Server-Reverse fuehrt die Huelle
+beim Lesen zurueck — Abschnitt 6.2 in
+[`type-mapping.md`](type-mapping.md) —, sodass Hin- und Rueckweg Typ und
+Ausdruck unveranderlich lassen.
 
 **Den Ausdruck einer bestehenden Spalte ändern.** Ob das in place geht, hängt
 am Server — gemessen, nicht der Doku entnommen:
