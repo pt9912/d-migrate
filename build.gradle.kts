@@ -55,13 +55,15 @@ fun parseMemorySize(raw: String): Long? {
 }
 
 /**
- * Der Speicher, der **diesem Bau** zur Verfuegung steht — nicht der der
- * Maschine, auf der jemand tippt.
+ * Der Speicher, der **diesem Bau** zur Verfuegung steht.
  *
  * Die Integrationslaeufe laufen in einem Container (`docker run` in
  * `scripts/test-integration-docker.sh`). Gilt dort eine cgroup-Grenze, ist sie
- * die Wahrheit; ohne `--memory` steht dort `max`, und dann zaehlt der
- * Hauptspeicher. Beides gemessen, nicht angenommen.
+ * die Wahrheit; ohne `--memory` steht dort `max`, und dann zaehlt, was der
+ * Host **uebrig hat** — `MemAvailable`, nicht `MemTotal`. Der Desktop auf
+ * demselben Rechner hat keine eigene cgroup; die Rechnung mit `MemTotal`
+ * (31 GiB) hat den globalen OOM am 2026-09-29 mitverantwortet.
+ * Beides gemessen, nicht angenommen.
  */
 fun availableMemoryBytes(): Long? {
     val cgroupV2 = File("/sys/fs/cgroup/memory.max").takeIf { it.canRead() }?.readText()?.trim()
@@ -70,8 +72,10 @@ fun availableMemoryBytes(): Long? {
     // cgroup v1 meldet "unbegrenzt" als absurd grosse Zahl statt als Wort.
     cgroupV1?.toLongOrNull()?.takeIf { it in 1..(1L shl 50) }?.let { return it }
     return File("/proc/meminfo").takeIf { it.canRead() }?.useLines { lines ->
-        lines.firstOrNull { it.startsWith("MemTotal:") }
-            ?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull()?.times(1024)
+        val inKiB = lines.associate { line ->
+            line.substringBefore(" ") to line.split(Regex("\\s+")).getOrNull(1)?.toLongOrNull()
+        }
+        (inKiB["MemAvailable:"] ?: inKiB["MemTotal:"])?.times(1024)
     }
 }
 
@@ -87,7 +91,9 @@ fun availableMemoryBytes(): Long? {
  * Daraus die Rechnung: vom verfuegbaren Speicher die Daemon-Reserve abziehen
  * und durch die Kosten eines Slots teilen (Heap plus Nicht-Heap plus ein
  * Server). Auf einer 31-GiB-Maschine ergibt das drei, auf einem 8-GiB-Runner
- * einen — dieselbe Build-Datei, ohne Schalter.
+ * einen — dieselbe Build-Datei, ohne Schalter. Gemessen wird am
+ * `MemAvailable` der laufenden Minute: ist der Desktop schon hungrig, rueckt
+ * der Slot-Katalog nach unten, bevor der OOM-Killer es tut.
  *
  * Die Obergrenze ist bewusst niedrig: jenseits davon bestimmen Docker-I/O und
  * Container-Start die Laufzeit, nicht mehr die Parallelitaet.
