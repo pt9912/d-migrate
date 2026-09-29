@@ -391,6 +391,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ein Reverse nimmt keine extension-eigenen Objekte mehr auf (P2a, P2b).**
+  PostGIS in `public` brachte rund 800 Funktionen, 22 Aggregate und die zwei
+  Sichten `geometry_columns`/`geography_columns` mit — sie stehen im
+  Anwenderschema, gehoeren aber der Extension, und ein Reverse schrieb sie
+  beim Erzeugen ins Ziel, wo sie mit derselben Extension kollidierten. Ein
+  Konsument meldete ein Artefakt von 320 kB gegen 816 B. Oracle Spatial legt
+  zu jedem raeumlichen Index eine Sequenz `MDRS_<hex>$` (und eine Tabelle
+  `MDRT_<hex>$`) an; beide standen als Anwenderobjekte im Artefakt. **Das
+  Kriterium ist der Katalog, nicht der Name** (`pg_depend.deptype = 'e'`
+  bzw. `ALL_OBJECTS.SECONDARY = 'Y'`) — ein Praefixfilter haette eine
+  Anwendersequenz `SDO_ORDER_SEQ` mit verschluckt. Gefiltert wird stumm, wie
+  bei Tabellen und Typen; Anwenderfunktionen, -sichten und -prozeduren
+  bleiben, auch wenn sie PostGIS benutzen.
+
 - **Eine `NOT NULL`-Geometriespalte entsteht auf SpatiaLite, statt die ganze
   Tabelle zu kosten.** `schema generate --target sqlite --spatial-profile
   spatialite` verwarf eine Tabelle mit `E052`, sobald eine Geometriespalte

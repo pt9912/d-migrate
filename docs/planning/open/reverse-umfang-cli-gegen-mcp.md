@@ -9,6 +9,19 @@
 > Default-Umfang haben sollen (Eigner), oder ein Abnehmer, der Reverse-Dateien
 > aus beiden Wegen gegeneinander vergleicht.
 
+## Nachtrag 2026-09-18 — der PostGIS-Teil ist behoben
+
+Die DoD von P2b in
+[`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md)
+verlangt einen Vermerk hier: Der **Umfang**-Unterschied bleibt (er ist der
+Gegenstand dieses Eintrags), aber die **Flut** ist weg. `schema_reverse_start`
+las jede extension-eigene Funktion und Sicht mit; seit P2b filtert der
+PostgreSQL-Reader sie ueber `pg_depend.deptype = 'e'`. Damit ist die
+MCP-Seite eines PostGIS-in-`public`-Schemas um rund 800 Objekte kleiner — was
+den Vergleich zweier Reverse-Dateien aus beiden Wegen eher schaerfer macht,
+nicht milder: der Umfang-Unterschied selbst (Sichten, Routinen, Trigger)
+steht unveraendert.
+
 ## Befund
 
 - **CLI:** `schema reverse` liest Sichten, Funktionen, Prozeduren und Trigger

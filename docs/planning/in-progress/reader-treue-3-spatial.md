@@ -750,15 +750,20 @@ Grund und Gegenprobe.
 `identifier` traegt keinen — der Verlust fiel beim Rundweg ueber einen anderen
 Dialekt auf.
 
-**Eine Folge, die mitmusste:** `MssqlNeutralTypeCanonicalizer` ist als
-`reverse(toSql(t))` gebaut und zog die Aenderung automatisch nach — damit fiel
-`Identifier(autoIncrement = true)` auf `Integer` zusammen, und die
-Identitaets-Faltung des Comparators (`identitySpelledDifferently`, die genau
-dieses Paar ueber `foldsAutoIncrementOntoIdentity` gleichsetzt) verlor ihren
-Anker: links `Integer` ohne Erzeugung, rechts `Integer` mit `ALWAYS` — ein
-Fehlalarm im Migrate-Pfad auf einer Spalte, die der Lauf selbst so angelegt
-hat. Der Kanonisierer laesst die Autowert-Schreibweise deshalb stehen; ein
-Test pinnt das.
+**Eine Folge, die mitmusste — und nach dem Matrixlauf korrigiert wurde:**
+`MssqlNeutralTypeCanonicalizer` ist als `reverse(toSql(t))` gebaut;
+`toSql(Identifier(autoIncrement))` ist `INT IDENTITY(1,1)`, die
+Speicherrealitaet also `integer`. Der erste Stand liess die Autowert-Schreibweise
+stehen (Carve-out), aus der Befuerchtung heraus, die Identitaets-Faltung des
+Comparators (`identitySpelledDifferently`) verloere ihren Anker. Der
+Migrate-Lauf mass das Gegenteil: mit Carve-out stand im Typvergleich links
+`identifier` und rechts `integer` — der Migrate-Pfad plante eine Typaenderung
+auf einer Spalte, die er selbst gerade angelegt hat. Der Typvergleich arbeitet
+auf kanonisierten Typen; die Schreibweise-Gleichheit liegt auf den **rohen**
+Spalten (`identitySpelledDifferently` ueber `foldsAutoIncrementOntoIdentity`) und
+braucht den Unterschied hier gerade nicht. Der Kanonisierer kanonisiert
+`Identifier(autoIncrement = true)` darum wie jede andere Form, und ein Test
+pinnt das Paar.
 
 **Geprueft:** `:adapters:driven:driver-mssql` gruen; drei Bestandstests auf die
 neue Lesart umgestellt (`MssqlTypeMappingTest`, `MssqlSchemaReaderTest`,
@@ -803,8 +808,11 @@ Fehler mit. Also von Hand aus den Artefakten gelesen.
 `identity(always)` als Verlust und verlangte einen Code — fuer eine Spalte,
 die verlustfrei angekommen ist. `silent-loss.sh` kennt jetzt `same_spelling`:
 die Autowert-Schreibweise und eine ausdrueckliche Identitaet sind dieselbe
-Spalte, dieselbe Gleichheit, die der Comparator kennt. Der Eintrag
-`sl_pg_identity_int` faellt aus `SILENT_LOSS_KNOWN` (25 → 24); die Liste ist
+Spalte, dieselbe Gleichheit, die der Comparator kennt — **nur** fuer
+`integer`, denn die 32-Bit-Autowert-Spalte ist in T-SQL `INT IDENTITY`;
+`biginteger`/`smallint` waeren Breitenaenderungen und damit echte Verluste,
+die gemeldet gehoeren. Der Eintrag
+`sl_pg_identity_int` faellt aus `SILENT_LOSS_KNOWN` (7 → 6 Eintraege); die Liste ist
 Code, und ein Eintrag, der nicht mehr auftritt, ist ein Fehlschlag — genau
 so hat sie es gemeldet.
 

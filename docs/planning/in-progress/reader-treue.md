@@ -301,6 +301,7 @@ den Ledger-Eintrag.
 | `R403` | 3, P4 | `WARNING` (Begründung in Plan 3) | **gebaut** |
 | `R404` | 2, P9 (PostgreSQL) | `WARNING` | **gebaut** |
 | `R405` | 2, P3 | `WARNING` (ADR 0058, Entscheidung 1: ein verlorener SRID) | **gebaut** |
+| `R406` | 3, S6 | `WARNING` (der Modus `ALWAYS` geht verloren) | **gebaut** (`PostgresTypeMapping`, mit und ohne Schluessel) |
 | `R221` | 2, P9 (SQLite) | `WARNING` | **gebaut** |
 | `W162` | 2, P5 (MySQL und SQLite) | warning | **gebaut**, an allen fünf Registrierungsorten |
 | `W163` | 2, P10 (MySQL und SQLite) | warning | **gebaut**, an allen fünf Registrierungsorten |
@@ -310,9 +311,11 @@ Dazu hat Plan 2 `R301` (allgemein) an zwei neuen Stellen ausgelöst — Elementa
 eines Arrays und Feldtyp eines zusammengesetzten Typs — und `R365` (Oracle) von
 `INFO` auf `WARNING` gehoben.
 
-Frei und **nicht** vergeben: `R406` (PostgreSQL), `R222` (SQLite), `W165`. Sie
-waren für S1 bis S3 vorgesehen, falls die Messung eine Note statt eines Fixes
-ergibt; alle drei sind behoben worden, also blieb keiner nötig.
+Frei und **nicht** vergeben: `R222` (SQLite) und `W165`. Sie waren für S2/S3
+vorgesehen, falls die Messung eine Note statt eines Fixes ergibt; beide sind
+behoben worden, also blieben sie unnoetig. `R406` war der dritte Kandidat — er
+**ist** vergeben: S6 hat sich gegen die Modellerweiterung und fuer die Meldung
+entschieden (Eigner, 2026-09-18).
 
 **`W162` statt `W149`.** `W149` meldet „Array wird als JSON gerendert" und
 steht im Oracle-Bereich von `spec/ledger.md` (`W145`–`W154`). SQLite rendert

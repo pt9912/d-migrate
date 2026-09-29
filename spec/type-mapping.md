@@ -94,9 +94,16 @@ Anwendertyp.
 **Text-artige Extension-Typen bleiben `enum` mit `ref_type`.** Für `citext`,
 `ltree` und `hstore` wäre `text` bzw. `json` die nähere Entsprechung; solange
 das Reverse sie nicht kennt, ist der benannte Verweis die ehrlichere Form —
-er sagt, welcher Typ dastand. Die Modellfrage dazu ist offen und betrifft nur
-das Reverse-Engineering von Datenbanken mit Extensions; dateibasierte Schemas
-sind nicht betroffen.
+er sagt, welcher Typ dastand. Die Frage betrifft nur das Reverse-Engineering
+von Datenbanken mit Extensions; dateibasierte Schemas sind nicht betroffen.
+
+**Was einer Extension gehört, gehört nicht ins Modell.** Ein Objekt, das eine
+Extension angelegt hat — Tabelle, Typ, Routine, Aggregat oder Sicht —, steht
+zwar im Anwenderschema, ist aber Teil der Extension: ein Reverse, der es
+aufnimmt, schreibt es beim Erzeugen ins Ziel und kollidiert dort mit derselben
+Extension. Das Kriterium ist die Zugehörigkeit im Katalog, **nicht** der Name:
+PostgreSQL führt sie in `pg_depend` (`deptype = 'e'`), Oracle in
+`ALL_OBJECTS.SECONDARY`.
 
 ### 3.2 Interne PG-Typen (name, oid, regclass, etc.)
 
