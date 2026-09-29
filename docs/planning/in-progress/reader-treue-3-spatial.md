@@ -887,6 +887,15 @@ liest. **Vor jedem Matrixlauf also `make docker-build`**, und den Beweis am
 6. **Was gemessen ist und was nicht:** A6 (SpatiaLite) gemessen; A2 und A3
    gemeldet (Vorbedingung geprüft); A5, M3, M7, M11, L4 und N4 im Code
    geprüft.
+7. **Abschluss-Verifikation (eigener Klon, 2026-09-29):** alle sechs DoD-Punkte
+   erfüllt; `docs-check` im Klon ohne Befund. Zwei Grenzen der Belegart, keine
+   DoD-Brueche: S5 hat keinen eigenen Sabotage-Lauf — die Umkehrung ist durch
+   die Bestandstests getragen (`MssqlTypeMappingTest` pinnt `int IDENTITY` →
+   `integer` + `identity(ALWAYS)`, Rücknahme fällt dort rot); und für
+   `listProcedures` ist „Filter weg → Test rot" auf PostGIS 3.6
+   prinzipbedingt unbeobachtbar, weil die Extension keine Prozeduren
+   mitbringt (Messung im Bauabschnitt: 0) — der Test pinnt dort nur die
+   Gegenprobe, dass die Anwenderprozedur bleibt.
 
 ## Offen
 
