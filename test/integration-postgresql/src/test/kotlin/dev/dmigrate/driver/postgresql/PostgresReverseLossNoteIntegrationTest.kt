@@ -189,9 +189,13 @@ class PostgresReverseLossNoteIntegrationTest : FunSpec({
         columns.getValue("id").type shouldBe NeutralType.Identifier(autoIncrement = true)
         columns.getValue("always_counter").type shouldBe NeutralType.Identifier(autoIncrement = true)
 
-        val note = result.notes.single { it.code == "R406" }
+        // Zwei Huelle: `id` (mit Schluessel) und `always_counter` (ohne) —
+        // R406 gilt mit und ohne Schluessel, das `single` filtert auf die
+        // Schluessel-Spalte.
+        val note = result.notes.single {
+            it.code == "R406" && it.objectName == "loss_identity_small.id"
+        }
         note.severity shouldBe SchemaReadSeverity.WARNING
-        note.objectName shouldBe "loss_identity_small.id"
         note.message shouldContain "ALWAYS"
 
         // `always_counter` traegt denselben Verlust …
