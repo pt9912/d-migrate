@@ -382,9 +382,12 @@ silent_loss_target() {
       # (`foldsAutoIncrementOntoIdentity`). Ohne sie meldete der Check hier
       # eine Degradierung, die keine ist — und verlangte einen Code fuer eine
       # Spalte, die verlustfrei angekommen ist.
+      # Nur `integer`: die 32-Bit-Autowert-Spalte ist in T-SQL `INT IDENTITY`.
+      # `biginteger`/`smallint` waeren eine **Breitenaenderung** und damit ein
+      # echter Verlust — der gehoert gemeldet, nicht weggerechnet.
       def same_spelling($sf; $sg; $tf; $tg):
         ($sf == "identifier(auto)") and ($sg == "-")
-        and (($tf == "integer") or ($tf == "biginteger") or ($tf == "smallint"))
+        and ($tf == "integer")
         and ($tg | startswith("identity("));
       ([$report.skipped[] | .name]) as $skipped
       | ([ ($src | to_entries[]) as $entry

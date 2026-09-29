@@ -1,6 +1,8 @@
 package dev.dmigrate.cli
 
 import dev.dmigrate.cli.integration.runRealCli
+import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.format.yaml.YamlSchemaCodec
 import dev.dmigrate.test.containers.newMssqlContainer
@@ -103,7 +105,11 @@ class MssqlSchemaReverseE2ETest : FunSpec({
 
         val customers = schema.tables.getValue("customers")
         customers.primaryKey shouldBe listOf("id")
-        customers.columns.getValue("id").type shouldBe NeutralType.Identifier(autoIncrement = true)
+        // S5 (Reader-Plan 3): `int IDENTITY` traegt seinen Modus wie `bigint`.
+        // Vorher fiel die Spalte auf `identifier` — und das traegt keinen.
+        customers.columns.getValue("id").type shouldBe NeutralType.Integer
+        customers.columns.getValue("id").generation shouldBe
+            ColumnGeneration.Identity(mode = IdentityMode.ALWAYS)
         customers.columns.getValue("name").let {
             it.type shouldBe NeutralType.Text(100)
             it.required shouldBe true

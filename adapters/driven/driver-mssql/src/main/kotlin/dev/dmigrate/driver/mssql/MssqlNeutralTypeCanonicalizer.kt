@@ -72,19 +72,18 @@ internal object MssqlNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
         type: NeutralType,
         customTypes: Map<String, CustomTypeDefinition>,
     ): NeutralType = when {
-        // **Die Autowert-Schreibweise bleibt stehen.** `identifier` mit
-        // `autoIncrement` und `Integer` + `generation: identity` beschreiben
-        // dieselbe Spalte (`INT IDENTITY(1,1)`), und genau dieses Paar faltet
-        // der Comparator ueber `foldsAutoIncrementOntoIdentity`
-        // ([dev.dmigrate.core.diff.TableComparator.identitySpelledDifferently])
-        // — er erkennt es an der Typform. Fiele die Schreibweise hier auf
-        // `Integer` zusammen, verloere die Faltung ihren Anker: links stuende
-        // `Integer` ohne Erzeugung, rechts `Integer` mit `ALWAYS`, und der
-        // Migrate-Pfad meldete eine Aenderung auf einer Spalte, die er selbst
-        // gerade so angelegt hat. Der Reverse liest `INT IDENTITY` seit S5
-        // (Reader-Plan 3) als `Integer` + Identitaet — die Unterscheidung ist
-        // damit keine Projektions-, sondern eine Schreibweise-Frage.
-        type is NeutralType.Identifier && type.autoIncrement -> type
+        // **Kein Carve-out fuer `identifier`.** Der Versuch stand hier kurz
+        // und war falsch: `canonicalize(t) = reverse(toSql(t))` ist die
+        // Zusage dieser Datei, und `toSql(Identifier(auto))` ist
+        // `INT IDENTITY(1,1)` — die Speicherrealitaet ist `integer`. Bliebe
+        // `identifier` stehen, verloere der Typvergleich des Comparators
+        // (`canon(left.type) == canon(right.type)`) seinen Boden: links
+        // stuende `identifier`, rechts `integer`, und der Migrate-Pfad plante
+        // eine Typaenderung auf einer Spalte, die er selbst so angelegt hat.
+        // Die **Schreibweise**-Gleichheit traegt ohnehin der Comparator
+        // ([dev.dmigrate.core.diff.TableComparator.identitySpelledDifferently]),
+        // und der liest die **rohen** Spalten — er braucht den Unterschied
+        // hier gerade nicht.
         type is NeutralType.Enum && type.refType != null ->
             canonicalize(resolveRefType(type, customTypes), customTypes)
         else -> {
