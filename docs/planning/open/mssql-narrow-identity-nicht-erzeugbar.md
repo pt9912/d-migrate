@@ -59,7 +59,7 @@ fünf Generatoren" wäre Teil des Pakets.
   (`E130`, Zeile 275-283).
 - `adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlTypeMappingTest.kt`
   (Zeile 104-108).
-- [`../in-progress/reader-treue.md`](../in-progress/reader-treue.md), Plan 3,
-  Paket S5 (die Plan-Datei steht nach der Graduierung in `../done/`), und
+- Plan 3, Paket S5
+  ([`../done/reader-treue-3-spatial.md`](../done/reader-treue-3-spatial.md)), und
   [`mssql-integer-identity-pk-verliert-den-modus.md`](mssql-integer-identity-pk-verliert-den-modus.md)
   (der `int`-Fall, geschlossen).

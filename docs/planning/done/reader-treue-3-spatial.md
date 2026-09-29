@@ -1,25 +1,62 @@
 # Reader-Treue 3: Spatial-Treue (P4, P7, P2a, P2b)
 
-> **Status:** **In Arbeit seit 2026-09-18.** Schnitt 2026-09-17 aus dem
-> ungeschnittenen Reader-Slice; Befunde aus Plan-Review und
-> Architektur-Prüfung eingearbeitet, Anker gegen `90c6c234f` nachgemessen.
+> **Status:** **Done — graduiert 2026-09-29.** Aktiv seit 2026-09-18; alle
+> Pakete geliefert (P4, P7, P2b und P2a, S6, S5), dazu ein Neu-Pin der
+> Compare-Matrix (P4) und eine Korrekturrunde nach Review und Verifikation.
+> Noch nicht released: die Wirkung steht in `CHANGELOG.md` unter
+> `[Unreleased]`. Schnitt 2026-09-17 aus dem ungeschnittenen Reader-Slice;
+> Befunde aus Plan-Review und Architektur-Prüfung eingearbeitet, Anker gegen
+> `90c6c234f` nachgemessen. Der Bauabschnitt unten hält Nulllinie, Messungen,
+> Sabotagen und Neu-Pins fest; die Closure mit Paket → Commit steht am Ende,
+> jeder verbliebene Punkt mit seinem Ort unter „Restflächen" direkt unter
+> diesem Kopf.
+>
+> **Commits** (in dieser Reihenfolge):
+> `b1faa1d3a` P4 (geography liest als Geometrie, `R403`, Datenpfad) ·
+> `19e907782` Neu-Pin P4 · `49560f581` P7 (SpatiaLite `NOT NULL` nativ) ·
+> `0c932d1cb` P2a/P2b (Katalogfilter) · `0f821e2c8` S6 (`R406`) ·
+> `b34b3fcfb` S5 (`int IDENTITY` mit Modus) · `d32500e2f`, `ebc7306c6`,
+> `978f4788c` Vertrag, Matrix-Harness, Plan · Korrekturrunde `1beebc238`
+> (Kanonisierer-Carve-out revidiert), `5875681b` · Review-Nacharbeit
+> `06e91f2e` · Abschluss-Verifikation `183d3afd` · Validierungs-Nacharbeit
+> `6c2c9558` · Graduation (dieser Commit).
 > Teil des Umbrellas
-> [`reader-treue.md`](reader-treue.md); dort stehen Nenner, Belegart, Regeln
-> der Abnahme, Doku-Pflichten und die Code-Tabelle. Der Bauabschnitt am Ende
-> hält Nulllinie, Messungen, Sabotagen und Neu-Pins fest.
-> **Vorbedingung / Gate:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md) ist geliefert und graduiert
+> [`reader-treue.md`](../in-progress/reader-treue.md), der in
+> `../in-progress/` **bleibt**, solange Plan 4 offen ist. Dort stehen Nenner,
+> Belegart, Regeln der Abnahme, Doku-Pflichten und die Code-Tabelle.
+> **Vorbedingung / Gate:** [Plan 1](reader-treue-1-matrix-abnahme.md) ist geliefert und graduiert
 > (2026-09-18; Matrix als Abnahme,
 > PostGIS-Dienst im eigenen Schema), und
-> [Plan 2](../done/reader-treue-2-meldungen.md) ebenso (2026-09-18) — **P3
+> [Plan 2](reader-treue-2-meldungen.md) ebenso (2026-09-18) — **P3
 > steht damit**, also auch die Grundlage, die P4 auf `geography_columns`
 > erweitert; der PostGIS-Container in `:test:integration-postgresql` ist seit
 > P3 gefahren. Die Eigner-Entscheidungen F1 (P4 nur Rückweg) und A6 (P7)
 > stehen; keine offene Frage sperrt diesen Plan.
 > **Aktivierung:** mit dem ersten Implementierungs-Commit (P4) nach
 > `in-progress/` gewandert (2026-09-18); der Umbrella bleibt, wo er ist.
-> **Abhängigkeit:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md) und, für P4, P3 aus
-> [Plan 2](../done/reader-treue-2-meldungen.md) — **beide geliefert**. P7, P2a und P2b
+> **Graduiert** am 2026-09-29 (Move nach `../done/`); der Umbrella bleibt in
+> `../in-progress/`.
+> **Abhängigkeit:** [Plan 1](reader-treue-1-matrix-abnahme.md) und, für P4, P3 aus
+> [Plan 2](reader-treue-2-meldungen.md) — **beide geliefert**. P7, P2a und P2b
 > hängen an keinem anderen Paket und berühren die Matrix nicht.
+
+## Restflächen (2026-09-29)
+
+**Nichts davon ist Bauschuld dieses Plans.** Jeder Punkt ist eine
+Eigner-Entscheidung, ein beim Bauen sichtbar gewordener Befund oder eine
+Grenze, die der Plan bewusst zieht. Jeder hat einen Ort außerhalb; die Liste
+„Offen" weiter unten bleibt als Stand vor der Graduation stehen.
+
+| Punkt | Ort |
+| --- | --- |
+| **Der planmandierte S5-Nachbarfall:** `smallint`/`tinyint`/`decimal` IDENTITY lesen auf SQL Server als Basistyp + `identity(ALWAYS)` — genau die Form, die `E130` ablehnt; aus dem SQL-Server-Reverse einer `SMALLINT IDENTITY`-Spalte lässt sich nichts erzeugen. Derselbe Defekt, den S6 auf der PostgreSQL-Seite mit `R406` benannt hat, hier ohne den Code | [`../open/mssql-narrow-identity-nicht-erzeugbar.md`](../open/mssql-narrow-identity-nicht-erzeugbar.md); die Spec-Zeile 6.2 (`spec/type-mapping.md`) trägt den `E130`-Vorbehalt |
+| **Der SpatiaLite-Tabellen-Neubau blockt** an Geometriespalten (`SPATIAL_METADATA_UNSUPPORTED`), weil er die Registrierung (Metadaten, Trigger, R\*Tree) nicht mitnimmt — gebaut ist die Blockade; ein Neubau, der die Registrierung mitnimmt, ist der eigene Posten (P7, Stelle 4) | [`../open/spatialite-rebuild-registrierung.md`](../open/spatialite-rebuild-registrierung.md) |
+| **Das Modellattribut „geodätisch"** — PostgreSQL rendert vorwärts weiter `geometry`; eine `geography`-Spalte übersteht PostgreSQL → PostgreSQL nicht (F1). Die Spannung zum Lastenheft ([`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) nennt `GEOGRAPHY` als PostGIS-Zielform) trägt der Eintrag | [`../open/geometrie-geodaetisch-modellattribut.md`](../open/geometrie-geodaetisch-modellattribut.md) |
+| **Der SpatiaLite-Bootstrap (ADR 0016) steht nicht in `spec/`** — ältere Lücke; die Abgrenzung hat sie bewusst nicht geschlossen, und 16.5 wurde neu gefasst, ohne dass der Bootstrap ohne Umbau hineinpasste | „Offen" unten; [ADR 0016](../../adr/0016-spatialite-metadata-bootstrap.md) |
+| **Der Umfangs-Unterschied CLI gegen MCP** (`schema reverse` liest Sichten und Routinen nur mit `--include-*`, `schema_reverse_start` immer) bleibt; behoben ist der PostGIS-in-`public`-Teil (P2b) | [`../open/reverse-umfang-cli-gegen-mcp.md`](../open/reverse-umfang-cli-gegen-mcp.md), Nachtrag 2026-09-18 |
+
+**Und die `Datei:Zeile`-Anker im Text sind Entwurfs- bzw. Bauabschnittsstand.**
+Wer einen Beleg nachfährt, sucht über den Symbolnamen.
 
 ## Befund
 
@@ -922,3 +959,60 @@ liest. **Vor jedem Matrixlauf also `make docker-build`**, und den Beweis am
   Nachbarfall (`smallint`/`tinyint`/`decimal` auf SQL Server) blieb offen und
   steht in
   [`../open/mssql-narrow-identity-nicht-erzeugbar.md`](../open/mssql-narrow-identity-nicht-erzeugbar.md).
+
+## Closure
+
+**Graduiert 2026-09-29.** Alle Pakete sind gebaut (P4, P7, P2b und P2a, S6,
+S5), dazu ein Neu-Pin der Compare-Matrix (P4) und eine Korrekturrunde nach
+Review. Released ist es nicht: die Wirkung steht in `CHANGELOG.md` unter
+`[Unreleased]`. Offen bleibt in diesem Plan nichts; jeder verbliebene Punkt
+hat unter „Restflächen" einen Ort außerhalb. Der Umbrella
+[`reader-treue.md`](../in-progress/reader-treue.md) bleibt in
+`../in-progress/`, weil Plan 4 offen ist.
+
+**Woran „fertig" gemessen ist** — am Vertrag, nicht an diesem Plan (Urteil
+der Validierung):
+
+- [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004) (Extraktion
+  datenbankeigener Objekte; PostGIS als Spezial-Feature, Abschnitt 8.4):
+  **bedient** — ein PostGIS-in-`public`-Reverse führt keine Funktion, kein
+  Aggregat und keine Sicht der Extension (`pg_depend.deptype = 'e'`, P2b),
+  und Oracles Spatial-Sequenz fällt über das Katalogkriterium
+  `ALL_OBJECTS.SECONDARY = 'Y'` weg, ohne dass ein Anwenderobjekt mit
+  verschwindet (`SDO_ORDER_SEQ` und `MDRS_KUNDE$` bleiben, P2a).
+- [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) (Geometrie-Spalten
+  für PostGIS und SpatiaLite abbildbar): **teilweise bedient** — SpatiaLite
+  ja: eine `required`-Geometriespalte entsteht nativ als `NOT NULL`, ohne
+  `E052`, in Generate und Migrate (P7). Die `GEOGRAPHY`-Zielform bleibt
+  bewusst offen (F1): PostgreSQL rendert vorwärts weiter `geometry`,
+  `geography` liest nur auf dem Rückweg als Geometrie mit SRID, benannt mit
+  `R403` (P4); das Modellattribut dafür ist eine Restfläche.
+
+**Die Grenzen der Belegart** aus der Abschluss-Verifikation bleiben benannt
+(Verifikation, Punkt 7): S5 hat keinen eigenen Sabotage-Lauf — die Umkehrung
+ist durch die Bestandstests getragen (`MssqlTypeMappingTest` pinnt
+`int IDENTITY` → `integer` + `identity(ALWAYS)`, die Rücknahme fällt dort
+rot); und für `listProcedures` ist „Filter weg → Test rot" auf PostGIS 3.6
+prinzipbedingt unbeobachtbar, weil die Extension keine Prozeduren mitbringt
+(Messung im Bauabschnitt: 0) — der Test pinnt dort nur die Gegenprobe, dass
+die Anwenderprozedur bleibt.
+
+**Paket → Commit**
+
+| Abschnitt | Paket | Commit |
+| --- | --- | --- |
+| Bau | P4 — `geography` liest als Geometrie mit SRID, benannt mit `R403`, samt Datenpfad und `geography`-Seed | `b1faa1d3a` |
+| Neu-Pin | P4 — die `geography`-Spalte in der Matrix | `19e907782` |
+| Bau | P7 — `NOT NULL` an einer Geometriespalte geht auf SpatiaLite nativ | `49560f581` |
+| Bau | P2a/P2b — extension-eigene und interne Objekte gehören nicht ins Modell | `0c932d1cb` |
+| Bau | S6 — eine `smallint`-Identity meldet den verlorenen Modus (`R406`) | `0f821e2c8` |
+| Bau | S5 — `int IDENTITY` trägt seinen Modus | `b34b3fcfb` |
+| Vertrag | S5 und S6 — `R406`, die SQL-Server-Identity-Lesart und ihre Folge | `d32500e2f` |
+| Neu-Pin | S5 — die Matrix trägt die neue SQL-Server-Lesart, der Check kennt die Schreibweise | `ebc7306c6` |
+| Plan | P2a/P2b, S5 und S6 gebaut, mit der Lehre aus dem Matrixlauf | `978f4788c` |
+| Korrektur | S5-Korrektur — der Kanonisierer fällt `identifier(auto)` auf `integer` | `1beebc238` |
+| Vertrag | P2a/P2b — Extension-Regel, `R406` in der Code-Tabelle, Nachtrag | `5875681b` |
+| Review | Plan-3-Review — S5-Nachbarfall in `open/`, `E130`-Vorbehalt, Rubriken | `06e91f2e` |
+| Verifikation | Abschluss-Verifikation — alle sechs DoD-Punkte erfüllt | `183d3afd` |
+| Validierung | Rebuild-Registrierung in `open/`, README-Status | `6c2c9558` |
+| Graduation | Closure, Restflächen, Move nach `../done/`; Nachträge im Umbrella und in `open/` | der Move-Commit |

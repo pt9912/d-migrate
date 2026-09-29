@@ -1,7 +1,7 @@
 # SpatiaLite: ein Tabellen-Neubau, der die Geometrie-Registrierung mitnimmt
 
 > **Status:** Draft / Trigger Watch — aus Plan 3 (P7, Stelle 4) abgetrennt.
-> **Trigger:** Der Bau von P7 (`../in-progress/reader-treue-3-spatial.md`,
+> **Trigger:** Der Bau von P7 (`../done/reader-treue-3-spatial.md`,
 > Umbrella `../in-progress/reader-treue.md`) hat entschieden: der
 > Tabellen-Neubau an einer Tabelle mit Geometriespalte **blockt** mit
 > `SPATIAL_METADATA_UNSUPPORTED`, weil er die SpatiaLite-Registrierung nicht
@@ -37,5 +37,5 @@ SpatiaLites Bootstrap (ADR 0016) vorab erfüllt.
 
 - `SqliteRebuildRenderer.kt` (Blockade beider Seiten, `emitGeometryBlockerIfAny`).
 - `SqliteSpatialDiffOps.kt` (die Auslöser des Blocks).
-- [`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md),
+- [`../done/reader-treue-3-spatial.md`](../done/reader-treue-3-spatial.md),
   Paket P7, Stelle 4, und die „Offen"-Liste des Plans.

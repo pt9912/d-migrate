@@ -12,7 +12,7 @@
 ## Nachtrag 2026-09-18 — der PostGIS-Teil ist behoben
 
 Die DoD von P2b in
-[`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md)
+[`../done/reader-treue-3-spatial.md`](../done/reader-treue-3-spatial.md)
 verlangt einen Vermerk hier: Der **Umfang**-Unterschied bleibt (er ist der
 Gegenstand dieses Eintrags), aber die **Flut** ist weg. `schema_reverse_start`
 las jede extension-eigene Funktion und Sicht mit; seit P2b filtert der
@@ -41,7 +41,7 @@ Umfang stammen.
 PostGIS-Funktionen (im Repro gemessen, beim Konsumenten bekannt und durch ein
 eigenes Schema `postgis` umgangen). Dieser Teil ist ein Reader-Thema und steht
 im Reader-Slice
-([`reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md),
+([`reader-treue-3-spatial.md`](../done/reader-treue-3-spatial.md),
 Posten A3, Paket P2b); der Umfangs-Unterschied bleibt auch nach dessen Fix.
 
 ## Zu klären

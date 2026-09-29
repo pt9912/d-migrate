@@ -1,7 +1,7 @@
 # Vertragsfrage: E052 verwirft die ganze Tabelle (SpatiaLite-Profil)
 
 > **Status:** **Geschlossen (2026-09-18)** — P7 in Plan 3 des Reader-Slices ist
-> gebaut ([`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md)).
+> gebaut ([`../done/reader-treue-3-spatial.md`](../done/reader-treue-3-spatial.md)).
 > `required` an einer Geometriespalte geht jetzt nativ über das sechste
 > Argument von `AddGeometryColumn`, in **beiden** Pfaden (Generate und
 > Migrate); der Reverse verwirft SpatiaLites Füllwert `DEFAULT ''`. Was weiter
@@ -33,7 +33,7 @@
 > (Kandidat 2 unter „Verworfene/aufgeschobene Alternativen"); die Auslöser von
 > `E052` waren nie Gegenstand eines ADR.
 > **Umsetzung (2026-09-17):** wird in **P7** gebaut
-> ([`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md));
+> ([`../done/reader-treue-3-spatial.md`](../done/reader-treue-3-spatial.md));
 > dieser Eintrag schließt mit dessen Lieferung, nicht vorher. Beim
 > Aktivierungsschnitt nachgemessen und dort festgehalten: die drei
 > Spec-Stellen unten haben `NOT NULL` **nie** als Auslöser genannt — die
@@ -45,7 +45,7 @@
 > Geometriespalte inline an, ohne `AddGeometryColumn`, und die Spec
 > widerspricht sich darin, ob `E052` auch aus `schema migrate` kommt.
 > **Trigger:** Konsumentenmessung gegen 1.7.1 (Posten A6 des Reader-Slices,
-> jetzt in [`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md)):
+> jetzt in [`../done/reader-treue-3-spatial.md`](../done/reader-treue-3-spatial.md)):
 > `schema generate --target sqlite --spatial-profile spatialite` auf einer
 > MySQL-Quelle mit **NOT NULL**-Geometrie erzeugt `E052` und laesst die
 > **komplette** Tabelle aus der Ausgabe fallen — die uebrigen, darstellbaren
@@ -99,7 +99,7 @@ ist — Tabellenblockade als Antwort auf eine Spalteneinschraenkung.
 ## Referenzen
 
 - Befund, Belege und Paket (Posten A6, Paket P7):
-  [`../in-progress/reader-treue-3-spatial.md`](../in-progress/reader-treue-3-spatial.md);
+  [`../done/reader-treue-3-spatial.md`](../done/reader-treue-3-spatial.md);
   Umbrella [`../in-progress/reader-treue.md`](../in-progress/reader-treue.md).
 - [`ADR 0016`](../../adr/0016-spatialite-metadata-bootstrap.md) — SpatiaLite-Metadaten-Bootstrap
   im Migrate-Diff-Pfad; im Generate-Pfad ist dort nur der Bootstrap

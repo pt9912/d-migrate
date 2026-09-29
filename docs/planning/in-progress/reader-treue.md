@@ -1,8 +1,8 @@
 # Reader-Treue: stille Verluste und Fremdes im Reverse und am Generator (Umbrella)
 
-> **Status:** **In Arbeit seit 2026-09-17** (die Pläne 1 und 2 sind geliefert
-> und am 2026-09-18 nach [`../done/`](../done/) graduiert; Plan 3 ist seit
-> 2026-09-18 in Arbeit, Plan 4 steht weiter in [`../next/`](../next/)),
+> **Status:** **In Arbeit seit 2026-09-17** (die Pläne 1, 2 und 3 sind
+> geliefert und graduiert — Plan 1 und 2 am 2026-09-18, Plan 3 am 2026-09-29
+> nach [`../done/`](../done/); Plan 4 steht weiter in [`../next/`](../next/)),
 > **Umbrella über vier Pläne**
 > (Schnitt 2026-09-17, Eigner-Entscheidung „E-Schnitt"). Eingearbeitet sind die Befunde
 > aus Plan-Review und Architektur-Prüfung (gegen `da29034b1`); die Anker sind
@@ -34,7 +34,7 @@ Die Reihenfolge ist Eigner-Entscheidung: 1 → 2 → 3 → 4.
 | --- | --- | --- | --- |
 | [1 — Matrix als Abnahme](../done/reader-treue-1-matrix-abnahme.md) — **geliefert, graduiert 2026-09-18 (`../done/`)** | P6 (MySQL-Server-Text), P0 (Seeds und Silent-Loss-Check), S4 (SQLite-Migrate verliert FK-Aktionen), P12 (T-SQL-Quoting im Berechnungsausdruck), P11 (SQLite-Constraint-Namen); dazu der E1-Bauteil | Compare-Matrix, `:test:integration-mysql`, `:test:integration-sqlite`, `:test:integration-mssql` | — |
 | [2 — Meldungen](../done/reader-treue-2-meldungen.md) — **geliefert, graduiert 2026-09-18 (`../done/`)** | P5 (Array-Verlust MySQL und SQLite), P10 (`ALWAYS` ohne Entsprechung), P8 (`json`), P9 (ungebundene Zahl, unbekanntes Array-Element), P1 (Oracle-SRID), P3 (`search_path`); dazu S1 bis S3, gemessen und behoben statt gemeldet. Gebaut in der Reihenfolge P5 → S2 → P10 → S3 → P8/P9 → S1 → P1 → P3 | Matrix, Integrationsmodule je Dialekt | [Plan 1](../done/reader-treue-1-matrix-abnahme.md) |
-| [3 — Spatial-Treue](reader-treue-3-spatial.md) — **in Arbeit seit 2026-09-18** | P4 (PostgreSQL `geography`, nur Rückweg, samt Datenpfad), P7 (SpatiaLite `NOT NULL`), P2a/P2b (Oracle- und PostGIS-Systemobjekte); dazu S5 und S6 (nachgetragen 2026-09-18, gemeinsam zu entscheiden) | `:test:integration-postgresql` mit PostGIS, `:test:integration-sqlite`, `:test:integration-oracle`, `:test:e2e-cli`, Matrix | [Plan 1](../done/reader-treue-1-matrix-abnahme.md); P4 auf P3 aus [Plan 2](../done/reader-treue-2-meldungen.md) — **beide geliefert**, keine Vorbedingung mehr offen |
+| [3 — Spatial-Treue](../done/reader-treue-3-spatial.md) — **geliefert, graduiert 2026-09-29 (`../done/`)** | P4 (PostgreSQL `geography`, nur Rückweg, samt Datenpfad), P7 (SpatiaLite `NOT NULL`), P2a/P2b (Oracle- und PostGIS-Systemobjekte); dazu S5 und S6 (nachgetragen 2026-09-18, gemeinsam zu entscheiden) | `:test:integration-postgresql` mit PostGIS, `:test:integration-sqlite`, `:test:integration-oracle`, `:test:e2e-cli`, Matrix | [Plan 1](../done/reader-treue-1-matrix-abnahme.md); P4 auf P3 aus [Plan 2](../done/reader-treue-2-meldungen.md) — **beide geliefert**, keine Vorbedingung mehr offen |
 | [4 — Typ berechneter SQL-Server-Spalten](../next/reader-treue-4-mssql-berechneter-typ.md) | P13 (erst messen, dann nach der entschiedenen Regel) | `:test:integration-mssql`, Roundtrip-Harness, Matrix | P12 aus [Plan 1](../done/reader-treue-1-matrix-abnahme.md) |
 
 ## Der gemeinsame Nenner
