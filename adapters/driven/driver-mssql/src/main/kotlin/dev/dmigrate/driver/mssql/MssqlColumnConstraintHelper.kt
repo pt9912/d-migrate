@@ -85,9 +85,10 @@ internal class MssqlColumnConstraintHelper(
 
     private fun computedColumn(colName: String, col: ColumnDefinition): String {
         val computed = requireNotNull(ComputedColumnClause.of(col)) { "computedColumn called for a plain column" }
-        // Ohne `GENERATED ALWAYS` und ohne Typ — beides lehnt SQL Server ab.
+        // Ohne `GENERATED ALWAYS` — das lehnt SQL Server ab; den deklarierten Typ
+        // traegt der Ausdruck als `CAST`-Huelle, nicht als Praefix.
         val suffix = if (computed.stored) " PERSISTED" else ""
-        return "${quoteIdentifier(colName)} AS (${computed.expression})$suffix"
+        return "${quoteIdentifier(colName)} AS (CAST(${computed.expression} AS ${typeMapper.castTargetSql(col.type)}))$suffix"
     }
 
     fun renderColumn(
@@ -103,11 +104,15 @@ internal class MssqlColumnConstraintHelper(
         val generation = col.generation
         val ctx = ColumnContext(tableName, colName, col, table, notes, skipped)
         val declaration = when {
-            // SQL Server faellt aus dem Muster der anderen vier: die Spalte
-            // bekommt ihren Typ aus dem Ausdruck, ein davorstehender Typ ist
-            // ein Syntaxfehler. `PERSISTED` heisst gespeichert; ohne Angabe
-            // wird bei jedem Zugriff gerechnet. NOT NULL, DEFAULT und UNIQUE
-            // sind an einer berechneten Spalte keine Frage.
+            // SQL Server faellt aus dem Muster der anderen vier: ein Typ
+            // davorstehend ist ein Syntaxfehler, und die Spalte bekommt ihren
+            // Typ aus dem Ausdruck abgeleitet (`decimal(23,2)` fuer
+            // `quantity * unit_price` ueber zwei `decimal(12,2)`). Der deklarierte
+            // Typ wird deshalb als `CAST`-Huelle um den Ausdruck gelegt — der
+            // Reverse fuehrt sie gegen den Spaltentyp zurueck (P12-Normalform).
+            // `PERSISTED` heisst gespeichert; ohne Angabe wird bei jedem Zugriff
+            // gerechnet. NOT NULL, DEFAULT und UNIQUE sind an einer berechneten
+            // Spalte keine Frage.
             //
             // Traegt der Ausdruck fremde Grammatik, faellt die Berechnung weg
             // und die Spalte bleibt gewoehnlich — benannt, nicht still.

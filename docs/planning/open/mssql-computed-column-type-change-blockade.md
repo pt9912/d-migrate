@@ -2,7 +2,7 @@
 
 > **Status:** Befund (gemessen 2026-09-29, P13-Messung 3) / Folgeschnitt der
 > Eigner-Entscheidung zu
-> [`../next/reader-treue-4-mssql-berechneter-typ.md`](../next/reader-treue-4-mssql-berechneter-typ.md).
+> [`../in-progress/reader-treue-4-mssql-berechneter-typ.md`](../in-progress/reader-treue-4-mssql-berechneter-typ.md).
 > **Trigger:** P13-Messung 3 — Soll = SQL-Server-Reverse mit abgeleitetem
 > Typ, Ziel = Datenbank mit `CAST`-Hülle (dezimal(14,2)): `schema migrate`
 > rendert `ALTER TABLE [orders] ALTER COLUMN [line_total] DECIMAL(25,4)
@@ -41,5 +41,5 @@ beide Seiten aus derselben d-migrate-Generierung — vielmehr gefaltet wird
 
 - `MssqlColumnConstraintHelper` (Generierung des berechneten Ausdrucks).
 - `DiffPlanner` / `AlterColumnType` (die gerenderte Operation).
-- [`../next/reader-treue-4-mssql-berechneter-typ.md`](../next/reader-treue-4-mssql-berechneter-typ.md),
+- [`../in-progress/reader-treue-4-mssql-berechneter-typ.md`](../in-progress/reader-treue-4-mssql-berechneter-typ.md),
   „Regelhafte Bewertung" und die Eigner-Entscheidung.

@@ -108,6 +108,25 @@ class MssqlTypeMapper : TypeMapper {
     fun isPrecisionClamped(type: NeutralType): Boolean =
         type is NeutralType.Decimal && type.precision > MAX_DECIMAL_PRECISION
 
+    /**
+     * Zieltyp der `CAST`-Hülle an einer berechneten Spalte: der **deklarierte**
+     * Typ, so wie der Server ihn aus der Hülle ableitet — denn genau gegen
+     * diesen Text vergleicht der Reverse bei der Rückführung der Hülle
+     * ([MssqlServerCast.catalogTypeText]). Ableitungen, die der Server
+     * parameterlos ablegt, aber mit Praezision liest, werden deshalb explizit
+     * gerendert (`DATETIME2(7)`, nicht `DATETIME2`): sonst träfe den Textvergleich
+     * `datetime2` gegen `datetime2(7)`, und die eigene Hülle käme nicht mehr
+     * zurück. `IDENTITY(1,1)` wäre im CAST ein Syntaxfehler — eine berechnete
+     * Spalte ist nie eine Identity.
+     */
+    fun castTargetSql(type: NeutralType): String = when (type) {
+        is NeutralType.Identifier -> "INT"
+        is NeutralType.Time -> "TIME($DEFAULT_DATETIME_PRECISION)"
+        is NeutralType.DateTime ->
+            if (type.timezone) "DATETIMEOFFSET($DEFAULT_DATETIME_PRECISION)" else "DATETIME2($DEFAULT_DATETIME_PRECISION)"
+        else -> toSql(type)
+    }
+
     override fun toDefaultSql(default: DefaultValue, type: NeutralType): String = when (default) {
         // Unicode-Literal, passend zur NVARCHAR-Familie; der Reverse-Parser
         // liest N'…' wieder als StringLiteral.
@@ -144,6 +163,9 @@ class MssqlTypeMapper : TypeMapper {
 
         const val MAX_UNICODE_LENGTH = 4000
         const val MAX_DECIMAL_PRECISION = 38
+
+        /** Sekundenpräzision, die SQL Server für `time`/`datetime2`/`datetimeoffset` ableitet. */
+        const val DEFAULT_DATETIME_PRECISION = 7
 
         /** EPSG geographic CRS block (2D/3D geodetic systems, incl. 4326 WGS 84). */
         val GEODETIC_SRID_RANGE: IntRange = 4000..4999

@@ -76,7 +76,7 @@ class MssqlDiffGenerationOpsTest : FunSpec({
         sqls shouldHaveSize 3
         sqls[0] shouldContain "DROP CONSTRAINT"
         sqls[1] shouldBe "ALTER TABLE [order_line] DROP COLUMN [total];"
-        sqls[2] shouldBe "ALTER TABLE [order_line] ADD [total] AS (qty * 2) PERSISTED;"
+        sqls[2] shouldBe "ALTER TABLE [order_line] ADD [total] AS (CAST(qty * 2 AS INT)) PERSISTED;"
         result.destructiveOperations shouldHaveSize 1
         result.requiresConfirmation shouldBe true
     }

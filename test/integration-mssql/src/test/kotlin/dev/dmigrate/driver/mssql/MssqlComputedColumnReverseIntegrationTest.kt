@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.connection.ConnectionPool
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
@@ -44,6 +45,9 @@ class MssqlComputedColumnReverseIntegrationTest : FunSpec({
                  price DECIMAL(10,2) NOT NULL,
                  total AS (qty * price) PERSISTED,
                  note AS ('n' + CAST(id AS VARCHAR(10))),
+                 declared AS (CAST(qty * price AS DECIMAL(14,2))) PERSISTED,
+                 double_cast AS (CAST(CAST(qty AS VARCHAR(5)) AS VARCHAR(12))),
+                 with_style AS (CONVERT(VARCHAR(30), GETDATE(), 126)),
                  "Menge" INT NOT NULL,
                  "Preis" DECIMAL(10,2) NOT NULL,
                  "Summe" AS ("Menge" * "Preis") PERSISTED)""",
@@ -89,5 +93,32 @@ class MssqlComputedColumnReverseIntegrationTest : FunSpec({
     test("a plain column stays plain") {
         readSchema(pool).tables.getValue("order_line")
             .columns.getValue("qty").generation.shouldBeNull()
+    }
+
+    test("the cast hull on the declared type comes back stripped with the declared type carried (P13)") {
+        val table = readSchema(pool).tables.getValue("order_line")
+
+        // `declared AS (CAST(qty * price AS DECIMAL(14,2))) PERSISTED` legt der
+        // Server als `(CONVERT([decimal](14,2),[qty]*[price]))` ab. Der Reader
+        // fuehrt die aeusserste Huelle gegen den Spaltentyp zurueck — der
+        // deklarierte Typ steht an der Spalte, der Ausdruck ohne Huelle im Modell.
+        val declared = table.columns.getValue("declared")
+        withClue(declared.generation.toString()) {
+            (declared.generation as? ColumnGeneration.Computed).shouldNotBeNull()
+                .expression shouldBe "qty*price"
+        }
+        (declared.type as? NeutralType.Decimal) shouldNotBeNull { precision shouldBe 14; scale shouldBe 2 }
+    }
+
+    test("the counter-probes of the measured rule hold") {
+        val table = readSchema(pool).tables.getValue("order_line")
+
+        // Autorenhuelle auf einen anderen Typ — als innere Huelle realisiert,
+        // sie bleibt, nachdem die aeusserste (Typ = Spaltentyp) gefallen ist.
+        (table.columns.getValue("double_cast").generation as? ColumnGeneration.Computed)
+            .shouldNotBeNull().expression shouldBe "CONVERT(varchar(5),qty)"
+        // `CONVERT` mit Stilargument — drittes Argument, bleibt.
+        (table.columns.getValue("with_style").generation as? ColumnGeneration.Computed)
+            .shouldNotBeNull().expression shouldBe "CONVERT(varchar(30),getdate(),(126))"
     }
 })

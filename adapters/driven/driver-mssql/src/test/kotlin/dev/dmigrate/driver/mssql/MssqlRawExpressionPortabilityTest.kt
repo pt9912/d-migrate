@@ -97,7 +97,8 @@ class MssqlRawExpressionPortabilityTest : FunSpec({
         val sql = result.statements.joinToString("\n") { it.sql }
 
         withClue(sql) {
-            sql.contains("AS (quantity * unit_price) PERSISTED") shouldBe true
+            // P13: der deklarierte Typ reist als `CAST`-Huelle um den Ausdruck.
+            sql.contains("AS (CAST(quantity * unit_price AS DECIMAL(14,2))) PERSISTED") shouldBe true
             sql.contains("CHECK (quantity > 0)") shouldBe true
         }
         result.notes.none { it.code == "E053" } shouldBe true

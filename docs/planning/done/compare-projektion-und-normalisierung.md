@@ -2545,7 +2545,7 @@ unberührt, kein Oracle-Opt-in.
   eine eigene Frage ohne Ort.
 - **Der Typ einer berechneten Spalte in SQL Server** — wandert laut
   Eigner-Entscheidung (2026-09-16) in den
-  [Reader-Slice](../next/reader-treue-4-mssql-berechneter-typ.md); SQL Server führt
+  [Reader-Slice](../in-progress/reader-treue-4-mssql-berechneter-typ.md); SQL Server führt
   keinen deklarierten Typ, der Reverse liest den abgeleiteten
   (`decimal(23,2)` statt `decimal(14,2)`). Steht dort als Posten D1; hier
   nicht gebaut.

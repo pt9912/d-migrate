@@ -434,7 +434,7 @@ internal object MssqlTypeMapping {
 
     // Index HINTER dem schliessenden Quote ('' = Escape); Stringende, wenn
     // das Literal unterminiert ist.
-    private fun endOfStringLiteral(value: String, openQuote: Int): Int {
+    internal fun endOfStringLiteral(value: String, openQuote: Int): Int {
         var index = openQuote + 1
         while (index < value.length) {
             index += when {

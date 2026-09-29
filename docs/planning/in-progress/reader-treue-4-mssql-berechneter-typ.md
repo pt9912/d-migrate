@@ -1,19 +1,20 @@
 # Reader-Treue 4: der Typ einer berechneten SQL-Server-Spalte (P13)
 
-> **Status:** Entwurf mit Scope (Schnitt 2026-09-17 aus dem ungeschnittenen
+> **Status:** **In Arbeit seit 2026-09-29** — Variante a nach der
+> Eigner-Entscheidung (siehe „Entschieden“), Aktivierung mit dem ersten
+> Implementierungs-Commit (Move von [`../next/`](../next/) hierher). Schnitt
+> 2026-09-17 aus dem ungeschnittenen
 > Reader-Slice; Befunde aus Plan-Review und Architektur-Prüfung eingearbeitet,
-> Anker gegen `90c6c234f` nachgemessen). **Die drei P13-Messungen sind
-> eingetragen (2026-09-29)** — sie tragen Variante a, lösen aber den
-> Stopp-Fall F5 aus; die Variante bleibt beim Eigner offen. Teil des Umbrellas
-> [`reader-treue.md`](../in-progress/reader-treue.md); dort stehen Nenner, Belegart, Regeln
+> Anker gegen `90c6c234f` nachgemessen. **Die drei P13-Messungen sind
+> eingetragen (2026-09-29)**. Teil des Umbrellas
+> [`reader-treue.md`](reader-treue.md); dort stehen Nenner, Belegart, Regeln
 > der Abnahme, Doku-Pflichten und die Code-Tabelle.
 > **Vorbedingung / Gate:** P12 aus [Plan 1](../done/reader-treue-1-matrix-abnahme.md) ist geliefert — die Rückführung
 > arbeitet auf normalisiertem Text. Die Entscheidungsregel ist vom Eigner
 > bestätigt (2026-09-17). Kein ADR: die Regel „ohne Typ" steht in
 > `spec/ddl-generation-rules.md` 3.2a und ist eine Spec-Regel.
-> **Aktivierung:** Move nach `../in-progress/` beim ersten
-> Implementierungs-Commit dieses Plans; die Messungen allein sind noch kein
-> Implementierungs-Commit.
+> **Aktivierung:** mit dem ersten Implementierungs-Commit vollzogen
+> (2026-09-29, Move von `../next/` nach `../in-progress/`).
 > **Abhängigkeit:** [Plan 1](../done/reader-treue-1-matrix-abnahme.md) (P12, Nulllinie von `:test:integration-mssql`).
 > Plan 2 und Plan 3 sind keine Vorbedingung; der Plan kommt nach Eigner-Reihenfolge
 > zuletzt.

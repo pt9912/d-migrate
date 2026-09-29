@@ -165,17 +165,16 @@ class MssqlSchemaReader(
             // und `is_persisted` die Speicherform. Ins Modell geht er in
             // neutraler Schreibweise — dieselbe Regel wie beim CHECK
             // (`MssqlTypeMapping.normalizeExpression`): ohne sie traegt jedes
-            // andere Ziel das Klammer-Quoting und lehnt die DDL ab. Fehlt der
+            // andere Ziel das Klammer-Quoting und lehnt die DDL ab. Die
+            // aeusserste `CONVERT`-Huelle auf dem Spaltentyp faellt dabei weg:
+            // sie ist die Ablegeform der `CAST`-Huelle, die der Generator um den
+            // Ausdruck legt, und auf dem normalisierten Text restlos
+            // rueckfuehrbar (`MssqlServerCast.withoutServerTypeCast`). Fehlt der
             // Ausdruck, ist die Berechnung wirklich verloren — dann bleibt es
             // bei der Meldung.
             val computed = if (row.isComputed) {
                 row.computedDefinition?.takeIf { it.isNotBlank() }
-                    ?.let {
-                        ColumnGeneration.Computed(
-                            MssqlTypeMapping.normalizeExpression(it),
-                            stored = row.computedPersisted,
-                        )
-                    }
+                    ?.let { ColumnGeneration.Computed(computedExpression(it, row), stored = row.computedPersisted) }
             } else {
                 null
             }
@@ -316,6 +315,19 @@ class MssqlSchemaReader(
             ?.computedDefinition
         return MssqlHashPartitionRecognition.recognize(definition, scan.boundaries)
     }
+
+    /**
+     * Der Berechnungsausdruck einer Spalte in neutraler Schreibweise, ohne die
+     * aeusserste `CONVERT`-Huelle auf dem Spaltentyp — der Ablegeform der
+     * `CAST`-Huelle, die der Generator um den Ausdruck legt
+     * ([MssqlServerCast.withoutServerTypeCast]). Beides vergleicht gegen den
+     * Katalogtext des Spaltentyps, aus derselben Zeile gelesen.
+     */
+    private fun computedExpression(raw: String, row: MssqlMetadataQueries.ColumnRow): String =
+        MssqlServerCast.withoutServerTypeCast(
+            MssqlTypeMapping.normalizeExpression(raw),
+            MssqlServerCast.catalogTypeText(row.typeName, row.maxLength, row.precision, row.scale),
+        )
 
     /**
      * Die Eimerspalte aus allen Indizes.
