@@ -196,7 +196,12 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
 
             val customers = result.schema.tables.getValue("customers")
             customers.primaryKey shouldBe listOf("id")
-            customers.columns.getValue("id").type shouldBe NeutralType.Identifier(autoIncrement = true)
+            // S5 (Reader-Plan 3): `int IDENTITY` traegt seinen Modus wie
+            // `bigint` — `integer` + `identity(ALWAYS)` statt `identifier`.
+            customers.columns.getValue("id").let {
+                it.type shouldBe NeutralType.Integer
+                it.generation shouldBe ColumnGeneration.Identity(mode = IdentityMode.ALWAYS)
+            }
             customers.columns.getValue("name").let {
                 it.type shouldBe NeutralType.Text(100)
                 it.required shouldBe true

@@ -2,8 +2,10 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.FloatPrecision
+import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
@@ -62,7 +64,16 @@ class MssqlPostCompareFingerprintIntegrationTest : FunSpec({
             "probe" to TableDefinition(
                 primaryKey = listOf("id"),
                 columns = linkedMapOf(
-                    "id" to column(NeutralType.Identifier(autoIncrement = true), required = true),
+                    // S5 (Reader-Plan 3): der Generator rendert integer +
+                    // identity(ALWAYS) als INT IDENTITY(1,1), und genau so
+                    // liest der Reverse zurueck — der Fingerprintkoerper
+                    // traegt die Generation, die Autorenseite muss sie
+                    // beschreiben.
+                    "id" to ColumnDefinition(
+                        type = NeutralType.Integer,
+                        required = true,
+                        generation = ColumnGeneration.Identity(mode = IdentityMode.ALWAYS),
+                    ),
                     // Fixpunkte
                     "n_int" to column(NeutralType.Integer),
                     "n_big" to column(NeutralType.BigInteger),
@@ -93,7 +104,12 @@ class MssqlPostCompareFingerprintIntegrationTest : FunSpec({
             "probe" to TableDefinition(
                 primaryKey = listOf("id"),
                 columns = linkedMapOf(
-                    "id" to column(NeutralType.Identifier(autoIncrement = true), required = true),
+                    // Dieselbe Autorenform wie in typeProbe — s. die Anmerkung dort.
+                    "id" to ColumnDefinition(
+                        type = NeutralType.Integer,
+                        required = true,
+                        generation = ColumnGeneration.Identity(mode = IdentityMode.ALWAYS),
+                    ),
                     "mood" to column(NeutralType.Enum(values = listOf("red", "green"))),
                 ),
             ),

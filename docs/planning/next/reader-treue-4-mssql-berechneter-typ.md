@@ -251,6 +251,19 @@ differierender abgeleiteter Typen (Soll: Reverse ohne Hülle, `decimal(25,4)`,
   **Eigner-Frage**. Die Variante bleibt deshalb offiziell offen; nichts
   gebaut.
 
+**Entschieden (Eigner, 2026-09-29): Variante a, die Schutzwand als
+Folgeschnitt.** Die Messungen tragen Variante a (Rückführung auf
+normalisiertem Text exakt, die „hinnnehmbar"-Frage bejaht). Der gemessene
+Stopp-Fall wiegt den Bau nicht auf: die geplante Typänderung ist **laut**
+(der Server lehnt das `ALTER` an der berechneten Spalte ab), sie bildet den
+realen Drift ab, und sie ist heute schon über Autorenhüllen erreichbar —
+Variante a macht sie zum Normalfall, räumt aber zugleich genau diese Drift
+für die Paarung d-migrate-Schema gegen d-migrate-DB ab. Die Schutzwand —
+eine geplante Typänderung an einer berechneten Spalte **blocken** statt
+rendern — ist ein heutiger, eigenständiger Defekt und bekommt einen eigenen
+Posten:
+[`../open/mssql-computed-column-type-change-blockade.md`](../open/mssql-computed-column-type-change-blockade.md).
+
 **Regel (Eigner, 2026-09-17):**
 - **Variante a** — der Generator hüllt den Ausdruck in `CAST(… AS <typ>)`,
   der Reader führt die äußerste `CONVERT`-Hülle zurück —, **nur** wenn
@@ -326,13 +339,16 @@ differierender abgeleiteter Typen (Soll: Reverse ohne Hülle, `decimal(25,4)`,
 
 ## Offen
 
-- **Messung 3, Herkunft — gemessen (2026-09-29):** geplant ist **keine**
-  `AlterColumnGeneration` (der Ausdrucksunterschied bleibt unentscheidbar),
-  aber eine gerenderte `AlterColumnType` an der berechneten Spalte — dieselbe
-  In-place-Falle (3.2a). Ob diese Typänderung für bestehende Artefakte
-  hinnnehmbar ist (sie bildet den realen Drift ab) oder als Fehlalarm
-  unterbleiben muss, ist die Eigner-Frage, die den Bau stoppt.
+- **Messung 3, Herkunft — gemessen (2026-09-29), entschieden (Eigner,
+  2026-09-29):** geplant ist **keine** `AlterColumnGeneration` (der
+  Ausdrucksunterschied bleibt unentscheidbar), aber eine gerenderte
+  `AlterColumnType` an der berechneten Spalte — dieselbe In-place-Falle
+  (3.2a). Der Eigner hat sie als hinnnehmbar entschieden (laut, reale Drift,
+  heute schon über Autorenhüllen erreichbar); die Schutzwand kommt als
+  eigener Posten
+  ([`../open/mssql-computed-column-type-change-blockade.md`](../open/mssql-computed-column-type-change-blockade.md)).
 - **Autorentext mit eigener Hülle auf denselben Typ** (Messung 2) — gemessen
   (2026-09-29): von der Generatorhülle ununterscheidbar, ihre Entfernung
   bedeutungserhaltend, die DDL des Hin- und Rückwegs stabil; die Messung
-  hebt das Ausschlusskriterium für Variante a nicht.
+  hebt das Ausschlusskriterium für Variante a nicht. **Kein offener Punkt
+  mehr.**
