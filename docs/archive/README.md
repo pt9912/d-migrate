@@ -20,3 +20,4 @@ der Datei trotzdem um, damit sie lesbar bleiben.
 | ----- | ----- | ---------- |
 | [`design.md`](design.md) | retiriert: veralteter Ist/Soll-Überblick, überholt durch `spec/architecture.md` ([ADR 0024](../adr/0024-ist-zustand-dokumentation.md)) | [`design-md-retire.md`](../planning/done/design-md-retire.md) |
 | [`reader-treue-spatial-array-json.md`](reader-treue-spatial-array-json.md) | durch Schnitt überholt (2026-09-17): in vier Pläne unter einem Umbrella geteilt | [`reader-treue.md`](../planning/next/reader-treue.md) |
+| [`sdkman-distribution.md`](sdkman-distribution.md) | verworfen (2026-10-22): kein SDKMAN-Kanal, Workflow gelöscht ([ADR 0059](../adr/0059-kein-sdkman-kanal.md)) | — |

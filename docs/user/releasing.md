@@ -688,42 +688,6 @@ docker pull ghcr.io/pt9912/d-migrate:X.Y.Z-native
 docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z-native --help
 ```
 
-#### 4.3.4 SDKMAN
-
-Mit dem Tag-Push publiziert
-[`sdkman-release.yml`](../../.github/workflows/sdkman-release.yml) die Version an
-SDKMAN (`sdk install dmigrate`). Ein **separater** Workflow, nicht Teil der
-Release-Erzeugung — analog zum Native-Image-Workflow. Der Job wartet, bis das
-ZIP-Asset am Release liegt, bevor er die URL an SDKMAN meldet (die API lädt sie
-selbst herunter).
-
-> **Nicht auf `on: release` umstellen.** Genau so war es zuerst gebaut, und der
-> Workflow lief zum `v1.0.0-RC2`-Tag **gar nicht**: Releases, die dieser Repo per
-> `GITHUB_TOKEN` erzeugt, lösen laut
-> [GitHub-Doku](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
-> keine weiteren Workflow-Läufe aus. Einordnung des Kanals:
-> [ADR 0042](../adr/0042-sdkman-kein-1.0.0-gate.md).
-
-- **Artefakt:** das UNIVERSAL-JVM-Launcher-ZIP `d-migrate-X.Y.Z.zip` (`bin/d-migrate`
-  + `lib/`; braucht Java). Es ist bereits ein Release-Asset ([4.4](#44-release-assets-aus-dem-grünen-tag-build-beziehen)).
-- **Mechanik:** offizielle Action `sdkman/sdkman-release-action` (SHA-gepinnt) für
-  `POST /release`; `PUT /default` nur bei **Stable** (RCs werden released, aber nicht
-  Default).
-- **Gated auf Secrets:** `SDKMAN_CONSUMER_KEY` / `SDKMAN_CONSUMER_TOKEN`. Fehlen sie,
-  überspringt der Workflow den Publish mit einer Notice (kein roter Release) — wie der
-  Docker-Hub-Spiegel.
-
-**Voraussetzung (einmalig, EXTERN):** d-migrate muss ein SDKMAN-Candidate sein — PR an `sdkman/sdkman-db-migrations` (legt den Candidate `dmigrate` an — Anzeigename „d-migrate", keine Versionen), dann armored
-GPG-Public-Key an `info@sdkman.io` → `Consumer-Key`/`Consumer-Token` → als GitHub-Secrets
-hinterlegen. Warum SDKMAN kein 1.0.0-Gate ist und unter welcher Bedingung die
-Roadmap-Zeile schliesst: [ADR 0042](../adr/0042-sdkman-kein-1.0.0-gate.md).
-
-```bash
-# nach grünem sdkman-release.yml-Lauf, auf einem Host mit `sdk` + Java:
-sdk install dmigrate X.Y.Z
-d-migrate --version
-```
-
 ### 4.4 Release-Assets aus dem grünen Tag-Build beziehen
 
 ```bash
@@ -1014,7 +978,6 @@ Für jeden Release abhaken:
 - [ ] Image auf dem Docker-Hub-Spiegel `pt9912/d-migrate:X.Y.Z` verfügbar (`:latest` nur bei Stable)
 - [ ] Natives Container-Image `ghcr.io/pt9912/d-migrate:X.Y.Z-native` verfügbar (`:native` nur bei Stable), Docker-Hub-Spiegel dito
 - [ ] [`native-image.yml`](../../.github/workflows/native-image.yml) für den Tag: **Linux-Leg + `attach-release` grün** (Gate, Frage 6 = Hybrid); Windows best-effort (rotes Leg = kein Asset, Release bleibt gültig)
-- [ ] **SDKMAN** ([4.3.4](#434-sdkman)) — nur falls Candidate freigegeben + Secrets gesetzt: `sdkman-release.yml` grün, `sdk install dmigrate X.Y.Z` funktioniert. Sonst Skip (Notice im Log), Release bleibt gültig
 
 **Veröffentlichung**
 - [ ] `release-assets` aus dem grünen Tag-Build heruntergeladen

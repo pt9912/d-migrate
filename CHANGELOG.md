@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Der SDKMAN-Kanal entfaellt.** `sdkman-release.yml` ist geloescht, der
+  Plan archiviert ([ADR 0059](docs/adr/0059-kein-sdkman-kanal.md)). Der Kanal
+  war nie scharf, weil der Candidate nie freigegeben wurde.
+
 ### Added
 
 - **Eine PostGIS-`geography`-Spalte liest als Geometrie und ist benannt

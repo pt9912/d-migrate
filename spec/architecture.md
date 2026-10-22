@@ -1228,7 +1228,6 @@ Distribution-Formate:
    → Zusätzlich als Container-Image `…:<version>-native` (Binary statt JVM)
 
 5. Zukunftspfade
-   → SDKMAN
    → Scoop
 ```
 

@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0059
 date: 2026-08-09
 decision-makers: pt9912
 consulted: docs/planning/next/sdkman-distribution.md, docs/planning/in-progress/roadmap.md, docs/user/releasing.md
