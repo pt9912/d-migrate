@@ -112,6 +112,9 @@ class CanonicalValueCodecTest : FunSpec({
         test("Binary trägt rohe Bytes") {
             codec.canonicalize(byteArrayOf(1, 2, 3), NeutralType.Binary).toList() shouldBe listOf<Byte>(1, 2, 3)
         }
+        test("Array: List und Array<*> kanonisieren gleich") {
+            same(listOf(1, 2, 3) to NeutralType.Array("integer"), arrayOf(1, 2, 3) to NeutralType.Array("integer"))
+        }
         test("Array rekursiv, längen-gerahmt; verschiedene Werte ≠") {
             val a = codec.canonicalize(arrayOf(1, 2, 3), NeutralType.Array("integer"))
             val b = codec.canonicalize(arrayOf(1, 2, 3), NeutralType.Array("integer"))

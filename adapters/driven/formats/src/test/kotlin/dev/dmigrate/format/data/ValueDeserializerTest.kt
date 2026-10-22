@@ -128,6 +128,11 @@ class ValueDeserializerTest : FunSpec({
         forCol(Types.BIGINT).deserialize(tableName, "c", 10_000_000_000L) shouldBe 10_000_000_000L
     }
 
+    test("INTEGER: Short and Byte pass through as Long") {
+        forCol(Types.INTEGER).deserialize(tableName, "c", 7.toShort()) shouldBe 7L
+        forCol(Types.INTEGER).deserialize(tableName, "c", 5.toByte()) shouldBe 5L
+    }
+
     test("INTEGER: string without decimal point parses") {
         forCol(Types.INTEGER).deserialize(tableName, "c", "42") shouldBe 42L
     }
@@ -193,6 +198,13 @@ class ValueDeserializerTest : FunSpec({
 
     test("NUMERIC: integer token with fractional scale stays BigDecimal") {
         forCol(Types.NUMERIC, precision = 10, scale = 2).deserialize(tableName, "c", 42) shouldBe BigDecimal(42)
+    }
+
+    test("NUMERIC: Short, Byte and Float tokens become BigDecimal") {
+        val d = forCol(Types.NUMERIC, precision = 10, scale = 2)
+        d.deserialize(tableName, "c", 7.toShort()) shouldBe BigDecimal(7)
+        d.deserialize(tableName, "c", 5.toByte()) shouldBe BigDecimal(5)
+        d.deserialize(tableName, "c", 1.5f) shouldBe BigDecimal("1.5")
     }
 
     test("NUMERIC: integer token with precision > 18 stays BigDecimal") {
