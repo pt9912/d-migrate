@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Plan archiviert ([ADR 0059](docs/adr/0059-kein-sdkman-kanal.md)). Der Kanal
   war nie scharf, weil der Candidate nie freigegeben wurde.
 
+### Security
+
+- **CVE-2026-68497 (`jackson-databind`) ist im ausgelieferten Image behoben.**
+  Der eigene Pin steht jetzt auf Jackson 2.21.7 (vorher 2.21.5), und eine
+  Constraint hebt das von Flyway mitgebrachte `tools.jackson` von 3.1.5 auf
+  3.1.7. Die in `parquet-jackson-1.17.1.jar` geshadete Kopie (2.21.3) bleibt
+  und steht mit Begruendung in `.trivyignore.yaml`; der Fix liegt bei Apache
+  Parquet.
+
 ### Added
 
 - **Eine PostGIS-`geography`-Spalte liest als Geometrie und ist benannt

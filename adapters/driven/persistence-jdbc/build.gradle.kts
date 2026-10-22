@@ -17,6 +17,19 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql:${rootProject.properties["flywayVersion"]}")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
 
+    // Flyway 13.1.0 bringt Jackson 3 (tools.jackson) in 3.1.5 mit; CVE-2026-68497
+    // ist erst ab 3.1.6 behoben. Heben statt entfernen: Flyway braucht es.
+    constraints {
+        implementation("tools.jackson.core:jackson-databind") {
+            version { require("3.1.7") }
+            because("CVE-2026-68497 — flyway-core 13.1.0 loest sonst auf 3.1.5 auf.")
+        }
+        implementation("tools.jackson.core:jackson-core") {
+            version { require("3.1.7") }
+            because("Gleicher Release-Zug wie jackson-databind 3.1.7 (CVE-2026-68497).")
+        }
+    }
+
     // LF-012 / LN-011 / LN-017 / LN-027: ApprovalChallenge JSON-Codec fuer JSONB-Persistenz
     // (idempotency_reservations.challenge). Jackson-databind +
     // kotlin-Modul reichen; YAML wird hier nicht gebraucht.

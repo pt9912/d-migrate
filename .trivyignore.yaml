@@ -17,7 +17,7 @@ vulnerabilities:
   # Dependabot strukturell NICHT sehen kann: Jackson liegt nicht als eigenes
   # Jar, sondern relokiert nach `shaded/parquet/com/fasterxml` (1100 Klassen)
   # INNERHALB von parquet-jackson. Dessen pom.properties weisen 2.21.3 aus,
-  # waehrend das Projekt selbst 2.21.5 zieht. Kein eigener Pin erreicht diese
+  # waehrend das Projekt selbst 2.21.7 zieht. Kein eigener Pin erreicht diese
   # Kopie; der Fix laege bei Apache Parquet.
   #
   # Warum tragbar: Die Klassen sind UMBENANNT. Eigener Code bindet gegen
@@ -33,7 +33,7 @@ vulnerabilities:
   # dependency-cve-exposure-shipped-artifact.md als Weg 3 fuehrt.
   - id: CVE-2026-54512
     paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
-    statement: "Relokiert in parquet-jackson (shaded/parquet/com/fasterxml); eigener Code nutzt das gepatchte 2.21.5-Jar. Fix liegt bei Apache Parquet."
+    statement: "Relokiert in parquet-jackson (shaded/parquet/com/fasterxml); eigener Code nutzt das gepatchte 2.21.7-Jar. Fix liegt bei Apache Parquet."
     expired_at: 2026-11-15
   - id: CVE-2026-54513
     paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
@@ -42,4 +42,8 @@ vulnerabilities:
   - id: GHSA-r7wm-3cxj-wff9
     paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
     statement: "Siehe CVE-2026-54512 — dieselbe geshadete Kopie (jackson-core)."
+    expired_at: 2026-11-15
+  - id: CVE-2026-68497
+    paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
+    statement: "Siehe CVE-2026-54512 — dieselbe geshadete Kopie (jackson-databind 2.21.3). Eigener Code nutzt das gepatchte 2.21.7-Jar; Fix liegt bei Apache Parquet."
     expired_at: 2026-11-15
