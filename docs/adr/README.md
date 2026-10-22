@@ -95,7 +95,7 @@ argumentiert werden.
 | 0039 | [Externer Security-Audit ist kein 1.0.0-Gate — Verschiebung auf Post-1.0.0](0039-externer-security-audit-kein-1.0.0-gate.md) | accepted |
 | 0040 | [Keychain-Credential-Provider: Backend-Port mit Default-Shell-out und opt-in Native-Modul](0040-keychain-credential-provider-backend-port.md) | accepted |
 | 0041 | [Das publizierte JVM-OCI-Image kommt aus der Dockerfile-`runtime`-Stage, nicht aus Jib](0041-oci-image-aus-dockerfile-runtime-statt-jib.md) | accepted |
-| 0042 | [SDKMAN-Distribution ist kein 1.0.0-Gate — 1.0.0 wird ohne SDKMAN geschnitten](0042-sdkman-kein-1.0.0-gate.md) | accepted |
+| 0042 | [SDKMAN-Distribution ist kein 1.0.0-Gate — 1.0.0 wird ohne SDKMAN geschnitten](0042-sdkman-kein-1.0.0-gate.md) | superseded by ADR-0059 |
 | 0043 | [Interface-Default-Methoden ohne `$DefaultImpls`-Brücke (`-jvm-default=no-compatibility`)](0043-interface-default-ohne-defaultimpls.md) | accepted |
 | 0044 | [Kein natives `macos-arm64`-Binary — GraalVM-Auslieferung auf Linux und Windows begrenzt](0044-kein-macos-native-binary.md) | accepted |
 | 0045 | [Ein Branch statt `develop` → `main` — Entwicklung nach v1.0.1 auf `main`](0045-ein-branch-main-statt-develop-main.md) | accepted |
@@ -112,3 +112,4 @@ argumentiert werden.
 | 0056 | [Dialekt-Schreibweise roher SQL-Texte — `schema compare` setzt sie gleich, `schema migrate` und der Fingerabdruck nicht](0056-dialekt-schreibweise-roher-sql-texte-in-schema-compare.md) | accepted |
 | 0057 | [Eine Semantik für `schema compare` in CLI, `schema_compare` und `schema_compare_start` — die Herkunft einer Seite ist kein Unterschied](0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md) | accepted |
 | 0058 | [Ein beim Reverse verlorener SRID ist eine Warnung, kein Blocker](0058-verlorener-srid-beim-reverse-ist-warnung.md) | accepted |
+| 0059 | [Kein SDKMAN-Kanal — Workflow und Plan entfallen](0059-kein-sdkman-kanal.md) | accepted |

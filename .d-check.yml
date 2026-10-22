@@ -10,8 +10,11 @@
 # wäre dauerhaftes Rauschen ohne Nutzen. docs/planning/done/ bleibt im
 # Scan (frisch abgeschlossen). Begründung: ADR 0010. docs/archive/ (kalt
 # gestellte/retirete Artefakte wie das retirete design.md) ebenso ausgenommen.
+# docs/adr/0042-*: durch ADR 0059 abgeloeste, eingefrorene ADR; ihr Fliesstext
+# verweist historisch auf den nach docs/archive/ verschobenen SDKMAN-Plan, und
+# den Link umzubiegen waere eine Kernaenderung (doc-immutable).
 scan:
-  ignore: ["docs/planning/done-archive/**", "docs/archive/**"]
+  ignore: ["docs/planning/done-archive/**", "docs/archive/**", "docs/adr/0042-sdkman-kein-1.0.0-gate.md"]
 
 modules: [links, anchors, matrix, hostpaths, spans, codepaths, ids, pins, citations, workflows, versions]
 

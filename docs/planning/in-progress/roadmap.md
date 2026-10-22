@@ -770,7 +770,6 @@ approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
 | -------- | ------------------------------------------------- | ------ | ------ |
 | Build    | GraalVM Native Image (Linux, Windows)             | [Slice](../done/graalvm-native-image-distribution.md) | ✅⁸     |
 | Build    | Docker Image auf Docker Hub                       | —      | ✅⁶     |
-| Build    | SDKMAN-Distribution                               | [Slice](../next/sdkman-distribution.md) | ⛔⁷     |
 | Security | Interner Security-Audit                           | —      | ✅⁵     |
 | QA       | 1 Mio. Datensätze Export/Import ohne Datenverlust | 8.1    | ✅¹     |
 | QA       | DDL-Generierung 1.000 Tabellen < 30 Sekunden      | 8.2    | ✅²     |
@@ -828,17 +827,6 @@ pt9912/d-migrate:1.0.0-RC2` **und** `:1.0.0-RC2-native` gelingen, und die gezoge
 Layer-Stack, kein Zweitbau (Vertrag „Spiegel, keine zweite Build-Quelle",
 [`releasing.md` 4.4.1](../../user/releasing.md)). `:latest` bleibt korrekt auf dem letzten Stable,
 da Prereleases es in keiner Registry setzen.
-
-⁷ **Kein 1.0.0-Gate** ([ADR 0042](../../adr/0042-sdkman-kein-1.0.0-gate.md), 2026-08-09): 1.0.0 wird
-**ohne** SDKMAN geschnitten. Auf unserer Seite ist der Kanal fertig
-([`sdkman-release.yml`](../../../.github/workflows/sdkman-release.yml), Dispatch-Pfad am 2026-07-31
-mit `tag=v1.0.0-RC2` real durchlaufen); offen ist ausschließlich der externe Merge des
-Candidate-PRs [#794](https://github.com/sdkman/sdkman-db-migrations/pull/794), der die am 2026-07-31
-gesetzte Wartefrist (2026-08-05) ohne Bewegung verstreichen ließ. Die Zeile bleibt `⛔` — anders als
-der externe Audit wandert sie **nicht** in einen späteren Milestone, weil ein
-`gh workflow run sdkman-release.yml -f tag=vX.Y.Z` nachträglich für den 1.0.0-Tag publiziert (kein
-Re-Release, keine Patch-Version). `✅` erst, wenn `sdk install dmigrate X.Y.Z` tatsächlich
-funktioniert — dieselbe Latte wie beim Docker-Hub-Spiegel.
 
 ⁸ **Kein natives macOS-Binary** ([ADR 0044](../../adr/0044-kein-macos-native-binary.md), 2026-08-15).
 Native Binaries erscheinen für `linux-x64` (Gate) und `windows-x64` (best-effort). Das macOS-Leg
