@@ -56,7 +56,10 @@ jobs:
           [ "${{ steps.meta.outputs.prerelease }}" = "true" ] && PRERELEASE_FLAG="--prerelease"
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release upload "${TAG}" "${RELEASE_DIR}"/* --clobber
-            [ -n "${PRERELEASE_FLAG}" ] && gh release edit "${TAG}" --prerelease
+            # `if` statt `[ ] && …`: bei Stable ist das Flag leer, die Bedingung liefert 1, und
+            # als letzte Anweisung des Zweigs liesse das den Schritt unter `bash -e` scheitern
+            # (so scheiterte der Re-Run von v1.8.0 an einem bereits vorhandenen Release).
+            if [ -n "${PRERELEASE_FLAG}" ]; then gh release edit "${TAG}" --prerelease; fi
           else
             gh release create "${TAG}" "${RELEASE_DIR}"/* --title "${TAG}" --generate-notes ${PRERELEASE_FLAG}
           fi
