@@ -255,6 +255,14 @@ class ValueSerializerTest : FunSpec({
         )
     }
 
+    test("F29: java.sql.Array with primitive int[] and short[] → Sequence of Integer") {
+        val ser = ValueSerializer()
+        val ints = ser.serialize("t", "c", StubSqlArray(intArrayOf(1, 2))) as SerializedValue.Sequence
+        ints.elements shouldBe listOf(SerializedValue.Integer(1), SerializedValue.Integer(2))
+        val shorts = ser.serialize("t", "c", StubSqlArray(shortArrayOf(3, 4))) as SerializedValue.Sequence
+        shorts.elements shouldBe listOf(SerializedValue.Integer(3), SerializedValue.Integer(4))
+    }
+
     test("F29: java.sql.Array with byte[] payload → Base64 Text (binary fallback)") {
         val ser = ValueSerializer()
         val array = StubSqlArray(byteArrayOf(0x01, 0x02, 0x03))
