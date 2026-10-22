@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.7.1**
-(stable, [released 2026-09-16](https://github.com/pt9912/d-migrate/releases/tag/v1.7.1)).
+d-migrate is a working production tool at version **1.8.0**
+(stable, [released 2026-10-22](https://github.com/pt9912/d-migrate/releases/tag/v1.8.0)).
 
 The current capabilities:
 
@@ -161,9 +161,17 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.7.1** (2026-09-16) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **It closes a consumer's
-  findings against 1.7.0.** Oracle now counts the objects it drops — a UNIQUE
+- **Current stable** · **1.8.0** (2026-10-22) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **Readers and `schema
+  compare` now say what they lose.** Reverse names losses it used to keep
+  quiet (PostGIS `geography`, array and `mode: always` losses, identity
+  modes, lost SRIDs); a SQL Server computed column keeps its declared type;
+  `schema_compare` findings name their before and after and follow one
+  semantics in CLI and MCP; the MCP read jobs store the reverse report. The
+  schema fingerprint moves to `schema-fingerprint-v17`, and the image no
+  longer ships `jackson-databind` below the CVE-2026-68497 fix. The SDKMAN
+  channel is dropped. 1.7.1 (2026-09-16) closed a consumer's findings
+  against 1.7.0: Oracle now counts the objects it drops — a UNIQUE
   or PRIMARY KEY on a large-object column (`E057`, the gap SQL Server closed
   in 1.5.1) and its index losses (`W152`, `E052`) — and its exit code follows,
   so a run that quietly lost a constraint no longer reports success. A

@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.7.1** (stabil, [veröffentlicht 2026-09-16](https://github.com/pt9912/d-migrate/releases/tag/v1.7.1)).
+**1.8.0** (stabil, [veröffentlicht 2026-10-22](https://github.com/pt9912/d-migrate/releases/tag/v1.8.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,9 +175,18 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.7.1** (2026-09-16) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Es schließt die Befunde
-  eines Konsumenten gegen 1.7.0.** Oracle zählt jetzt die Objekte, die es
+- **Aktuelles Stable** · **1.8.0** (2026-10-22) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Reader und `schema
+  compare` sagen jetzt, was sie verlieren.** Der Reverse benennt Verluste,
+  die er bisher verschwieg (PostGIS-`geography`, Array- und
+  `mode: always`-Verlust, Identity-Modi, verlorene SRIDs); eine berechnete
+  SQL-Server-Spalte behält ihren deklarierten Typ; `schema_compare`-Funde
+  nennen ihr Vorher und Nachher und folgen in CLI und MCP einer Semantik;
+  die MCP-Lese-Jobs legen den Reverse-Report ab. Der Fingerabdruck steht auf
+  `schema-fingerprint-v17`, und das Image liefert kein `jackson-databind`
+  unterhalb des Fixes für CVE-2026-68497 mehr aus. Der SDKMAN-Kanal
+  entfällt. 1.7.1 (2026-09-16) schloss die Befunde eines Konsumenten gegen
+  1.7.0: Oracle zählt jetzt die Objekte, die es
   wegwirft — ein UNIQUE oder PRIMARY KEY auf einer LOB-Spalte (`E057`, die
   Lücke, die SQL Server in 1.5.1 geschlossen hat) und seine Index-Verluste
   (`W152`, `E052`) —, und der Ausgang folgt: ein Lauf, der still eine
