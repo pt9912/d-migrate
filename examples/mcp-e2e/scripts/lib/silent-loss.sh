@@ -448,7 +448,6 @@ SILENT_LOSS_KNOWN=(
     "ziel postgresql->sqlite: sl_pg_json.payload_jsonb: Degradierung json/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
     "ziel mysql->sqlite: sl_my_expr.note: Degradierung text(40)/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
     "ziel mysql->sqlite: sl_my_expr.stufe: Degradierung text(10)/- -> text/- ohne Code (Anmerkung sagt keinen)|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md"
-    "ziel mysql->mssql: sl_my_expr.stufe: Degradierung text(10)/- -> text(5)/- ohne Code (Anmerkung sagt keinen)|D1 (Plan 4) — SQL Server leitet den Typ einer berechneten Spalte ab"
     "ziel mssql->sqlite: sl_ms_calc.Summe: Degradierung ohne W200 im Generate-Report|Befund open/sqlite-generate-verschweigt-typmarke-und-laenge.md — W200 trifft die berechnete Spalte nicht"
 )
 
