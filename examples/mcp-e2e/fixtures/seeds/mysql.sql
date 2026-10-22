@@ -38,7 +38,7 @@
 -- seed: sl_my_expr.stufe | paket: P6 | quelle: text(10)
 --   ausdruck: (case when ("Menge" > 0) then 'hoch' else 'keine' end)
 --   ziel postgresql: text(10) | code: keinen
---   ziel mssql: text(5) | code: keinen
+--   ziel mssql: text(10) | code: keinen
 --   ziel sqlite: text | code: keinen
 CREATE TABLE sl_my_expr (
   id INT NOT NULL AUTO_INCREMENT,
