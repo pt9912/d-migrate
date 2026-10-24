@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-10-24
+
+### Fixed
+
+- **`schema rollback --execute` bricht bei rohem SQL-Text nicht mehr mit
+  `TARGET_STATE_MISMATCH` ab** (Issue #46). Nach
+  `schema migrate --execute --generate-rollback` endete der Rollback mit Exit
+  `8`, sobald das Schema einen CHECK-Ausdruck oder ein Index-Praedikat
+  (`where`) trug — obwohl die Datenbank dazwischen nicht veraendert wurde.
+  Das Artefakt haelt den Fingerabdruck des Post-Compare, der rohen SQL-Text
+  ausblendet; der Rollback berechnete den des Ziels dagegen mit Text. Jetzt
+  legt auch der Rollback das Ziel durch dieselbe Projektion, und ein Artefakt
+  ohne bestaetigten Post-Compare (ohne `--execute`) und ein Recovery-Artefakt
+  halten ebenfalls den projizierten Soll-Abdruck. Jede andere Abweichung des
+  Ziels bleibt `TARGET_STATE_MISMATCH`. Der Rollback vergleicht rohen Text
+  damit nicht mit; eine Aenderung allein daran faellt ihm nicht auf
+  (Anwenderhandbuch §3.14).
+- **Ein erneuter Lauf von `release-homebrew.yml` scheitert nicht mehr an
+  einem vorhandenen Stable-Release.**
+
 ## [1.8.0] - 2026-10-22
 
 ### Removed

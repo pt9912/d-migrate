@@ -503,6 +503,9 @@ Alle folgenden Dateien anpassen:
 | [`build.gradle.kts`](../../build.gradle.kts)                                                               | `version = "X.Y.Z-SNAPSHOT"` → `"X.Y.Z"`                                                                          |
 | [`CHANGELOG.md`](../../CHANGELOG.md)                                             | `[Unreleased]` und neue Sektion `[X.Y.Z] - YYYY-MM-DD` einfügen, alle Einträge unter den neuen Header verschieben |
 | [`README.md`](../../README.md)                                                                      | „Current Status"-Block: alte SNAPSHOT-Notiz durch released-Eintrag mit Link auf den GitHub-Tag ersetzen           |
+| [`README.de.md`](../../README.de.md)                                             | dieselbe Änderung wie in `README.md` (Versionsangabe und „Status"-Block) — im selben Commit, s. [3.6](#36-dokumentations--und-packaging-konsistenz) |
+| [`version.md`](../../version.md)                                                 | „Aktuell"-Zeile, Docker-Tag, neue Verlaufs-Zeile **und** `<a id>`-Anker auf die neue Version verschieben          |
+| Versions-Pins in `docs/`                                                         | `make docs-check` nach dem Bump fahren: das Modul `versions` meldet `version-stale` für jeden Pin, der noch die alte Version trägt (z. B. ein `ghcr.io/pt9912/d-migrate:X.Y.Z` in einem Repro-Kommando) — nachziehen |
 | [`docs/user/guide.md`](guide.md), [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md), [`docs/user/releasing.md`](releasing.md) | falls der Release neue Kommandos, Flags, Distributionen oder Packaging-Schritte dokumentiert                      |
 | [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md)                                                                | Milestone-Datum aktualisieren, Footer `**Stand**:` und `**Status**:` bumpen                                       |
 
@@ -518,7 +521,7 @@ Versions-Quelle ist [`build.gradle.kts`](../../build.gradle.kts) /
 ### 4.2 Release-Commit auf `main`
 
 ```bash
-git add build.gradle.kts CHANGELOG.md README.md docs/planning/in-progress/roadmap.md
+git add build.gradle.kts CHANGELOG.md README.md README.de.md version.md docs/planning/in-progress/roadmap.md
 git add docs/user/guide.md spec/cli-spec.md spec/architecture.md docs/user/releasing.md
 git commit -m "Release X.Y.Z"
 git push origin main
@@ -964,7 +967,9 @@ Für jeden Release abhaken:
 **Version-Bump auf `main`**
 - [ ] [`build.gradle.kts`](../../build.gradle.kts) Version
 - [ ] [`CHANGELOG.md`](../../CHANGELOG.md) Sektion + Datum
-- [ ] [`README.md`](../../README.md) Current-Status-Block
+- [ ] [`README.md`](../../README.md) **und** [`README.de.md`](../../README.de.md) Current-Status-Block
+- [ ] [`version.md`](../../version.md) Aktuell-Zeile, Docker-Tag, Verlaufs-Zeile und Anker
+- [ ] `make docs-check` grün (meldet übersehene Versions-Pins als `version-stale`)
 - [ ] [`docs/user/guide.md`](guide.md), [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md), [`docs/user/releasing.md`](releasing.md) falls nötig angepasst
 - [ ] [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md) Milestone-Status + Footer
 - [ ] Commit `Release X.Y.Z` gepusht

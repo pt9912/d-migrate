@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.8.0** (stabil, [veröffentlicht 2026-10-22](https://github.com/pt9912/d-migrate/releases/tag/v1.8.0)).
+**1.8.1** (stabil, [veröffentlicht 2026-10-24](https://github.com/pt9912/d-migrate/releases/tag/v1.8.1)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,9 +175,15 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.8.0** (2026-10-22) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Reader und `schema
-  compare` sagen jetzt, was sie verlieren.** Der Reverse benennt Verluste,
+- **Aktuelles Stable** · **1.8.1** (2026-10-24) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Es behebt `schema
+  rollback` bei Schemata mit rohem SQL-Text.** Nach `schema migrate --execute
+  --generate-rollback` endete der Rollback mit Exit 8
+  (`TARGET_STATE_MISMATCH`), sobald das Schema einen CHECK-Ausdruck oder ein
+  Index-Prädikat trug, obwohl niemand die Datenbank angefasst hatte. Der
+  Rollback vergleicht das Ziel jetzt so, wie die Migration es festgehalten
+  hat. Die Linie darunter ist unverändert: **Reader und `schema compare`
+  sagen jetzt, was sie verlieren.** Der Reverse benennt Verluste,
   die er bisher verschwieg (PostGIS-`geography`, Array- und
   `mode: always`-Verlust, Identity-Modi, verlorene SRIDs); eine berechnete
   SQL-Server-Spalte behält ihren deklarierten Typ; `schema_compare`-Funde
