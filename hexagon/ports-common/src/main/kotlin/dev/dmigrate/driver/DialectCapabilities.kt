@@ -357,6 +357,18 @@ data class DialectCapabilities(
      * jemand geschrieben hat.
      */
     val supportsDropIfExists: Boolean = true,
+    /**
+     * Ob der Reverse des Dialekts den Wertevorrat eines `ref_type`-Enums als
+     * CHECK zurueckgibt, den das Soll nur ueber `custom_types` kennt. Nur SQLite:
+     * Enum und Domain liegen dort als unbenannter CHECK an der Spalte, und der
+     * Migrate-Reader liefert ihn zurueck. Abdruck und Wertevorrats-Vergleich
+     * loesen die Soll-Spalte dann gegen die Custom Types auf.
+     *
+     * PostgreSQL fuehrt den Typ selbst, MySQL rendert einen nativen `ENUM`, SQL
+     * Server und Oracle loesen `ref_type` ueber ihren Kanonisierer auf: dort
+     * darf sich nichts aendern.
+     */
+    val resolvesRefTypeVocabulary: Boolean = false,
 ) {
     companion object {
         /**

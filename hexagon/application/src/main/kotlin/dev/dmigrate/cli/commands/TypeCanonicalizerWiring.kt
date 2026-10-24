@@ -27,6 +27,7 @@ internal typealias FingerprintOfSchema = (
     (PartitionConfig) -> PartitionConfig,
     Boolean,
     Boolean,
+    Boolean,
 ) -> String
 
 /**
@@ -225,6 +226,15 @@ fun capabilityFoldsAutoIncrementOntoIdentity(dialect: DatabaseDialect): Boolean 
  */
 fun capabilityProjectsCustomTypes(dialect: DatabaseDialect): Boolean =
     DialectCapabilities.forDialect(dialect).supportsCustomTypes
+
+/**
+ * Ob Abdruck und Wertevorrats-Vergleich den Wertevorrat eines `ref_type`-Enums
+ * auf der Soll-Seite aus den Custom Types aufloesen (siehe
+ * `RefTypeVocabulary`). Nur wo der Reverse des Ziels ihn als CHECK
+ * zurueckgibt -- sonst haette das Ist ein Vokabular und das Soll keins.
+ */
+fun capabilityResolvesRefTypeVocabulary(dialect: DatabaseDialect): Boolean =
+    DialectCapabilities.forDialect(dialect).resolvesRefTypeVocabulary
 
 /**
  * Der Name eines einspaltigen Constraints — oder `null`, wo der Dialekt ihn

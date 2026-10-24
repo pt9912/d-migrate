@@ -3,6 +3,7 @@ package dev.dmigrate.core.diff.migration
 import dev.dmigrate.core.diff.ConstraintDiffContract
 import dev.dmigrate.core.diff.EffectivePrimaryKey
 import dev.dmigrate.core.diff.EnumCheckProjection
+import dev.dmigrate.core.diff.RefTypeVocabulary
 import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
@@ -178,12 +179,19 @@ object MigrationFingerprint {
      * `array(biginteger)` bisher auf `array(text)`. Derselbe unveraenderte
      * Schemastand hasht damit anders.
      *
+     * v18: **der Wertevorrat eines `ref_type`-Enums auf SQLite.** Dessen Reverse
+     * gibt ihn (im Migrate- und Rollback-Pfad) als CHECK zurueck; die Soll-Seite
+     * loest ihn dafuer aus den Custom Types auf ([RefTypeVocabulary]). Ein SQLite-
+     * Schema mit `ref_type`-Enum traegt damit `enum_checks[1]` statt `[0]` — der
+     * Abdruck aendert sich fuer eine unveraenderte Datenbank. Alle anderen
+     * Dialekte hashen bis auf den Algorithmus-Tag wie zuvor.
+     *
      * Die Anhebung ist der Punkt: ohne sie passte ein vor dem Slice
      * erzeugtes Artefakt still nicht mehr, und der Betreiber saehe ein
      * blankes `TARGET_STATE_MISMATCH` statt des Hinweises, das Artefakt neu
      * zu erzeugen.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v17"
+    const val ALGORITHM: String = "schema-fingerprint-v18"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -201,10 +209,11 @@ object MigrationFingerprint {
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
         foldsAutoIncrementOntoIdentity: Boolean = false,
         projectsCustomTypes: Boolean = true,
+        resolvesRefTypeVocabulary: Boolean = false,
     ): String = sha256Hex(
         project(
             schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
-            foldsAutoIncrementOntoIdentity, projectsCustomTypes,
+            foldsAutoIncrementOntoIdentity, projectsCustomTypes, resolvesRefTypeVocabulary,
         ),
     )
 
@@ -231,6 +240,7 @@ object MigrationFingerprint {
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
         foldsAutoIncrementOntoIdentity: Boolean = false,
         projectsCustomTypes: Boolean = true,
+        resolvesRefTypeVocabulary: Boolean = false,
     ): String {
         val sb = StringBuilder()
         sb.append("algorithm=").append(ALGORITHM).append('\n')
@@ -243,7 +253,15 @@ object MigrationFingerprint {
         appendTables(
             sb,
             canonicalizedTables(
-                schema.tables, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+                // v18: ein Dialekt, dessen Reverse den Wertevorrat eines
+                // `ref_type`-Enums als CHECK zurueckgibt, hasht ihn auch auf der
+                // Soll-Seite als Wertevorrat (siehe [RefTypeVocabulary]).
+                if (resolvesRefTypeVocabulary) {
+                    RefTypeVocabulary.resolve(schema.tables, schema.customTypes)
+                } else {
+                    schema.tables
+                },
+                canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
                 foldsAutoIncrementOntoIdentity,
             ),
             canonicalizeType,

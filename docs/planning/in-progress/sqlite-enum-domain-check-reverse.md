@@ -1,10 +1,10 @@
 # SQLite: Wertevorrat von `ref_type`-Enums gegen eine echte Datenbank (Issue #48)
 
-> **Status:** Draft mit Scope (2026-10-24), nach drei Review-Runden. Angelegt
+> **Status:** In Umsetzung (2026-10-24), nach drei Review-Runden. Angelegt
 > nach der Umsetzung von #48/#49 (Commit `6889535c8`), die eine Grenze bewusst
-> offen lässt.
-> **Vorbedingung:** keine. **Aktivierung** (Move nach `../in-progress/`) beim
-> ersten Implementierungs-Commit.
+> offen lässt. Entscheidung: [ADR 0060](../../adr/0060-sqlite-ref-type-enum-wertevorrat-gegen-datenbank.md)
+> (accepted).
+> **Vorbedingung:** keine.
 
 ## Ziel
 
@@ -255,9 +255,10 @@ weiterläuft, ist `DROP TABLE` + `RENAME` durchgelaufen und die Tabelle **leer**
   unverändert, Preflight meldet es vorher; Caveat im Plan-Only-Artefakt ergänzt.
 - `schema rollback` nach einem Rebuild: DDL in `sqlite_master` entspricht dem
   Ausgangszustand, Folgelauf ohne `TARGET_STATE_MISMATCH`.
-- Fingerprints der anderen Dialekte bleiben byte-gleich bis auf den
-  Algorithmus-Tag (Test); v17-Rollback-Artefakt liefert die bestehende
-  Algorithmus-Fehlermeldung.
+- Ohne Dialekt-Gate bleibt der Abdruck unveraendert: ein Schema ohne
+  `ref_type`-Enum hasht mit und ohne Gate gleich (Test); fuer die anderen Dialekte
+  ist das Gate aus, ihr Pfad ist unveraendert bis auf den Algorithmus-Tag.
+  v17-Rollback-Artefakt liefert die bestehende Algorithmus-Fehlermeldung.
 - `make docker-test`, `make docker-check` (betroffene Module, einmal ohne
   `MODULES=` wegen der Signaturänderung im Hexagon), `make integration`,
   `make solid-suppression-gate`, `make docs-check` grün; vor dem Push

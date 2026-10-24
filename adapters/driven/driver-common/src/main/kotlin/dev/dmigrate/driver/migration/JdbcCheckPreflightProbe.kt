@@ -32,6 +32,7 @@ object JdbcCheckPreflightProbe {
         connection: Connection,
         diff: DiffResult,
         expressionText: (String) -> String = { it },
+        refTypeVocabulary: Boolean = false,
     ): List<CheckPreflightDeclaration> {
         val plan = CheckPreflightPlanner.plan(
             diff = diff,
@@ -39,6 +40,7 @@ object JdbcCheckPreflightProbe {
             initialStatus = CheckPreflightPlanner.InitialStatus.NOT_RUN_POLICY,
             identifierQuoter = { SqlIdentifiers.quoteIdentifier(it, dialect) },
             expressionText = expressionText,
+            refTypeVocabulary = refTypeVocabulary,
         )
         return plan.map { planned ->
             try {

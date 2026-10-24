@@ -16,6 +16,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
@@ -178,6 +179,27 @@ class SqliteDiffCustomTypeOpsTest : FunSpec({
             plan.operations.filterIsInstance<dev.dmigrate.core.diff.migration.DiffOperation.CreateCustomType>().map { it.id },
         ) shouldBe true
         r.diagnostics.map { it.code } shouldContain "SQLITE_CUSTOM_TYPE_AT_COLUMN"
+    }
+
+    context("Warnung SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED") {
+        // Gegen eine Datenbank hat das Ist die Spalte, aber keinen Typ.
+        test("fuer eine ENUM entfaellt sie: der Migrate-Reader gibt den Wertevorrat zurueck") {
+            val ee = enumType("a", "b")
+            val diff = SchemaDiff(customTypesAdded = listOf(NamedCustomType("ee", ee)))
+            val plan = planner.plan(schema(emptyMap()), schema(mapOf("ee" to ee)), diff)
+
+            gen.generateUp(plan, DdlGenerationOptions()).diagnostics.map { it.code } shouldNotContain
+                "SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED"
+        }
+
+        test("fuer eine DOMAIN bleibt sie: ihr CHECK ist am Ist nicht zu sehen") {
+            val pos = domain("VALUE >= 0")
+            val diff = SchemaDiff(customTypesAdded = listOf(NamedCustomType("pos", pos)))
+            val plan = planner.plan(domainSchema(emptyMap()), domainSchema(mapOf("pos" to pos)), diff)
+
+            gen.generateUp(plan, DdlGenerationOptions()).diagnostics.map { it.code } shouldContain
+                "SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED"
+        }
     }
 
     test("AlterCustomType einer DOMAIN baut die nutzende Tabelle mit neuem CHECK neu auf") {

@@ -1245,6 +1245,10 @@ Bei SQLite steht der CHECK **unbenannt** (`"n" INTEGER NOT NULL CHECK ("n" >= 0)
 der Reverse liest einen benannten CHECK als Constraint zurück, den das Soll
 (`ref_type`) nicht kennt. Dasselbe gilt für den CHECK einer Enum mit `ref_type`
 und für `schema migrate` (`CREATE TABLE`, `ADD COLUMN`, Tabellen-Neubau).
+Den unbenannten Wertelisten-CHECK einer Enum gibt der Reader im Migrate- und
+Rollback-Pfad als Constraint mit synthetischem Namen `__dm_enum_<tabelle>_<spalte>`
+zurück; ein Tabellen-Neubau schreibt ihn wieder unbenannt am Spaltentext. Der
+CHECK einer Domain ist keine Werteliste und wird nicht zurückgegeben.
 Ein Basistyp ohne neutrales Gegenstück wird nicht roh durchgereicht, sondern
 als `action_required` E053 ausgewiesen (Spalte: `TEXT`).
 

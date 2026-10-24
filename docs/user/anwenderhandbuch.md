@@ -2549,12 +2549,20 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   Werte einer Enum oder `base_type`/`check` einer Domain und planen Sie gegen
   ein `file:`-Ziel des bisherigen Schemas, baut `schema migrate` jede Tabelle
   mit einer `ref_type`-Spalte neu auf (neuer `CHECK`, Daten bleiben
-  erhalten). Der Rückweg ist nicht automatisch möglich
+  erhalten). Der Rückweg gegen ein `file:`-Ziel ist nicht automatisch möglich
   (`ROLLBACK_NOT_POSSIBLE`).
-  Gegen eine **Datenbank** erkennt `schema migrate` eine solche Änderung
-  **nicht**: SQLite meldet Wertevorrat und Domain-`CHECK` einer Spalte nicht
-  zurück. Der Lauf endet mit Exit 0, baut den `CHECK` aber nicht neu und warnt
-  mit `SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED`. `composite` bleibt im Diff
+  Gegen eine **Datenbank** erkennt `schema migrate` eine geänderte **Werteliste
+  einer Enum** ebenfalls und baut die Tabelle mit neuem `CHECK` neu auf (Daten
+  bleiben erhalten, der Folgelauf ist ohne Drift). Trägt eine Zeile einen Wert,
+  den die neue Liste nicht mehr enthält, meldet der Lauf das vor dem Apply
+  (`CHECK_PREFLIGHT_VIOLATIONS`) und lässt die Tabelle unverändert. Führen Sie
+  das erzeugte SQL-Skript nicht in einer Shell aus, die nach einem Fehler
+  weiterläuft: der Neubau würde die Tabelle dann leeren. Der Rückweg ist über
+  `schema rollback` möglich.
+  Den `CHECK` einer **Domain** meldet SQLite nicht zurück: gegen eine
+  Datenbank bleibt eine Domain-Änderung unerkannt, der Lauf endet mit Exit 0,
+  baut den `CHECK` nicht neu und warnt mit
+  `SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED`. `composite` bleibt im Diff
   auf SQLite blockiert; `schema generate` überspringt ihn mit **E054**.
 
 ### 3.22 Testdaten erzeugen (Seed)

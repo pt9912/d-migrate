@@ -238,6 +238,7 @@ class SchemaMigrateRunner(
         val canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
         val foldsAutoIncrementOntoIdentity: Boolean,
         val projectsCustomTypes: Boolean,
+        val resolvesRefTypeVocabulary: Boolean,
     )
 
     // Schemagebunden: ein `Enum(refType)` loest gegen die Custom Types
@@ -250,6 +251,7 @@ class SchemaMigrateRunner(
         val canonicalizePartitioning = capabilityPartitionCanonicalizer(dialect)
         val foldsAutoIncrement = capabilityFoldsAutoIncrementOntoIdentity(dialect)
         val projectsCustomTypes = capabilityProjectsCustomTypes(dialect)
+        val resolvesRefTypeVocabulary = capabilityResolvesRefTypeVocabulary(dialect)
         val desiredSansRawText = RawSqlTextProjection.blank(prepared.sourceNormalized.schema)
         return EndpointFingerprints(
             current = MigrationFingerprint.compute(
@@ -260,6 +262,7 @@ class SchemaMigrateRunner(
                 canonicalizePartitioning,
                 foldsAutoIncrement,
                 projectsCustomTypes,
+                resolvesRefTypeVocabulary,
             ),
             desired = MigrationFingerprint.compute(
                 prepared.sourceNormalized.schema,
@@ -269,6 +272,7 @@ class SchemaMigrateRunner(
                 canonicalizePartitioning,
                 foldsAutoIncrement,
                 projectsCustomTypes,
+                resolvesRefTypeVocabulary,
             ),
             desiredSansRawText = MigrationFingerprint.compute(
                 desiredSansRawText,
@@ -278,12 +282,14 @@ class SchemaMigrateRunner(
                 canonicalizePartitioning,
                 foldsAutoIncrement,
                 projectsCustomTypes,
+                resolvesRefTypeVocabulary,
             ),
             canonicalizeIndex = canonicalizeIndex,
             canonicalizeGeneration = canonicalizeGeneration,
             canonicalizePartitioning = canonicalizePartitioning,
             foldsAutoIncrementOntoIdentity = foldsAutoIncrement,
             projectsCustomTypes = projectsCustomTypes,
+            resolvesRefTypeVocabulary = resolvesRefTypeVocabulary,
         )
     }
 
@@ -592,6 +598,7 @@ class SchemaMigrateRunner(
         endpoints.canonicalizePartitioning,
         endpoints.foldsAutoIncrementOntoIdentity,
         endpoints.projectsCustomTypes,
+        endpoints.resolvesRefTypeVocabulary,
         RawSqlBaseline(
             observedBeforeRun = prepared.targetNormalized.schema,
             touchedObjects = plan.operations.map { it.objectRef.path.first() }.toSet(),
@@ -632,6 +639,7 @@ class SchemaMigrateRunner(
             foldsAutoIncrementOntoIdentity =
                 DialectCapabilities.forDialect(prep.effectiveDialect).rendersAutoIncrementAsIdentity,
             constraintName = capabilityConstraintNameCanonicalizer(prep.effectiveDialect),
+            resolvesRefTypeVocabulary = capabilityResolvesRefTypeVocabulary(prep.effectiveDialect),
         )
         val authorship = OverlayRawTextAuthorship.of(mergedOverlays)
         val serverForm = (prep.targetOp as? CompareOperand.Database)?.let { db ->
@@ -691,6 +699,7 @@ class SchemaMigrateRunner(
                 foldsAutoIncrementOntoIdentity =
                     capabilityFoldsAutoIncrementOntoIdentity(prep.effectiveDialect),
                 projectsCustomTypes = capabilityProjectsCustomTypes(prep.effectiveDialect),
+                resolvesRefTypeVocabulary = capabilityResolvesRefTypeVocabulary(prep.effectiveDialect),
             )
         }
         // Wo der Berechnungsausdruck einer Spalte nicht entscheidbar war, plant

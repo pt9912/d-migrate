@@ -19,11 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Tabelle mit einer `ref_type`-Spalte neu auf; ihr Rueckweg ist nicht
   automatisch moeglich (`ROLLBACK_NOT_POSSIBLE`). Ausserdem schrieb ein
   Tabellen-Neubau eine `ref_type`-Spalte als nacktes `TEXT` und liess den
-  `CHECK` fallen — er bleibt jetzt erhalten. **Grenze:** gegen eine
-  Datenbank sieht der Planer eine Aenderung der Werte nicht (SQLite meldet
-  den Wertevorrat nicht zurueck); der Lauf warnt mit
-  `SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED`. `composite` und `domain` bleiben
-  blockiert (Anwenderhandbuch §3.21).
+  `CHECK` fallen — er bleibt jetzt erhalten. Auch **gegen eine echte
+  Datenbank** erkennt `schema migrate` jetzt eine geaenderte Werteliste einer
+  `ref_type`-Enum und baut die Tabelle mit neuem `CHECK` neu auf (Daten
+  bleiben erhalten, Folgelauf ohne Drift); ein entfernter Wert, den Zeilen
+  noch tragen, wird vor dem Apply gemeldet (`CHECK_PREFLIGHT_VIOLATIONS`),
+  die Tabelle bleibt unveraendert. Dafuer liefert der Reader den unbenannten
+  Wertelisten-`CHECK` im Migrate- und Rollback-Pfad als Constraint zurueck,
+  und Abdruck wie Vergleich loesen den Wertevorrat des Soll aus den
+  `custom_types` auf (ADR 0060). Der Fingerabdruck steht dafuer auf
+  `schema-fingerprint-v18` (von `v17`); ein Rollback-Artefakt eines
+  SQLite-Schemas mit `ref_type`-Enum ist neu zu erzeugen. **Grenze:** eine
+  geaenderte **Domain** gegen eine Datenbank bleibt unerkannt
+  (`SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED`). `composite` bleibt blockiert
+  (Anwenderhandbuch §3.21).
 - **Eine Domain behaelt auf SQLite Basistyp und `CHECK`** (Issue #49).
   `schema generate` schrieb eine Spalte mit `ref_type` auf eine Domain als
   nacktes `TEXT` — obwohl Spec §6.3 „Basistyp + CHECK inline an der Spalte"
@@ -46,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   benannten Typen mit ein, das zurueckgelesene Ziel eines Dialekts ohne Custom
   Types (`supportsCustomTypes = false`) kann sie nie tragen. Jetzt fallen sie
   fuer solche Dialekte aus dem Abdruck. Der Abdruck eines Schemas ohne
-  benannte Typen aendert sich nicht (`schema-fingerprint-v17` bleibt); ein
+  benannte Typen aendert sich nicht; ein
   Rollback-Artefakt, das fuer einen solchen Dialekt mit benannten Typen
   erzeugt wurde, ist neu zu erzeugen.
 

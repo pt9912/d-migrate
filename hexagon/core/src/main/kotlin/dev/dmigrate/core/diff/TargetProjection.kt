@@ -105,4 +105,15 @@ data class TargetProjection(
      * Unterschied, und `schema compare` soll ihn zeigen.
      */
     val constraintName: (String?) -> String? = { it },
+    /**
+     * Ob der Reverse des Ziels den Wertevorrat eines `ref_type`-Enums als CHECK
+     * zurueckgibt, den das Soll nur ueber `custom_types` kennt (SQLite). Dann
+     * loest der Wertevorrats-Vergleich die Soll-Spalte dagegen auf
+     * ([RefTypeVocabulary]); sonst bliebe der Unterschied unsichtbar.
+     *
+     * Eine Spalte, die auch die Gegenseite als `ref_type` fuehrt, bleibt
+     * unaufgeloest: dort deckt der Vergleich der Custom Types die Aenderung ab,
+     * und ein zweites `ColumnDiff` aenderte Operations-IDs.
+     */
+    val resolvesRefTypeVocabulary: Boolean = false,
 )

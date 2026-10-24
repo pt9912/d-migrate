@@ -515,8 +515,13 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         ctx: SqliteDiffRenderContext,
     ): Boolean {
         if (ctx.options.checkPreflights.isEmpty()) return false
-        val checkAdds = bucket.filterIsInstance<DiffOperation.AddConstraint>()
-            .filter { it.constraint.type == ConstraintType.CHECK }
+        // Ein `AlterColumnType` traegt eine Sonde, wenn sein neuer Typ ein
+        // `ref_type`-Enum ist (siehe CheckPreflightPlanner); ohne Deklaration
+        // entscheidet [CheckPreflightGate.decide] auf "weiter".
+        val checkAdds = bucket.filter { op ->
+            (op is DiffOperation.AddConstraint && op.constraint.type == ConstraintType.CHECK) ||
+                op is DiffOperation.AlterColumnType
+        }
         if (checkAdds.isEmpty()) return false
         val blockingDecisions = checkAdds.mapNotNull { op ->
             when (val decision = CheckPreflightGate.decide(op.id, ctx.options.checkPreflights)) {

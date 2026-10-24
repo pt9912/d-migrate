@@ -220,7 +220,7 @@ internal object SchemaMigrateWiring {
         val pool = HikariConnectionPoolFactory.create(config)
         return pool.use { p ->
             val result = DatabaseDriverRegistry.get(config.dialect).schemaReader()
-                .read(p, SchemaReadOptions())
+                .read(p, SchemaReadOptions(sqliteRefTypeChecks = true))
             ResolvedSchemaOperand(
                 reference = userRef,
                 schema = result.schema,

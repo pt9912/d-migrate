@@ -1,6 +1,9 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.diff.EnumCheckProjection
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.CustomTypeKind
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.util.sha256Hex
 
 /**
@@ -93,25 +96,77 @@ object CheckPreflightPlanner {
         initialStatus: InitialStatus,
         identifierQuoter: (String) -> String,
         expressionText: (String) -> String = { it },
+        refTypeVocabulary: Boolean = false,
     ): List<PlannedCheckPreflight> {
         val out = mutableListOf<PlannedCheckPreflight>()
         for (op in diff.operations) {
-            if (op !is DiffOperation.AddConstraint) continue
-            if (op.constraint.type != ConstraintType.CHECK) continue
-            val expression = op.constraint.expression?.takeIf { it.isNotBlank() } ?: continue
-            val table = op.objectRef.path.firstOrNull() ?: continue
-            val sql = "SELECT count(*) FROM ${identifierQuoter(table)} WHERE NOT (${expressionText(expression)})"
-            out += PlannedCheckPreflight(
-                operationId = op.id,
-                dialect = dialect,
-                table = table,
-                constraintName = op.constraint.name,
-                expression = expression,
-                initialStatus = initialStatus,
-                probeSql = sql,
-                sqlHash = sha256Hex(sql),
-            )
+            val planned = when {
+                op is DiffOperation.AddConstraint -> addConstraintProbe(op, dialect, initialStatus, identifierQuoter, expressionText)
+                refTypeVocabulary && op is DiffOperation.AlterColumnType ->
+                    vocabularyProbe(op, diff, dialect, initialStatus, identifierQuoter)
+                else -> null
+            }
+            if (planned != null) out += planned
         }
         return out
+    }
+
+    private fun addConstraintProbe(
+        op: DiffOperation.AddConstraint,
+        dialect: String,
+        initialStatus: InitialStatus,
+        identifierQuoter: (String) -> String,
+        expressionText: (String) -> String,
+    ): PlannedCheckPreflight? {
+        if (op.constraint.type != ConstraintType.CHECK) return null
+        val expression = op.constraint.expression?.takeIf { it.isNotBlank() } ?: return null
+        val table = op.objectRef.path.firstOrNull() ?: return null
+        val sql = "SELECT count(*) FROM ${identifierQuoter(table)} WHERE NOT (${expressionText(expression)})"
+        return PlannedCheckPreflight(
+            operationId = op.id,
+            dialect = dialect,
+            table = table,
+            constraintName = op.constraint.name,
+            expression = expression,
+            initialStatus = initialStatus,
+            probeSql = sql,
+            sqlHash = sha256Hex(sql),
+        )
+    }
+
+    /**
+     * Der Wertevorrat eines `ref_type`-Enums als Sonde: eine Spalte, deren neuer
+     * Typ ein ENUM der Custom Types des Soll-Schemas ist, bekommt einen CHECK, den
+     * die vorhandenen Zeilen verletzen koennen (Wert entfernt). Ohne die Sonde
+     * brach erst der `INSERT ... SELECT` des Neubaus ab.
+     *
+     * Nur fuer Dialekte, die den Wertevorrat so aufloesen (SQLite); sonst ist
+     * `AlterColumnType` eine Typaenderung ohne CHECK.
+     */
+    private fun vocabularyProbe(
+        op: DiffOperation.AlterColumnType,
+        diff: DiffResult,
+        dialect: String,
+        initialStatus: InitialStatus,
+        identifierQuoter: (String) -> String,
+    ): PlannedCheckPreflight? {
+        val type = op.after as? NeutralType.Enum ?: return null
+        val definition = type.refType?.let { diff.desiredSchema?.customTypes?.get(it) }
+            ?.takeIf { it.kind == CustomTypeKind.ENUM } ?: return null
+        val values = definition.values?.takeIf { it.isNotEmpty() } ?: return null
+        val table = op.objectRef.path.getOrNull(0) ?: return null
+        val column = op.objectRef.path.getOrNull(1) ?: return null
+        val expression = EnumCheckProjection.canonicalText(identifierQuoter(column), values)
+        val sql = "SELECT count(*) FROM ${identifierQuoter(table)} WHERE NOT ($expression)"
+        return PlannedCheckPreflight(
+            operationId = op.id,
+            dialect = dialect,
+            table = table,
+            constraintName = column,
+            expression = expression,
+            initialStatus = initialStatus,
+            probeSql = sql,
+            sqlHash = sha256Hex(sql),
+        )
     }
 }

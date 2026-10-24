@@ -128,6 +128,8 @@ open class DiffPlanner {
         // Und dieselbe Sicht auf benannte Typen: ein Dialekt, der sie nicht
         // zurueckgibt, hasht sie auch im Artefakt nicht mit.
         projectsCustomTypes: Boolean = true,
+        // Und dieselbe Aufloesung der Wertevorraete von `ref_type`-Enums.
+        resolvesRefTypeVocabulary: Boolean = false,
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         // F.5 Sub-Slice A (2026-05-19): the planner-level block
@@ -228,15 +230,13 @@ open class DiffPlanner {
             )
         }
 
+        val projections = FingerprintProjections(
+            canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+            foldsAutoIncrementOntoIdentity, projectsCustomTypes, resolvesRefTypeVocabulary,
+        )
         return DiffResult(
-            current = endpoint(
-                current, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
-                foldsAutoIncrementOntoIdentity, projectsCustomTypes,
-            ),
-            desired = endpoint(
-                desired, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
-                foldsAutoIncrementOntoIdentity, projectsCustomTypes,
-            ),
+            current = endpoint(current, projections),
+            desired = endpoint(desired, projections),
             schemaDiff = schemaDiff,
             operations = sortResult.sorted,
             diagnostics = diagnostics,
@@ -248,21 +248,26 @@ open class DiffPlanner {
         )
     }
 
-    private fun endpoint(
-        schema: SchemaDefinition,
-        canonicalizeType: (NeutralType) -> NeutralType,
-        canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
-        canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
-        canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
-        foldsAutoIncrementOntoIdentity: Boolean,
-        projectsCustomTypes: Boolean,
-    ): DiffEndpoint =
+    /** Die Projektionen, durch die beide Endpunkte denselben Abdruck bilden. */
+    private data class FingerprintProjections(
+        val canonicalizeType: (NeutralType) -> NeutralType,
+        val canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
+        val canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
+        val canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
+        val foldsAutoIncrementOntoIdentity: Boolean,
+        val projectsCustomTypes: Boolean,
+        val resolvesRefTypeVocabulary: Boolean,
+    )
+
+    private fun endpoint(schema: SchemaDefinition, projections: FingerprintProjections): DiffEndpoint =
         DiffEndpoint(
             schemaName = schema.name,
             schemaVersion = schema.version,
             fingerprint = MigrationFingerprint.compute(
-                schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
-                foldsAutoIncrementOntoIdentity, projectsCustomTypes,
+                schema, projections.canonicalizeType, projections.canonicalizeIndex,
+                projections.canonicalizeGeneration, projections.canonicalizePartitioning,
+                projections.foldsAutoIncrementOntoIdentity, projections.projectsCustomTypes,
+                projections.resolvesRefTypeVocabulary,
             ),
         )
 

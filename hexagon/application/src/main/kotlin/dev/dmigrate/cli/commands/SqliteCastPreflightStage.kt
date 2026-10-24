@@ -137,6 +137,7 @@ object MigrationPreflightPlanner {
             dialect = dialect.name.lowercase(),
             initialStatus = plannerInitial,
             identifierQuoter = { SqlIdentifiers.quoteIdentifier(it, dialect) },
+            refTypeVocabulary = capabilityResolvesRefTypeVocabulary(dialect),
         ).map { planned ->
             CheckPreflightDeclaration(
                 operationId = planned.operationId,

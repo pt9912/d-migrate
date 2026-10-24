@@ -655,14 +655,23 @@ internal class SqliteRebuildRenderer(
     ): String {
         val lines = mutableListOf<String>()
         val solePrimaryKey = target.primaryKey.singleOrNull()
+        // Der Reader gibt den unbenannten CHECK eines `ref_type`-Enums als
+        // Constraint mit synthetischem Namen zurueck (Down-Seite). Er wird so
+        // zurueckgeschrieben, wie er war: unbenannt am Spaltentext -- ein
+        // benannter kaeme vom Reverse als anderer Zustand zurueck.
+        val (synthetic, regular) = target.constraints.partition { c ->
+            SqliteRefTypeCheckReverse.columnOf(c, target.columns.keys) != null
+        }
+        val columnChecks = synthetic.associateBy { SqliteRefTypeCheckReverse.columnOf(it, target.columns.keys) }
         for ((colName, col) in target.columns.inOrdinalOrder()) {
             // SQLite's PRIMARY KEY does not imply NOT NULL; materialise the
             // neutral model's "PK ⇒ required" invariant on the rebuilt table.
             val effectiveCol = SqlitePrimaryKeyNullability.materialize(colName, col, target.primaryKey)
-            lines += "    " + sql.columnLine(finalName, colName, effectiveCol, solePrimaryKey == colName, customTypes)
+            val check = columnChecks[colName]?.let { " CHECK (${it.expression})" }.orEmpty()
+            lines += "    " + sql.columnLine(finalName, colName, effectiveCol, solePrimaryKey == colName, customTypes) + check
         }
         sql.primaryKeyClause(target)?.let { lines += "    $it" }
-        for (c in target.constraints.sortedBy { it.name }) {
+        for (c in regular.sortedBy { it.name }) {
             sql.constraintLine(c)?.let { lines += "    $it" }
         }
         return buildString {

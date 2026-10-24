@@ -337,6 +337,51 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    context("sqliteRefTypeChecks") {
+        val migrate = SchemaReadOptions(sqliteRefTypeChecks = true)
+
+        test("ein unbenannter Wertelisten-CHECK wird zum synthetischen Constraint, ohne R203") {
+            withDb("CREATE TABLE t (id INTEGER PRIMARY KEY, e TEXT CHECK (\"e\" IN ('a', 'b')))") { pool ->
+                val result = reader.read(pool, migrate)
+                val check = result.schema.tables["t"]!!.constraints.single { it.type == ConstraintType.CHECK }
+                check.name shouldBe "__dm_enum_t_e"
+                check.expression shouldBe "\"e\" IN ('a', 'b')"
+                result.notes.none { it.code == "R203" } shouldBe true
+            }
+        }
+
+        test("ohne die Option bleibt es bei R203 und ohne Constraint") {
+            withDb("CREATE TABLE t (id INTEGER PRIMARY KEY, e TEXT CHECK (\"e\" IN ('a', 'b')))") { pool ->
+                val result = reader.read(pool)
+                result.schema.tables["t"]!!.constraints.none { it.type == ConstraintType.CHECK } shouldBe true
+                result.notes.count { it.code == "R203" } shouldBe 1
+            }
+        }
+
+        test("ein CHECK, der keine Werteliste ist, bleibt R203") {
+            withDb("CREATE TABLE t (n INTEGER CHECK (n >= 0))") { pool ->
+                val result = reader.read(pool, migrate)
+                result.schema.tables["t"]!!.constraints.none { it.type == ConstraintType.CHECK } shouldBe true
+                result.notes.count { it.code == "R203" } shouldBe 1
+            }
+        }
+
+        test("zwei Wertelisten-CHECKs auf einer Spalte bleiben beide R203") {
+            withDb("CREATE TABLE t (e TEXT CHECK (e IN ('a')) CHECK (e IN ('a', 'b')))") { pool ->
+                val result = reader.read(pool, migrate)
+                result.schema.tables["t"]!!.constraints.none { it.type == ConstraintType.CHECK } shouldBe true
+                result.notes.count { it.code == "R203" } shouldBe 2
+            }
+        }
+
+        test("ein benannter CHECK bleibt, was er war") {
+            withDb("CREATE TABLE t (e TEXT, CONSTRAINT ck_t_e CHECK (e IN ('a')))") { pool ->
+                val result = reader.read(pool, migrate)
+                result.schema.tables["t"]!!.constraints.single().name shouldBe "ck_t_e"
+            }
+        }
+    }
+
     test("AUTOINCREMENT pk emits R202 64-bit narrowing note") {
         withDb("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, v TEXT)") { pool ->
             val result = reader.read(pool)

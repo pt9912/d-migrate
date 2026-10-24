@@ -318,7 +318,16 @@ class SqliteSchemaReader : SchemaReader {
         // Unnamed CHECK clauses cannot become ConstraintDefinitions (the
         // model keys constraints by name) — surface the drop loud instead
         // of silently losing the rule.
-        for (expr in checkScan.unnamedExpressions) {
+        val refTypeChecks = if (read.options.sqliteRefTypeChecks) {
+            SqliteRefTypeCheckReverse.extract(
+                tableName, columnDefs.keys, checkScan.unnamedExpressions,
+                takenNames = constraints.map { it.name }.toSet(),
+            )
+        } else {
+            null
+        }
+        constraints += refTypeChecks?.constraints.orEmpty()
+        for (expr in refTypeChecks?.remaining ?: checkScan.unnamedExpressions) {
             notes += SchemaReadNote(
                 severity = SchemaReadSeverity.INFO, code = "R203",
                 objectName = tableName,

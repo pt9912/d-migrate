@@ -49,6 +49,16 @@ data class SchemaReadOptions(
     val sqliteAutoincrementSource: PreferenceSource = PreferenceSource.CONFIG,
     /** Where [autoIncrementSyntax] was declared; see [sqliteAutoincrementSource]. */
     val autoIncrementSyntaxSource: PreferenceSource = PreferenceSource.CONFIG,
+    /**
+     * SQLite: gibt den unbenannten, Wertelisten-foermigen CHECK einer Spalte als
+     * Constraint mit synthetischem Namen zurueck (statt nur als Notiz `R203`).
+     * Nur Migrate und Rollback setzen es -- dort loest die Soll-Seite den
+     * Wertevorrat eines `ref_type`-Enums gegen die Custom Types auf, und beide
+     * Seiten muessen gleich gelesen werden. `schema reverse`, `schema compare`
+     * und der Datentransfer lassen es aus; ihre Ausgabe aendert sich nicht.
+     * Andere Reader ignorieren das Feld.
+     */
+    val sqliteRefTypeChecks: Boolean = false,
 )
 
 /**

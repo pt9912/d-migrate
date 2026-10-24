@@ -9,6 +9,7 @@ import dev.dmigrate.driver.sqlite.SqliteDriver
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
@@ -131,7 +132,17 @@ class CliSchemaMigrateCustomTypesSqliteTest : FunSpec({
         ) shouldBe 0
     }
 
-    test("geaenderter Wertevorrat gegen eine Datenbank wird nicht erkannt und als Warnung gemeldet") {
+    fun tableSql(db: Path): String =
+        DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
+            conn.createStatement().use { st ->
+                st.executeQuery("SELECT sql FROM sqlite_master WHERE name = 't'").use { rs ->
+                    rs.next()
+                    rs.getString(1)
+                }
+            }
+        }
+
+    test("geaenderter Wertevorrat gegen eine Datenbank baut den CHECK neu auf, ohne Folge-Drift") {
         val dir = Files.createTempDirectory("cli-migrate-custom-types-live")
         val before = dir.resolve("c.yaml").also { Files.writeString(it, schemaYaml("a, b")) }
         val after = dir.resolve("c-vals.yaml").also { Files.writeString(it, schemaYaml("a, b, c")) }
@@ -143,9 +154,82 @@ class CliSchemaMigrateCustomTypesSqliteTest : FunSpec({
             "--execute", "--report", report.toString(),
         ) shouldBe 0
 
-        // Kein stilles "ok" ohne Wirkung: der Lauf sagt, dass der CHECK nicht neu gebaut wurde.
-        Files.readString(report) shouldContain "SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED"
-        rejects(db, "INSERT INTO t (id, e) VALUES (3, 'c')") shouldBe true
+        // Der neue Wert steht im CHECK der Datenbank, die Daten sind erhalten.
+        tableSql(db) shouldContain "'c'"
+        exec(db, "INSERT INTO t (id, e) VALUES (3, 'c')")
+        rows(db) shouldBe listOf("1:a", "2:b", "3:c")
+        rejects(db, "INSERT INTO t (id, e) VALUES (4, 'x')") shouldBe true
+        Files.readString(report) shouldNotContain "SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED"
+
+        // Gleicher Stand noch einmal: nichts mehr zu tun, kein Drift.
+        run(
+            "schema", "migrate", "--source", after.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("again.json").toString(),
+        ) shouldBe 0
+    }
+
+    test("ein entfernter Wert, den Zeilen noch tragen, laesst die Tabelle unveraendert") {
+        val dir = Files.createTempDirectory("cli-migrate-custom-types-violating")
+        val wide = dir.resolve("c.yaml").also { Files.writeString(it, schemaYaml("a, b, c")) }
+        val narrow = dir.resolve("c-narrow.yaml").also { Files.writeString(it, schemaYaml("a, b")) }
+        val db = database(dir, wide)
+        exec(db, "INSERT INTO t (id, e) VALUES (3, 'c')")
+        val sqlBefore = tableSql(db)
+
+        val report = dir.resolve("report.json")
+        val exit = run(
+            "schema", "migrate", "--source", narrow.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", report.toString(),
+        )
+
+        (exit != 0) shouldBe true
+        // Der Preflight meldet es vor dem Apply, nicht erst der abbrechende INSERT.
+        Files.readString(report) shouldContain "CHECK_PREFLIGHT_VIOLATIONS"
+        rows(db) shouldBe listOf("1:a", "2:b", "3:c")
+        tableSql(db) shouldBe sqlBefore
+    }
+
+    test("ein handgeschriebener CHECK in anderer Schreibweise mit gleichem Wertevorrat loest keinen Neubau aus") {
+        val dir = Files.createTempDirectory("cli-migrate-custom-types-spelling")
+        val yaml = dir.resolve("c.yaml").also { Files.writeString(it, schemaYaml("a, b")) }
+        val db = dir.resolve("db.sqlite")
+        exec(
+            db,
+            "CREATE TABLE t (id INTEGER NOT NULL, e TEXT NOT NULL DEFAULT 'a' CHECK (  e IN ( 'b' ,'a' )  ), PRIMARY KEY (id))",
+            "INSERT INTO t (id, e) VALUES (1, 'a')",
+        )
+        val sqlBefore = tableSql(db)
+
+        run(
+            "schema", "migrate", "--source", yaml.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("report.json").toString(),
+        ) shouldBe 0
+        tableSql(db) shouldBe sqlBefore
+    }
+
+    test("schema rollback nach dem Neubau stellt den Ausgangszustand her") {
+        val dir = Files.createTempDirectory("cli-migrate-custom-types-rollback")
+        val before = dir.resolve("c.yaml").also { Files.writeString(it, schemaYaml("a, b")) }
+        val after = dir.resolve("c-vals.yaml").also { Files.writeString(it, schemaYaml("a, b, c")) }
+        val db = database(dir, before)
+        val sqlBefore = tableSql(db)
+        val up = dir.resolve("up.sql")
+        val down = dir.resolve("down.sql")
+
+        run(
+            "schema", "migrate", "--source", after.toString(), "--target", "db:sqlite://$db",
+            "--generate-rollback", "--output", up.toString(), "--rollback-output", down.toString(),
+            "--report", dir.resolve("plan.json").toString(),
+        ) shouldBe 0
+        applyFile(db, up)
+        tableSql(db) shouldContain "'c'"
+
+        run(
+            "schema", "rollback", "--source", down.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--allow-destructive",
+        ) shouldBe 0
+        rejects(db, "INSERT INTO t (id, e) VALUES (9, 'c')") shouldBe true
+        tableSql(db) shouldBe sqlBefore
     }
 
     fun domainYaml(check: String) = """

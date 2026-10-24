@@ -22,5 +22,5 @@ object SqliteCheckPreflightProbe {
         probe(connection.asJdbc(), diff)
 
     fun probe(connection: Connection, diff: DiffResult): List<CheckPreflightDeclaration> =
-        JdbcCheckPreflightProbe.probe(DatabaseDialect.SQLITE, connection, diff)
+        JdbcCheckPreflightProbe.probe(DatabaseDialect.SQLITE, connection, diff, refTypeVocabulary = true)
 }

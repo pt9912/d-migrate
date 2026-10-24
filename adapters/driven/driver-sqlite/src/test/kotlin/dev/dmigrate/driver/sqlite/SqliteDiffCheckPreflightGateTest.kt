@@ -118,4 +118,55 @@ class SqliteDiffCheckPreflightGateTest : FunSpec({
         val r = renderUp(emptyList())
         r.isBlocked shouldBe false
     }
+
+    context("Wertevorrat eines ref_type-Enums") {
+        val enumType = dev.dmigrate.core.model.CustomTypeDefinition(
+            kind = dev.dmigrate.core.model.CustomTypeKind.ENUM, values = listOf("a", "b"),
+        )
+        val before = schemaWith(
+            mapOf("u" to baseTable.copy(columns = baseTable.columns + ("e" to ColumnDefinition(NeutralType.Text())))),
+        )
+        val after = SchemaDefinition(
+            name = "App", version = "1", customTypes = mapOf("ee" to enumType),
+            tables = mapOf(
+                "u" to baseTable.copy(
+                    columns = baseTable.columns + ("e" to ColumnDefinition(NeutralType.Enum(refType = "ee"))),
+                ),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "u",
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff(
+                            name = "e",
+                            type = dev.dmigrate.core.diff.ValueChange(NeutralType.Text(), NeutralType.Enum(refType = "ee")),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val plan = planner.plan(before, after, diff)
+        val opId = plan.operations.filterIsInstance<DiffOperation.AlterColumnType>().single().id
+
+        fun decl(status: CheckPreflightStatus) = CheckPreflightDeclaration(
+            operationId = opId, dialect = "sqlite", table = "u", constraintName = "e",
+            expression = "\"e\" IN ('a', 'b')", status = status, sqlHash = "h", failingRows = 2,
+        )
+
+        test("FAILED blockiert den Neubau, bevor die Tabelle angefasst wird") {
+            val r = gen.generateUp(plan, DdlGenerationOptions(checkPreflights = listOf(decl(CheckPreflightStatus.FAILED))))
+
+            r.isBlocked shouldBe true
+            r.statements.none { it.sql.startsWith("CREATE TABLE") } shouldBe true
+            r.diagnostics.any { it.code == PlannerBlockerClassifier.CHECK_PREFLIGHT_VIOLATIONS_CODE } shouldBe true
+        }
+
+        test("PASSED laesst den Neubau laufen") {
+            val r = gen.generateUp(plan, DdlGenerationOptions(checkPreflights = listOf(decl(CheckPreflightStatus.PASSED))))
+
+            r.isBlocked shouldBe false
+        }
+    }
 })

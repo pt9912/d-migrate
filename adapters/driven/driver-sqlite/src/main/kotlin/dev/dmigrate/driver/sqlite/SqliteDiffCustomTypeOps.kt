@@ -38,14 +38,19 @@ internal object SqliteDiffCustomTypeOps {
     }
 
     /**
-     * Gegen eine Datenbank liest der Reverse den Wertevorrat einer Spalte nicht
-     * zurueck (der `CHECK` steht unbenannt am Spaltentext), und die Datenbank
-     * kennt keinen benannten Typ: `CreateCustomType` erscheint bei jedem Lauf,
-     * und eine Aenderung der Werte ist auf der Ist-Seite nicht zu sehen. Eine
-     * Spalte, die es auf beiden Seiten gibt, bleibt dann ohne Operation.
-     * Still hinzunehmen waere das ein "ok" ohne Wirkung -- gesagt wird es.
+     * Gegen eine Datenbank liest der Reverse den CHECK einer **Domain**-Spalte
+     * nicht zurueck (er steht unbenannt am Spaltentext und ist kein
+     * Wertevorrat): `CreateCustomType` erscheint bei jedem Lauf, und eine
+     * Aenderung des CHECK ist auf der Ist-Seite nicht zu sehen. Eine Spalte, die
+     * es auf beiden Seiten gibt, bleibt dann ohne Operation. Still hinzunehmen
+     * waere das ein "ok" ohne Wirkung -- gesagt wird es.
+     *
+     * Fuer eine ENUM entfaellt die Warnung: der Migrate-Reader gibt den
+     * Wertevorrat zurueck, der Vergleich sieht die Aenderung und baut die
+     * Tabelle neu auf.
      */
     private fun warnIfVocabularyUnverifiable(op: DiffOperation.CreateCustomType, ctx: SqliteDiffRenderContext) {
+        if (op.customType.kind != CustomTypeKind.DOMAIN) return
         val name = op.objectRef.rootName
         val current = ctx.currentSchema ?: return
         val desired = ctx.desiredSchema ?: return
@@ -58,7 +63,7 @@ internal object SqliteDiffCustomTypeOps {
         ctx.warning(
             op,
             "Type '$name' is used by existing column(s) ${existing.joinToString(", ")}. SQLite reports " +
-                "no value list or domain CHECK for them, so a changed definition of '$name' is not detected " +
+                "no domain CHECK for them, so a changed definition of '$name' is not detected " +
                 "against a database target and its CHECK is not rebuilt. Plan against a `file:` target of the " +
                 "previous schema to rebuild the CHECK.",
             code = "SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED",

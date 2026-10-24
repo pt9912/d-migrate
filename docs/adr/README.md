@@ -113,3 +113,4 @@ argumentiert werden.
 | 0057 | [Eine Semantik für `schema compare` in CLI, `schema_compare` und `schema_compare_start` — die Herkunft einer Seite ist kein Unterschied](0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md) | accepted |
 | 0058 | [Ein beim Reverse verlorener SRID ist eine Warnung, kein Blocker](0058-verlorener-srid-beim-reverse-ist-warnung.md) | accepted |
 | 0059 | [Kein SDKMAN-Kanal — Workflow und Plan entfallen](0059-kein-sdkman-kanal.md) | accepted |
+| 0060 | [Der Wertevorrat eines `ref_type`-Enums auf SQLite wird gegen eine Datenbank aufgelöst, `schema-fingerprint-v18`](0060-sqlite-ref-type-enum-wertevorrat-gegen-datenbank.md) | accepted |

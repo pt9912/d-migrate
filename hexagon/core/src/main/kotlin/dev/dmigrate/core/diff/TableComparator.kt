@@ -52,7 +52,10 @@ internal class TableComparator(
             NamedTable(it, left.tables.getValue(it))
         }
         val changed = (leftNames intersect rightNames).sorted().mapNotNull { name ->
-            compareTable(name, left.tables.getValue(name), right.tables.getValue(name))
+            compareTable(
+                name, left.tables.getValue(name), right.tables.getValue(name),
+                CustomTypeContext(left.customTypes, right.customTypes),
+            )
         }
 
         return TableDiffs(added, removed, changed)
@@ -61,10 +64,17 @@ internal class TableComparator(
     private val folding = RawTextFolding(authorship, serverForm, canonicalizeRawExpressions)
     private val indexComparator = TableIndexComparator(targetProjection, folding)
 
+    /** Die Custom Types beider Seiten; nur der Wertevorrat einer `ref_type`-Spalte braucht sie. */
+    internal data class CustomTypeContext(
+        val left: Map<String, CustomTypeDefinition> = emptyMap(),
+        val right: Map<String, CustomTypeDefinition> = emptyMap(),
+    )
+
     internal fun compareTable(
         name: String,
         left: TableDefinition,
         right: TableDefinition,
+        customTypes: CustomTypeContext = CustomTypeContext(),
     ): TableDiff? {
         val leftNorm = normalizeConstraints(left)
         val rightNorm = normalizeConstraints(right)
@@ -93,7 +103,7 @@ internal class TableComparator(
             pkRight = rightPk,
         )
 
-        val columnDiffs = compareColumns(name, left, right, absorbedColumns, enumVocabularies(left, right))
+        val columnDiffs = compareColumns(name, left, right, absorbedColumns, enumVocabularies(left, right, customTypes))
         val pkDiff = when {
             targetProjection != null && EffectivePrimaryKey.of(left) == EffectivePrimaryKey.of(right) -> null
             left.primaryKey == right.primaryKey -> null
@@ -241,12 +251,37 @@ internal class TableComparator(
         val right: Map<String, List<String>>,
     )
 
-    private fun enumVocabularies(left: TableDefinition, right: TableDefinition): EnumVocabularies =
+    private fun enumVocabularies(
+        left: TableDefinition,
+        right: TableDefinition,
+        customTypes: CustomTypeContext,
+    ): EnumVocabularies =
         if (targetProjection == null) {
             EnumVocabularies(emptyMap(), emptyMap())
         } else {
-            EnumVocabularies(EnumCheckProjection.vocabulary(left), EnumCheckProjection.vocabulary(right))
+            val resolve = targetProjection.resolvesRefTypeVocabulary
+            EnumVocabularies(
+                EnumCheckProjection.vocabulary(
+                    if (resolve) resolvedAgainst(left, customTypes.left, right) else left,
+                ),
+                EnumCheckProjection.vocabulary(
+                    if (resolve) resolvedAgainst(right, customTypes.right, left) else right,
+                ),
+            )
         }
+
+    /**
+     * [table] mit aufgeloesten `ref_type`-Spalten — ausser dort, wo auch die
+     * Gegenseite die Spalte als `ref_type` fuehrt (siehe
+     * [TargetProjection.resolvesRefTypeVocabulary]).
+     */
+    private fun resolvedAgainst(
+        table: TableDefinition,
+        customTypes: Map<String, CustomTypeDefinition>,
+        counterpart: TableDefinition,
+    ): TableDefinition = RefTypeVocabulary.resolve(table, customTypes) { column ->
+        (counterpart.columns[column]?.type as? NeutralType.Enum)?.refType != null
+    }
 
     /**
      * Die beiden Seiten einer Spalte, dazu die Soll-Seite mit gefaltetem
