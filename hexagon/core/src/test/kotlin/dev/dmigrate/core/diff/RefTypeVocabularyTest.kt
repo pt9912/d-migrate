@@ -69,8 +69,19 @@ class RefTypeVocabularyTest : FunSpec({
                 "dom" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "text", check = "VALUE IN ('x', 'y')"),
             )
 
+            // Die Domain behaelt ihren refType: der Kanonisierer findet daran den Basistyp.
             RefTypeVocabulary.resolve(tables, customTypes).getValue("t").columns.getValue("d").type shouldBe
-                NeutralType.Enum(values = listOf("x", "y"))
+                NeutralType.Enum(values = listOf("x", "y"), refType = "dom")
+        }
+
+        test("das Platzhalterwort der Domain gilt in jeder Schreibweise, nicht in Literalen") {
+            fun domainOf(check: String) = CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "text", check = check)
+
+            RefTypeVocabulary.vocabularyOf(domainOf("Value IN ('a', 'b')")) shouldBe listOf("a", "b")
+            RefTypeVocabulary.vocabularyOf(domainOf("value in ('a')")) shouldBe listOf("a")
+            RefTypeVocabulary.vocabularyOf(domainOf("VALUE IN ('VALUE', 'it''s')")) shouldBe listOf("VALUE", "it's")
+            RefTypeVocabulary.vocabularyOf(domainOf("VALUE IN ('a') AND LENGTH(VALUE) > 0")) shouldBe null
+            RefTypeVocabulary.vocabularyOf(domainOf("VALUE >= 0")) shouldBe null
         }
 
         test("Domain ohne Werteliste, Composite, unbekannter Typ und Inline-Enum bleiben unberuehrt") {
@@ -185,6 +196,75 @@ class RefTypeVocabularyTest : FunSpec({
 
         test("ohne das Gate haben beide Seiten verschiedene Abdruecke (Dauer-Drift)") {
             fingerprint(soll("a", "b"), false) shouldNotBe fingerprint(ist(), false)
+        }
+
+        test("eine Domain mit Nicht-Text-Basistyp haelt Soll und Ist gleich: der Basistyp geht nicht verloren") {
+            val domainSoll = SchemaDefinition(
+                name = "app", version = "1",
+                customTypes = mapOf(
+                    "dom" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "integer", check = "VALUE IN ('1', '2')"),
+                ),
+                tables = mapOf("t" to TableDefinition(columns = mapOf("e" to refColumn("dom")))),
+            )
+            // Wie der Reverse die Spalte liest: der Basistyp und der gefaltete CHECK.
+            val domainIst = SchemaDefinition(
+                name = "app", version = "1",
+                tables = mapOf(
+                    "t" to TableDefinition(
+                        columns = mapOf("e" to ColumnDefinition(NeutralType.Integer, required = true)),
+                        constraints = listOf(
+                            ConstraintDefinition("__dm_enum_t_e", ConstraintType.CHECK, expression = "\"e\" IN ('1', '2')"),
+                        ),
+                    ),
+                ),
+            )
+            // Ein Kanonisierer wie der von SQLite: die Domain findet ihren Basistyp ueber den refType.
+            val sqliteCanon = { type: NeutralType ->
+                when {
+                    type is NeutralType.Enum && type.refType == "dom" -> NeutralType.Integer
+                    type is NeutralType.Enum -> NeutralType.Text()
+                    else -> type
+                }
+            }
+            fun fp(schema: SchemaDefinition) = MigrationFingerprint.compute(
+                schema, sqliteCanon, projectsCustomTypes = false, resolvesRefTypeVocabulary = true,
+            )
+
+            fp(domainSoll.copy(tables = domainSoll.tables.mapValues { (_, t) ->
+                t.copy(columns = t.columns.mapValues { (_, c) -> c.copy(required = true) })
+            })) shouldBe fp(domainIst)
+        }
+
+        test("Inline-Enum und ref_type-Enum nebeneinander hashen auf beiden Seiten gleich") {
+            val both = SchemaDefinition(
+                name = "app", version = "1",
+                customTypes = mapOf("ee" to enumType("a", "b")),
+                tables = mapOf(
+                    "t" to TableDefinition(
+                        columns = mapOf(
+                            "e" to refColumn(),
+                            "i" to ColumnDefinition(NeutralType.Enum(values = listOf("x", "y")), required = true),
+                        ),
+                    ),
+                ),
+            )
+            val readBack = SchemaDefinition(
+                name = "app", version = "1",
+                tables = mapOf(
+                    "t" to TableDefinition(
+                        columns = mapOf(
+                            "e" to ColumnDefinition(NeutralType.Text(), required = true),
+                            "i" to ColumnDefinition(NeutralType.Text(), required = true),
+                        ),
+                        constraints = listOf(
+                            ConstraintDefinition("__dm_enum_t_e", ConstraintType.CHECK, expression = "\"e\" IN ('a', 'b')"),
+                            ConstraintDefinition("ck_t_i", ConstraintType.CHECK, expression = "\"i\" IN ('x', 'y')"),
+                        ),
+                    ),
+                ),
+            )
+
+            fingerprint(both, true) shouldBe fingerprint(readBack, true)
         }
 
         test("ein anderer Wertevorrat aendert den Abdruck") {

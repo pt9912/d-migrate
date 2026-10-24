@@ -22,12 +22,14 @@ import dev.dmigrate.core.model.ConstraintType
  */
 internal object SqliteRefTypeCheckReverse {
 
-    /** Fester Namenspraefix; `ck_<tabelle>_<spalte>` ist der Name des Inline-Enum-CHECK. */
+    /**
+     * Praefix des synthetischen Namens `__dm_enum_<tabelle>_<spalte>`;
+     * `ck_<tabelle>_<spalte>` ist der Name des Inline-Enum-CHECK. Erkannt wird ein
+     * synthetischer Constraint ueber [columnOf], am exakten Namen.
+     */
     const val NAME_PREFIX = "__dm_enum_"
 
     fun name(table: String, column: String): String = "$NAME_PREFIX${table}_$column"
-
-    fun isSynthetic(constraintName: String): Boolean = constraintName.startsWith(NAME_PREFIX)
 
     /**
      * Die Spalte, deren Wertevorrat [constraint] aufzaehlt -- `null`, wenn er

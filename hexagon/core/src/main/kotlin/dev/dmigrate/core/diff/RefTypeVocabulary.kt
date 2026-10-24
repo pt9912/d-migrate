@@ -21,9 +21,13 @@ import dev.dmigrate.core.model.TableDefinition
  * ist (`VALUE IN ('a', 'b')`): der Reverse sieht dort denselben Wertelisten-CHECK
  * und kann ihn nicht von dem einer Enum unterscheiden. Jede andere DOMAIN und
  * COMPOSITE bleiben unberuehrt, ebenso eine Spalte, deren Typ nicht aufloesbar
- * ist. Sie ist **nur** fuer Abdruck und
- * Wertevorrats-Vergleich gedacht: das Ergebnis darf nicht in geplante
- * Operationen oder erzeugte DDL fliessen.
+ * ist.
+ *
+ * Eine aufgeloeste **Domain** behaelt ihren `refType`: der Kanonisierer braucht ihn,
+ * um den Basistyp (`integer`, `varchar(20)`) zu finden, den der Reverse liest.
+ *
+ * Die Funktion ist **nur** fuer Abdruck und Wertevorrats-Vergleich gedacht: das
+ * Ergebnis darf nicht in geplante Operationen oder erzeugte DDL fliessen.
  */
 object RefTypeVocabulary {
 
@@ -56,8 +60,14 @@ object RefTypeVocabulary {
         val type = column.type as? NeutralType.Enum ?: return null
         val ref = type.refType ?: return null
         if (type.values != null) return null
-        val values = vocabularyOf(customTypes[ref] ?: return null) ?: return null
-        return column.copy(type = NeutralType.Enum(values = values))
+        val definition = customTypes[ref] ?: return null
+        val values = vocabularyOf(definition) ?: return null
+        val resolved = if (definition.kind == CustomTypeKind.DOMAIN) {
+            NeutralType.Enum(values = values, refType = ref)
+        } else {
+            NeutralType.Enum(values = values)
+        }
+        return column.copy(type = resolved)
     }
 
     /**
@@ -68,9 +78,36 @@ object RefTypeVocabulary {
     fun vocabularyOf(definition: CustomTypeDefinition): List<String>? = when (definition.kind) {
         CustomTypeKind.ENUM -> definition.values?.takeIf { it.isNotEmpty() }
         CustomTypeKind.DOMAIN -> definition.check?.let { check ->
-            // `VALUE` ist das Platzhalterwort der Domain; die Schreibweise ist frei.
-            listOf("VALUE", "value").firstNotNullOfOrNull { EnumCheckProjection.valuesOf(check, it) }
+            EnumCheckProjection.valuesOf(substituteValueToken(check), VALUE_COLUMN)
         }
         CustomTypeKind.COMPOSITE -> null
+    }
+
+    private const val VALUE_COLUMN = "dm_value"
+    private val VALUE_TOKEN = Regex("\\bVALUE\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * `VALUE` — in beliebiger Schreibweise, wie es auch der SQLite-Generator ersetzt —
+     * durch einen festen Spaltennamen, ausserhalb von `'…'`-Literalen.
+     */
+    private fun substituteValueToken(check: String): String {
+        val out = StringBuilder()
+        var index = 0
+        while (index < check.length) {
+            if (check[index] == '\'') {
+                var end = index + 1
+                while (end < check.length) {
+                    if (check[end] == '\'' && check.getOrNull(end + 1) == '\'') end += 2
+                    else if (check[end] == '\'') { end++; break } else end++
+                }
+                out.append(check, index, end)
+                index = end
+            } else {
+                val next = check.indexOf('\'', index).let { if (it < 0) check.length else it }
+                out.append(VALUE_TOKEN.replace(check.substring(index, next), VALUE_COLUMN))
+                index = next
+            }
+        }
+        return out.toString()
     }
 }

@@ -226,9 +226,9 @@ weiterläuft, ist `DROP TABLE` + `RENAME` durchgelaufen und die Tabelle **leer**
 
 ## Nachtrag (Review der Umsetzung, 2026-10-24)
 
-Zwei Abweichungen von ADR 0060, die der Review der Umsetzung gefunden hat; ein
-akzeptierter ADR bleibt unverändert (`doc-immutable`), sie stehen hier und in
-Handbuch, Spec und Changelog.
+Abweichungen von und Ergänzungen zu ADR 0060, die der Review der Umsetzung
+gefunden hat; ein akzeptierter ADR bleibt unverändert (`doc-immutable`), sie
+stehen hier und in Handbuch, Spec und Changelog.
 
 - **Domain mit Wertelisten-CHECK.** Der Reader kann einen Domain-CHECK
   `VALUE IN ('a', 'b')` nicht von dem einer Enum unterscheiden. Ohne Auflösung
@@ -247,7 +247,21 @@ Handbuch, Spec und Changelog.
   Slices; belegt ist sie durch Messung (sqlite3) und die Executor-Tests. Der Test
   dieses Slices belegt den Preflight (`CHECK_PREFLIGHT_VIOLATIONS`, Tabelle
   unverändert).
-- **Sonde.** Sie gilt auch für ein Inline-Enum (`values`), nicht nur für `ref_type`.
+- **Domain-Auflösung behält den `refType`.** Eine aufgelöste Domain wird zu
+  `Enum(values, refType)`, nicht zu `Enum(values)`: der Kanonisierer braucht den
+  `refType`, um den Basistyp (`integer`, `varchar(20)`) zu finden, den der Reverse
+  liest; ohne ihn hätten Soll (`text`) und Ist (`integer`) verschiedene Abdrücke.
+  Das Platzhalterwort `VALUE` gilt in jeder Schreibweise.
+- **Sonde.** Sie gilt auch für ein Inline-Enum (`values`) und für eine Domain mit
+  Wertelisten-CHECK, nicht nur für `ref_type`-Enums. Das Gate im Generator zieht
+  sie für **jede** `AlterColumnType` heran; ohne Deklaration entscheidet
+  `CheckPreflightGate` auf „weiter", andere Rebuilds sind nicht betroffen.
+- **Signatur.** `FingerprintOfSchema` und `DiffPlanner.plan` haben einen weiteren
+  Boolean bekommen (`resolvesRefTypeVocabulary`); die Aussage „keine neuen
+  Aufrufer-Parameter" in den Einhängepunkten gilt nur, soweit das Gate über die
+  Capability läuft — die Durchreichung der Capability selbst ist neu.
+- **Bekannte Grenze.** Ein Spaltenname mit Hochkomma-Verdopplung im Domain-CHECK
+  wird über `EnumCheckProjection` erkannt (doppeltes `""`).
 
 ## Nicht-Scope
 

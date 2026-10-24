@@ -304,7 +304,7 @@ object EnumCheckProjection {
      * liefert je nach Dialekt `mood`, `"mood"`, `[mood]` oder `` `mood` ``.
      */
     private fun stripLeadingIdentifier(text: String, column: String): String? {
-        val candidates = listOf(column, "\"$column\"", "[$column]", "`$column`")
+        val candidates = listOf(column, "\"$column\"", "\"${column.replace("\"", "\"\"")}\"", "[$column]", "`$column`")
         val match = candidates.firstOrNull { text.startsWith(it) } ?: return null
         val rest = text.substring(match.length)
         // Ohne Trenner waere `moody='x'` ein Treffer fuer die Spalte `mood`.

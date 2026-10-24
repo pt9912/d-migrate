@@ -2557,8 +2557,8 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   den die neue Liste nicht mehr enthält, meldet der Lauf das vor dem Apply
   (`CHECK_PREFLIGHT_VIOLATIONS`) und lässt die Tabelle unverändert. Führen Sie
   das erzeugte SQL-Skript nicht in einer Shell aus, die nach einem Fehler
-  weiterläuft: der Neubau würde die Tabelle dann leeren. Der Rückweg ist über
-  `schema rollback` möglich.
+  weiterläuft: der Neubau würde die Tabelle dann leeren. Für eine Enum ist der
+  Rückweg über `schema rollback` möglich.
   Dasselbe gilt für eine **Domain**, deren `CHECK` eine Werteliste ist
   (`VALUE IN ('a', 'b')`). Den `CHECK` einer Domain, der keine Werteliste ist
   (`VALUE >= 0`), meldet SQLite nicht zurück: gegen eine Datenbank bleibt eine

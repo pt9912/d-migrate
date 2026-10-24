@@ -1256,7 +1256,9 @@ solchen CHECK je Spalte; die Soll-Seite löst den Wertevorrat einer `ref_type`-S
 (Enum, oder Domain mit Wertelisten-CHECK) aus den `custom_types` auf. Ein
 Tabellen-Neubau schreibt den synthetischen Constraint wieder unbenannt am
 Spaltentext. Der CHECK einer Domain, der keine Werteliste ist (`VALUE >= 0`),
-wird nicht zurückgegeben. Ein Basistyp ohne neutrales Gegenstück wird nicht roh durchgereicht, sondern
+wird nicht zurückgegeben.
+
+Ein Basistyp ohne neutrales Gegenstück wird nicht roh durchgereicht, sondern
 als `action_required` E053 ausgewiesen (Spalte: `TEXT`).
 
 Für MSSQL: Basistyp + benannter CHECK (`ck_<table>_<column>`) inline an der

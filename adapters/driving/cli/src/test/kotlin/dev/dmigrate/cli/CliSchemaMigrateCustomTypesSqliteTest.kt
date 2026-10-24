@@ -201,6 +201,8 @@ class CliSchemaMigrateCustomTypesSqliteTest : FunSpec({
             "--execute", "--report", dir.resolve("report.json").toString(),
         ) shouldBe 0
 
+        // Ein No-Op bliebe hier nicht grün: der alte, weitere CHECK muss weg sein.
+        tableSql(db) shouldNotContain "'c'"
         rejects(db, "INSERT INTO t (id, e) VALUES (3, 'c')") shouldBe true
         rows(db) shouldBe listOf("1:a", "2:b")
     }
@@ -253,6 +255,9 @@ class CliSchemaMigrateCustomTypesSqliteTest : FunSpec({
             "--execute", "--report", dir.resolve("report.json").toString(),
         ) shouldBe 0
         exec(db, "INSERT INTO t (id, e) VALUES (2, 'c')")
+        // Der alte CHECK ist ersetzt, nicht ergaenzt.
+        rejects(db, "INSERT INTO t (id, e) VALUES (3, 'x')") shouldBe true
+        tableSql(db) shouldContain "'c'"
     }
 
     test("ein handgeschriebener Wertelisten-CHECK an einer Spalte, die das Soll als Text fuehrt, wird abgeloest") {
@@ -331,6 +336,9 @@ class CliSchemaMigrateCustomTypesSqliteTest : FunSpec({
             "schema", "migrate", "--source", before.toString(), "--target", "db:sqlite://$db",
             "--execute", "--report", dir.resolve("after-rollback.json").toString(),
         ) shouldBe 0
+        // Nichts zu tun: der Zustand nach dem Rollback ist der Ausgangszustand, auch fuer den Abdruck.
+        tableSql(db) shouldBe sqlBefore
+        Files.readString(dir.resolve("after-rollback.json")) shouldNotContain "TARGET_STATE_MISMATCH"
     }
 
     fun domainYaml(check: String, base: String = "integer") = """
@@ -429,5 +437,58 @@ class CliSchemaMigrateCustomTypesSqliteTest : FunSpec({
         ) shouldBe 0
         exec(db, "INSERT INTO t (id, n) VALUES (2, 'c')")
         rejects(db, "INSERT INTO t (id, n) VALUES (3, 'x')") shouldBe true
+    }
+
+    test("eine Domain mit Wertenliste und Nicht-Text-Basistyp bleibt ohne Drift: der Basistyp geht nicht verloren") {
+        val dir = Files.createTempDirectory("cli-migrate-domain-list-integer")
+        val yaml = dir.resolve("d.yaml").also { Files.writeString(it, domainYaml("VALUE IN ('1', '2')", "integer")) }
+        val create = dir.resolve("create.sql")
+        run("schema", "generate", "--source", yaml.toString(), "--target", "sqlite", "--output", create.toString()) shouldBe 0
+        val db = dir.resolve("db.sqlite")
+        applyFile(db, create)
+        exec(db, "INSERT INTO t (id, n) VALUES (1, 1)")
+        val sqlBefore = tableSql(db)
+
+        run(
+            "schema", "migrate", "--source", yaml.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("report.json").toString(),
+        ) shouldBe 0
+        tableSql(db) shouldBe sqlBefore
+    }
+
+    test("eine Domain-Wertenliste in gemischter Schreibweise bleibt ohne Drift") {
+        val dir = Files.createTempDirectory("cli-migrate-domain-list-case")
+        val yaml = dir.resolve("d.yaml").also { Files.writeString(it, domainYaml("Value IN ('a', 'b')", "text")) }
+        val create = dir.resolve("create.sql")
+        run("schema", "generate", "--source", yaml.toString(), "--target", "sqlite", "--output", create.toString()) shouldBe 0
+        val db = dir.resolve("db.sqlite")
+        applyFile(db, create)
+        val sqlBefore = tableSql(db)
+
+        run(
+            "schema", "migrate", "--source", yaml.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("report.json").toString(),
+        ) shouldBe 0
+        tableSql(db) shouldBe sqlBefore
+    }
+
+    test("ein entfernter Domain-Wert, den Zeilen noch tragen, wird vor dem Apply gemeldet") {
+        val dir = Files.createTempDirectory("cli-migrate-domain-list-violating")
+        val wide = dir.resolve("d.yaml").also { Files.writeString(it, domainYaml("VALUE IN ('a', 'b', 'c')", "text")) }
+        val narrow = dir.resolve("d-narrow.yaml").also { Files.writeString(it, domainYaml("VALUE IN ('a', 'b')", "text")) }
+        val create = dir.resolve("create.sql")
+        run("schema", "generate", "--source", wide.toString(), "--target", "sqlite", "--output", create.toString()) shouldBe 0
+        val db = dir.resolve("db.sqlite")
+        applyFile(db, create)
+        exec(db, "INSERT INTO t (id, n) VALUES (1, 'c')")
+        val sqlBefore = tableSql(db)
+        val report = dir.resolve("report.json")
+
+        (run(
+            "schema", "migrate", "--source", narrow.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", report.toString(),
+        ) != 0) shouldBe true
+        Files.readString(report) shouldContain "CHECK_PREFLIGHT_VIOLATIONS"
+        tableSql(db) shouldBe sqlBefore
     }
 })

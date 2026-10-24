@@ -41,8 +41,9 @@ internal object SqliteDiffCustomTypeOps {
     /**
      * Gegen eine Datenbank liest der Reverse den CHECK einer **Domain**-Spalte
      * nur zurueck, wenn er eine Werteliste ist (`VALUE IN (…)`); jeder andere
-     * (`VALUE >= 0`) steht unbenannt am Spaltentext und ist nicht zu sehen: `CreateCustomType` erscheint bei jedem Lauf, und eine
-     * Aenderung des CHECK ist auf der Ist-Seite nicht zu sehen. Eine Spalte, die
+     * (`VALUE >= 0`) steht unbenannt am Spaltentext und ist nicht zu sehen:
+     * `CreateCustomType` erscheint bei jedem Lauf, und eine Aenderung des CHECK
+     * ist auf der Ist-Seite nicht zu sehen. Eine Spalte, die
      * es auf beiden Seiten gibt, bleibt dann ohne Operation. Still hinzunehmen
      * waere das ein "ok" ohne Wirkung -- gesagt wird es.
      *
