@@ -2528,14 +2528,14 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
 
 - **Enum** → PostgreSQL `CREATE TYPE … ENUM`, MySQL inline `ENUM(…)`,
   SQLite `TEXT` + `CHECK`, MS SQL Server `NVARCHAR(n)` + `CHECK`.
-- **Composite** → PostgreSQL nativ (`CREATE TYPE … AS (…)`); MySQL/SQLite
-  benötigen eine **konfigurierte Fallback-Strategie** (`json`, `flatten`,
-  `action_required`) — ohne Konfiguration erfolgt kein stiller Fallback,
-  sondern `action_required`. MS SQL Server kennt keinen Composite-Typ; er
-  wird übersprungen (**E054**).
+- **Composite** → PostgreSQL nativ (`CREATE TYPE … AS (…)`). MySQL, SQLite und
+  MS SQL Server kennen keinen Composite-Typ; er wird übersprungen (**E054**),
+  und die Spalten, die ihn nutzen, müssen Sie selbst abbilden (etwa als
+  einzelne Spalten oder als JSON). Eine einstellbare Fallback-Strategie gibt
+  es nicht.
 - **Domain** → PostgreSQL nativ; bei anderen Dialekten nennt der
-  Transformations-Report die gewählte Abbildung (MS SQL Server: Basistyp +
-  `CHECK`).
+  Transformations-Report die gewählte Abbildung (SQLite, MySQL, MS SQL Server:
+  Basistyp + `CHECK`).
 
 **Hinweise:**
 
@@ -3997,7 +3997,7 @@ custom_types:
   order_status:               # enum
     kind: enum
     values: [pending, shipped]
-  address:                    # composite (PostgreSQL nativ; MySQL/SQLite Fallback)
+  address:                    # composite (nur PostgreSQL nativ; sonst E054)
     kind: composite
     fields:
       street: { type: text, max_length: 200 }

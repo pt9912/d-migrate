@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.8.1**
-(stable, [released 2026-10-24](https://github.com/pt9912/d-migrate/releases/tag/v1.8.1)).
+d-migrate is a working production tool at version **1.9.0**
+(stable, [released 2026-10-24](https://github.com/pt9912/d-migrate/releases/tag/v1.9.0)).
 
 The current capabilities:
 
@@ -161,13 +161,21 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.8.1** (2026-10-24) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **It fixes `schema
-  rollback` on schemas that carry raw SQL text.** After `schema migrate
-  --execute --generate-rollback`, the rollback stopped with exit 8
+- **Current stable** · **1.9.0** (2026-10-24) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **SQLite now handles named
+  types.** `schema migrate` against a real SQLite database no longer stops on
+  `custom_types`: an enum with `ref_type` is a `TEXT` column with a CHECK, and
+  a changed value list is detected and the table rebuilt (rows are kept; a
+  removed value that rows still carry is reported before anything is applied).
+  A domain keeps its base type and CHECK in `schema generate` and `schema
+  migrate`, and `schema rollback --execute` no longer fails with exit 8 on a
+  schema that carries `custom_types`. The schema fingerprint moves to
+  `schema-fingerprint-v18`, so a rollback artefact made by an earlier version
+  must be created again. 1.8.1 (2026-10-24) fixed `schema rollback` on schemas
+  that carry raw SQL text: after `schema migrate --execute
+  --generate-rollback`, the rollback stopped with exit 8
   (`TARGET_STATE_MISMATCH`) as soon as the schema held a CHECK expression or
-  an index predicate, although nobody had touched the database. The rollback
-  now compares the target the way the migration recorded it. The lineage
+  an index predicate, although nobody had touched the database. The lineage
   below is unchanged: **Readers and `schema compare` now say what they lose.** Reverse names losses it used to keep
   quiet (PostGIS `geography`, array and `mode: always` losses, identity
   modes, lost SRIDs); a SQL Server computed column keeps its declared type;

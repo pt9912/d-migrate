@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.8.1** (stabil, [veröffentlicht 2026-10-24](https://github.com/pt9912/d-migrate/releases/tag/v1.8.1)).
+**1.9.0** (stabil, [veröffentlicht 2026-10-24](https://github.com/pt9912/d-migrate/releases/tag/v1.9.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,14 +175,22 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.8.1** (2026-10-24) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Es behebt `schema
-  rollback` bei Schemata mit rohem SQL-Text.** Nach `schema migrate --execute
-  --generate-rollback` endete der Rollback mit Exit 8
-  (`TARGET_STATE_MISMATCH`), sobald das Schema einen CHECK-Ausdruck oder ein
-  Index-Prädikat trug, obwohl niemand die Datenbank angefasst hatte. Der
-  Rollback vergleicht das Ziel jetzt so, wie die Migration es festgehalten
-  hat. Die Linie darunter ist unverändert: **Reader und `schema compare`
+- **Aktuelles Stable** · **1.9.0** (2026-10-24) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **SQLite versteht jetzt
+  benannte Typen.** `schema migrate` gegen eine echte SQLite-Datenbank bleibt
+  nicht mehr an `custom_types` hängen: eine Enum mit `ref_type` ist eine
+  `TEXT`-Spalte mit CHECK, eine geänderte Werteliste wird erkannt und die
+  Tabelle neu aufgebaut (die Zeilen bleiben; ein entfernter Wert, den Zeilen
+  noch tragen, wird vor dem Apply gemeldet). Eine Domain behält in `schema
+  generate` und `schema migrate` Basistyp und CHECK, und `schema rollback
+  --execute` bricht bei einem Schema mit `custom_types` nicht mehr mit Exit 8
+  ab. Der Fingerabdruck steht auf `schema-fingerprint-v18`; ein
+  Rollback-Artefakt einer früheren Version ist neu zu erzeugen. 1.8.1
+  (2026-10-24) behob `schema rollback` bei Schemata mit rohem SQL-Text: nach
+  `schema migrate --execute --generate-rollback` endete der Rollback mit
+  Exit 8 (`TARGET_STATE_MISMATCH`), sobald das Schema einen CHECK-Ausdruck
+  oder ein Index-Prädikat trug, obwohl niemand die Datenbank angefasst hatte.
+  Die Linie darunter ist unverändert: **Reader und `schema compare`
   sagen jetzt, was sie verlieren.** Der Reverse benennt Verluste,
   die er bisher verschwieg (PostGIS-`geography`, Array- und
   `mode: always`-Verlust, Identity-Modi, verlorene SRIDs); eine berechnete
