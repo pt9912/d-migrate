@@ -57,9 +57,13 @@ internal class SqliteDiffSqlBuilders {
     fun columnLine(
         table: String,
         name: String,
-        col: ColumnDefinition,
+        declared: ColumnDefinition,
         isSolePrimaryKey: Boolean,
+        customTypes: Map<String, dev.dmigrate.core.model.CustomTypeDefinition> = emptyMap(),
     ): String {
+        // Ein `ref_type` loest sich an der Spalte auf (siehe [SqliteRefTypeColumns]).
+        val resolved = SqliteRefTypeColumns.resolve(name, declared, customTypes, ::quote)
+        val col = resolved.column
         // Wie im Generate-Pfad: eine berechnete Spalte traegt ihren Ausdruck,
         // nicht NOT NULL/DEFAULT/UNIQUE. Beide Renderer muessen dasselbe
         // schreiben, sonst meldet der Post-Compare Drift.
@@ -102,6 +106,9 @@ internal class SqliteDiffSqlBuilders {
         EnumValueCheck.inlineValues(col.type)?.let {
             parts += EnumValueCheck.namedClause(table, name, it, ::quote)
         }
+        // Unbenannt, wie `schema generate` ihn schreibt: ein benannter CHECK
+        // kaeme vom Reverse zurueck, das Soll (`ref_type`) kennt ihn nicht.
+        resolved.check?.let { parts += it }
         col.references?.let { ref ->
             val onDelete = ref.onDelete?.let { " ON DELETE ${referentialActionSql(it)}" } ?: ""
             val onUpdate = ref.onUpdate?.let { " ON UPDATE ${referentialActionSql(it)}" } ?: ""

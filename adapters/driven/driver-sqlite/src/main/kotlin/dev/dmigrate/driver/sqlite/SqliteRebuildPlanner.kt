@@ -33,11 +33,17 @@ internal object SqliteRebuildPlanner {
         val simpleOps: List<DiffOperation>,
     )
 
-    fun classify(ops: List<DiffOperation>): Classification {
+    /**
+     * [customTypeUsers] nennt je `AlterCustomType` (nach Operations-Id) die
+     * Tabellen, deren Spalten den Typ nutzen: der `CHECK` ueber dem
+     * Wertevorrat steht dort, und SQLite ersetzt ihn nur im Neubau. Die
+     * Operation gehoert damit in den Eimer jeder dieser Tabellen.
+     */
+    fun classify(ops: List<DiffOperation>, customTypeUsers: Map<String, Set<String>> = emptyMap()): Classification {
         val rebuildTables = ops.asSequence()
             .filter { isRebuildTrigger(it) }
             .mapNotNull { tableOf(it) }
-            .toSet()
+            .toSet() + customTypeUsers.values.flatten()
         if (rebuildTables.isEmpty()) {
             return Classification(rebuildBuckets = emptyMap(), simpleOps = ops)
         }
@@ -45,6 +51,10 @@ internal object SqliteRebuildPlanner {
         for (table in rebuildTables.sorted()) buckets[table] = mutableListOf()
         val simple = mutableListOf<DiffOperation>()
         for (op in ops) {
+            customTypeUsers[op.id]?.let { tables ->
+                for (table in tables) buckets.getValue(table) += op
+                continue
+            }
             val target = tableOf(op)
             if (target != null && target in rebuildTables && isAbsorbedByRebuild(op)) {
                 buckets.getValue(target) += op
@@ -170,7 +180,15 @@ internal object SqliteRebuildPlanner {
         sourceSchema: dev.dmigrate.core.model.SchemaDefinition? = null,
         targetSchema: dev.dmigrate.core.model.SchemaDefinition? = null,
     ): SqliteRebuildPlan {
-        val mapping = computeColumnMapping(source, target, sql)
+        // Eine Domain-Spalte steht in der Spaltenabbildung mit ihrem Basistyp: aendert
+        // sich der Basistyp, ist das eine Umwandlung (CAST), keine gleiche Spalte.
+        // Die neue Tabelle selbst schreibt `ref_type` an der Spalte
+        // ([SqliteRefTypeColumns]); dafuer bleiben die Tabellen unaufgeloest.
+        val mapping = computeColumnMapping(
+            SqliteRefTypeColumns.withDomainBaseTypes(source, sourceSchema?.customTypes.orEmpty()),
+            SqliteRefTypeColumns.withDomainBaseTypes(target, targetSchema?.customTypes.orEmpty()),
+            sql,
+        )
         val resolvedTempName = resolveTempTableName(table, bucket, catalog)
         return SqliteRebuildPlan(
             originalTableName = table,
@@ -187,6 +205,7 @@ internal object SqliteRebuildPlanner {
             dependentTriggersToDrop = collectDependentTriggers(sourceSchema, table),
             dependentTriggersToRecreate = collectDependentTriggers(targetSchema, table),
             preflight = buildPreflightChecks(table, source, mapping, resolvedTempName, catalog),
+            customTypes = targetSchema?.customTypes.orEmpty(),
         )
     }
 

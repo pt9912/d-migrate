@@ -118,7 +118,7 @@ internal class SqliteRebuildRenderer(
         val op = plan.bucketOperations.firstOrNull() ?: return
         val solePrimaryKey = plan.newTable.primaryKey.singleOrNull()
         for ((colName, col) in plan.newTable.columns.inOrdinalOrder()) {
-            SqliteEnumDegradation.warnIfEnum(op, ctx, colName, col)
+            SqliteEnumDegradation.warnIfEnum(op, ctx, colName, col, plan.customTypes)
             SqliteArrayDegradation.warnIfArray(op, ctx, colName, col)
             if (SqliteCompositePkIdentity.isDroppedAutoincrement(col, solePrimaryKey == colName)) {
                 ctx.warning(op, SqliteCompositePkIdentity.message(colName), SqliteCompositePkIdentity.W_CODE)
@@ -433,7 +433,7 @@ internal class SqliteRebuildRenderer(
         // TABLES phase: schema reshape. Statements that touch data inherit bucketRisk;
         // CREATE temp is structurally safe (no data yet).
         ctx.emitRebuildStatement(
-            buildCreateTempSql(tempName, originalTable, plan.newTable),
+            buildCreateTempSql(tempName, originalTable, plan.newTable, plan.customTypes),
             opIds, risk = safe, phase = DiffPhase.TABLES,
         )
         ctx.emitRebuildStatement(
@@ -647,14 +647,19 @@ internal class SqliteRebuildRenderer(
      * am Ende auf ihren echten Namen umbenannt, die Namen ihrer Constraints
      * wandern unveraendert mit — sie duerfen nicht die Zwischenstation tragen.
      */
-    private fun buildCreateTempSql(tempName: String, finalName: String, target: TableDefinition): String {
+    private fun buildCreateTempSql(
+        tempName: String,
+        finalName: String,
+        target: TableDefinition,
+        customTypes: Map<String, dev.dmigrate.core.model.CustomTypeDefinition>,
+    ): String {
         val lines = mutableListOf<String>()
         val solePrimaryKey = target.primaryKey.singleOrNull()
         for ((colName, col) in target.columns.inOrdinalOrder()) {
             // SQLite's PRIMARY KEY does not imply NOT NULL; materialise the
             // neutral model's "PK ⇒ required" invariant on the rebuilt table.
             val effectiveCol = SqlitePrimaryKeyNullability.materialize(colName, col, target.primaryKey)
-            lines += "    " + sql.columnLine(finalName, colName, effectiveCol, solePrimaryKey == colName)
+            lines += "    " + sql.columnLine(finalName, colName, effectiveCol, solePrimaryKey == colName, customTypes)
         }
         sql.primaryKeyClause(target)?.let { lines += "    $it" }
         for (c in target.constraints.sortedBy { it.name }) {

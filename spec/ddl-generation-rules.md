@@ -1241,6 +1241,12 @@ CREATE DOMAIN "positive_amount" AS DECIMAL(10,2) CHECK (VALUE >= 0);
 ```
 
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
+Bei SQLite steht der CHECK **unbenannt** (`"n" INTEGER NOT NULL CHECK ("n" >= 0)`):
+der Reverse liest einen benannten CHECK als Constraint zurück, den das Soll
+(`ref_type`) nicht kennt. Dasselbe gilt für den CHECK einer Enum mit `ref_type`
+und für `schema migrate` (`CREATE TABLE`, `ADD COLUMN`, Tabellen-Neubau).
+Ein Basistyp ohne neutrales Gegenstück wird nicht roh durchgereicht, sondern
+als `action_required` E053 ausgewiesen (Spalte: `TEXT`).
 
 Für MSSQL: Basistyp + benannter CHECK (`ck_<table>_<column>`) inline an der
 Spalte; das PostgreSQL-Platzhalterwort `VALUE` wird durch die Spalte ersetzt:

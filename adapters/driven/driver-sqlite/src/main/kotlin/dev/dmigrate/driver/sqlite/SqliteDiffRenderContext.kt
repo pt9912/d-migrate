@@ -118,6 +118,10 @@ internal class SqliteDiffRenderContext(
      * stehen an der Operation, nicht am Dialekt, und duerfen nicht dadurch
      * verschwinden, dass dieser Dialekt nichts auszufuehren hat.
      */
+    /** Die benannten Typen auf der Seite, die diese Richtung liest (UP=desired, DOWN=current). */
+    fun customTypesForDirection(): Map<String, dev.dmigrate.core.model.CustomTypeDefinition> =
+        (if (direction == SqliteRenderDirection.UP) desiredSchema else currentSchema)?.customTypes ?: emptyMap()
+
     fun markRendered(op: DiffOperation) {
         rendered += op.id
         // `riskFor` verlangt ein Risiko der aktiven Richtung und bricht ab,

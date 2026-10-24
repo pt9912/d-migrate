@@ -58,7 +58,7 @@ internal object SqliteDiffSimpleOps {
         val solePrimaryKey = op.table.primaryKey.singleOrNull()
         for ((colName, col) in effectiveColumns.inOrdinalOrder()) {
             val isSolePrimaryKey = solePrimaryKey == colName
-            lines += "    " + ctx.sql.columnLine(tableName, colName, col, isSolePrimaryKey)
+            lines += "    " + ctx.sql.columnLine(tableName, colName, col, isSolePrimaryKey, ctx.customTypesForDirection())
             if (SqliteCompositePkIdentity.isDroppedAutoincrement(col, isSolePrimaryKey)) {
                 ctx.warning(op, SqliteCompositePkIdentity.message(colName), SqliteCompositePkIdentity.W_CODE)
             }
@@ -79,7 +79,7 @@ internal object SqliteDiffSimpleOps {
                 SqliteSpatialDiffOps.ensureSpatialMetadataBootstrap(op, ctx)
                 ctx.emit(op, SqliteSpatialDiffOps.addGeometryColumnSql(tableName, colName, col))
             }
-            SqliteEnumDegradation.warnIfEnum(op, ctx, colName, col)
+            SqliteEnumDegradation.warnIfEnum(op, ctx, colName, col, ctx.customTypesForDirection())
             SqliteArrayDegradation.warnIfArray(op, ctx, colName, col)
         }
         for (idx in op.table.indices) {
@@ -162,9 +162,9 @@ internal object SqliteDiffSimpleOps {
         // einen Schluessel, den das Soll nicht nennt. Die Spalte entsteht
         // hier also nie als Autowert — deshalb `isSolePrimaryKey = false`,
         // fuer die Deklaration **und** fuer die Notizen daneben.
-        val line = ctx.sql.columnLine(table, column, op.column, isSolePrimaryKey = false)
+        val line = ctx.sql.columnLine(table, column, op.column, isSolePrimaryKey = false, customTypes = ctx.customTypesForDirection())
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN $line;")
-        SqliteEnumDegradation.warnIfEnum(op, ctx, column, op.column)
+        SqliteEnumDegradation.warnIfEnum(op, ctx, column, op.column, ctx.customTypesForDirection())
         SqliteArrayDegradation.warnIfArray(op, ctx, column, op.column)
         SqliteIdentityModeDegradation.warnIfAlways(op, ctx, column, op.column, isSolePrimaryKey = false)
         // 0.9.7 G5: when the new column carries SequenceNextVal,

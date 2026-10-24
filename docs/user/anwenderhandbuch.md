@@ -2541,6 +2541,21 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
 
 - Vollständige Custom-Type-Felder (inkl. `composite`/`domain`-Beispiele):
   [Anhang F.9](#f9-custom-types).
+- **`schema migrate` mit Enum- und Domain-Typen auf SQLite:** SQLite hat kein
+  Typ-Objekt. Eine Enum steht als `TEXT` + `CHECK` an der Spalte, eine Domain
+  als ihr Basistyp + `CHECK` (`VALUE` wird durch die Spalte ersetzt). Der
+  `CHECK` ist unbenannt. `CreateCustomType` und `DropCustomType` erzeugen
+  deshalb keine Anweisung; der Lauf ist nicht mehr blockiert. Ändern Sie die
+  Werte einer Enum oder `base_type`/`check` einer Domain und planen Sie gegen
+  ein `file:`-Ziel des bisherigen Schemas, baut `schema migrate` jede Tabelle
+  mit einer `ref_type`-Spalte neu auf (neuer `CHECK`, Daten bleiben
+  erhalten). Der Rückweg ist nicht automatisch möglich
+  (`ROLLBACK_NOT_POSSIBLE`).
+  Gegen eine **Datenbank** erkennt `schema migrate` eine solche Änderung
+  **nicht**: SQLite meldet Wertevorrat und Domain-`CHECK` einer Spalte nicht
+  zurück. Der Lauf endet mit Exit 0, baut den `CHECK` aber nicht neu und warnt
+  mit `SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED`. `composite` bleibt im Diff
+  auf SQLite blockiert; `schema generate` überspringt ihn mit **E054**.
 
 ### 3.22 Testdaten erzeugen (Seed)
 

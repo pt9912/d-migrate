@@ -51,7 +51,7 @@ import dev.dmigrate.driver.migration.PlannerBlockerClassifier
  * - Sequences (Create/Alter/Drop/Rename/AlterCurrentValue) via
  *   [SqliteDiffSequenceOps] (`OpCategory.SEQUENCE`); gated on
  *   `--sqlite-named-sequences helper_table`.
- * - Routines (functions, procedures), custom types und einige
+ * - Routines (functions, procedures) und einige
  *   Rename-Pfade (View/Trigger/Function/Procedure) bleiben
  *   `DIALECT_UNSUPPORTED_OPERATION`. Materialized Views haben einen
  *   dedizierten Blocker (`MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`).
@@ -83,7 +83,15 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         )
         val ops = if (direction == SqliteRenderDirection.UP) diff.operations else diff.operations.reversed()
 
-        val classification = SqliteRebuildPlanner.classify(ops)
+        // Der Rueckwaertsgang einer geaenderten ENUM ist gesperrt
+        // ([SqliteDiffCustomTypeOps.renderAlterCustomType]); nur UP baut die
+        // nutzenden Tabellen neu.
+        val customTypeUsers = if (direction == SqliteRenderDirection.UP) {
+            SqliteDiffCustomTypeOps.rebuildUsers(ops, diff.currentSchema, diff.desiredSchema)
+        } else {
+            emptyMap()
+        }
+        val classification = SqliteRebuildPlanner.classify(ops, customTypeUsers)
 
         // Render rebuild buckets first (they belong to TABLES phase),
         // then the rest in original (already topo-sorted) order.
@@ -219,7 +227,17 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.SEQUENCE -> renderSequenceOp(op, ctx)
             OpCategory.MATERIALIZED_VIEW -> blockMaterializedView(op, ctx)
             OpCategory.PARTITION -> blockPartitioning(op, ctx)
+            OpCategory.CUSTOM_TYPE -> renderCustomTypeOp(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
+        }
+    }
+
+    private fun renderCustomTypeOp(op: DiffOperation, ctx: SqliteDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateCustomType -> SqliteDiffCustomTypeOps.renderCreateCustomType(op, ctx)
+            is DiffOperation.AlterCustomType -> SqliteDiffCustomTypeOps.renderAlterCustomType(op, ctx)
+            is DiffOperation.DropCustomType -> SqliteDiffCustomTypeOps.renderDropCustomType(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised CUSTOM_TYPE but renderCustomTypeOp does not handle it")
         }
     }
 
@@ -309,9 +327,6 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         // routing exists so a future planner regression that lets one
         // through surfaces as `DIALECT_UNSUPPORTED_OPERATION` instead
         // of being silently emitted as garbled SQL.
-        is DiffOperation.CreateCustomType,
-        is DiffOperation.AlterCustomType,
-        is DiffOperation.DropCustomType,
         is DiffOperation.CreateFunction,
         is DiffOperation.ReplaceFunction,
         is DiffOperation.DropFunction,
@@ -323,6 +338,13 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.RenameFunction,
         is DiffOperation.RenameProcedure,
         -> OpCategory.UNSUPPORTED
+
+        // Benannte Typen: eine ENUM lebt in SQLite an den Spalten (TEXT + CHECK),
+        // COMPOSITE/DOMAIN bleiben blockiert -- siehe [SqliteDiffCustomTypeOps].
+        is DiffOperation.CreateCustomType,
+        is DiffOperation.AlterCustomType,
+        is DiffOperation.DropCustomType,
+        -> OpCategory.CUSTOM_TYPE
 
         // 0.9.7 Phase F2: SQLite-helper_table sequence diff-migration.
         // Routes via SqliteDiffSequenceOps; gated on
@@ -519,5 +541,5 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         return true
     }
 
-    private enum class OpCategory { SIMPLE, REBUILD, TRIGGER, SEQUENCE, MATERIALIZED_VIEW, PARTITION, UNSUPPORTED }
+    private enum class OpCategory { SIMPLE, REBUILD, TRIGGER, SEQUENCE, MATERIALIZED_VIEW, PARTITION, CUSTOM_TYPE, UNSUPPORTED }
 }

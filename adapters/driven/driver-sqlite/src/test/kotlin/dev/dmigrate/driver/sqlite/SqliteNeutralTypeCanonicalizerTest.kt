@@ -94,4 +94,20 @@ class SqliteNeutralTypeCanonicalizerTest : FunSpec({
             }
         }
     }
+
+    test("eine Domain-Spalte faellt auf ihren Basistyp, eine Enum-Spalte auf TEXT") {
+        val types = mapOf(
+            "pos" to dev.dmigrate.core.model.CustomTypeDefinition(
+                kind = dev.dmigrate.core.model.CustomTypeKind.DOMAIN, baseType = "integer", check = "VALUE >= 0",
+            ),
+            "ee" to dev.dmigrate.core.model.CustomTypeDefinition(
+                kind = dev.dmigrate.core.model.CustomTypeKind.ENUM, values = listOf("a", "b"),
+            ),
+        )
+
+        canon.canonicalize(NeutralType.Enum(refType = "pos"), types) shouldBe NeutralType.Integer
+        canon.canonicalize(NeutralType.Enum(refType = "ee"), types) shouldBe NeutralType.Text()
+        // Ohne Schema bleibt es bei der kontextfreien Projektion.
+        canon.canonicalize(NeutralType.Enum(refType = "pos")) shouldBe NeutralType.Text()
+    }
 })

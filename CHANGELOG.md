@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`schema migrate` auf SQLite blockiert nicht mehr bei Enum-`custom_types`**
+  (Issue #48). Gegen eine echte SQLite-Datenbank endete jeder Lauf mit
+  `custom_types` im Schema mit Exit `8` (`DIALECT_UNSUPPORTED_OPERATION`,
+  `CreateCustomType`) — auch ohne jede Aenderung. `CreateCustomType` und
+  `DropCustomType` einer Enum buchen jetzt keine Anweisung (SQLite hat kein
+  Typ-Objekt, die Aufzaehlung steht als `TEXT` + `CHECK` an der Spalte), wie
+  schon bei Oracle. Eine geaenderte Enum (`AlterCustomType`) baut jede
+  Tabelle mit einer `ref_type`-Spalte neu auf; ihr Rueckweg ist nicht
+  automatisch moeglich (`ROLLBACK_NOT_POSSIBLE`). Ausserdem schrieb ein
+  Tabellen-Neubau eine `ref_type`-Spalte als nacktes `TEXT` und liess den
+  `CHECK` fallen — er bleibt jetzt erhalten. **Grenze:** gegen eine
+  Datenbank sieht der Planer eine Aenderung der Werte nicht (SQLite meldet
+  den Wertevorrat nicht zurueck); der Lauf warnt mit
+  `SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED`. `composite` und `domain` bleiben
+  blockiert (Anwenderhandbuch §3.21).
+- **Eine Domain behaelt auf SQLite Basistyp und `CHECK`** (Issue #49).
+  `schema generate` schrieb eine Spalte mit `ref_type` auf eine Domain als
+  nacktes `TEXT` — obwohl Spec §6.3 „Basistyp + CHECK inline an der Spalte"
+  verlangt und die Meldung I001 genau das behauptete. Jetzt steht
+  `"n" INTEGER NOT NULL CHECK ("n" >= 0)` da; ein Basistyp ohne neutrales
+  Gegenstueck wird als E053 ausgewiesen. `schema migrate` behandelt die
+  Domain wie die Enum: `CreateCustomType`/`DropCustomType` buchen keine
+  Anweisung, eine geaenderte Domain baut die nutzenden Tabellen mit neuem
+  Basistyp und `CHECK` neu auf. Der Tabellen-Neubau schreibt den `CHECK`
+  einer `ref_type`-Spalte jetzt **unbenannt**, wie `schema generate`; ein
+  benannter kam vom Reverse zurueck, und der naechste Lauf endete in
+  `POST_EXECUTE_DRIFT` (Exit 5). Dasselbe gilt fuer `CREATE TABLE` und
+  `ADD COLUMN` des Diffs. `composite` bleibt im Diff blockiert (wie bei
+  SQL Server und Oracle); die Generierung meldet E054 und ueberspringt ihn.
 - **`schema rollback --execute` bricht auf Dialekten ohne benannte Typen bei
   `custom_types` nicht mehr mit `TARGET_STATE_MISMATCH` ab** (Issue #47).
   Trug das Schema `custom_types` (etwa eine Aufzaehlung mit `ref_type`),

@@ -25,6 +25,21 @@ internal object SqliteNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
 
     private val typeMapper = SqliteTypeMapper()
 
+    /**
+     * Eine Domain liegt in SQLite als ihr Basistyp an der Spalte ([SqliteRefTypeColumns]);
+     * der Reverse liest `INTEGER`, nie den `refType`. Eine ENUM bleibt, was
+     * [canonicalize] ohnehin aus ihr macht (`TEXT`).
+     */
+    override fun canonicalize(
+        type: NeutralType,
+        customTypes: Map<String, dev.dmigrate.core.model.CustomTypeDefinition>,
+    ): NeutralType {
+        val domain = (type as? NeutralType.Enum)?.refType?.let { customTypes[it] }
+            ?.takeIf { it.kind == dev.dmigrate.core.model.CustomTypeKind.DOMAIN }
+        val base = domain?.let(SqliteRefTypeColumns::baseType)
+        return canonicalize(base ?: type)
+    }
+
     override fun canonicalize(type: NeutralType): NeutralType = when (type) {
         is NeutralType.Geometry -> type
         else -> {

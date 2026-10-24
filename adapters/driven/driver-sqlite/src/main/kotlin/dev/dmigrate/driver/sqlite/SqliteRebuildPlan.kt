@@ -118,6 +118,12 @@ internal data class SqliteRebuildPlan(
     val preflight: List<SqliteRebuildPreflightCheck> = emptyList(),
 
     /**
+     * Die benannten Typen des Ziel-Schemas: eine `ref_type`-Spalte der neuen
+     * Tabelle loest sich gegen sie auf ([SqliteRefTypeColumns]).
+     */
+    val customTypes: Map<String, dev.dmigrate.core.model.CustomTypeDefinition> = emptyMap(),
+
+    /**
      * Phase H.3b: how the rebuild SQL is consumed. Affects the
      * `PRAGMA foreign_keys` sequence at the boundaries of the
      * canonical 9-statement output.

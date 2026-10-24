@@ -264,6 +264,56 @@ class SqliteDdlGeneratorTableTest : FunSpec({
         sql shouldContain "\"priority\" TEXT NOT NULL CHECK (\"priority\" IN ('low', 'medium', 'high', 'critical'))"
     }
 
+    test("domain with ref_type renders base type and an inline CHECK on the column (spec 6.3)") {
+        val s = schema(
+            customTypes = mapOf(
+                "positive_amount" to CustomTypeDefinition(
+                    kind = CustomTypeKind.DOMAIN, baseType = "integer", check = "VALUE >= 0",
+                ),
+            ),
+            tables = mapOf(
+                "t" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Integer, required = true),
+                        "n" to col(NeutralType.Enum(refType = "positive_amount"), required = true),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+        )
+        val result = generator.generate(s)
+
+        // Vorher: `"n" TEXT NOT NULL` -- Basistyp und CHECK gingen still verloren.
+        result.tableSql() shouldContain "\"n\" INTEGER NOT NULL CHECK (\"n\" >= 0)"
+        result.notes.any { it.code == "E053" } shouldBe false
+    }
+
+    test("domain CHECK keeps VALUE inside string literals") {
+        val s = schema(
+            customTypes = mapOf(
+                "code" to CustomTypeDefinition(
+                    kind = CustomTypeKind.DOMAIN, baseType = "text", check = "VALUE <> 'VALUE'",
+                ),
+            ),
+            tables = mapOf("t" to table(columns = mapOf("c" to col(NeutralType.Enum(refType = "code"))))),
+        )
+
+        generator.generate(s).tableSql() shouldContain "CHECK (\"c\" <> 'VALUE')"
+    }
+
+    test("domain with an unknown base type is reported as E053, not passed through raw") {
+        val s = schema(
+            customTypes = mapOf(
+                "weird" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "money", check = "VALUE > 0"),
+            ),
+            tables = mapOf("t" to table(columns = mapOf("m" to col(NeutralType.Enum(refType = "weird"))))),
+        )
+        val result = generator.generate(s)
+
+        result.notes.any { it.code == "E053" && it.objectName == "t.m" } shouldBe true
+        result.tableSql() shouldNotContain "money"
+    }
+
     test("composite custom type emits E054 action required note") {
         val s = schema(
             customTypes = mapOf(

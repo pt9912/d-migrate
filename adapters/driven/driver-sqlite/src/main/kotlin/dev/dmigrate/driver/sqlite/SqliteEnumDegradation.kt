@@ -27,8 +27,11 @@ internal object SqliteEnumDegradation {
         ctx: SqliteDiffRenderContext,
         colName: String,
         col: ColumnDefinition,
+        customTypes: Map<String, dev.dmigrate.core.model.CustomTypeDefinition> = emptyMap(),
     ) {
-        if (col.type is NeutralType.Enum && EnumValueCheck.inlineValues(col.type) == null) {
+        // Ein `ref_type` mit Werten wird an der Spalte aufgeloest und durchgesetzt.
+        val enforced = SqliteRefTypeColumns.resolve(colName, col, customTypes) { it }.check != null
+        if (col.type is NeutralType.Enum && EnumValueCheck.inlineValues(col.type) == null && !enforced) {
             ctx.warning(op, message(colName), code = "W134")
         }
     }

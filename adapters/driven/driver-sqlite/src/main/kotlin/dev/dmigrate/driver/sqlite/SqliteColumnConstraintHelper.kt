@@ -76,6 +76,12 @@ internal class SqliteColumnConstraintHelper(
             return generateAutoIncrementColumn(colName, col, type)
         }
         if (type is NeutralType.Enum && type.refType != null) {
+            domainResolution(colName, col, schema, tableName, notes)?.let { resolved ->
+                val line = generateColumnSql(
+                    colName, resolved.column, schema, tableName, notes, deferredFks, isSolePrimaryKey, skipped,
+                )
+                return listOfNotNull(line, resolved.check).joinToString(" ")
+            }
             return generateEnumRefTypeColumn(colName, col, type, schema, tableName, deferredFks)
         }
         if (type is NeutralType.Enum && type.values != null) {
@@ -145,6 +151,33 @@ internal class SqliteColumnConstraintHelper(
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
         if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         return parts.joinToString(" ")
+    }
+
+    /**
+     * Eine Domain hat in SQLite kein Typ-Objekt: die Spalte traegt ihren Basistyp
+     * und den `CHECK` der Domain (`VALUE` -> Spalte). Dieselbe Aufloesung wie im
+     * Diff-Pfad ([SqliteRefTypeColumns]). `null`, wenn die Spalte keine Domain
+     * nutzt -- oder ihr Basistyp kein neutrales Gegenstueck hat: dann wird er
+     * nicht roh durchgereicht, sondern als E053 ausgewiesen.
+     */
+    private fun domainResolution(
+        colName: String,
+        col: ColumnDefinition,
+        schema: SchemaDefinition,
+        tableName: String,
+        notes: MutableList<TransformationNote>,
+    ): SqliteRefTypeColumns.Resolved? {
+        val domainName = (col.type as? NeutralType.Enum)?.refType ?: return null
+        val domain = schema.customTypes[domainName]?.takeIf { it.kind == CustomTypeKind.DOMAIN } ?: return null
+        val resolved = SqliteRefTypeColumns.resolve(colName, col, schema.customTypes, quoteIdentifier)
+        if (resolved.column.type !is NeutralType.Enum) return resolved
+        notes += TransformationNote(
+            type = NoteType.ACTION_REQUIRED, code = "E053", objectName = "$tableName.$colName",
+            message = "Domain '$domainName' base type '${domain.baseType}' has no neutral mapping; " +
+                "column '$colName' was rendered as TEXT.",
+            hint = "Declare the domain base type as a neutral type, or adjust the column type manually.",
+        )
+        return null
     }
 
     private fun generateEnumRefTypeColumn(

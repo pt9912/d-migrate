@@ -438,12 +438,11 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         diagnostic.message shouldContainStr "materialized=true"
     }
 
-    test("Out-of-matrix CreateCustomType (SQLite has no CREATE TYPE) is DIALECT_UNSUPPORTED") {
-        val enumT = dev.dmigrate.core.model.CustomTypeDefinition(
-            kind = dev.dmigrate.core.model.CustomTypeKind.ENUM,
-            values = listOf("a"),
+    test("Out-of-matrix CreateCustomType of a COMPOSITE stays DIALECT_UNSUPPORTED") {
+        val composite = dev.dmigrate.core.model.CustomTypeDefinition(
+            kind = dev.dmigrate.core.model.CustomTypeKind.COMPOSITE,
         )
-        val r = planAndUp(SchemaDiff(customTypesAdded = listOf(dev.dmigrate.core.diff.NamedCustomType("t", enumT))))
+        val r = planAndUp(SchemaDiff(customTypesAdded = listOf(dev.dmigrate.core.diff.NamedCustomType("t", composite))))
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
 
