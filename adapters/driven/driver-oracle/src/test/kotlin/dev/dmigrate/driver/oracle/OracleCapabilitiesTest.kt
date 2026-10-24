@@ -32,4 +32,9 @@ class OracleCapabilitiesTest : FunSpec({
         provider.defaultSpatialProfile() shouldBe SpatialProfile.NATIVE
         provider.capabilities(null).supportsBitmapIndexes shouldBe true
     }
+
+    test("der Wertevorrat eines ref_type-Enums wird nicht aufgeloest (nur SQLite)") {
+        dev.dmigrate.driver.DialectCapabilities.forDialect(DatabaseDialect.ORACLE)
+            .resolvesRefTypeVocabulary shouldBe false
+    }
 })

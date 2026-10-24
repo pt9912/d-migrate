@@ -32,4 +32,9 @@ class SqliteCapabilitiesTest : FunSpec({
         provider.defaultSpatialProfile() shouldBe SpatialProfile.NONE
         provider.allowedSpatialProfiles() shouldBe setOf(SpatialProfile.SPATIALITE, SpatialProfile.NONE)
     }
+
+    test("der Wertevorrat eines ref_type-Enums wird aufgeloest") {
+        dev.dmigrate.driver.DialectCapabilities.forDialect(DatabaseDialect.SQLITE)
+            .resolvesRefTypeVocabulary shouldBe true
+    }
 })

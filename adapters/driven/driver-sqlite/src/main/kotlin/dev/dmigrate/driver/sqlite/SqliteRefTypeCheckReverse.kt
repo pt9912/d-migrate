@@ -31,11 +31,12 @@ internal object SqliteRefTypeCheckReverse {
 
     /**
      * Die Spalte, deren Wertevorrat [constraint] aufzaehlt -- `null`, wenn er
-     * nicht synthetisch ist oder keine Spalte der Tabelle trifft.
+     * nicht synthetisch ist (exakt der Name, den [extract] vergibt) oder keine
+     * Spalte der Tabelle trifft.
      */
-    fun columnOf(constraint: ConstraintDefinition, columns: Collection<String>): String? =
+    fun columnOf(table: String, constraint: ConstraintDefinition, columns: Collection<String>): String? =
         columns.firstOrNull {
-            isSynthetic(constraint.name) && EnumCheckProjection.valuesOf(constraint.expression, it) != null
+            constraint.name == name(table, it) && EnumCheckProjection.valuesOf(constraint.expression, it) != null
         }
 
     data class Result(

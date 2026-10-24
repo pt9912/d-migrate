@@ -2559,10 +2559,14 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   das erzeugte SQL-Skript nicht in einer Shell aus, die nach einem Fehler
   weiterläuft: der Neubau würde die Tabelle dann leeren. Der Rückweg ist über
   `schema rollback` möglich.
-  Den `CHECK` einer **Domain** meldet SQLite nicht zurück: gegen eine
-  Datenbank bleibt eine Domain-Änderung unerkannt, der Lauf endet mit Exit 0,
-  baut den `CHECK` nicht neu und warnt mit
-  `SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED`. `composite` bleibt im Diff
+  Dasselbe gilt für eine **Domain**, deren `CHECK` eine Werteliste ist
+  (`VALUE IN ('a', 'b')`). Den `CHECK` einer Domain, der keine Werteliste ist
+  (`VALUE >= 0`), meldet SQLite nicht zurück: gegen eine Datenbank bleibt eine
+  solche Änderung unerkannt, der Lauf endet mit Exit 0, baut den `CHECK` nicht
+  neu und warnt mit `SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED`.
+  Ein von Hand geschriebener, unbenannter Wertelisten-`CHECK` an einer Spalte,
+  die Ihr Schema ohne diesen `CHECK` führt, wird beim Angleichen abgelöst — wie
+  ein benannter `CHECK`, den das Schema nicht kennt. `composite` bleibt im Diff
   auf SQLite blockiert; `schema generate` überspringt ihn mit **E054**.
 
 ### 3.22 Testdaten erzeugen (Seed)

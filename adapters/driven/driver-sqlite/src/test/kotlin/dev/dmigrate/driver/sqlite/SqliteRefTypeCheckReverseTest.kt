@@ -44,8 +44,13 @@ class SqliteRefTypeCheckReverseTest : FunSpec({
         val synthetic = ConstraintDefinition("__dm_enum_t_e", ConstraintType.CHECK, expression = "e IN ('a')")
         val named = ConstraintDefinition("ck_t_e", ConstraintType.CHECK, expression = "e IN ('a')")
 
-        SqliteRefTypeCheckReverse.columnOf(synthetic, listOf("id", "e")) shouldBe "e"
-        SqliteRefTypeCheckReverse.columnOf(named, listOf("id", "e")) shouldBe null
-        SqliteRefTypeCheckReverse.columnOf(synthetic, listOf("id")) shouldBe null
+        val foreign = ConstraintDefinition("__dm_enum_irgendwas", ConstraintType.CHECK, expression = "e IN ('a')")
+
+        SqliteRefTypeCheckReverse.columnOf("t", synthetic, listOf("id", "e")) shouldBe "e"
+        SqliteRefTypeCheckReverse.columnOf("t", named, listOf("id", "e")) shouldBe null
+        SqliteRefTypeCheckReverse.columnOf("t", synthetic, listOf("id")) shouldBe null
+        // Nur der Name, den extract vergibt -- ein gleich beginnender, vom Nutzer benannter CHECK nicht.
+        SqliteRefTypeCheckReverse.columnOf("t", foreign, listOf("id", "e")) shouldBe null
+        SqliteRefTypeCheckReverse.columnOf("other", synthetic, listOf("id", "e")) shouldBe null
     }
 })

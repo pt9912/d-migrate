@@ -192,6 +192,15 @@ class SqliteDiffCustomTypeOpsTest : FunSpec({
                 "SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED"
         }
 
+        test("fuer eine Domain mit Wertelisten-CHECK entfaellt sie ebenfalls") {
+            val colors = domain("VALUE IN ('red', 'green')", base = "text")
+            val diff = SchemaDiff(customTypesAdded = listOf(NamedCustomType("pos", colors)))
+            val plan = planner.plan(domainSchema(emptyMap()), domainSchema(mapOf("pos" to colors)), diff)
+
+            gen.generateUp(plan, DdlGenerationOptions()).diagnostics.map { it.code } shouldNotContain
+                "SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED"
+        }
+
         test("fuer eine DOMAIN bleibt sie: ihr CHECK ist am Ist nicht zu sehen") {
             val pos = domain("VALUE >= 0")
             val diff = SchemaDiff(customTypesAdded = listOf(NamedCustomType("pos", pos)))

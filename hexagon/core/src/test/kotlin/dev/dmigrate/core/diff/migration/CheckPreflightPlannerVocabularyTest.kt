@@ -60,7 +60,7 @@ class CheckPreflightPlannerVocabularyTest : FunSpec({
 
         probe.operationId shouldBe diff.operations.filterIsInstance<DiffOperation.AlterColumnType>().single().id
         probe.table shouldBe "t"
-        probe.constraintName shouldBe "e"
+        probe.constraintName shouldBe "e (enum values)"
         probe.probeSql shouldBe "SELECT count(*) FROM \"t\" WHERE NOT (\"e\" IN ('a', 'b'))"
         probe.expression shouldContain "'a', 'b'"
     }
@@ -69,12 +69,24 @@ class CheckPreflightPlannerVocabularyTest : FunSpec({
         probes(plan(enumEe), enabled = false).shouldBeEmpty()
     }
 
-    test("eine Domain, ein unbekannter Typ und ein Typ ohne ref_type haben keine Sonde") {
-        val domain = CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "integer", check = "VALUE > 0")
-        probes(plan(domain), enabled = true).shouldBeEmpty()
+    test("ein unbekannter Typ und ein Typ ohne Enum haben keine Sonde") {
         probes(plan(null), enabled = true).shouldBeEmpty()
-        probes(plan(enumEe, after = NeutralType.Enum(values = listOf("x"))), enabled = true).shouldBeEmpty()
         probes(plan(enumEe, after = NeutralType.Integer), enabled = true).shouldBeEmpty()
+    }
+
+    test("ein Enum mit eigenen Werten bekommt ebenfalls eine Sonde") {
+        val probe = probes(plan(null, after = NeutralType.Enum(values = listOf("y", "x"))), enabled = true).single()
+
+        probe.probeSql shouldBe "SELECT count(*) FROM \"t\" WHERE NOT (\"e\" IN ('x', 'y'))"
+    }
+
+    test("eine Domain mit Wertelisten-CHECK bekommt eine Sonde, eine mit anderem CHECK nicht") {
+        val list = CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "text", check = "VALUE IN ('b', 'a')")
+        val range = CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "integer", check = "VALUE > 0")
+
+        probes(plan(list), enabled = true).single().probeSql shouldBe
+            "SELECT count(*) FROM \"t\" WHERE NOT (\"e\" IN ('a', 'b'))"
+        probes(plan(range), enabled = true).shouldBeEmpty()
     }
 
     test("ein ENUM ohne Werte hat keine Sonde") {

@@ -32,4 +32,9 @@ class MssqlCapabilitiesTest : FunSpec({
         provider.defaultSpatialProfile() shouldBe SpatialProfile.NATIVE
         provider.capabilities(null).batchSeparator shouldBe "GO"
     }
+
+    test("der Wertevorrat eines ref_type-Enums wird nicht aufgeloest (nur SQLite)") {
+        dev.dmigrate.driver.DialectCapabilities.forDialect(DatabaseDialect.MSSQL)
+            .resolvesRefTypeVocabulary shouldBe false
+    }
 })

@@ -17,8 +17,11 @@ import dev.dmigrate.core.model.TableDefinition
  * — Vergleich und Abdruck meldeten bei jedem Lauf Drift.
  *
  * Die Funktion ersetzt `Enum(refType = r)` durch `Enum(values = …)`, wenn
- * `custom_types[r]` ein ENUM ist. DOMAIN und COMPOSITE bleiben unberuehrt, ebenso
- * eine Spalte, deren Typ nicht aufloesbar ist. Sie ist **nur** fuer Abdruck und
+ * `custom_types[r]` ein ENUM ist — oder eine DOMAIN, deren CHECK eine Werteliste
+ * ist (`VALUE IN ('a', 'b')`): der Reverse sieht dort denselben Wertelisten-CHECK
+ * und kann ihn nicht von dem einer Enum unterscheiden. Jede andere DOMAIN und
+ * COMPOSITE bleiben unberuehrt, ebenso eine Spalte, deren Typ nicht aufloesbar
+ * ist. Sie ist **nur** fuer Abdruck und
  * Wertevorrats-Vergleich gedacht: das Ergebnis darf nicht in geplante
  * Operationen oder erzeugte DDL fliessen.
  */
@@ -53,8 +56,21 @@ object RefTypeVocabulary {
         val type = column.type as? NeutralType.Enum ?: return null
         val ref = type.refType ?: return null
         if (type.values != null) return null
-        val definition = customTypes[ref]?.takeIf { it.kind == CustomTypeKind.ENUM } ?: return null
-        val values = definition.values?.takeIf { it.isNotEmpty() } ?: return null
+        val values = vocabularyOf(customTypes[ref] ?: return null) ?: return null
         return column.copy(type = NeutralType.Enum(values = values))
+    }
+
+    /**
+     * Der Wertevorrat, den [definition] an der Spalte als CHECK hinterlaesst —
+     * `null`, wo es keinen gibt (COMPOSITE, eine Domain ohne Werteliste, eine Enum
+     * ohne Werte).
+     */
+    fun vocabularyOf(definition: CustomTypeDefinition): List<String>? = when (definition.kind) {
+        CustomTypeKind.ENUM -> definition.values?.takeIf { it.isNotEmpty() }
+        CustomTypeKind.DOMAIN -> definition.check?.let { check ->
+            // `VALUE` ist das Platzhalterwort der Domain; die Schreibweise ist frei.
+            listOf("VALUE", "value").firstNotNullOfOrNull { EnumCheckProjection.valuesOf(check, it) }
+        }
+        CustomTypeKind.COMPOSITE -> null
     }
 }

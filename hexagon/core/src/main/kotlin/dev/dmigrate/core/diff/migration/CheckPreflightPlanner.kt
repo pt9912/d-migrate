@@ -2,7 +2,7 @@ package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.EnumCheckProjection
 import dev.dmigrate.core.model.ConstraintType
-import dev.dmigrate.core.model.CustomTypeKind
+import dev.dmigrate.core.diff.RefTypeVocabulary
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.util.sha256Hex
 
@@ -135,9 +135,10 @@ object CheckPreflightPlanner {
     }
 
     /**
-     * Der Wertevorrat eines `ref_type`-Enums als Sonde: eine Spalte, deren neuer
-     * Typ ein ENUM der Custom Types des Soll-Schemas ist, bekommt einen CHECK, den
-     * die vorhandenen Zeilen verletzen koennen (Wert entfernt). Ohne die Sonde
+     * Der Wertevorrat eines Enums als Sonde: eine Spalte, deren neuer Typ ein Enum
+     * ist — mit eigenen Werten oder als `ref_type` auf eine ENUM bzw. eine Domain
+     * mit Wertelisten-CHECK —, bekommt einen CHECK, den die vorhandenen Zeilen
+     * verletzen koennen (Wert entfernt). Ohne die Sonde
      * brach erst der `INSERT ... SELECT` des Neubaus ab.
      *
      * Nur fuer Dialekte, die den Wertevorrat so aufloesen (SQLite); sonst ist
@@ -151,9 +152,9 @@ object CheckPreflightPlanner {
         identifierQuoter: (String) -> String,
     ): PlannedCheckPreflight? {
         val type = op.after as? NeutralType.Enum ?: return null
-        val definition = type.refType?.let { diff.desiredSchema?.customTypes?.get(it) }
-            ?.takeIf { it.kind == CustomTypeKind.ENUM } ?: return null
-        val values = definition.values?.takeIf { it.isNotEmpty() } ?: return null
+        val values = type.values?.takeIf { it.isNotEmpty() }
+            ?: type.refType?.let { diff.desiredSchema?.customTypes?.get(it) }?.let(RefTypeVocabulary::vocabularyOf)
+            ?: return null
         val table = op.objectRef.path.getOrNull(0) ?: return null
         val column = op.objectRef.path.getOrNull(1) ?: return null
         val expression = EnumCheckProjection.canonicalText(identifierQuoter(column), values)
@@ -162,7 +163,8 @@ object CheckPreflightPlanner {
             operationId = op.id,
             dialect = dialect,
             table = table,
-            constraintName = column,
+            // Es gibt keinen benannten Constraint: der Gate-Text nennt ihn so.
+            constraintName = "$column (enum values)",
             expression = expression,
             initialStatus = initialStatus,
             probeSql = sql,

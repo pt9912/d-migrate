@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff
 
+import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
@@ -62,7 +63,17 @@ class RefTypeVocabularyTest : FunSpec({
             resolved.getValue("t").columns.getValue("e").required shouldBe true
         }
 
-        test("Domain, Composite, unbekannter Typ und Inline-Enum bleiben unberuehrt") {
+        test("eine Domain mit Wertelisten-CHECK wird zum Enum mit Werten") {
+            val tables = mapOf("t" to TableDefinition(columns = mapOf("d" to refColumn("dom"))))
+            val customTypes = mapOf(
+                "dom" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "text", check = "VALUE IN ('x', 'y')"),
+            )
+
+            RefTypeVocabulary.resolve(tables, customTypes).getValue("t").columns.getValue("d").type shouldBe
+                NeutralType.Enum(values = listOf("x", "y"))
+        }
+
+        test("Domain ohne Werteliste, Composite, unbekannter Typ und Inline-Enum bleiben unberuehrt") {
             val tables = mapOf(
                 "t" to TableDefinition(
                     columns = mapOf(
@@ -138,6 +149,19 @@ class RefTypeVocabularyTest : FunSpec({
 
             diff.tablesChanged.shouldBeEmpty()
             diff.customTypesChanged.single().name shouldBe "ee"
+        }
+
+        test("die geplanten Operationen und ihre IDs sind mit und ohne Dialekt-Gate dieselben") {
+            val current = soll("a", "b")
+            val desired = soll("a", "b", "c")
+            val diff = SchemaComparator(sqliteLike).compare(current, desired)
+            val gated = DiffPlanner().plan(current, desired, diff, resolvesRefTypeVocabulary = true)
+            val ungated = DiffPlanner().plan(current, desired, diff, resolvesRefTypeVocabulary = false)
+
+            gated.operations.map { it.id } shouldBe ungated.operations.map { it.id }
+            gated.operations.map { it::class } shouldBe ungated.operations.map { it::class }
+            // Die Aenderung steckt allein in der Custom-Type-Operation, nicht in einer Spaltenoperation.
+            gated.operations.none { it is dev.dmigrate.core.diff.migration.DiffOperation.AlterColumnType } shouldBe true
         }
 
         test("der Vergleich ist mit und ohne Dialekt-Gate derselbe (Operationen und IDs bleiben)") {

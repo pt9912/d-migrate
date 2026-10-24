@@ -32,4 +32,9 @@ class PostgresCapabilitiesTest : FunSpec({
         provider.routineCapability(null).function.enabled shouldBe true
         provider.defaultSpatialProfile() shouldBe SpatialProfile.POSTGIS
     }
+
+    test("der Wertevorrat eines ref_type-Enums wird nicht aufgeloest (nur SQLite)") {
+        dev.dmigrate.driver.DialectCapabilities.forDialect(DatabaseDialect.POSTGRESQL)
+            .resolvesRefTypeVocabulary shouldBe false
+    }
 })

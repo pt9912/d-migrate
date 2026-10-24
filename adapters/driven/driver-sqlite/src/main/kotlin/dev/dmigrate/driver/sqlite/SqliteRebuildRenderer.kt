@@ -660,9 +660,9 @@ internal class SqliteRebuildRenderer(
         // zurueckgeschrieben, wie er war: unbenannt am Spaltentext -- ein
         // benannter kaeme vom Reverse als anderer Zustand zurueck.
         val (synthetic, regular) = target.constraints.partition { c ->
-            SqliteRefTypeCheckReverse.columnOf(c, target.columns.keys) != null
+            SqliteRefTypeCheckReverse.columnOf(finalName, c, target.columns.keys) != null
         }
-        val columnChecks = synthetic.associateBy { SqliteRefTypeCheckReverse.columnOf(it, target.columns.keys) }
+        val columnChecks = synthetic.associateBy { SqliteRefTypeCheckReverse.columnOf(finalName, it, target.columns.keys) }
         for ((colName, col) in target.columns.inOrdinalOrder()) {
             // SQLite's PRIMARY KEY does not imply NOT NULL; materialise the
             // neutral model's "PK ⇒ required" invariant on the rebuilt table.

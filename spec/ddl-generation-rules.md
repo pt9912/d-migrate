@@ -1241,15 +1241,22 @@ CREATE DOMAIN "positive_amount" AS DECIMAL(10,2) CHECK (VALUE >= 0);
 ```
 
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
-Bei SQLite steht der CHECK **unbenannt** (`"n" INTEGER NOT NULL CHECK ("n" >= 0)`):
-der Reverse liest einen benannten CHECK als Constraint zurück, den das Soll
-(`ref_type`) nicht kennt. Dasselbe gilt für den CHECK einer Enum mit `ref_type`
-und für `schema migrate` (`CREATE TABLE`, `ADD COLUMN`, Tabellen-Neubau).
-Den unbenannten Wertelisten-CHECK einer Enum gibt der Reader im Migrate- und
-Rollback-Pfad als Constraint mit synthetischem Namen `__dm_enum_<tabelle>_<spalte>`
-zurück; ein Tabellen-Neubau schreibt ihn wieder unbenannt am Spaltentext. Der
-CHECK einer Domain ist keine Werteliste und wird nicht zurückgegeben.
-Ein Basistyp ohne neutrales Gegenstück wird nicht roh durchgereicht, sondern
+Bei SQLite steht der CHECK **unbenannt** (`"n" INTEGER NOT NULL CHECK ("n" >= 0)`),
+ebenso der CHECK einer Enum mit `ref_type`, in `schema generate` wie in
+`schema migrate` (`CREATE TABLE`, `ADD COLUMN`, Tabellen-Neubau). Der Grund ist
+der Reverse: ein *benannter* CHECK käme als Constraint zurück, den das Soll
+(`ref_type`) nicht kennt, und der Folgelauf endete in `POST_EXECUTE_DRIFT`.
+
+Ein unbenannter CHECK ist für das neutrale Modell zunächst unsichtbar (Notiz
+`R203`). Damit `schema migrate` gegen eine Datenbank eine geänderte Werteliste
+erkennt, gibt der Reader im Migrate- und Rollback-Pfad einen unbenannten
+**Wertelisten**-CHECK (`spalte IN ('a', 'b')`) als Constraint mit dem
+synthetischen Namen `__dm_enum_<tabelle>_<spalte>` zurück — nur bei genau einem
+solchen CHECK je Spalte; die Soll-Seite löst den Wertevorrat einer `ref_type`-Spalte
+(Enum, oder Domain mit Wertelisten-CHECK) aus den `custom_types` auf. Ein
+Tabellen-Neubau schreibt den synthetischen Constraint wieder unbenannt am
+Spaltentext. Der CHECK einer Domain, der keine Werteliste ist (`VALUE >= 0`),
+wird nicht zurückgegeben. Ein Basistyp ohne neutrales Gegenstück wird nicht roh durchgereicht, sondern
 als `action_required` E053 ausgewiesen (Spalte: `TEXT`).
 
 Für MSSQL: Basistyp + benannter CHECK (`ck_<table>_<column>`) inline an der

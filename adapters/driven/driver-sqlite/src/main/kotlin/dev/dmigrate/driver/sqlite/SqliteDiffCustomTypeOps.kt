@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.core.diff.RefTypeVocabulary
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
@@ -39,8 +40,8 @@ internal object SqliteDiffCustomTypeOps {
 
     /**
      * Gegen eine Datenbank liest der Reverse den CHECK einer **Domain**-Spalte
-     * nicht zurueck (er steht unbenannt am Spaltentext und ist kein
-     * Wertevorrat): `CreateCustomType` erscheint bei jedem Lauf, und eine
+     * nur zurueck, wenn er eine Werteliste ist (`VALUE IN (…)`); jeder andere
+     * (`VALUE >= 0`) steht unbenannt am Spaltentext und ist nicht zu sehen: `CreateCustomType` erscheint bei jedem Lauf, und eine
      * Aenderung des CHECK ist auf der Ist-Seite nicht zu sehen. Eine Spalte, die
      * es auf beiden Seiten gibt, bleibt dann ohne Operation. Still hinzunehmen
      * waere das ein "ok" ohne Wirkung -- gesagt wird es.
@@ -51,6 +52,8 @@ internal object SqliteDiffCustomTypeOps {
      */
     private fun warnIfVocabularyUnverifiable(op: DiffOperation.CreateCustomType, ctx: SqliteDiffRenderContext) {
         if (op.customType.kind != CustomTypeKind.DOMAIN) return
+        // Eine Werteliste liest der Migrate-Reader zurueck; der Vergleich sieht sie.
+        if (RefTypeVocabulary.vocabularyOf(op.customType) != null) return
         val name = op.objectRef.rootName
         val current = ctx.currentSchema ?: return
         val desired = ctx.desiredSchema ?: return
@@ -63,7 +66,7 @@ internal object SqliteDiffCustomTypeOps {
         ctx.warning(
             op,
             "Type '$name' is used by existing column(s) ${existing.joinToString(", ")}. SQLite reports " +
-                "no domain CHECK for them, so a changed definition of '$name' is not detected " +
+                "no CHECK for them that is a value list, so a changed definition of '$name' is not detected " +
                 "against a database target and its CHECK is not rebuilt. Plan against a `file:` target of the " +
                 "previous schema to rebuild the CHECK.",
             code = "SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED",

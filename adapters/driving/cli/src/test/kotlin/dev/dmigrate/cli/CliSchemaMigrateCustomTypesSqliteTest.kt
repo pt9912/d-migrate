@@ -185,8 +185,103 @@ class CliSchemaMigrateCustomTypesSqliteTest : FunSpec({
         (exit != 0) shouldBe true
         // Der Preflight meldet es vor dem Apply, nicht erst der abbrechende INSERT.
         Files.readString(report) shouldContain "CHECK_PREFLIGHT_VIOLATIONS"
+        Files.readString(report) shouldContain "e (enum values)"
         rows(db) shouldBe listOf("1:a", "2:b", "3:c")
         tableSql(db) shouldBe sqlBefore
+    }
+
+    test("ein entfernter Wert ohne betroffene Zeilen baut den CHECK enger neu auf") {
+        val dir = Files.createTempDirectory("cli-migrate-custom-types-narrow")
+        val wide = dir.resolve("c.yaml").also { Files.writeString(it, schemaYaml("a, b, c")) }
+        val narrow = dir.resolve("c-narrow.yaml").also { Files.writeString(it, schemaYaml("a, b")) }
+        val db = database(dir, wide)
+
+        run(
+            "schema", "migrate", "--source", narrow.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("report.json").toString(),
+        ) shouldBe 0
+
+        rejects(db, "INSERT INTO t (id, e) VALUES (3, 'c')") shouldBe true
+        rows(db) shouldBe listOf("1:a", "2:b")
+    }
+
+    fun inlineYaml(values: String) = """
+        schema_format: "1.0"
+        name: "I"
+        version: "1.0"
+        tables:
+          t:
+            columns:
+              id: { type: integer, required: true }
+              e:  { type: enum, values: [$values], required: true }
+            primary_key: [id]
+    """.trimIndent() + "\n"
+
+    test("ein Inline-Enum verhaelt sich unveraendert: gleicher Stand ohne Neubau, neue Werte mit Neubau") {
+        val dir = Files.createTempDirectory("cli-migrate-inline-enum")
+        val before = dir.resolve("i.yaml").also { Files.writeString(it, inlineYaml("a, b")) }
+        val after = dir.resolve("i-vals.yaml").also { Files.writeString(it, inlineYaml("a, b, c")) }
+        val db = database(dir, before)
+        val sqlBefore = tableSql(db)
+
+        run(
+            "schema", "migrate", "--source", before.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("same.json").toString(),
+        ) shouldBe 0
+        tableSql(db) shouldBe sqlBefore
+
+        run(
+            "schema", "migrate", "--source", after.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("vals.json").toString(),
+        ) shouldBe 0
+        exec(db, "INSERT INTO t (id, e) VALUES (3, 'c')")
+        rejects(db, "INSERT INTO t (id, e) VALUES (4, 'x')") shouldBe true
+    }
+
+    test("ein handgeschriebener CHECK mit anderem Wertevorrat wird auf das Soll gebracht") {
+        val dir = Files.createTempDirectory("cli-migrate-custom-types-handwritten-diff")
+        val yaml = dir.resolve("c.yaml").also { Files.writeString(it, schemaYaml("a, b, c")) }
+        val db = dir.resolve("db.sqlite")
+        exec(
+            db,
+            "CREATE TABLE t (id INTEGER NOT NULL, e TEXT NOT NULL DEFAULT 'a' CHECK (e IN ('a', 'b')), PRIMARY KEY (id))",
+            "INSERT INTO t (id, e) VALUES (1, 'a')",
+        )
+
+        run(
+            "schema", "migrate", "--source", yaml.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("report.json").toString(),
+        ) shouldBe 0
+        exec(db, "INSERT INTO t (id, e) VALUES (2, 'c')")
+    }
+
+    test("ein handgeschriebener Wertelisten-CHECK an einer Spalte, die das Soll als Text fuehrt, wird abgeloest") {
+        // Wie ein benannter CHECK, den das Soll nicht fuehrt: das Soll ist die Autoritaet.
+        val dir = Files.createTempDirectory("cli-migrate-custom-types-handwritten-extra")
+        val yaml = dir.resolve("p.yaml").also {
+            Files.writeString(
+                it,
+                """
+                schema_format: "1.0"
+                name: "P"
+                version: "1.0"
+                tables:
+                  t:
+                    columns:
+                      id: { type: integer, required: true }
+                      e:  { type: text, required: true }
+                    primary_key: [id]
+                """.trimIndent() + "\n",
+            )
+        }
+        val db = dir.resolve("db.sqlite")
+        exec(db, "CREATE TABLE t (id INTEGER NOT NULL, e TEXT NOT NULL CHECK (e IN ('a', 'b')), PRIMARY KEY (id))")
+
+        run(
+            "schema", "migrate", "--source", yaml.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("report.json").toString(),
+        ) shouldBe 0
+        exec(db, "INSERT INTO t (id, e) VALUES (1, 'zzz')")
     }
 
     test("ein handgeschriebener CHECK in anderer Schreibweise mit gleichem Wertevorrat loest keinen Neubau aus") {
@@ -230,14 +325,20 @@ class CliSchemaMigrateCustomTypesSqliteTest : FunSpec({
         ) shouldBe 0
         rejects(db, "INSERT INTO t (id, e) VALUES (9, 'c')") shouldBe true
         tableSql(db) shouldBe sqlBefore
+
+        // Der Ausgangszustand stimmt auch fuer den Abdruck: derselbe Stand noch einmal ist nichts zu tun.
+        run(
+            "schema", "migrate", "--source", before.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("after-rollback.json").toString(),
+        ) shouldBe 0
     }
 
-    fun domainYaml(check: String) = """
+    fun domainYaml(check: String, base: String = "integer") = """
         schema_format: "1.0"
         name: "D"
         version: "1.0"
         custom_types:
-          pos: { kind: domain, base_type: integer, check: "$check" }
+          pos: { kind: domain, base_type: $base, check: "$check" }
         tables:
           t:
             columns:
@@ -302,5 +403,31 @@ class CliSchemaMigrateCustomTypesSqliteTest : FunSpec({
             "schema", "migrate", "--source", composite.toString(), "--target", "db:sqlite://$db",
             "--execute", "--report", dir.resolve("report.json").toString(),
         ) shouldBe 8
+    }
+
+    test("eine Domain mit Wertelisten-CHECK wird wie eine Enum erkannt: gleicher Stand ohne Neubau, neue Werte mit Neubau") {
+        val dir = Files.createTempDirectory("cli-migrate-domain-list")
+        val before = dir.resolve("d.yaml").also { Files.writeString(it, domainYaml("VALUE IN ('a', 'b')", "text")) }
+        val after = dir.resolve("d-vals.yaml").also { Files.writeString(it, domainYaml("VALUE IN ('a', 'b', 'c')", "text")) }
+        val create = dir.resolve("create.sql")
+        run("schema", "generate", "--source", before.toString(), "--target", "sqlite", "--output", create.toString()) shouldBe 0
+        val db = dir.resolve("db.sqlite")
+        applyFile(db, create)
+        exec(db, "INSERT INTO t (id, n) VALUES (1, 'a')")
+        val sqlBefore = tableSql(db)
+
+        // Ohne die Aufloesung der Domain wuerde die Spalte bei jedem Lauf neu gebaut und der Post-Compare scheitern.
+        run(
+            "schema", "migrate", "--source", before.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("same.json").toString(),
+        ) shouldBe 0
+        tableSql(db) shouldBe sqlBefore
+
+        run(
+            "schema", "migrate", "--source", after.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("vals.json").toString(),
+        ) shouldBe 0
+        exec(db, "INSERT INTO t (id, n) VALUES (2, 'c')")
+        rejects(db, "INSERT INTO t (id, n) VALUES (3, 'x')") shouldBe true
     }
 })

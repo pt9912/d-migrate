@@ -33,4 +33,9 @@ class MysqlCapabilitiesTest : FunSpec({
         provider.routineCapability(null).function.enabled shouldBe false
         provider.defaultSpatialProfile() shouldBe SpatialProfile.NATIVE
     }
+
+    test("der Wertevorrat eines ref_type-Enums wird nicht aufgeloest (nur SQLite)") {
+        dev.dmigrate.driver.DialectCapabilities.forDialect(DatabaseDialect.MYSQL)
+            .resolvesRefTypeVocabulary shouldBe false
+    }
 })

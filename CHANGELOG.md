@@ -28,10 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Wertelisten-`CHECK` im Migrate- und Rollback-Pfad als Constraint zurueck,
   und Abdruck wie Vergleich loesen den Wertevorrat des Soll aus den
   `custom_types` auf (ADR 0060). Der Fingerabdruck steht dafuer auf
-  `schema-fingerprint-v18` (von `v17`); ein Rollback-Artefakt eines
-  SQLite-Schemas mit `ref_type`-Enum ist neu zu erzeugen. **Grenze:** eine
-  geaenderte **Domain** gegen eine Datenbank bleibt unerkannt
-  (`SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED`). `composite` bleibt blockiert
+  `schema-fingerprint-v18` (von `v17`); ein Rollback-Artefakt, das
+  mit `v17` erzeugt wurde, wird abgewiesen (Exit 8,
+  `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`) und ist neu zu erzeugen — der
+  Algorithmus-Tag gilt fuer **alle** Dialekte, auch wenn sich nur der Abdruck
+  von SQLite-Schemas mit `ref_type`-Enum aendert. Eine Domain, deren `CHECK`
+  eine Werteliste ist (`VALUE IN ('a', 'b')`), wird wie eine Enum erkannt.
+  **Verhaltensaenderung:** ein handgeschriebener, unbenannter
+  Wertelisten-`CHECK` an einer Spalte, die das Soll ohne diesen `CHECK`
+  fuehrt, gilt jetzt wie ein benannter und wird beim Angleichen abgeloest
+  (bisher unsichtbar, nur Notiz `R203`). **Grenze:** eine geaenderte
+  **Domain** mit anderem `CHECK` (`VALUE >= 0`) gegen eine Datenbank bleibt
+  unerkannt (`SQLITE_CUSTOM_TYPE_VOCABULARY_UNVERIFIED`). `composite` bleibt blockiert
   (Anwenderhandbuch §3.21).
 - **Eine Domain behaelt auf SQLite Basistyp und `CHECK`** (Issue #49).
   `schema generate` schrieb eine Spalte mit `ref_type` auf eine Domain als

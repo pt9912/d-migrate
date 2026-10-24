@@ -224,6 +224,31 @@ weiterläuft, ist `DROP TABLE` + `RENAME` durchgelaufen und die Tabelle **leer**
   (`SchemaMigrateArtefactSink`, Caveat 2); dessen Caveat-Block nennt den
   Datenverlust bei Shell-Ausführung nicht. P4 ergänzt ihn.
 
+## Nachtrag (Review der Umsetzung, 2026-10-24)
+
+Zwei Abweichungen von ADR 0060, die der Review der Umsetzung gefunden hat; ein
+akzeptierter ADR bleibt unverändert (`doc-immutable`), sie stehen hier und in
+Handbuch, Spec und Changelog.
+
+- **Domain mit Wertelisten-CHECK.** Der Reader kann einen Domain-CHECK
+  `VALUE IN ('a', 'b')` nicht von dem einer Enum unterscheiden. Ohne Auflösung
+  hätte die Soll-Seite kein Vokabular, und jeder Lauf wäre Drift gewesen.
+  `RefTypeVocabulary.vocabularyOf` löst deshalb auch eine DOMAIN auf, deren CHECK
+  eine Werteliste ist; Sonde und Warnung (nur noch für Nicht-Wertelisten-Domains)
+  folgen dem. Eine Domain mit anderem CHECK bleibt unsichtbar.
+- **Handgeschriebener Wertelisten-CHECK ohne `ref_type` im Soll.** Der
+  unbenannte CHECK einer Textspalte, die das Soll ohne CHECK führt, gilt jetzt
+  wie ein benannter und wird beim Angleichen abgelöst (bisher nur Notiz `R203`).
+  Das ist die Folge der formbasierten Erkennung (ADR 0048/0055) und steht als
+  Verhaltensänderung in Changelog und Handbuch.
+- **Atomarität (E3).** Der Pfad „Preflight umgehen, `INSERT ... SELECT` bricht ab,
+  `ROLLBACK`" ist die Eigenschaft des bestehenden Executors
+  (`JdbcMigrationStatementExecutor`, `runStreamOwnedTransaction`), nicht dieses
+  Slices; belegt ist sie durch Messung (sqlite3) und die Executor-Tests. Der Test
+  dieses Slices belegt den Preflight (`CHECK_PREFLIGHT_VIOLATIONS`, Tabelle
+  unverändert).
+- **Sonde.** Sie gilt auch für ein Inline-Enum (`values`), nicht nur für `ref_type`.
+
 ## Nicht-Scope
 
 - Composite-Typen auf SQLite (bleiben im Diff blockiert).
