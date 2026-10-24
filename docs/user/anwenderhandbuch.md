@@ -1628,6 +1628,10 @@ zurück.
   anderweitig verändert, bricht der Rollback mit **Exit 8**
   (`TARGET_STATE_MISMATCH`) ab, statt einen inkonsistenten Zustand zu erzeugen.
   Passt der Dialekt des Artefakts nicht zur Datenbank, ebenfalls Exit 8.
+  Rohen SQL-Text (CHECK-`expression`, Index-`where`, Sichten, Ausdrücke)
+  vergleicht der Rollback dabei nicht mit: Der Server gibt ihn in eigener
+  Schreibweise zurück, und die Prüfung gilt dem Aufbau des Schemas. Eine
+  Änderung allein an diesem Text fällt dem Rollback deshalb nicht auf.
 - Nach einem **d-migrate-Update** kann ein älteres Down-Artefakt abgelehnt werden
   (Exit 8, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`) — erzeugen Sie es dann mit
   der neuen Version neu. Siehe [Fehlerbehebung](#5-fehlerbehebung).

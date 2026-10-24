@@ -5,6 +5,23 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationDdlResult
 
 /**
+ * Was ein Rollback-Artefakt als erwarteten Zustand nach dem Up festhalten kann:
+ * das Ergebnis des Post-Compare (oder `null`, wenn keiner lief) und, fuer den
+ * Fall ohne bestaetigten Zustand, den geplanten Soll-Abdruck.
+ *
+ * [plannedFingerprint] ist der Abdruck des Soll-Schemas **mit ausgeblendetem
+ * rohen SQL-Text** ([dev.dmigrate.core.diff.migration.RawSqlTextProjection]) —
+ * dieselbe Form, die der Post-Compare als beobachteten Wert festhaelt und die
+ * `schema rollback` fuer das Ziel berechnet. Der unprojizierte Abdruck
+ * (`plan.desired.fingerprint`) bleibt die Identitaet im Bericht, ist aber nie
+ * ein Vergleichswert fuer ein Ziel.
+ */
+internal data class PostUpState(
+    val outcome: PostCompareOutcome?,
+    val plannedFingerprint: String,
+)
+
+/**
  * Decides whether and how a rollback artefact is finalised for a
  * `schema migrate` run. Bundles the rollback-artefact text builder, the
  * recovery-artefact text builder (Plan §F.5.e/f), and the recovery
@@ -25,17 +42,20 @@ internal class SchemaMigrateRollbackComposer(
      * target in an unknown state. F.5.b: when post-compare confirmed
      * a clean target, the OBSERVED fingerprint is pinned and
      * `postUpVerified=true`; otherwise the planned desired FP is used
-     * and `postUpVerified=false`.
+     * and `postUpVerified=false`. Both are fingerprints of the schema
+     * with raw SQL text blanked ([PostUpState.plannedFingerprint]) —
+     * the form `schema rollback` computes for the target.
      */
     fun maybeBuildRollback(
         request: SchemaMigrateRequest,
         combined: MigrationDdlResult,
         renderedDown: MigrationDdlResult?,
         executionTrace: ExecutionTrace?,
-        postCompareOutcome: PostCompareOutcome?,
+        postUp: PostUpState,
         plan: DiffResult,
         dialect: DatabaseDialect,
     ): String? {
+        val postCompareOutcome = postUp.outcome
         if (!request.generateRollback || renderedDown == null) return null
         if (combined.isBlocked) return null
         // Execute is "ok" when either there was no execute attempt, or the
@@ -48,7 +68,7 @@ internal class SchemaMigrateRollbackComposer(
         if (!executeOk) return null
         val (postUpFp, postUpVerified) = when (postCompareOutcome) {
             is PostCompareOutcome.Clean -> postCompareOutcome.observedFingerprint to true
-            else -> (plan.desired.fingerprint ?: "") to false
+            else -> postUp.plannedFingerprint to false
         }
         return buildRollbackArtefact(plan, renderedDown, dialect, postUpFp, postUpVerified)
     }
@@ -66,6 +86,7 @@ internal class SchemaMigrateRollbackComposer(
         renderedDown: MigrationDdlResult?,
         plan: DiffResult,
         dialect: DatabaseDialect,
+        plannedFingerprint: String,
     ): RecoveryContext? = if (
         request.generateRollback &&
         renderedDown != null &&
@@ -73,7 +94,7 @@ internal class SchemaMigrateRollbackComposer(
     ) {
         RecoveryContext(
             build = { fp, verified -> buildRecoveryArtefact(plan, renderedDown, dialect, fp, verified) },
-            desiredFingerprint = plan.desired.fingerprint ?: "",
+            desiredFingerprint = plannedFingerprint,
         )
     } else {
         null

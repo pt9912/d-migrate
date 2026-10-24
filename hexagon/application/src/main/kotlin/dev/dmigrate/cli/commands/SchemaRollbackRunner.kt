@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
+import dev.dmigrate.core.diff.migration.RawSqlTextProjection
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
 import dev.dmigrate.driver.DatabaseDialect
@@ -218,8 +219,11 @@ class SchemaRollbackRunner(
         val canonicalizePartitioning = dialect?.let(::capabilityPartitionCanonicalizer) ?: { it }
         // Und dieselbe Faltung der beiden Autowert-Schreibweisen.
         val foldsAutoIncrement = dialect?.let(::capabilityFoldsAutoIncrementOntoIdentity) == true
+        // Rohes SQL steht im Artefakt in der Autorenschreibweise, im Ziel in der
+        // Katalogform des Servers -- beide fallen aus dem Abdruck heraus, wie beim
+        // Post-Compare des Migrate, der den erwarteten Wert festgehalten hat.
         val targetFingerprint = fingerprint(
-            targetResolved.schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration,
+            RawSqlTextProjection.blank(targetResolved.schema), canonicalizeType, canonicalizeIndex, canonicalizeGeneration,
             canonicalizePartitioning, foldsAutoIncrement,
         )
         val acceptable = if (parsed.recovery) {

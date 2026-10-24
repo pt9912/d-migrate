@@ -8,6 +8,7 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.RawTextAuthorship
 import dev.dmigrate.core.diff.RawTextServerForm
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
+import dev.dmigrate.core.diff.migration.RawSqlTextProjection
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayCanonicalJson
@@ -227,6 +228,11 @@ class SchemaMigrateRunner(
     private data class EndpointFingerprints(
         val current: String,
         val desired: String,
+        /**
+         * Wie [desired], aber mit ausgeblendetem rohen SQL-Text: die Form, in
+         * der `schema rollback` das Ziel vergleicht (siehe [PostUpState]).
+         */
+        val desiredSansRawText: String,
         val canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
         val canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
         val canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
@@ -242,6 +248,7 @@ class SchemaMigrateRunner(
             capabilityGenerationCanonicalizer(dialect, prepared.targetNormalized.serverVersion)
         val canonicalizePartitioning = capabilityPartitionCanonicalizer(dialect)
         val foldsAutoIncrement = capabilityFoldsAutoIncrementOntoIdentity(dialect)
+        val desiredSansRawText = RawSqlTextProjection.blank(prepared.sourceNormalized.schema)
         return EndpointFingerprints(
             current = MigrationFingerprint.compute(
                 prepared.targetNormalized.schema,
@@ -254,6 +261,14 @@ class SchemaMigrateRunner(
             desired = MigrationFingerprint.compute(
                 prepared.sourceNormalized.schema,
                 registrySchemaAwareCanonicalizer(dialect, prepared.sourceNormalized.schema),
+                canonicalizeIndex,
+                canonicalizeGeneration,
+                canonicalizePartitioning,
+                foldsAutoIncrement,
+            ),
+            desiredSansRawText = MigrationFingerprint.compute(
+                desiredSansRawText,
+                registrySchemaAwareCanonicalizer(dialect, desiredSansRawText),
                 canonicalizeIndex,
                 canonicalizeGeneration,
                 canonicalizePartitioning,
@@ -500,10 +515,12 @@ class SchemaMigrateRunner(
         }
         val rollbackArtefact = rollbackComposer.maybeBuildRollback(
             request, render.executableCombined, render.renderedDown,
-            executionTrace, postCompareOutcome, effectivePlan, prepared.effectiveDialect,
+            executionTrace, PostUpState(postCompareOutcome, endpoints.desiredSansRawText),
+            effectivePlan, prepared.effectiveDialect,
         )
         val recoveryContext = rollbackComposer.buildRecoveryContextIfApplicable(
             request, render.executableCombined, render.renderedDown, effectivePlan, prepared.effectiveDialect,
+            endpoints.desiredSansRawText,
         )
         return finalize(
             request, withExecution, report, rollbackArtefact,

@@ -22,9 +22,11 @@ import dev.dmigrate.core.model.ViewDefinition
  * desselben Ausdrucks stimmen deshalb nie ueberein.
  *
  * **Wofuer das gedacht ist und wofuer nicht.** Diese Projektion gehoert
- * ausschliesslich in den Post-Compare, wo beide Seiten anschliessend gegen
- * gleichartige Formen geprueft werden ([ADR 0053](../../../../../../../../docs/adr/0053-vergleich-rohen-sql-texts.md)).
- * Sie darf **nicht** in die Identitaet eingehen — weder in den Comparator noch
+ * in den Post-Compare, wo beide Seiten anschliessend gegen gleichartige Formen
+ * geprueft werden ([ADR 0053](../../../../../../../../docs/adr/0053-vergleich-rohen-sql-texts.md)),
+ * und in jeden Vergleich gegen den Wert, den dieser festgehalten hat: der
+ * Abdruck im Rollback-Artefakt entsteht im Post-Compare, `schema rollback`
+ * legt das Ziel deshalb durch dieselbe Projektion. Sie darf **nicht** in die Identitaet eingehen — weder in den Comparator noch
  * in `CanonicalPayload`: der Text IST die Aussage einer Sicht, eines CHECKs und
  * eines Ausdrucks-Index, und ihn dort auszublenden hiesse, eine echte Aenderung
  * nicht mehr zu sehen.
