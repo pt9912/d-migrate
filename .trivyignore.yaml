@@ -47,3 +47,23 @@ vulnerabilities:
     paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
     statement: "Siehe CVE-2026-54512 — dieselbe geshadete Kopie (jackson-databind 2.21.3). Eigener Code nutzt das gepatchte 2.21.7-Jar; Fix liegt bei Apache Parquet."
     expired_at: 2026-11-15
+  - id: CVE-2026-68494
+    paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
+    statement: "Siehe CVE-2026-54512 — dieselbe geshadete Kopie (jackson-core 2.21.3). Eigener Code nutzt das gepatchte 2.21.7-Jar. Erreichbarkeit im Parquet-Pfad nicht geprueft; parquet-java 1.18.1 shadet 2.22.2 und behebt es nicht (Fix ab 2.22.3)."
+    expired_at: 2026-11-15
+  - id: CVE-2026-89407
+    paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
+    statement: "Siehe CVE-2026-54512 — dieselbe geshadete Kopie (jackson-core 2.21.3). Eigener Code nutzt das gepatchte 2.21.7-Jar. Erreichbarkeit im Parquet-Pfad nicht geprueft; parquet-java 1.18.1 shadet 2.22.2 und behebt es nicht (Fix ab 2.22.3)."
+    expired_at: 2026-11-15
+  - id: CVE-2026-89425
+    paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
+    statement: "Siehe CVE-2026-54512 — dieselbe geshadete Kopie (jackson-core 2.21.3). Eigener Code nutzt das gepatchte 2.21.7-Jar. Erreichbarkeit im Parquet-Pfad nicht geprueft; parquet-java 1.18.1 shadet 2.22.2 und behebt es nicht (Fix ab 2.22.3)."
+    expired_at: 2026-11-15
+  - id: CVE-2026-91776
+    paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
+    statement: "Siehe CVE-2026-54512 — dieselbe geshadete Kopie (jackson-databind 2.21.3). Eigener Code nutzt das gepatchte 2.21.7-Jar. Erreichbarkeit im Parquet-Pfad nicht geprueft; parquet-java 1.18.1 shadet 2.22.2 und behebt es nicht (Fix ab 2.22.3)."
+    expired_at: 2026-11-15
+  - id: CVE-2026-91777
+    paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
+    statement: "Siehe CVE-2026-54512 — dieselbe geshadete Kopie (jackson-databind 2.21.3). Eigener Code nutzt das gepatchte 2.21.7-Jar. Erreichbarkeit im Parquet-Pfad nicht geprueft; parquet-java 1.18.1 shadet 2.22.2 und behebt es nicht (Fix ab 2.22.3)."
+    expired_at: 2026-11-15
