@@ -271,6 +271,35 @@ class RefTypeVocabularyTest : FunSpec({
             fingerprint(soll("a", "b", "c"), true) shouldNotBe fingerprint(ist(), true)
         }
 
+        test("fuer Dialekte ohne Gate bleibt der Abdruck eines ref_type-Schemas bis auf den Tag der alte") {
+            val projection = MigrationFingerprint.project(
+                soll("a", "b"), projections, projectsCustomTypes = false, resolvesRefTypeVocabulary = false,
+            )
+
+            // Das Layout der Projektion ist das der Version davor; nur der Tag steht auf v18.
+            // Die Felder einer Spalte trennt das ASCII-Unit-Separator-Zeichen (0x1F).
+            val sep = "\u001F"
+            projection shouldBe """
+                algorithm=schema-fingerprint-v18
+                custom_types[0]
+                tables[1]
+                table=t
+                  columns[1]
+                    column=e${sep}type=text${sep}required=true${sep}unique=false${sep}default=${sep}references=${sep}generation=
+                  primary_key=
+                  indices[0]
+                  constraints[0]
+                  enum_checks[0]
+                  partitioning=none
+                views[0]
+                sequences[0]
+                functions[0]
+                procedures[0]
+                triggers[0]
+
+            """.trimIndent()
+        }
+
         test("ein Schema ohne ref_type-Enum hasht mit und ohne Gate gleich") {
             val plain = ist()
             fingerprint(plain, true) shouldBe fingerprint(plain, false)

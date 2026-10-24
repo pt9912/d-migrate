@@ -7,6 +7,7 @@ import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.sqlite.SqliteDriver
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -131,6 +132,20 @@ class CliSchemaMigrateCustomTypesSqliteTest : FunSpec({
             "--execute", "--report", dir.resolve("follow-up.json").toString(),
         ) shouldBe 0
     }
+
+    fun scalar(db: Path, query: String): String =
+        DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
+            conn.createStatement().use { st -> st.executeQuery(query).use { rs -> rs.next(); rs.getString(1) } }
+        }
+
+    fun names(db: Path): List<String> =
+        DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
+            conn.createStatement().use { st ->
+                st.executeQuery("SELECT name FROM sqlite_master").use { rs ->
+                    buildList { while (rs.next()) add(rs.getString(1)) }
+                }
+            }
+        }
 
     fun tableSql(db: Path): String =
         DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
@@ -490,5 +505,59 @@ class CliSchemaMigrateCustomTypesSqliteTest : FunSpec({
         ) != 0) shouldBe true
         Files.readString(report) shouldContain "CHECK_PREFLIGHT_VIOLATIONS"
         tableSql(db) shouldBe sqlBefore
+    }
+
+    test("der Neubau erhaelt Index und Fremdschluessel der Tabelle mit der ref_type-Spalte") {
+        fun yaml(values: String) = """
+            schema_format: "1.0"
+            name: "D"
+            version: "1.0"
+            custom_types:
+              ee: { kind: enum, values: [$values] }
+            tables:
+              p:
+                columns:
+                  id: { type: integer, required: true }
+                primary_key: [id]
+              t:
+                columns:
+                  id: { type: integer, required: true }
+                  pid: { type: integer, required: true, references: { table: p, column: id } }
+                  e:  { type: enum, ref_type: ee, required: true, default: a }
+                primary_key: [id]
+                indices:
+                  - name: ix_t_e
+                    columns: [e]
+              c:
+                columns:
+                  id: { type: integer, required: true }
+                  tid: { type: integer, required: true, references: { table: t, column: id } }
+                primary_key: [id]
+        """.trimIndent() + "\n"
+
+        val dir = Files.createTempDirectory("cli-migrate-rebuild-deps")
+        val before = dir.resolve("d.yaml").also { Files.writeString(it, yaml("a, b")) }
+        val after = dir.resolve("d-vals.yaml").also { Files.writeString(it, yaml("a, b, c")) }
+        val create = dir.resolve("create.sql")
+        run("schema", "generate", "--source", before.toString(), "--target", "sqlite", "--output", create.toString()) shouldBe 0
+        val db = dir.resolve("db.sqlite")
+        applyFile(db, create)
+        exec(
+            db,
+            "INSERT INTO p (id) VALUES (1)", "INSERT INTO t (id, pid, e) VALUES (1, 1, 'a')",
+            "INSERT INTO c (id, tid) VALUES (1, 1)",
+        )
+
+        run(
+            "schema", "migrate", "--source", after.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--report", dir.resolve("report.json").toString(),
+        ) shouldBe 0
+
+        exec(db, "INSERT INTO t (id, pid, e) VALUES (2, 1, 'c')")
+        names(db) shouldContain "ix_t_e"
+        scalar(db, "SELECT count(*) FROM pragma_foreign_key_list('c')") shouldBe "1"
+        scalar(db, "SELECT count(*) FROM pragma_foreign_key_check") shouldBe "0"
+        scalar(db, "SELECT count(*) FROM c") shouldBe "1"
+        scalar(db, "SELECT count(*) FROM t") shouldBe "2"
     }
 })

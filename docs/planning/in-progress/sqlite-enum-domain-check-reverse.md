@@ -260,6 +260,13 @@ stehen hier und in Handbuch, Spec und Changelog.
   Boolean bekommen (`resolvesRefTypeVocabulary`); die Aussage „keine neuen
   Aufrufer-Parameter" in den Einhängepunkten gilt nur, soweit das Gate über die
   Capability läuft — die Durchreichung der Capability selbst ist neu.
+- **Bestehende Grenze, nicht Teil dieses Slices.** Hängt eine Sicht von der
+  neu gebauten Tabelle ab, blockiert `schema migrate --execute` mit
+  `TRANSACTION_SCOPE_UNSUPPORTED`: der Neubau läuft in einer eigenen Transaktion,
+  das `ReplaceView` im Runner — gemischte Umfänge lehnt der Executor ab
+  (`MigrationStreamClassifier`, „deferred to Plan-2 §G.3"). Das gilt für jeden
+  SQLite-Neubau mit abhängiger Sicht, nicht nur für Wertevorräte. Index und
+  Fremdschlüssel (auch von Kindtabellen) bleiben erhalten (E2E).
 - **Bekannte Grenze.** Ein Spaltenname mit Hochkomma-Verdopplung im Domain-CHECK
   wird über `EnumCheckProjection` erkannt (doppeltes `""`).
 
