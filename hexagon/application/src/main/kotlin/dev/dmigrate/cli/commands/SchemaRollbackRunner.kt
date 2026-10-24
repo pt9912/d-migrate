@@ -219,12 +219,14 @@ class SchemaRollbackRunner(
         val canonicalizePartitioning = dialect?.let(::capabilityPartitionCanonicalizer) ?: { it }
         // Und dieselbe Faltung der beiden Autowert-Schreibweisen.
         val foldsAutoIncrement = dialect?.let(::capabilityFoldsAutoIncrementOntoIdentity) == true
+        // Und dieselbe Sicht auf benannte Typen.
+        val projectsCustomTypes = dialect?.let(::capabilityProjectsCustomTypes) ?: true
         // Rohes SQL steht im Artefakt in der Autorenschreibweise, im Ziel in der
         // Katalogform des Servers -- beide fallen aus dem Abdruck heraus, wie beim
         // Post-Compare des Migrate, der den erwarteten Wert festgehalten hat.
         val targetFingerprint = fingerprint(
             RawSqlTextProjection.blank(targetResolved.schema), canonicalizeType, canonicalizeIndex, canonicalizeGeneration,
-            canonicalizePartitioning, foldsAutoIncrement,
+            canonicalizePartitioning, foldsAutoIncrement, projectsCustomTypes,
         )
         val acceptable = if (parsed.recovery) {
             parsed.allowedPostUpFingerprints.orEmpty().toSet()

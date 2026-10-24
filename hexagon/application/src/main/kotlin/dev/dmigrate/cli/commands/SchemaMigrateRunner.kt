@@ -237,6 +237,7 @@ class SchemaMigrateRunner(
         val canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
         val canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
         val foldsAutoIncrementOntoIdentity: Boolean,
+        val projectsCustomTypes: Boolean,
     )
 
     // Schemagebunden: ein `Enum(refType)` loest gegen die Custom Types
@@ -248,6 +249,7 @@ class SchemaMigrateRunner(
             capabilityGenerationCanonicalizer(dialect, prepared.targetNormalized.serverVersion)
         val canonicalizePartitioning = capabilityPartitionCanonicalizer(dialect)
         val foldsAutoIncrement = capabilityFoldsAutoIncrementOntoIdentity(dialect)
+        val projectsCustomTypes = capabilityProjectsCustomTypes(dialect)
         val desiredSansRawText = RawSqlTextProjection.blank(prepared.sourceNormalized.schema)
         return EndpointFingerprints(
             current = MigrationFingerprint.compute(
@@ -257,6 +259,7 @@ class SchemaMigrateRunner(
                 canonicalizeGeneration,
                 canonicalizePartitioning,
                 foldsAutoIncrement,
+                projectsCustomTypes,
             ),
             desired = MigrationFingerprint.compute(
                 prepared.sourceNormalized.schema,
@@ -265,6 +268,7 @@ class SchemaMigrateRunner(
                 canonicalizeGeneration,
                 canonicalizePartitioning,
                 foldsAutoIncrement,
+                projectsCustomTypes,
             ),
             desiredSansRawText = MigrationFingerprint.compute(
                 desiredSansRawText,
@@ -273,11 +277,13 @@ class SchemaMigrateRunner(
                 canonicalizeGeneration,
                 canonicalizePartitioning,
                 foldsAutoIncrement,
+                projectsCustomTypes,
             ),
             canonicalizeIndex = canonicalizeIndex,
             canonicalizeGeneration = canonicalizeGeneration,
             canonicalizePartitioning = canonicalizePartitioning,
             foldsAutoIncrementOntoIdentity = foldsAutoIncrement,
+            projectsCustomTypes = projectsCustomTypes,
         )
     }
 
@@ -585,6 +591,7 @@ class SchemaMigrateRunner(
         endpoints.canonicalizeGeneration,
         endpoints.canonicalizePartitioning,
         endpoints.foldsAutoIncrementOntoIdentity,
+        endpoints.projectsCustomTypes,
         RawSqlBaseline(
             observedBeforeRun = prepared.targetNormalized.schema,
             touchedObjects = plan.operations.map { it.objectRef.path.first() }.toSet(),
@@ -683,6 +690,7 @@ class SchemaMigrateRunner(
                 canonicalizePartitioning = capabilityPartitionCanonicalizer(prep.effectiveDialect),
                 foldsAutoIncrementOntoIdentity =
                     capabilityFoldsAutoIncrementOntoIdentity(prep.effectiveDialect),
+                projectsCustomTypes = capabilityProjectsCustomTypes(prep.effectiveDialect),
             )
         }
         // Wo der Berechnungsausdruck einer Spalte nicht entscheidbar war, plant

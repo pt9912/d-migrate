@@ -263,6 +263,7 @@ internal class SchemaMigrateExecutionStage(
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
         foldsAutoIncrementOntoIdentity: Boolean = false,
+        projectsCustomTypes: Boolean = true,
         rawSqlBaseline: RawSqlBaseline? = null,
     ): PostCompareOutcome? {
         val loader = dbLoader ?: return null
@@ -296,10 +297,11 @@ internal class SchemaMigrateExecutionStage(
             canonicalizeGeneration,
             canonicalizePartitioning,
             foldsAutoIncrementOntoIdentity,
+            projectsCustomTypes,
         )
         val desiredFp = fingerprint(
             desiredSchema, canonicalizerFor(desiredSchema), canonicalizeIndex, canonicalizeGeneration,
-            canonicalizePartitioning, foldsAutoIncrementOntoIdentity,
+            canonicalizePartitioning, foldsAutoIncrementOntoIdentity, projectsCustomTypes,
         )
         rawSqlHandChange(request, rawSqlBaseline, postNormalized.schema)?.let { return it }
         return if (observed == desiredFp) {

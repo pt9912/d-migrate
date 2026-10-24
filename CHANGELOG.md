@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`schema rollback --execute` bricht auf Dialekten ohne benannte Typen bei
+  `custom_types` nicht mehr mit `TARGET_STATE_MISMATCH` ab** (Issue #47).
+  Trug das Schema `custom_types` (etwa eine Aufzaehlung mit `ref_type`),
+  endete der Rollback auf SQLite mit Exit `8` — obwohl die Datenbank nach dem
+  Up-SQL dem Soll entsprach. Der Fingerabdruck des Soll-Schemas rechnete die
+  benannten Typen mit ein, das zurueckgelesene Ziel eines Dialekts ohne Custom
+  Types (`supportsCustomTypes = false`) kann sie nie tragen. Jetzt fallen sie
+  fuer solche Dialekte aus dem Abdruck. Der Abdruck eines Schemas ohne
+  benannte Typen aendert sich nicht (`schema-fingerprint-v17` bleibt); ein
+  Rollback-Artefakt, das fuer einen solchen Dialekt mit benannten Typen
+  erzeugt wurde, ist neu zu erzeugen.
+
 ## [1.8.1] - 2026-10-24
 
 ### Fixed

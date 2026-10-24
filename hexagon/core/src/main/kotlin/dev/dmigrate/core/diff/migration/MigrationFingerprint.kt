@@ -200,10 +200,11 @@ object MigrationFingerprint {
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
         foldsAutoIncrementOntoIdentity: Boolean = false,
+        projectsCustomTypes: Boolean = true,
     ): String = sha256Hex(
         project(
             schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
-            foldsAutoIncrementOntoIdentity,
+            foldsAutoIncrementOntoIdentity, projectsCustomTypes,
         ),
     )
 
@@ -229,10 +230,16 @@ object MigrationFingerprint {
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
         foldsAutoIncrementOntoIdentity: Boolean = false,
+        projectsCustomTypes: Boolean = true,
     ): String {
         val sb = StringBuilder()
         sb.append("algorithm=").append(ALGORITHM).append('\n')
-        appendCustomTypes(sb, schema.customTypes)
+        // Ein Dialekt ohne benannte Typen (`supportsCustomTypes = false`) gibt
+        // sie auch nicht zurueck: das Soll-Schema fuehrte sie, das Ziel nie.
+        // Die Zeile bleibt als `custom_types[0]` stehen statt zu entfallen --
+        // so aendert sich der Abdruck eines Schemas ohne benannte Typen nicht,
+        // und es braucht keine neue Algorithmus-Version.
+        appendCustomTypes(sb, if (projectsCustomTypes) schema.customTypes else emptyMap())
         appendTables(
             sb,
             canonicalizedTables(

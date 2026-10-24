@@ -125,6 +125,9 @@ open class DiffPlanner {
         // Comparator: sonst traegt das Artefakt einen Abdruck, den ein
         // Post-Compare gegen dieselbe Spalte nie erreicht.
         foldsAutoIncrementOntoIdentity: Boolean = false,
+        // Und dieselbe Sicht auf benannte Typen: ein Dialekt, der sie nicht
+        // zurueckgibt, hasht sie auch im Artefakt nicht mit.
+        projectsCustomTypes: Boolean = true,
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         // F.5 Sub-Slice A (2026-05-19): the planner-level block
@@ -228,11 +231,11 @@ open class DiffPlanner {
         return DiffResult(
             current = endpoint(
                 current, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
-                foldsAutoIncrementOntoIdentity,
+                foldsAutoIncrementOntoIdentity, projectsCustomTypes,
             ),
             desired = endpoint(
                 desired, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
-                foldsAutoIncrementOntoIdentity,
+                foldsAutoIncrementOntoIdentity, projectsCustomTypes,
             ),
             schemaDiff = schemaDiff,
             operations = sortResult.sorted,
@@ -252,13 +255,14 @@ open class DiffPlanner {
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
         foldsAutoIncrementOntoIdentity: Boolean,
+        projectsCustomTypes: Boolean,
     ): DiffEndpoint =
         DiffEndpoint(
             schemaName = schema.name,
             schemaVersion = schema.version,
             fingerprint = MigrationFingerprint.compute(
                 schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
-                foldsAutoIncrementOntoIdentity,
+                foldsAutoIncrementOntoIdentity, projectsCustomTypes,
             ),
         )
 

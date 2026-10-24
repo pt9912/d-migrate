@@ -47,6 +47,7 @@ object PartitionOverlayHint {
             canonicalizeGeneration = capabilityGenerationCanonicalizer(dialect),
             canonicalizePartitioning = capabilityPartitionCanonicalizer(dialect),
             foldsAutoIncrementOntoIdentity = capabilityFoldsAutoIncrementOntoIdentity(dialect),
+            projectsCustomTypes = capabilityProjectsCustomTypes(dialect),
         )
 
     /**

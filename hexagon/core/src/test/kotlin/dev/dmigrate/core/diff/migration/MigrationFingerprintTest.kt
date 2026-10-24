@@ -656,4 +656,27 @@ class MigrationFingerprintTest : FunSpec({
         out shouldContain "precision=12"
         out shouldContain "check=VALUE > 0"
     }
+
+    // Issue #47: ein Dialekt ohne benannte Typen gibt sie nicht zurueck.
+
+    test("projectsCustomTypes = false blendet die benannten Typen aus dem Abdruck aus") {
+        val withTypes = schema().copy(
+            customTypes = mapOf(
+                "ee" to dev.dmigrate.core.model.CustomTypeDefinition(
+                    kind = dev.dmigrate.core.model.CustomTypeKind.ENUM,
+                    values = listOf("a", "b"),
+                ),
+            ),
+        )
+        MigrationFingerprint.compute(withTypes, projectsCustomTypes = false) shouldBe
+            MigrationFingerprint.compute(schema(), projectsCustomTypes = false)
+        MigrationFingerprint.compute(withTypes) shouldNotBe MigrationFingerprint.compute(schema())
+    }
+
+    test("projectsCustomTypes = false aendert den Abdruck eines Schemas ohne benannte Typen nicht") {
+        // Deshalb braucht der Fix keine neue Algorithmus-Version: bestehende
+        // Artefakte ohne benannte Typen bleiben vergleichbar.
+        MigrationFingerprint.compute(schema(), projectsCustomTypes = false) shouldBe
+            MigrationFingerprint.compute(schema())
+    }
 })

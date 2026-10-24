@@ -26,6 +26,7 @@ internal typealias FingerprintOfSchema = (
     (ColumnGeneration?) -> ColumnGeneration?,
     (PartitionConfig) -> PartitionConfig,
     Boolean,
+    Boolean,
 ) -> String
 
 /**
@@ -216,6 +217,14 @@ private const val MIDNIGHT = "00:00:00"
  */
 fun capabilityFoldsAutoIncrementOntoIdentity(dialect: DatabaseDialect): Boolean =
     DialectCapabilities.forDialect(dialect).rendersAutoIncrementAsIdentity
+
+/**
+ * Ob der Abdruck die benannten Typen eines Schemas mit hasht. Ein Dialekt ohne
+ * `supportsCustomTypes` (SQLite, MySQL, ...) gibt sie nie zurueck -- hasht der
+ * Abdruck sie trotzdem, trifft das Ziel das Artefakt nie.
+ */
+fun capabilityProjectsCustomTypes(dialect: DatabaseDialect): Boolean =
+    DialectCapabilities.forDialect(dialect).supportsCustomTypes
 
 /**
  * Der Name eines einspaltigen Constraints — oder `null`, wo der Dialekt ihn
