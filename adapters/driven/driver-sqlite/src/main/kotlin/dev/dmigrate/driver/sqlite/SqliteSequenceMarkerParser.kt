@@ -167,7 +167,8 @@ internal object SqliteIdentifierTokenScanner {
                 "(${Regex.escape(target)}|" +
                 "\"${Regex.escape(target)}\"|" +
                 "`${Regex.escape(target)}`|" +
-                "\\[${Regex.escape(target)}])",
+                "\\[${Regex.escape(target)}])" +
+                "(?![a-z0-9_])",
         )
         if (schemaQualifiedRegex.containsMatchIn(cleaned)) return true
         // Bare identifier at a token boundary (no quoting).

@@ -31,7 +31,7 @@ internal object SqliteViewDependencies {
                 if (name in reached) continue
                 val declared = view.dependencies?.let { it.tables + it.views }.orEmpty()
                 val hit = declared.any { it.lowercase() in referenced } ||
-                    referenced.any { SqliteIdentifierTokenScanner.containsIdentifier(view.query.orEmpty(), it) }
+                    referenced.any { mentions(view.query.orEmpty(), it) }
                 if (hit) {
                     reached += name
                     referenced += name.lowercase()
@@ -56,4 +56,14 @@ internal object SqliteViewDependencies {
         } else {
             tables.associateWith { viewNamesOf(current, it) + viewNamesOf(desired, it) }
         }
+
+    /**
+     * Nennt [query] den Namen als Bezeichner? Ein Name in einfachen Anfuehrungszeichen
+     * gilt als Literal und faellt aus dem Scan heraus; hinter `FROM`/`JOIN` ist er aber
+     * ein Tabellenname (SQLite liest `FROM 'users'` so), und das zaehlt hier.
+     */
+    private fun mentions(query: String, name: String): Boolean =
+        SqliteIdentifierTokenScanner.containsIdentifier(query, name) ||
+            Regex("""\b(?:from|join)\s+'${Regex.escape(name.replace("'", "''"))}'""", RegexOption.IGNORE_CASE)
+                .containsMatchIn(query)
 }

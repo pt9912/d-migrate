@@ -82,6 +82,22 @@ class SqliteViewDependenciesTest : FunSpec({
         SqliteViewDependencies.viewNamesOf(s, "orders") shouldBe setOf("decl")
     }
 
+    test("Teilwoerter sind kein Bezug") {
+        val s = schema(
+            "a" to view("SELECT * FROM t2"), "b" to view("SELECT * FROM t_x"),
+            "c" to view("SELECT * FROM test"), "d" to view("SELECT * FROM ct"), "e" to view("SELECT * FROM s.t2"),
+        )
+        SqliteViewDependencies.viewNamesOf(s, "t") shouldBe emptySet()
+    }
+
+    test("ein Name in einfachen Anfuehrungszeichen hinter FROM/JOIN ist ein Bezug, im Literal nicht") {
+        val s = schema(
+            "f" to view("SELECT * FROM 't'"), "j" to view("SELECT * FROM other JOIN 'T' ON 1"),
+            "lit" to view("SELECT 't' FROM other"),
+        )
+        SqliteViewDependencies.viewNamesOf(s, "t") shouldBe setOf("f", "j")
+    }
+
     test("viewsByTable ohne Schema ist leer") {
         SqliteViewDependencies.viewsByTable(setOf("t"), null, null) shouldBe emptyMap()
     }

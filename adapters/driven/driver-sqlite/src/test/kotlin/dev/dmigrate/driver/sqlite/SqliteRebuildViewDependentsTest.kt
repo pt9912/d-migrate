@@ -111,4 +111,14 @@ class SqliteRebuildViewDependentsTest : FunSpec({
         c.rebuildBuckets.getValue("t").map { it.id } shouldBe listOf("alter-1")
         c.simpleOps.map { it.id } shouldBe listOf("op")
     }
+
+    test("classify(): eine Sicht nur im Ist (DropView) oder nur im Soll (CreateView) gehoert in den Eimer") {
+        val empty = SchemaDefinition(name = "S", version = "1", tables = mapOf("t" to table(false)))
+        val drop = DiffOperation.DropView("op", viewRef, noDeps)
+        val create = DiffOperation.CreateView("op", viewRef, noDeps)
+        SqliteRebuildPlanner.classify(listOf(rebuildOp, drop), current = withView, desired = empty)
+            .rebuildBuckets.getValue("t").map { it.id } shouldBe listOf("alter-1", "op")
+        SqliteRebuildPlanner.classify(listOf(rebuildOp, create), current = empty, desired = withView)
+            .rebuildBuckets.getValue("t").map { it.id } shouldBe listOf("alter-1", "op")
+    }
 })

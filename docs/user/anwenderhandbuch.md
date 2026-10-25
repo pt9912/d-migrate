@@ -2137,15 +2137,18 @@ sie als normale View erzeugt (Warnung **W103**).
 - In **diff-basierten Migrationen** (`schema migrate`) werden Materialized Views
   blockiert, bis ein eigener Refresh-/Staleness-Vertrag existiert — sie werden
   dort nicht als normale View gerendert.
-- **SQLite:** baut `schema migrate` eine Tabelle neu auf (SQLite kann Nullbarkeit,
-  Typ oder Constraints nur so ändern), löscht und legt `schema migrate` jede Sicht neu an, die die
-  Tabelle im Abfragetext nennt — auch über andere Sichten, und auch ohne
-  `dependencies`. Der Text wird nach Bezeichnern
-  durchsucht (Namen in Literalen und Kommentaren zählen nicht); im Zweifel wird eine
-  Sicht eher einmal zu viel neu angelegt. Bezüge, die nur ein Trigger-Rumpf nennt,
-  erkennt das nicht. Deklarieren Sie `dependencies.tables` an einer Sicht, verlangt
-  eine Spaltenänderung weiterhin auch `dependencies.columns` (sonst blockiert
-  `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS`).
+- **SQLite:** Eine Tabelle, die SQLite nur über einen Neubau ändern kann (Nullbarkeit,
+  Typ, Constraints), baut `schema migrate` neu auf. Dabei löscht und legt es jede
+  Sicht neu an, die die Tabelle im Abfragetext nennt — auch über andere Sichten und
+  auch ohne `dependencies`. Der Text wird nach Bezeichnern durchsucht (Namen in
+  Literalen und Kommentaren zählen nicht); im Zweifel wird eine Sicht eher einmal zu
+  viel neu angelegt. Grenzen: Bezüge, die nur ein Trigger-Rumpf nennt, erkennt das
+  nicht; eine materialisierte Sicht, die die Tabelle im Text nennt, blockiert den
+  Neubau (auch bei einem bloß gleichnamigen Spaltennamen); eine **neue** Sicht über
+  einer ebenfalls neuen Tabelle wird vor dieser angelegt, wenn zwei weitere Tabellen
+  neu gebaut werden — legen Sie die Tabelle in einem eigenen Lauf an. Deklarieren Sie
+  `dependencies.tables` an einer Sicht, verlangt eine Spaltenänderung weiterhin auch
+  `dependencies.columns` (sonst blockiert `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS`).
 - Vollständige View-Felder (inkl. `columns`, `dependencies`): [Anhang F.11](#f11-views).
 
 ### 3.18 Trigger, Procedures und Functions mitnehmen

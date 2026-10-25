@@ -67,7 +67,7 @@ zwischen Soll und Ist: der Reader schneidet den Sichttext per `extractViewQuery`
 Zeilenumbrüche und Semikolons. Aus dem Code allein nicht entscheidbar; P0.1 misst
 es.
 
-## Richtung (vorläufig, nach P0 zu bestätigen)
+## Richtung (entschieden: A′, siehe Nachtrag)
 
 Zu leisten ist eine **Tabellenbezug-Ableitung aus dem Sichttext**, die an drei Stellen
 wirkt: bei der Drop-Liste (aus dem Ist-Schema), bei der Create-Liste (aus dem
@@ -125,7 +125,7 @@ Operation) und die **Eimer-Zuordnung** von Operationen (`absorbingRebuildTableFo
 5. **Down-Richtung / `schema rollback`:** der Down-Neubau vertauscht die Schemas; die
    Ableitung muss dort ebenfalls stimmen.
 
-### P1 — Entscheidung
+### P1 — Entscheidung (getroffen: A′, ohne ADR; siehe Nachtrag)
 
 Richtung (vorläufig A′, mit B als Rückfall für Sichten, deren Text sich nicht sicher
 lesen lässt); ob ein ADR nötig ist (bei A′ voraussichtlich nicht).
@@ -145,8 +145,8 @@ welche Sichten ein Neubau mitnimmt, und das gegebenenfalls nachziehen.
 ## Nicht-Scope
 
 - Materialisierte Sichten (bleiben blockiert, `emitMaterializedViewBlocker`).
-- Trigger, deren Rumpf die Tabelle nur erwähnt: heute zählt nur `trigger.table`, nicht
-  der Rumpf. Ein Gegenstück zur Sicht-Ableitung, aber nicht Teil von #50.
+- Trigger, deren Rumpf die Tabelle nur erwähnt: zählt nur `trigger.table` (auch eine Sicht
+  als Träger eines `INSTEAD OF`-Triggers), nicht der Rumpf. Ein Gegenstück zur Sicht-Ableitung, aber nicht Teil von #50.
 - Der Neubau selbst (Reihenfolge, Temp-Namen, Preflight) — unverändert.
 - Andere Dialekte.
 
@@ -206,7 +206,27 @@ Bezeichner mit Apostroph verschlucken im Bezeichner-Scan den Rest nicht mehr; Na
 sind ohne Beachtung der Schreibweise. `classify` ist fuer Sicht- und Trigger-Operationen
 einzeln getestet. **Grenzen:** eine Datei kann keinen Trigger auf einer Sicht deklarieren (der
 Validator kennt nur Tabellen), ein E2E dafuer entfaellt; die `INSTEAD OF`-Trigger der Datenbank
-werden planerseitig mitgenommen (Unit-Test). Ein neu angelegter Sicht ueber einer ebenfalls neuen
-Tabelle in einem spaeteren Eimer kann am `RENAME` scheitern (Randfall, nicht behandelt).
+werden planerseitig mitgenommen (Unit-Test). Randfall (nicht behandelt, im Handbuch genannt): Buckets werden vor den einfachen Operationen
+gerendert. Eine **neue** Sicht ueber einer **neuen** Tabelle T2, die in einen Eimer faellt,
+wird dort vor `CREATE TABLE T2` angelegt; ein spaeterer Eimer scheitert dann ab SQLite 3.26 am
+`RENAME` ("error in view …: no such table"). Der Fall braucht zwei Neubau-Tabellen plus neue
+Tabelle plus neue Sicht.
+Der Bezeichner-Scan zaehlt `FROM 'name'`/`JOIN 'name'` als Bezug (SQLite liest das so), ein
+Literal sonst nicht. Eine materialisierte Sicht, die den Namen im Text nennt, blockiert den
+Neubau jetzt auch ohne `dependencies`; ein Test dafuer fehlt.
 Der Scan ist nicht schneller geworden (`viewNamesOf` je Tabelle und Aufruf, unkritisch bei
 ueblichen Schemagroessen).
+
+**Messungen P0.2/P0.3/P0.5 und Altstand-Nachweis.** Lauf der neuen CLI-Tests gegen den Hauptcode
+von `origin/main` (also ohne die Aenderung, Quellbaum identisch mit dem Altstand fuer diesen Pfad):
+`TRANSACTION_SCOPE_UNSUPPORTED` (Fall 1, 16 Treffer im Log, auch Plan-Only) und `executionError`
+"no such table: main.t" (Fall 2, mit `dependencies`); beide Tests rot, der Plan-Only-Lauf endet
+mit Exit 8. Die Down-Richtung (P0.5) ist im Rollback-Test belegt: gleiche Reihenfolge
+`DROP VIEW` → `DROP TABLE` → `ALTER TABLE` → `CREATE VIEW` im Rollback-Skript, danach `operationsTotal: 0`.
+Gates: `make docker-test` (ganzes Repo), `make integration` (`:test:integration-sqlite:test`),
+`make solid-suppression-gate`, `make docs-check` gruen.
+
+**Runde 3 (behoben):** `FROM 'name'`, `CREATE VIEW v AS` ohne Abfrage liefert `null`,
+`classify` fuer einseitige Sichten, Teilwort-Negativfaelle. **Offen/akzeptiert:** der Scan ist
+nicht gecacht (`viewNamesOf` je Tabelle und Aufruf, bei ueblichen Schemagroessen unkritisch,
+nicht gemessen); der Rollback-Test fuehrt das Up-Skript per JDBC aus; `SELECT *` nicht gemessen.

@@ -30,7 +30,7 @@ internal object SqliteViewHead {
             i = skip(createSql, columnListEnd(createSql, i) ?: return null)
         }
         val afterAs = keyword(createSql, i, "AS") ?: return null
-        return createSql.substring(afterAs).trim()
+        return createSql.substring(afterAs).trim().ifEmpty { null }
     }
 
     private fun keyword(sql: String, i: Int, word: String): Int? =
