@@ -222,17 +222,24 @@ internal object SqliteRebuildPlanner {
         // ([SqliteRefTypeColumns]); dafuer bleiben die Tabellen unaufgeloest.
         val sourceTypes = sourceSchema?.customTypes.orEmpty()
         val targetTypes = targetSchema?.customTypes.orEmpty()
+        val resolvedSource = SqliteRefTypeColumns.withDomainBaseTypes(source, sourceTypes)
+        val resolvedTarget = SqliteRefTypeColumns.withDomainBaseTypes(target, targetTypes)
         val mapping = computeColumnMapping(
-            SqliteRefTypeColumns.withDomainBaseTypes(source, sourceTypes),
-            SqliteRefTypeColumns.withDomainBaseTypes(target, targetTypes),
+            resolvedSource,
+            resolvedTarget,
             sql,
-            // Eine Domain-Spalte bleibt auf beiden Seiten `ref_type`: ihren Basistypwechsel meldet der Vergleich
-            // nicht als `AlterColumnType`, sondern als `AlterCustomType` am Typ. Sie zaehlt hier immer als zu
-            // pruefen (aufgeloester Basistyp gegen die Cast-Matrix), sonst fiele der Wechsel `text` -> `integer`
-            // ohne CAST und ohne Blocker durch.
-            typeChangeReported = typeChangedColumns(bucket) +
+            // Eine Domain-Spalte bleibt `ref_type`: ihren Basistypwechsel meldet der Vergleich nicht als
+            // `AlterColumnType`, sondern als `AlterCustomType` am Typ (Datei gegen Datei) oder gar nicht (gegen eine
+            // Datenbank liest der Reader nur den Basistyp, ohne Laenge). Der Neubau prueft sie deshalb selbst: wechselt die
+            // Speicherklasse (`TEXT` -> `INTEGER`), entscheidet die Cast-Matrix; eine andere Laenge innerhalb derselben
+            // Klasse (`Text()` gegen `Text(32)`) ist kein Typwechsel.
+            typeChangeReported = typeChangedColumns(bucket) + domainColumnsWithStorageChange(
                 SqliteRefTypeColumns.domainColumns(source, sourceTypes) +
-                SqliteRefTypeColumns.domainColumns(target, targetTypes),
+                    SqliteRefTypeColumns.domainColumns(target, targetTypes),
+                resolvedSource,
+                resolvedTarget,
+                sql,
+            ),
         )
         val resolvedTempName = resolveTempTableName(table, bucket, catalog)
         return SqliteRebuildPlan(
@@ -498,6 +505,17 @@ internal object SqliteRebuildPlanner {
      * (`schema migrate`) mit der Projektion des Dialekts; der Planer rechnet ihn
      * nicht ein zweites Mal aus `source`/`target` (Issue #54).
      */
+    private fun domainColumnsWithStorageChange(
+        domainColumns: Set<String>,
+        resolvedSource: TableDefinition,
+        resolvedTarget: TableDefinition,
+        sql: SqliteDiffSqlBuilders,
+    ): Set<String> = domainColumns.filter { name ->
+        val before = resolvedSource.columns[name]?.type
+        val after = resolvedTarget.columns[name]?.type
+        before != null && after != null && sql.toSql(before) != sql.toSql(after)
+    }.toSet()
+
     private fun typeChangedColumns(bucket: List<DiffOperation>): Set<String> =
         bucket.filterIsInstance<DiffOperation.AlterColumnType>()
             .mapNotNull { it.objectRef.path.getOrNull(1) }

@@ -142,24 +142,23 @@ class CliSchemaMigrateRebuildFoldedGapsSqliteTest : FunSpec({
         Files.readString(dir.resolve("plan.sql")) shouldContain "INSERT INTO"
     }
 
-    // GEFUNDENER FEHLER (nicht behoben, nur festgehalten): die Datenbank liest `n` als `Text()` ohne Laenge, die
-    // aufgeloeste Domain traegt `Text(32)`. Seit der Domain-Pruefung im Neubau (domainColumns) meldet die Cast-Matrix
-    // darin eine Verengung ("target length is shorter than source length") und blockiert -- bei jeder Domain mit
-    // Laenge, auch ohne Typaenderung. Erwartet waere Exit 0 mit erhaltenen Daten (wie beim Fall ohne Laenge oben). Wird
-    // der Fehler behoben, schlaegt dieser Test fehl: dann auf Exit 0 und erhaltene Daten umstellen.
-    test("Domain ueber varchar(32) gegen eine Datenbank: der Neubau blockiert an der Laenge (bekannter Fehler)") {
+    // Regressionstest: die Datenbank liest `n` als `Text()` ohne Laenge, die aufgeloeste Domain traegt `Text(32)`. Die
+    // Domain-Pruefung im Neubau (domainColumns) gilt nur, wenn BEIDE Seiten die Domain tragen (Datei gegen Datei); gegen
+    // eine Datenbank wuerde sie hier eine Verengung ("target length is shorter than source length") ohne Typaenderung
+    // melden und jeden Neubau einer Tabelle mit einer Domain mit Laenge blockieren.
+    test("Domain ueber varchar(32) gegen eine Datenbank: der Neubau laeuft durch, die Daten bleiben") {
         val dir = Files.createTempDirectory("cli-folded-domain-varchar-length")
         val before = write(dir, "a.yaml", yaml(false, domainColumn, domain("varchar(32)")))
         val after = write(dir, "b.yaml", yaml(true, domainColumn, domain("varchar(32)")))
         val db = databaseFromFile(dir, before)
         exec(db, "INSERT INTO t (id, flag, n) VALUES (1, 7, 'abc')")
-        val catalogBefore = catalog(db)
 
-        migrate(dir, after, db, "up", "--execute") shouldBe 8
+        val code = migrate(dir, after, db, "up", "--execute")
 
-        report(dir, "up") shouldContain "target length is shorter than source length"
-        catalog(db) shouldBe catalogBefore
+        withClue(report(dir, "up")) { code shouldBe 0 }
+        report(dir, "up") shouldNotContain "SQLITE_CAST_NOT_WHITELISTED"
         scalar(db, "SELECT n FROM t") shouldBe "abc"
+        scalar(db, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'flag' AND \"notnull\" = 1") shouldBe "1"
     }
 
     // Regressionstest zu SqliteRefTypeColumns.domainColumns: der Vergleich meldet den Basistypwechsel einer
