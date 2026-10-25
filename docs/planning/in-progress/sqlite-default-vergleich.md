@@ -178,3 +178,7 @@ gleichen Vergleiche liefen in P0 ungefixt auf PostgreSQL und MySQL mit `operatio
 Schwesterplan `sqlite-neubau-cast-gleiche-speicherklasse.md`. (2) Ganzzahl über der Genauigkeit von `double`
 bleibt ein Unterschied (SQLite-Exit 5 bei `--execute`). (3) PostgreSQL liest negative und große `bigint`-Defaults
 als Text.
+
+**Stand der Messung:** Die P0-Zeilen mit Exit 8 (`decimal` `0`, `boolean`) sind vor dem Merge des Schwesterplans
+`sqlite-neubau-cast-gleiche-speicherklasse.md` gemessen; die Tests dieses Plans laufen nach dem Rebase auf dessen
+Stand grün (Gates unten im Abschlussbericht des Implementierungslaufs, nicht hier).
