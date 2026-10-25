@@ -101,8 +101,8 @@ class SchemaComparatorCustomTypeFormTest : FunSpec({
         val same = listOf(
             "biginteger" to "bigint", "biginteger" to "int8", "integer" to "int4", "integer" to "INT",
             "smallint" to "int2", "text" to "varchar(50)", "text" to "character varying", "text" to "bpchar",
-            "decimal" to "numeric", "decimal" to "NUMERIC(10, 2)", "float" to "real", "float" to "double precision",
-            "boolean" to "bool",
+            "decimal" to "numeric", "float" to "real", "float" to "double precision",
+            "boolean" to "bool", "json" to "jsonb", "binary" to "bytea",
         )
         for ((read, authored) in same) {
             SchemaComparator().compare(schema(domain(read)), schema(domain(authored))).customTypesChanged.shouldBeEmpty()
@@ -124,5 +124,36 @@ class SchemaComparatorCustomTypeFormTest : FunSpec({
             .customTypesChanged shouldHaveSize 1
         SchemaComparator().compare(schema(domain("decimal", 10, 2)), schema(domain("numeric", 10, 2)))
             .customTypesChanged.shouldBeEmpty()
+    }
+
+    test("Typ mit Klammer: numeric(10,2) ist decimal mit precision 10 und scale 2 (#52)") {
+        val read = domain("decimal", 10, 2)
+        SchemaComparator().compare(schema(read), schema(domain("NUMERIC(10,2)"))).customTypesChanged.shouldBeEmpty()
+        SchemaComparator().compare(schema(read), schema(domain("numeric(10, 2)"))).customTypesChanged.shouldBeEmpty()
+        // Eine echte Aenderung in der eingebetteten Form bleibt sichtbar — in beide Richtungen.
+        SchemaComparator().compare(schema(read), schema(domain("numeric(12,2)"))).customTypesChanged shouldHaveSize 1
+        SchemaComparator().compare(schema(domain("numeric(10,2)")), schema(domain("numeric(12,2)")))
+            .customTypesChanged shouldHaveSize 1
+        // Das Feld nennt den Wert, die Klammer fehlt.
+        SchemaComparator().compare(schema(domain("numeric(10,2)")), schema(domain("decimal", 10, 2)))
+            .customTypesChanged.shouldBeEmpty()
+    }
+
+    test("Laenge eines Typs: verglichen nur, wenn beide Seiten sie tragen (#52)") {
+        SchemaComparator().compare(schema(domain("varchar(50)")), schema(domain("text"))).customTypesChanged.shouldBeEmpty()
+        SchemaComparator().compare(schema(domain("varchar(50)")), schema(domain("varchar(50)")))
+            .customTypesChanged.shouldBeEmpty()
+        SchemaComparator().compare(schema(domain("varchar(50)")), schema(domain("varchar(254)")))
+            .customTypesChanged shouldHaveSize 1
+        SchemaComparator().compare(schema(domain("char(1)")), schema(domain("char(5)"))).customTypesChanged shouldHaveSize 1
+    }
+
+    test("precision und scale zaehlen nur bei decimal — eine alte Reverse-Datei mit precision 32 ist unveraendert (#52)") {
+        SchemaComparator().compare(schema(domain("integer", 32, 0)), schema(domain("integer"))).customTypesChanged.shouldBeEmpty()
+        SchemaComparator().compare(schema(domain("bigint", 64, 0)), schema(domain("biginteger"))).customTypesChanged.shouldBeEmpty()
+        SchemaComparator().compare(schema(domain("float", 24)), schema(domain("real"))).customTypesChanged.shouldBeEmpty()
+        // Wechsel des Typs bleibt eine Aenderung, auch mit gleicher Zahl.
+        SchemaComparator().compare(schema(domain("integer", 32, 0)), schema(domain("decimal", 32, 0)))
+            .customTypesChanged shouldHaveSize 1
     }
 })

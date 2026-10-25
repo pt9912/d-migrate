@@ -39,4 +39,10 @@ class MigrationFingerprintDomainBaseTypeTest : FunSpec({
         fp(withDomain("integer", fields = emptyMap())) shouldBe
             fp(withDomain("integer"))
     }
+
+    test("precision und scale gehen nur bei decimal in den Abdruck, die Klammer des Typs zaehlt dort mit (#52)") {
+        fp(withDomain("integer", 32, 0)) shouldBe fp(withDomain("integer"))
+        fp(withDomain("numeric(10,2)")) shouldBe fp(withDomain("decimal", 10, 2))
+        fp(withDomain("numeric(10,2)")) shouldNotBe fp(withDomain("numeric(12,2)"))
+    }
 })

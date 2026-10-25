@@ -1246,6 +1246,11 @@ Für MySQL/SQLite/MSSQL: Kein nativer Support. Verhalten abhängig von konfiguri
 CREATE DOMAIN "positive_amount" AS DECIMAL(10,2) CHECK (VALUE >= 0);
 ```
 
+Der PostgreSQL-Reader gibt den `CHECK` einer Domain in der Schreibweise eines Autors zurück
+(ohne die überflüssigen äußeren Klammern und ohne den Cast an Zahl- und Textliteralen, den der
+Server setzt) und `precision`/`scale` nur für `decimal`; ein Ausdruck, den der Server umschreibt
+(`BETWEEN`, `IN`, ein Cast an `VALUE`), bleibt in Katalogform.
+
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
 Bei SQLite steht der CHECK **unbenannt** (`"n" INTEGER NOT NULL CHECK ("n" >= 0)`),
 ebenso der CHECK einer Enum mit `ref_type`, in `schema generate` wie in

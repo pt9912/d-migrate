@@ -173,6 +173,10 @@ class SchemaComparator(
         }
     }
 
+    private fun sameBaseType(left: String?, right: String?): Boolean =
+        CustomTypeBaseType.canonical(left) == CustomTypeBaseType.canonical(right) &&
+            CustomTypeBaseType.sameParameters(left, right)
+
     private fun compareCustomType(
         name: String,
         left: CustomTypeDefinition,
@@ -183,10 +187,10 @@ class SchemaComparator(
             kind = valueChangeOrNull(left.kind, right.kind),
             values = if (left.values.orEmpty() == right.values.orEmpty()) null
                 else ValueChange(left.values.orEmpty(), right.values.orEmpty()),
-            baseType = if (CustomTypeBaseType.canonical(left.baseType) == CustomTypeBaseType.canonical(right.baseType)) null
+            baseType = if (sameBaseType(left.baseType, right.baseType)) null
                 else valueChangeOrNull(left.baseType, right.baseType),
-            precision = valueChangeOrNull(left.precision, right.precision),
-            scale = valueChangeOrNull(left.scale, right.scale),
+            precision = valueChangeOrNull(CustomTypeBaseType.precision(left), CustomTypeBaseType.precision(right)),
+            scale = valueChangeOrNull(CustomTypeBaseType.scale(left), CustomTypeBaseType.scale(right)),
             check = valueChangeOrNull(left.check, right.check),
             // Die Beschreibung eines Typs liefert kein Reader zurueck: gegen ein Ziel waere sie
             // immer ein Unterschied, den keine Operation beheben kann.

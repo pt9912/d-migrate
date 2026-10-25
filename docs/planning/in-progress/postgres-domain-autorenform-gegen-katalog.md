@@ -191,7 +191,7 @@ kein Vergleich in B). Ursache 3 → Neutralform des Basistyps im Vergleich **und
 (`CustomTypeBaseType`). Ursache 2 → **Reader-Normalform** statt Falten im Vergleich
 (`PostgresDomainCheckForm`): überflüssige äußere Klammern und der Cast an Zahl-/Textliteralen
 entfallen — das ist keine Normalisierung im Migrate-Vergleich und berührt ADR 0056 nicht (kein ADR
-nötig); `BETWEEN`/`IN`/Cast an `VALUE`/`AND`-Klammern bleiben dokumentierte Grenze (**F**), C/D/E sind
+nötig, siehe Begründung unten); `BETWEEN`/`IN`/Cast an `VALUE`/`AND`-Klammern bleiben dokumentierte Grenze (**F**), C/D/E sind
 verworfen (fehlende Herkunft/Serverform im Standardfall, ADR 0056/0057). Compare-Seite: unverändert,
 `compareCustomType` ruft `RawTextFolding` weiter nicht auf; der Fehlalarm des Checks entfällt dort mit
 der Reader-Normalform.
@@ -208,3 +208,25 @@ eigene Befunde; Array-Domain (`_int4` gegen `integer[]`) ist Grenze; ein Test �
 `precision: 32` gegen neuen Reader“ fehlt (so eine Datei gilt nach der Änderung als geändert, bis die
 Zeile entfällt). Der YAML-Parser-Roundtrip ist durch `SchemaNodeParserTest` (Form der Datei-Domain)
 abgedeckt, nicht durch einen Integrationsfall mit echter Datei.
+
+**Warum kein ADR.** ADR 0056 verbietet die lokale Normalisierung roher SQL-Texte im **Vergleich**
+von `schema migrate` (Entscheidung 1), weil dafür ein Parser nötig wäre, der Kommentare, Quoting
+und Literale beherrscht. `PostgresDomainCheckForm` ist kein Vergleichsschritt, sondern die
+**Reverse-Normalform des Readers**: derselbe Platz, an dem `normalizeDomainCheck` schon `CHECK` und
+eine Klammerebene entfernte. Sie bleibt absichtlich klein (Standardliterale, kein Cast mit
+Typmodifikator oder Array-Klammer, nichts bei Rechenoperatoren, keine negativen Zahlen) und
+vergleicht nichts. Sichtbar ändert sich der `schema reverse`-Vertrag: der Domain-`CHECK` steht in
+Autorenform, `precision`/`scale` entfallen bei Nicht-`decimal` — beides in Handbuch und CHANGELOG
+genannt, `spec/schema-reference.md` sagt „`precision`/`scale` nur bei decimal“ schon so. Der
+Fingerabdruck-Bump auf v19 braucht für sich keinen ADR (v16/v17 hatten keinen). Entscheidet jemand,
+dass die Reader-Normalform doch eine Teilablösung von 0056 ist, wäre ein ADR 0061 nachzuziehen.
+
+**Nach dem Review (3 Durchgänge, behoben):** `numeric(10,2)` und `varchar(n)` verschwinden nicht
+mehr stillschweigend (Klammerparameter bleiben, `precision`/`scale` aus der Klammer, Länge nur bei
+beidseitiger Angabe); die Synonymtabelle kennt `jsonb`/`bytea`; die Cast-Entfernung lässt
+Typmodifikatoren, Array-Casts, Rechenoperatoren und negative Zahlen in Ruhe (Bug am
+`character varying(10)` gefunden und behoben); der Vergleich ignoriert `precision`/`scale` bei
+Nicht-`decimal` (alte Reverse-Dateien); Tests: `knownLimits` prüfen `AlterCustomType`, mehr Messzeilen
+(`double precision`, `bpchar`, Domain über Domain, `OR`, Array-Domain), Rückweg für Domains.
+**Noch offen:** Mehrfach-CHECK (Reader behält den letzten), die `varchar`-Länge aus dem Katalog,
+`schema reverse`-Test für die Ausgabe ohne `precision: 32`, ein Parser-Roundtrip mit `decimal`.

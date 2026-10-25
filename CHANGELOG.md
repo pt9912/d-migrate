@@ -10,20 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`schema migrate` auf PostgreSQL blockiert nicht mehr bei einer unveränderten Domain**
-  (Issue #52). Eine Domain, die Datei und Datenbank gleich ausdrücken, aber verschieden
-  schreiben, planten `AlterCustomType` und endeten mit Exit `8`. Der Reader meldet
-  `precision`/`scale` nur noch für `decimal` (der Katalog füllt sie auch für `integer`: 32/0)
-  und bringt den `CHECK` auf die Autorenform zurück (überflüssige äußere Klammern und der
-  Cast an Zahl- und Textliteralen entfallen); der Basistyp gilt in Neutralform (`bigint` =
-  `biginteger`, `numeric` = `decimal`, `varchar(n)` = `text`). Grenzen: `BETWEEN`, `IN (…)`
-  und ein Cast an `VALUE` bleiben in Katalogform und gelten als geändert. Der Fingerabdruck
-  steht auf `schema-fingerprint-v19`; ein Rollback-Artefakt einer früheren Version ist neu
-  zu erzeugen. Ein `schema reverse` schreibt keine `precision`/`scale` mehr an eine Domain
-  über `integer`, `bigint`, `smallint` oder einen Gleitkommatyp.
-
-## [1.9.1] - 2026-10-25
-
-### Fixed
+  (Issue #52). Schrieb die Datei eine Domain anders als der Katalog, planten Datei und
+  Datenbank trotz gleichem Inhalt `AlterCustomType` und der Lauf endete mit Exit `8`.
+  Jetzt gilt:
+  - Der Reader meldet `precision`/`scale` nur für `decimal` (der Katalog füllt sie auch für
+    `integer`: 32/0) und bringt den `CHECK` auf die Autorenform zurück (überflüssige äußere
+    Klammern und der Cast an Zahl- und Textliteralen entfallen).
+  - Der Basistyp gilt in Neutralform (`bigint` = `biginteger`, `numeric(10,2)` = `decimal` mit
+    `precision` 10 und `scale` 2, `varchar(n)` = `text`, `jsonb` = `json`, `bytea` = `binary`);
+    `precision`/`scale` zählen nur bei `decimal`.
+  - Grenzen: `BETWEEN`, `IN (…)`, ein Cast an `VALUE`, `AND`/`OR` ohne Serverklammern und
+    Array-Domains bleiben in Katalogform und gelten als geändert; die Länge einer
+    `varchar(n)`-Domain vergleicht `schema migrate` nur, wenn beide Seiten sie nennen.
+  - Der Fingerabdruck steht auf `schema-fingerprint-v19`; ein Rollback-Artefakt einer früheren
+    Version ist neu zu erzeugen. `schema reverse` schreibt keine `precision`/`scale` mehr an eine
+    Domain über `integer`, `bigint`, `smallint` oder einen Gleitkommatyp.
 
 - **`schema migrate` auf PostgreSQL blockiert nicht mehr bei einem unveränderten benannten
   Typ** (Issue #51). Eine Datei mit `custom_types` und eine PostgreSQL-Datenbank, die aus

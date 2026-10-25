@@ -2585,18 +2585,28 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   anders schreibt als der Katalog (leere `fields`, kein `ordinal`, `required`
   oder `unique` an einem Composite-Feld, eine `description` am Typ). Beim
   Vergleich gegen ein Ziel zählt die `description` eines Typs nicht, denn
-  keine Datenbank speichert sie. Bei einer **Domain** gilt der Basistyp in seiner Neutralform (`bigint`,
-  `int8` und `biginteger` sind derselbe Typ, ebenso `numeric`/`decimal`,
-  `varchar(50)`/`text`), `precision` und `scale` zählen nur bei `decimal`, und
-  den `check` bringt der Reader auf die Schreibweise zurück, die Sie ihm geben
-  (`VALUE >= 0` statt `((VALUE >= (0)::numeric))`). **Grenzen:** was der Server
-  darüber hinaus umschreibt, bleibt in Katalogform und gilt als geändert —
-  `BETWEEN`, `IN (…)` (der Server macht `= ANY (ARRAY[…])` daraus), ein Cast an
-  `VALUE` (etwa bei einer `varchar`-Domain) und `AND`/`OR` ohne die Klammern,
-  die der Server setzt (`(VALUE > 0) AND (VALUE < 10)`). Die Länge einer
-  `varchar(n)`-Domain und `DEFAULT`/`NOT NULL` einer Domain vergleicht
-  `schema migrate` nicht; hat eine Domain mehrere `CHECK`-Constraints, sieht es
-  nur den letzten. Eine **echte** Änderung eines benannten Typs
+  keine Datenbank speichert sie. Für eine **Domain** gilt:
+
+  - Der Basistyp zählt in seiner Neutralform: `bigint`, `int8` und `biginteger`
+    sind derselbe Typ, ebenso `numeric`/`decimal`, `varchar`/`char`/`text`,
+    `real`/`float`, `jsonb`/`json`, `bytea`/`binary`. `precision` und `scale`
+    zählen nur bei `decimal`; eine Datei darf sie am Typ schreiben
+    (`numeric(10,2)`) oder als Felder. Eine `precision: 32` an einer
+    `integer`-Domain aus einem früheren `schema reverse` stört nicht mehr.
+  - Der Reader bringt den `check` auf die Schreibweise zurück, die Sie ihm geben
+    (`VALUE >= 0` statt `((VALUE >= (0)::numeric))`).
+  - Die Länge einer `varchar(n)`/`char(n)`-Domain vergleicht `schema migrate`
+    nur, wenn Datei und Katalog sie beide nennen; der Katalog tut es nicht. Auch
+    `DEFAULT` und `NOT NULL` einer Domain vergleicht es nicht.
+
+  **Grenzen:** was der Server darüber hinaus umschreibt, bleibt in Katalogform
+  und gilt als geändert und blockiert: `BETWEEN`, `IN (…)` (der Server macht
+  `= ANY (ARRAY[…])` daraus), ein Cast an `VALUE` (etwa bei einer
+  `varchar`-Domain), `AND`/`OR` ohne die Klammern, die der Server setzt
+  (`(VALUE > 0) AND (VALUE < 10)`), Rechnungen mit Cast und negative Zahlen.
+  Eine Array-Domain (`integer[]`) gilt ebenfalls als geändert. Hat eine Domain
+  mehrere `CHECK`-Constraints, sieht `schema migrate` nur den letzten.
+  Eine **echte** Änderung eines benannten Typs
   (andere Werte einer Enum, anderer `base_type` oder `check` einer Domain,
   anderer Typ oder weitere Felder eines Composite) plant `schema migrate` als
   `AlterCustomType`; PostgreSQL rendert sie noch nicht, der Plan blockiert mit

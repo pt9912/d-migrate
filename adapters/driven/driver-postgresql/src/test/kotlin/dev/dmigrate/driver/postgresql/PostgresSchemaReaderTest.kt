@@ -414,14 +414,67 @@ class PostgresSchemaReaderTest : FunSpec({
 
     test("normalizeDomainCheck drops the cast on number and text literals only outside quotes (#52)") {
         normalizeDomainCheck("CHECK ((VALUE > (0)::double precision))") shouldBe "VALUE > 0"
-        normalizeDomainCheck("CHECK ((VALUE >= (-1.5)::numeric))") shouldBe "VALUE >= -1.5"
+        normalizeDomainCheck("CHECK ((VALUE >= (1.5)::numeric))") shouldBe "VALUE >= 1.5"
         normalizeDomainCheck("CHECK ((VALUE = 'a'::text))") shouldBe "VALUE = 'a'"
         normalizeDomainCheck("CHECK ((VALUE <> 'x'::character varying))") shouldBe "VALUE <> 'x'"
+        normalizeDomainCheck("CHECK ((VALUE = ANY (ARRAY['a'::text, 'b'::text])))") shouldBe "VALUE = ANY (ARRAY['a', 'b'])"
         // Ein Cast im Literal ist Text, kein Cast; ein Cast an VALUE bleibt.
         normalizeDomainCheck("CHECK ((VALUE <> '(0)::numeric'))") shouldBe "VALUE <> '(0)::numeric'"
         normalizeDomainCheck("CHECK ((length((VALUE)::text) > 0))") shouldBe "length((VALUE)::text) > 0"
-        // Klammern im Literal zaehlen nicht beim Suchen der aeusseren Klammer.
+        // Klammern im Literal zaehlen nicht beim Suchen der aeusseren Klammer; '' ist ein Escape.
         normalizeDomainCheck("CHECK ((VALUE <> ')'))") shouldBe "VALUE <> ')'"
+        normalizeDomainCheck("CHECK ((VALUE = 'it''s'::text))") shouldBe "VALUE = 'it''s'"
+    }
+
+    test("normalizeDomainCheck keeps a cast that carries a modifier or an array bracket (#52)") {
+        normalizeDomainCheck("CHECK ((VALUE = 'x'::character varying(10)))") shouldBe "VALUE = 'x'::character varying(10)"
+        normalizeDomainCheck("CHECK ((VALUE = 'x'::character(5)))") shouldBe "VALUE = 'x'::character(5)"
+        normalizeDomainCheck("CHECK ((VALUE = '{a,b}'::text[]))") shouldBe "VALUE = '{a,b}'::text[]"
+        normalizeDomainCheck("CHECK ((VALUE > (1)::numeric(10,2)))") shouldBe "VALUE > (1)::numeric(10,2)"
+    }
+
+    test("normalizeDomainCheck leaves casts alone where an operator makes the cast meaningful (#52)") {
+        // Ohne die Casts wuerde aus numeric-Division eine Ganzzahldivision.
+        normalizeDomainCheck("CHECK (((10)::numeric / (4)::numeric) > 2)") shouldBe "((10)::numeric / (4)::numeric) > 2"
+        normalizeDomainCheck("CHECK ((VALUE ^ (2)::numeric) > 1)") shouldBe "(VALUE ^ (2)::numeric) > 1"
+        // Negative Zahlen: ungemessen, bleiben unveraendert.
+        normalizeDomainCheck("CHECK ((VALUE > (-1)::numeric))") shouldBe "VALUE > (-1)::numeric"
+    }
+
+    test("normalizeDomainCheck is idempotent over its own output and tolerates broken input (#52)") {
+        val inputs = listOf(
+            "CHECK ((VALUE > 0))", "CHECK ((VALUE >= (0)::numeric))", "CHECK (((VALUE > 0) AND (VALUE < 10)))",
+            "CHECK ((VALUE = ANY (ARRAY['a'::text])))", "CHECK ((VALUE = 'it''s'::text))",
+        )
+        for (input in inputs) {
+            val once = normalizeDomainCheck(input)!!
+            normalizeDomainCheck("CHECK ($once)") shouldBe once
+        }
+        // Unbalanciert oder unterbrochenes Literal: keine Ausnahme, keine Endlosschleife.
+        normalizeDomainCheck("CHECK ((VALUE > 0") shouldBe "((VALUE > 0"
+        normalizeDomainCheck("CHECK ((VALUE = 'abc") shouldBe "((VALUE = 'abc"
+        normalizeDomainCheck("CHECK ()").shouldBeNull()
+    }
+
+    test("domain precision and scale are read for decimal only (#52)") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
+            mapOf("typname" to "a", "base_type" to "int8", "numeric_precision" to 64, "numeric_scale" to 0,
+                "domain_default" to null, "check_clause" to null),
+            mapOf("typname" to "b", "base_type" to "float4", "numeric_precision" to 24, "numeric_scale" to null,
+                "domain_default" to null, "check_clause" to null),
+            mapOf("typname" to "c", "base_type" to "int2", "numeric_precision" to 16, "numeric_scale" to 0,
+                "domain_default" to null, "check_clause" to null),
+        )
+        every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val types = reader.read(pool, opts).schema.customTypes
+
+        for (name in listOf("a", "b", "c")) {
+            types[name]!!.precision.shouldBeNull()
+            types[name]!!.scale.shouldBeNull()
+        }
     }
 
     test("normalizeDomainCheck keeps predicate with multiple paren groups intact (I-06)") {

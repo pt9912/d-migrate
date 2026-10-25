@@ -137,8 +137,8 @@ internal object CanonicalPayload {
             // Neutralform: Datei und Reader schreiben denselben Basistyp verschieden (Issue #52).
             .append(SEP).append("base=").append(CustomTypeBaseType.canonical(t.baseType) ?: "")
             .append(SEP).append("values=").append(t.values?.joinToString(",") ?: "")
-            .append(SEP).append("precision=").append(t.precision ?: "")
-            .append(SEP).append("scale=").append(t.scale ?: "")
+            .append(SEP).append("precision=").append(CustomTypeBaseType.precision(t) ?: "")
+            .append(SEP).append("scale=").append(CustomTypeBaseType.scale(t) ?: "")
             .append(SEP).append("check=").append(t.check ?: "")
         append(SEP).append("fields[").append(t.fields?.size ?: 0).append(']')
         t.fields?.entries?.sortedBy { it.key }?.forEach { (name, col) ->

@@ -157,16 +157,6 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         migratesOnlyTheColumn(typedTo(db, db.customTypes.mapValues { (_, t) -> fileForm(t) }))
     }
 
-    test("Domain mit CHECK in Datei-Form") {
-        sql(
-            "CREATE DOMAIN pos AS integer CHECK (VALUE > 0)",
-            "CREATE TABLE t (id integer NOT NULL, n pos, PRIMARY KEY (id))",
-            pool = pool,
-        )
-        val db = read()
-        migratesOnlyTheColumn(typedTo(db, db.customTypes.mapValues { (_, t) -> fileForm(t) }))
-    }
-
     test("Composite-Feld mit required und unique in der Datei") {
         sql(
             "CREATE TYPE pt AS (x integer, y integer)",
@@ -279,14 +269,20 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         "integer" to ("CREATE DOMAIN d AS integer CHECK (VALUE > 0)" to authored("integer", "VALUE > 0")),
         "integer ohne check" to ("CREATE DOMAIN d AS integer" to authored("integer")),
         "bigint" to ("CREATE DOMAIN d AS bigint CHECK (VALUE > 0)" to authored("bigint", "VALUE > 0")),
+        "int8 als Synonym" to ("CREATE DOMAIN d AS bigint CHECK (VALUE > 0)" to authored("int8", "VALUE > 0")),
         "smallint" to ("CREATE DOMAIN d AS smallint CHECK (VALUE > 0)" to authored("smallint", "VALUE > 0")),
         "real" to ("CREATE DOMAIN d AS real CHECK (VALUE > 0)" to authored("real", "VALUE > 0")),
+        "double precision" to
+            ("CREATE DOMAIN d AS double precision CHECK (VALUE > 0)" to authored("double precision", "VALUE > 0")),
         "decimal(10,2)" to
             ("CREATE DOMAIN d AS decimal(10,2) CHECK (VALUE >= 0)" to authored("decimal", "VALUE >= 0", 10, 2)),
+        "numeric(10,2) eingebettet" to
+            ("CREATE DOMAIN d AS decimal(10,2) CHECK (VALUE >= 0)" to authored("NUMERIC(10,2)", "VALUE >= 0")),
         "numeric" to ("CREATE DOMAIN d AS numeric CHECK (VALUE >= 0)" to authored("numeric", "VALUE >= 0")),
         "text" to ("CREATE DOMAIN d AS text CHECK (length(VALUE) > 0)" to authored("text", "length(VALUE) > 0")),
+        "bpchar(5)" to ("CREATE DOMAIN d AS char(5) CHECK (length(VALUE) > 0)" to authored("char(5)", "length(VALUE) > 0")),
         "text mit Literal" to ("CREATE DOMAIN d AS text CHECK (VALUE <> 'x')" to authored("varchar", "VALUE <> 'x'")),
-        "AND mit Klammern" to
+        "AND, Klammern wie der Server sie setzt" to
             ("CREATE DOMAIN d AS integer CHECK (VALUE > 0 AND VALUE < 10)" to
                 authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
     )
@@ -298,20 +294,61 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         }
     }
 
+    test("Domain ueber Domain in Autorenform ist dieselbe Domain") {
+        domainTable("CREATE DOMAIN b AS integer CHECK (VALUE > 0)", "CREATE DOMAIN d AS b")
+        val db = read()
+        migratesOnlyTheColumn(withAuthoredDomain(db, authored("b")))
+    }
+
+    test("Domain in Autorenform: der Rueckweg stellt den Ausgangszustand her") {
+        domainTable("CREATE DOMAIN d AS decimal(10,2) CHECK (VALUE >= 0)")
+        val db = read()
+        val tmp = createTempDirectory("pg-domain-rollback")
+        try {
+            val down = tmp.resolve("down.sql")
+            val up = migrate(withAuthoredDomain(db, authored("numeric", "VALUE >= 0", 10, 2)), rollbackOutput = down)
+            withClue("${up.errors} ${up.report.take(900)}") { up.exit shouldBe 0 }
+            read().tables.getValue("t").columns.keys shouldBe setOf("id", "v", "extra")
+
+            val exit = SchemaRollbackRunner(
+                dbLoader = { _, _ -> ResolvedSchemaOperand("live-pg", read(), ValidationResult(), dialect = DatabaseDialect.POSTGRESQL) },
+                executor = { _, statements, _ -> executeAgainstPool(pool, statements) },
+                printError = { msg, src -> System.err.println("[$src] $msg") },
+            ).execute(
+                SchemaRollbackRequest(source = down, target = "db:placeholder", execute = true, allowDestructive = true),
+            )
+            exit shouldBe 0
+            read().tables.getValue("t").columns.keys shouldBe db.tables.getValue("t").columns.keys
+            read().customTypes.keys shouldBe setOf("d")
+        } finally {
+            tmp.toFile().deleteRecursively()
+        }
+    }
+
     // Bekannte Grenzen (Handbuch §3.21): der Server schreibt diese Ausdruecke um, der Reader gibt die
-    // Katalogform zurueck. Die Tests halten fest, dass sie weiter blockieren, bis die Faltung entschieden ist.
+    // Katalogform zurueck. Die Tests halten fest, dass sie weiter an `check` bzw. `baseType` blockieren, bis die
+    // Faltung entschieden ist. Sie haengen an der Katalogform des PostgreSQL-Images; ein anderes Image kann sie kippen.
     val knownLimits = mapOf(
         "BETWEEN" to ("CREATE DOMAIN d AS integer CHECK (VALUE BETWEEN 1 AND 10)" to
             authored("integer", "VALUE BETWEEN 1 AND 10")),
         "IN" to ("CREATE DOMAIN d AS text CHECK (VALUE IN ('a', 'b'))" to authored("text", "VALUE IN ('a', 'b')")),
+        "AND ohne Klammern" to ("CREATE DOMAIN d AS integer CHECK (VALUE > 0 AND VALUE < 10)" to
+            authored("integer", "VALUE > 0 AND VALUE < 10")),
+        "OR ohne Klammern" to ("CREATE DOMAIN d AS integer CHECK (VALUE < 0 OR VALUE > 10)" to
+            authored("integer", "VALUE < 0 OR VALUE > 10")),
         "Cast an VALUE (varchar)" to ("CREATE DOMAIN d AS varchar(50) CHECK (length(VALUE) > 0)" to
             authored("varchar", "length(VALUE) > 0")),
+        "Array-Domain" to ("CREATE DOMAIN d AS integer[]" to authored("integer[]")),
     )
     for ((name, case) in knownLimits) {
         test("bekannte Grenze, blockiert weiter: $name") {
             domainTable(case.first)
             val db = read()
-            migrate(withAuthoredDomain(db, case.second)).exit shouldBe 8
+            val o = migrate(withAuthoredDomain(db, case.second))
+            withClue("${o.errors} ${o.report.take(600)}") {
+                o.exit shouldBe 8
+                o.report.contains("kind=AlterCustomType") shouldBe true
+            }
         }
     }
 
@@ -320,6 +357,8 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         "andere Genauigkeit" to ("CREATE DOMAIN d AS decimal(10,2) CHECK (VALUE >= 0)" to
             authored("decimal", "VALUE >= 0", 12, 2)),
         "anderer Basistyp" to ("CREATE DOMAIN d AS integer CHECK (VALUE > 0)" to authored("bigint", "VALUE > 0")),
+        "andere Genauigkeit, eingebettet" to ("CREATE DOMAIN d AS decimal(10,2) CHECK (VALUE >= 0)" to
+            authored("NUMERIC(12,2)", "VALUE >= 0")),
     )
     for ((name, case) in realChanges) {
         test("echte Aenderung einer Domain blockiert weiter: $name") {
