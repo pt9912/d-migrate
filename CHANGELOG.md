@@ -31,8 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `CREATE UNIQUE INDEX` führt, plant deshalb einen Neubau; mit einer weiteren Änderung daneben
     endet `--execute` mit Exit `8` (`TRANSACTION_SCOPE_UNSUPPORTED`, die Datenbank bleibt
     unverändert). `schema reverse` neu ziehen oder die Spalte als Index schreiben.
-  - Grenze: der Text eines Ausdrucks-Index (`(lower(a))` aus dem Katalog, `lower(a)` in der Datei)
-    gilt als Unterschied und plant `DROP INDEX` + `CREATE INDEX` (ausführbar).
+  - Grenze: ein Ausdrucks-Index (`lower(a)`) gilt weiter als Unterschied und plant `DROP INDEX` +
+    `CREATE INDEX` (ausführbar); die Ursache ist noch nicht geklärt.
   - Der Fingerabdruck steht auf `schema-fingerprint-v20`; ein Rollback-Artefakt einer früheren
     Version ist neu zu erzeugen.
 - **`schema migrate` auf SQLite blockiert den Tabellenneubau nicht mehr an einer unveränderten

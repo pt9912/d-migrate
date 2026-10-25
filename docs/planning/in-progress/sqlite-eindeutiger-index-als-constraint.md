@@ -215,8 +215,8 @@ CLI-Fälle (u. a. Plan mit 2 statt 0 Operationen, `+d` mit Exit 8, neuer Index m
 und 4 der neuen Reader-Tests; mit dem Fix grün. Spec: `spec/ddl-generation-rules.md` §5.3 (Zurücklesen auf SQLite),
 `spec/schema-reference.md` (`unique` an Spalte gegen Index).
 
-**Offen / abgetrennt:** (1) Der Text eines Ausdrucks-Index (`(lower(a))` aus dem Katalog gegen `lower(a)` aus der
-Datei) gilt als Unterschied (`DROP INDEX` + `CREATE INDEX`, ausführbar); das betrifft den Ausdruck, nicht die
+**Offen / abgetrennt:** (1) Ein Ausdrucks-Index gilt als Unterschied (`DROP INDEX` + `CREATE INDEX`, ausführbar). Der Reader liefert `lower(a)`
+(Test-Agent gemessen), die Ursache des Unterschieds ist nicht geklärt; das betrifft den Ausdruck, nicht die
 Eindeutigkeit, und ist hier nicht behandelt. (2) Das Netz für Bestandsdateien ist nicht gebaut. (3) Die
 `COLLATE`-Angabe eines Index kennt das Modell nicht. (4) *Behoben:* der Testdaten-Seeder (`TableRowSeeder`) hält eine Spalte jetzt auch eindeutig, wenn sie nur über
 einen einspaltigen `UNIQUE`-Constraint oder einen einspaltigen eindeutigen Index (ohne Prädikat/Ausdruck) eindeutig ist;

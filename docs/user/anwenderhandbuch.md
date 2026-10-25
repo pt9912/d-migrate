@@ -2162,9 +2162,8 @@ sie als normale View erzeugt (Warnung **W103**).
     Index löschen). Mit einer weiteren Änderung daneben endet `--execute` mit Exit `8`
     (`TRANSACTION_SCOPE_UNSUPPORTED`); die Datenbank bleibt unverändert. Ziehen Sie die Datei
     mit `schema reverse` neu oder schreiben Sie die Spalte als `indices: [{ unique: true }]`.
-  - **Grenze Ausdrucks-Index:** der Katalog liefert den Ausdruck eines Index in Klammern
-    (`(lower(a))`), Ihre Datei vermutlich ohne (`lower(a)`); beides gilt als verschieden, und
-    `schema migrate` plant `DROP INDEX` + `CREATE INDEX`, obwohl nichts anders ist (ausführbar).
+  - **Grenze Ausdrucks-Index:** ein Index über einen Ausdruck (`lower(a)`) plant `schema migrate` bei jedem Lauf als
+    `DROP INDEX` + `CREATE INDEX`, obwohl Datei und Datenbank dasselbe beschreiben (ausführbar, Exit `0`).
 - **SQLite, Tabellenneubau und Spaltentypen:** SQLite legt viele Typen in derselben Speicherklasse
   ab (`text(n)`, `char`, `date`, `uuid`, `json`, … als `TEXT`, `boolean` als `INTEGER`, `decimal`
   als `REAL`). `schema migrate` plant eine Verengung wie `text(64)` → `text(32)` deshalb nicht als

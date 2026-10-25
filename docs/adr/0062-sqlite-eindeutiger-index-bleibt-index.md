@@ -75,7 +75,7 @@ umbauen (kein `ALTER TABLE ADD/DROP CONSTRAINT`), sie sind verschiedene Objekte.
   (`TRANSACTION_SCOPE_UNSUPPORTED`, die Datenbank bleibt unverändert). Dokumentierte Grenze (Handbuch, CHANGELOG). Ein
   Netz (Vergleich, der `column.unique` gegen einen eindeutigen Index gleichsetzt) bräuchte die
   beidseitige Faltung, die oben verworfen ist; es ist kein Teil dieser Entscheidung.
-- Weiter offen: der Text eines Ausdrucks-Index (`PRAGMA`/`sqlite_master` führt `(lower(a))`, die
+- Weiter offen: der Text eines Ausdrucks-Index (der Reader liefert `lower(a)`; warum der Vergleich trotzdem einen Unterschied plant, ist nicht geklärt, die
   Datei `lower(a)`) gilt im Vergleich als verschieden; das betrifft den Ausdruck, nicht die
   Eindeutigkeit, und ist hier nicht entschieden.
 
