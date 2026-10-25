@@ -143,8 +143,7 @@ class SqliteSchemaReaderUniqueIndexTest : FunSpec({
         }
     }
 
-    // Die Eindeutigkeit des Ausdrucks-Index geht nicht mehr verloren; sein Text gegen die Datei ist die bekannte
-    // Grenze (Folge-Slice docs/planning/next/sqlite-ausdrucks-index-textform.md).
+    // Die Eindeutigkeit des Ausdrucks-Index geht nicht verloren; sein Text kommt ohne umschliessende Klammer zurueck.
     test("a UNIQUE expression index stays an index with unique = true and does not set column.unique") {
         withDb(
             "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT)",

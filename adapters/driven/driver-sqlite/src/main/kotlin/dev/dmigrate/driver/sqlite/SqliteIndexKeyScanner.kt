@@ -25,12 +25,16 @@ internal object SqliteIndexKeyScanner {
      * Die Schluessel in Deklarationsreihenfolge, ohne `ASC`/`DESC` und ohne
      * `COLLATE <name>`: beides steht im Modell als eigenes Feld, im Text
      * mitzunehmen ergaebe einen Ausdruck, den kein Zieldialekt kennt.
+     *
+     * Eine Klammer, die den ganzen Ausdruck umschliesst, entfaellt: der
+     * Generator klammert jeden Ausdruck-Schluessel (`((lower(a)))`), die Datei
+     * traegt ihn ohne (`lower(a)`).
      */
     fun keysOf(createSql: String): List<String>? {
         val open = topLevelOpenParen(createSql) ?: return null
         val close = matchingCloseParen(createSql, open) ?: return null
         return splitTopLevel(createSql.substring(open + 1, close))
-            .map { stripKeyModifiers(it) }
+            .map { unwrapKey(stripKeyModifiers(stripComments(it))) }
             .takeIf { keys -> keys.isNotEmpty() && keys.all { it.isNotBlank() } }
     }
 
@@ -93,6 +97,46 @@ internal object SqliteIndexKeyScanner {
         }
         parts += current.toString().trim()
         return parts.filter { it.isNotEmpty() }
+    }
+
+    /**
+     * Die exakte Umkehrung von `IndexColumn.renderKey`: genau **eine** Klammer,
+     * und nur, wenn sie den ganzen Schluessel umschliesst. `(a) + (b)` und
+     * `('(' || a)` -- dessen Klammer in der Zeichenkette zaehlt nicht -- bleiben
+     * unberuehrt, ein `((x))` verliert nur die aeussere Schicht. Kommentare sind
+     * zu diesem Zeitpunkt bereits entfernt ([stripComments]).
+     */
+    private fun unwrapKey(key: String): String {
+        val enclosed = key.startsWith("(") && matchingCloseParen(key, 0) == key.length - 1
+        return if (enclosed) key.substring(1, key.length - 1).trim().ifEmpty { key } else key
+    }
+
+    /**
+     * Ein Kommentar in einem Schluessel ist semantisch leer, kann aber den
+     * Rest verschlucken (`-- c` bis zum Zeilenende, auch die schliessende
+     * Klammer des Generators). Er entfaellt; an seiner Stelle bleibt hoechstens
+     * ein Leerzeichen, damit `a /* c */ + b` zu `a + b` wird (nicht zu
+     * `a  + b`) und `a/* c */b` nicht zu `ab` zusammenwaechst. Kommentarzeichen
+     * in Zeichenketten und gequoteten Bezeichnern bleiben (`skipNonCode`
+     * unterscheidet beides). Ein Schluessel ohne Kommentar bleibt unveraendert.
+     */
+    private fun stripComments(key: String): String {
+        val out = StringBuilder()
+        var i = 0
+        while (i < key.length) {
+            val isComment = key.startsWith("--", i) || key.startsWith("/*", i)
+            val skipped = skipNonCode(key, i)
+            when {
+                isComment -> {
+                    if (out.isNotEmpty() && !out.last().isWhitespace()) out.append(' ')
+                    i = skipped
+                    while (i < key.length && key[i].isWhitespace()) i++
+                }
+                skipped > i -> { out.append(key, i, skipped); i = skipped }
+                else -> { out.append(key[i]); i++ }
+            }
+        }
+        return out.toString().trim()
     }
 
     /**

@@ -1,9 +1,9 @@
 # SQLite: ein Ausdrucks-Index gilt gegen die Datenbank als geändert (Folge von #53)
 
-> **Status:** Draft mit Scope (2026-10-25), Ursache gemessen. Befund aus der Umsetzung von
+> **Status:** In Umsetzung (2026-10-25), Ursache gemessen, Entscheidung A (ADR 0064). Befund aus der Umsetzung von
 > `sqlite-eindeutiger-index-als-constraint.md` (#53, ADR 0062): für einen Ausdrucks-Index plant `schema migrate` bei
-> jedem Lauf `DROP INDEX` + `CREATE INDEX` (ausführbar, Exit 0). **Vorbedingung:** keine. **Aktivierung** (Move nach
-> `../in-progress/`) beim ersten Implementierungs-Commit. GitHub-Issue: [#55](https://github.com/pt9912/d-migrate/issues/55).
+> jedem Lauf `DROP INDEX` + `CREATE INDEX` (ausführbar, Exit 0). **Vorbedingung:** keine. Aktiviert mit dem ersten
+> Implementierungs-Commit. GitHub-Issue: [#55](https://github.com/pt9912/d-migrate/issues/55).
 
 ## Ziel
 
@@ -58,9 +58,8 @@ Klammer, handgeschriebenes `ON t((a))` (wird zu `a`, einer Spalte gleich — bew
 Schlüssel. P0 endet, wenn jede Zeile Reader-Ausgabe und Operationen trägt.
 
 **Erwartung Fingerabdruck:** A ändert den Reader-Ausgang jedes SQLite-Ausdrucks-Index, der Abdruck trägt ihn (`expr:` in
-`CanonicalPayload.index`, `IndexColumn.toString()` in `MigrationFingerprint`) → **Tag-Bump erwartet** (Präzedenz ADR 0062, aktuell
-`schema-fingerprint-v21`, nächster freier Tag zum Aktivierungszeitpunkt; **neuer** ADR, nächste freie Nummer, ADR 0062/0063 sind
-eingefroren; er korrigiert ausdrücklich die Aussage in ADR 0062, der Reader liefere `lower(a)`). Folgen benennen: Rollback-Artefakte älterer Läufe → `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`; Operations-IDs von
+`CanonicalPayload.index`, `IndexColumn.toString()` in `MigrationFingerprint`) → **Tag-Bump erwartet** (Präzedenz ADR 0062; entschieden in P1:
+`schema-fingerprint-v22`, **neuer** ADR 0064; ADR 0062/0063 sind eingefroren; er korrigiert ausdrücklich die Aussage in ADR 0062, der Reader liefere `lower(a)`). Folgen benennen: Rollback-Artefakte älterer Läufe → `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`; Operations-IDs von
 Index-Ops mit Ausdruck ändern sich. Nur Schemas mit SQLite-Ausdrucks-Index sind betroffen.
 
 Nicht-Ziel: `COLLATE` im Modell (die Spalte `a COLLATE NOCASE` ist kein Ausdruck; der Reader lässt `COLLATE` weg — Hinweis im
@@ -82,6 +81,55 @@ Handbuch, kein eigener Folge-Plan); Ausdrucks-Indizes auf anderen Dialekten.
 * **P3 Doku:** Handbuch (Grenze „Ausdrucks-Index" streichen: `docs/user/anwenderhandbuch.md` um Zeile 2164; nur Ist-Zustand),
   neuer `CHANGELOG.md`-Eintrag unter der laufenden Entwicklung (kein Rückgriff auf 1.10.0; im Handbuch keine Chronik); Handbuch-Hinweis zu `COLLATE`; `spec/ddl-generation-rules.md` §5.1a um die Reader-Regel „entfernt eine umschließende
   Klammer" ergänzen (Zielbild, wie bei ADR 0061; ohne ADR-Verweis); `spec/schema-reference.md`: bewusst nicht (dort steht nichts zu Reader-Texten von Index-Ausdrücken); P1 bestätigt.
+
+## P0 — Messung (2026-10-25)
+
+Gemessen mit dem CLI-Test
+[`CliSchemaMigrateExpressionIndexSqliteTest`](../../../adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateExpressionIndexSqliteTest.kt)
+(`adapters/driving/cli`; die Datenbank entsteht aus `schema generate`, dann `schema migrate` mit derselben Datei) vor der
+Änderung: **jede** vom Generator angelegte Datenbank mit Ausdrucks-Index plant 2 Operationen (`DropIndex` + `AddIndex`)
+statt 0 — nicht nur die Fehlerzeilen, auch die Kontrollfälle, weil der Generator jeden Ausdruck klammert. Die Annahme des
+Plans stimmt also, aber breiter als angenommen. Von Hand angelegt (Katalogtext wie geschrieben, Datei trägt den Ausdruck
+ohne Klammer), kippt nur die Form mit zusätzlicher Klammer.
+
+| Fall | Reader vor der Änderung | Operationen vor | Reader danach | Operationen danach |
+| --- | --- | --- | --- | --- |
+| Datei `lower(a)` (Generator: `((lower(a)))`) | `(lower(a))` | 2 | `lower(a)` | 0 |
+| `UNIQUE`, `lower(a)` + Spalte `b` | `(lower(a))` + `b` | 2 | `lower(a)` + `b` | 0 |
+| Spalte `a` + `b + 1 DESC` | `a` + `(b + 1)`, `DESC` | 2 | `a` + `b + 1`, `DESC` | 0 |
+| `(a) \|\| (b)` (Klammer gehört zum Ausdruck) | `((a) \|\| (b))` | 2 | `(a) \|\| (b)` | 0 |
+| `(a \|\| b) \|\| 'x'` | `((a \|\| b) \|\| 'x')` | 2 | `(a \|\| b) \|\| 'x'` | 0 |
+| `'(' \|\| a` (Klammer in der Zeichenkette) | `('(' \|\| a)` | 2 | `'(' \|\| a` | 0 |
+| zwei Ausdrücke; Ausdruck, Spalte, Ausdruck (Reihenfolge) | je Schlüssel eine Klammer | 2 | ohne | 0 |
+| Prädikat `WHERE` | `(lower(a))` | 2 | `lower(a)` | 0 |
+| Datei `expression: a` (Generator: `((a))`) | Spalte `a` (der Katalog meldet den Namen) | 2 | Spalte `a` | 2 (bleibt: Ausdruck gegen Spalte) |
+| von Hand `ON t(lower(a))` | `lower(a)` | 0 | `lower(a)` | 0 |
+| von Hand `ON t((lower(a)))` | `(lower(a))` | 2 | `lower(a)` | 0 |
+| von Hand `ON t((a) \|\| (b))`, `((a + 1) * 2)`, `('(' \|\| a)` | wie geschrieben | 0 | unverändert | 0 |
+| von Hand `ON t(lower(a) COLLATE NOCASE)` | `lower(a)` | 0 | `lower(a)` | 0 |
+| von Hand `ON t((a))`, Datei `name: a` | Spalte `a` | 0 | Spalte `a` (einer Spalte gleich, bewusst) | 0 |
+
+Der Rundlauf `schema reverse` → `generate` → `reverse` war vorher nicht stabil (je Zyklus eine Klammerschicht mehr) und ist
+es danach. `lower(a)` → `upper(a)` bleibt 2 Operationen (`DropIndex` + `AddIndex`), `(a) || (b)` → `(a) || (a)` ebenso.
+
+**Rot ohne die Änderung (gemessen, Review-Runde 1):** mit abgeschalteter Klammer-Entfernung in `keysOf` sind rot:
+`SqliteIndexKeyScannerTest` 8 Tests, `CliSchemaMigrateExpressionIndexSqliteTest` 23 Tests,
+`CliSchemaMigrateUniqueIndexGapsSqliteTest` 1 Test, `ExpressionIndexRoundTripTest` 1 Test; mit der Änderung alle grün.
+Kommentare im Schlüsseltext (`((lower(a) -- c\n))`) entfernt der Reader vor dem Abtragen der Klammer; gemessen vor
+dieser Regel: Klammer blieb stehen, 2 Operationen, Rundlauf wuchs je Zyklus. Restgrenze: ein Kommentar im
+`expression`-Text der Datei gilt als Änderung (2 Operationen), und ein `--`-Kommentar dort erzeugt ungültiges DDL
+(eigener Befund: der Generator klammert wortgleich, der Kommentar verschluckt die schließende Klammer). `COLLATE`
+innerhalb der Klammer bleibt im Text.
+
+## P1 — Entscheidung (2026-10-25)
+
+**A**, wie erwartet: die Messung zeigt eine einzige Ursache (die Klammer des Generators) und keinen Fall, in dem das
+Entfernen einer umschließenden Klammer einen Ausdruck verändert (Klammern im Ausdruck und in Zeichenketten bleiben). B
+bräuchte eine dialektweite Faltung für ein SQLite-Problem, C ließe Bestandsdatenbanken mit `((…))` abweichen.
+Fingerabdruck **`schema-fingerprint-v22`**, Entscheidung **ADR 0064** (korrigiert die Aussage in ADR 0062, der Reader liefere
+`lower(a)`). Die Matrix erhält den Arbeitsstrang `expression-index` (Fixture mit allen Fällen, im Sweep file-mode in jedem
+Dialekt gerendert; der Rundlauf gegen SQLite steht in `ExpressionIndexRoundTripTest`, rot ohne die Änderung, weil der
+Sweep selbst nur Dateien vergleicht und den Reader nicht sieht).
 
 ## Akzeptanz
 

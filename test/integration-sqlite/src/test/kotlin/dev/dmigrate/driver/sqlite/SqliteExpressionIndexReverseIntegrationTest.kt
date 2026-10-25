@@ -83,4 +83,32 @@ class SqliteExpressionIndexReverseIntegrationTest : FunSpec({
             indices.getValue("ix_where").where shouldBe "a > 0"
         }
     }
+
+    // Der Generator klammert jeden Ausdruck (`((lower(a)))`); SQLite legt den Text unveraendert ab, der Reader nimmt
+    // genau diese eine Klammer wieder ab (Issue #55).
+    test("the generator's form comes back without its enclosing parenthesis") {
+        newPool().use { pool ->
+            execDdl(
+                pool,
+                "CREATE TABLE t (a TEXT, b TEXT)",
+                "CREATE INDEX ix_call ON t ((lower(a)))",
+                "CREATE UNIQUE INDEX ix_mixed ON t ((lower(a)), b)",
+                "CREATE INDEX ix_desc ON t (a, (b + 1) DESC)",
+                "CREATE INDEX ix_parts ON t (((a) || (b)))",
+                "CREATE INDEX ix_string ON t (('(' || a))",
+                "CREATE INDEX ix_hand ON t ((a) || (b) COLLATE NOCASE)",
+            )
+
+            val indices = SqliteSchemaReader().read(pool).schema
+                .tables.getValue("t").indices.associateBy { it.name }
+
+            indices.getValue("ix_call").columns.single().expression shouldBe "lower(a)"
+            indices.getValue("ix_mixed").columns.map { it.expression } shouldBe listOf("lower(a)", null)
+            indices.getValue("ix_desc").columns.map { it.expression } shouldBe listOf(null, "b + 1")
+            // Klammern, die zum Ausdruck gehoeren, bleiben.
+            indices.getValue("ix_parts").columns.single().expression shouldBe "(a) || (b)"
+            indices.getValue("ix_string").columns.single().expression shouldBe "'(' || a"
+            indices.getValue("ix_hand").columns.single().expression shouldBe "(a) || (b)"
+        }
+    }
 })

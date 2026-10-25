@@ -346,6 +346,50 @@ carve_outs:
     ownerTests:
       - hexagon/ports-read/src/test/kotlin/dev/dmigrate/driver/migration/PlannerBlockerClassifierTest.kt
 
+  # expression-index (Issue #55) — POSITIVE pinned (Rendern der Fallmenge in jedem
+  # Dialekt; der Rundlauf gegen SQLite steht in ExpressionIndexRoundTripTest).
+  # Die uebrigen Arten laufen ueber die SQLite-CLI-Tests.
+  - workstream: expression-index
+    dialect: mssql
+    kind: positive
+    permanent: true
+    reason: "SQL Server indiziert nur eine persistierte berechnete Spalte, keinen Ausdruck; der Diff-Pfad blockt AddIndex mit einem Ausdrucks-Schluessel benannt (DIALECT_UNSUPPORTED_OPERATION). Die Fixture ist fuer SQL Server nicht neutral."
+    planRef: docs/planning/in-progress/sqlite-ausdrucks-index-textform.md
+    ownerTests:
+      - adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDiffDdlGeneratorTest.kt
+  - workstream: expression-index
+    dialect: "*"
+    kind: blocker
+    permanent: true
+    reason: "Der Ausdrucks-Index hat keine eigene blocker-Aussage ueber den Sweep hinaus; Plan, Ausfuehrung, zweiter Lauf und Rueckweg gegen SQLite pinnt der CLI-Test."
+    planRef: docs/planning/in-progress/sqlite-ausdrucks-index-textform.md
+    ownerTests:
+      - adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateExpressionIndexSqliteTest.kt
+  - workstream: expression-index
+    dialect: "*"
+    kind: report
+    permanent: true
+    reason: "Der Ausdrucks-Index hat keine eigene report-Aussage ueber den Sweep hinaus; Plan, Ausfuehrung, zweiter Lauf und Rueckweg gegen SQLite pinnt der CLI-Test."
+    planRef: docs/planning/in-progress/sqlite-ausdrucks-index-textform.md
+    ownerTests:
+      - adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateExpressionIndexSqliteTest.kt
+  - workstream: expression-index
+    dialect: "*"
+    kind: rollback
+    permanent: true
+    reason: "Der Ausdrucks-Index hat keine eigene rollback-Aussage ueber den Sweep hinaus; Plan, Ausfuehrung, zweiter Lauf und Rueckweg gegen SQLite pinnt der CLI-Test."
+    planRef: docs/planning/in-progress/sqlite-ausdrucks-index-textform.md
+    ownerTests:
+      - adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateExpressionIndexSqliteTest.kt
+  - workstream: expression-index
+    dialect: "*"
+    kind: file-mode
+    permanent: true
+    reason: "Der Ausdrucks-Index hat keine eigene file-mode-Aussage ueber den Sweep hinaus; Plan, Ausfuehrung, zweiter Lauf und Rueckweg gegen SQLite pinnt der CLI-Test."
+    planRef: docs/planning/in-progress/sqlite-ausdrucks-index-textform.md
+    ownerTests:
+      - adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateExpressionIndexSqliteTest.kt
+
   # ═══════════════════════════════════════════════════════════
   # F2-Followup: new Kind axes report / rollback / file-mode
   # added to MatrixCell.Kind per plan §5.2 + §11.2 (the five

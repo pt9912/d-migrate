@@ -37,10 +37,11 @@ internal object MatrixWorkstreams {
         "F.5",  // CHECK/EXCLUDE diff: positive add CHECK (PG/SQLite); MySQL needs server-version (carved)
         "D.3",  // Materialized Views: positive PG, BLOCKER MySQL/SQLite (MV not supported by dialect)
         "E.2",  // Trigger migration: positive add trigger (MySQL); PG/SQLite need per-dialect bodies (carved)
+        "expression-index",  // Ausdrucks-Index: positive add index (PG/MySQL/SQLite/Oracle); MSSQL carved (E057)
     )
 
     /**
-     * The full plan-doc workstream catalogue (22 entries). Order
+     * The full plan-doc workstream catalogue (23 entries). Order
      * matches the plan-doc table of contents.
      */
     val ALL: List<String> = listOf(
@@ -55,6 +56,9 @@ internal object MatrixWorkstreams {
         // outside the §4-§10 catalogue. Included so the carve-out
         // registry stays exhaustive.
         "F.4-renderer-blocker-bridge",
+        // Ausdrucks-Index (Issue #55): ein Dialekt-neutrales Fixture mit allen Faellen der
+        // P0-Fallmenge, geprueft im Sweep (Rendern) und im Rundlauf gegen SQLite.
+        "expression-index",
     )
 
     /** Workstreams that are NOT pinned in this slice — must be covered by carve-outs. */
