@@ -32,7 +32,8 @@ internal object PostgresTypeMetadataQueries {
                    -- Die Kollation nur, wenn sie von der des Basistyps abweicht (Issue #59):
                    -- ohne eigenes COLLATE erbt die Domain `typcollation` des Basistyps.
                    (SELECT CASE WHEN cn.nspname = 'pg_catalog' THEN co.collname
-                                ELSE quote_ident(cn.nspname) || '.' || quote_ident(co.collname) END
+                                -- immer gequotet (quote_ident quotet nur bei Bedarf): `app.ci` waere sonst ein Name
+                                ELSE '"' || replace(cn.nspname, '"', '""') || '"."' || replace(co.collname, '"', '""') || '"' END
                       FROM pg_collation co
                       JOIN pg_namespace cn ON cn.oid = co.collnamespace
                      WHERE co.oid = t.typcollation AND t.typcollation <> bt.typcollation) AS collation_name,

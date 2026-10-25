@@ -54,6 +54,9 @@ class PostgresSchemaReaderDomainTraitsTest : FunSpec({
             mapOf("typname" to "d_seq", "base_type" to "int4", "numeric_precision" to 32,
                 "numeric_scale" to 0, "domain_default" to "nextval('s_seq'::regclass)", "not_null" to false,
                 "collation_name" to null, "check_clause" to null),
+            mapOf("typname" to "d_q", "base_type" to "text", "numeric_precision" to null,
+                "numeric_scale" to null, "domain_default" to null, "not_null" to false,
+                "collation_name" to "\"app\".\"ci\"", "check_clause" to null),
             mapOf("typname" to "d_plain", "base_type" to "int4", "numeric_precision" to 32,
                 "numeric_scale" to 0, "domain_default" to null, "not_null" to false,
                 "collation_name" to null, "check_clause" to null),
@@ -70,6 +73,7 @@ class PostgresSchemaReaderDomainTraitsTest : FunSpec({
         types["d_num"]!!.default shouldBe DefaultValue.NumberLiteral(5L)
         types["d_num"]!!.notNull shouldBe false
         types["d_seq"]!!.default shouldBe DefaultValue.SequenceNextVal("s_seq")
+        types["d_q"]!!.collation shouldBe "\"app\".\"ci\""
         types["d_plain"]!!.default.shouldBeNull()
         types["d_plain"]!!.notNull shouldBe false
         types["d_plain"]!!.collation.shouldBeNull()

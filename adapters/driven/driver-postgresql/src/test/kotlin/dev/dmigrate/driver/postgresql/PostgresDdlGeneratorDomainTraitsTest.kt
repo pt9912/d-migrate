@@ -46,6 +46,9 @@ class PostgresDdlGeneratorDomainTraitsTest : FunSpec({
         collate("de_DE.UTF-8") shouldContain """COLLATE "de_DE.UTF-8";"""
         collate("C") shouldContain """COLLATE "C";"""
         collate("\"C\"") shouldContain """COLLATE "C";"""
+        collate("\"app\".\"ci\"") shouldContain """COLLATE "app"."ci";"""
+        // Ein bloßes `app.ci` ist der eine Name `app.ci`.
+        collate("app.ci") shouldContain """COLLATE "app.ci";"""
         collate("\"my.app\".\"ci.v\"") shouldContain """COLLATE "my.app"."ci.v";"""
     }
 

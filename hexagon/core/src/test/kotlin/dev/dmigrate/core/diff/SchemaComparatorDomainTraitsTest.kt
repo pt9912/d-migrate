@@ -74,6 +74,11 @@ class SchemaComparatorDomainTraitsTest : FunSpec({
         changed(domain(collation = "\"app\".\"ci\""), domain(collation = "app.ci")).single().collation.shouldNotBeNull()
     }
 
+    test("ein Kollationsname mit eingebettetem Anfuehrungszeichen bleibt unveraendert (keine Entquotung)") {
+        changed(domain(collation = "\"a\"\"b\""), domain(collation = "\"a\"\"b\"")).shouldBeEmpty()
+        changed(domain(collation = "\"a\"\"b\""), domain(collation = "a\"b")).single().collation.shouldNotBeNull()
+    }
+
     test("eine Aenderung nur an den drei Feldern laesst die uebrigen Unterschiede leer") {
         val diff = changed(domain(), domain(notNull = true)).single()
         diff.check.shouldBeNull()
