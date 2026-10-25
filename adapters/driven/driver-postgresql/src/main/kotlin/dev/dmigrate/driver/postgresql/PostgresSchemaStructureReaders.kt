@@ -302,8 +302,10 @@ internal fun readPostgresCustomTypes(
         result[name] = CustomTypeDefinition(kind = CustomTypeKind.ENUM, values = values)
     }
 
-    for (row in PostgresMetadataQueries.listDomainTypes(session, schema)) {
-        val name = row["typname"] as String
+    val domainRows = PostgresMetadataQueries.listDomainTypes(session, schema)
+    for ((name, rows) in domainRows.groupBy { it["typname"] as String }) {
+        // Je Constraint eine Zeile; Basistyp, Genauigkeit und Skala wiederholen sich.
+        val row = rows.first()
         val baseType = row["base_type"] as? String ?: "text"
         val neutralBase = PostgresTypeMapping.mapParamType(baseType)
         result[name] = CustomTypeDefinition(
@@ -313,7 +315,7 @@ internal fun readPostgresCustomTypes(
             // eine Datei schreibt sie nur fuer `decimal` (Issue #52).
             precision = (row["numeric_precision"] as? Number)?.toInt()?.takeIf { neutralBase == "decimal" },
             scale = (row["numeric_scale"] as? Number)?.toInt()?.takeIf { neutralBase == "decimal" },
-            check = normalizeDomainCheck(row["check_clause"] as? String),
+            check = domainCheckOf(name, rows, notes),
         )
     }
 
@@ -342,6 +344,36 @@ internal fun readPostgresCustomTypes(
 }
 
 /**
+ * Der CHECK einer Domain aus ihren Zeilen (je Constraint eine): jedes Prädikat einzeln auf die Autorenform
+ * gebracht, danach verbunden ([PostgresDomainCheckForm.conjunction]). Ein `NOT VALID`-Constraint behält sein
+ * Prädikat (er prüft Neues weiter); `R407` meldet ihn.
+ */
+private fun domainCheckOf(
+    typeName: String,
+    rows: List<Map<String, Any?>>,
+    notes: MutableList<SchemaReadNote>,
+): String? {
+    val predicates = mutableListOf<String>()
+    for (row in rows) {
+        val raw = row["check_clause"] as? String ?: continue
+        if (PostgresDomainCheckForm.isNotValid(raw)) {
+            val constraint = row["conname"] as? String ?: "?"
+            notes += SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "R407",
+                objectName = typeName,
+                message = "CHECK constraint '$constraint' of domain '$typeName' is NOT VALID; " +
+                    "it is read as a regular CHECK.",
+                hint = "A NOT VALID constraint still checks new and changed values but not existing rows; " +
+                    "the schema file cannot express that difference.",
+            )
+        }
+        normalizeDomainCheck(raw)?.let { predicates += it }
+    }
+    return PostgresDomainCheckForm.conjunction(predicates)
+}
+
+/**
  * `pg_get_constraintdef` liefert den vollständigen Domain-Check inkl. Hülle, z. B.
  * `CHECK ((VALUE > 0))`. Das Modell soll nur das Prädikat halten, damit die
  * Generate-Seite genau einmal `CHECK (...)` wrappt (sonst entsteht
@@ -351,7 +383,7 @@ internal fun readPostgresCustomTypes(
  */
 internal fun normalizeDomainCheck(raw: String?): String? {
     if (raw == null) return null
-    var s = raw.trim()
+    var s = PostgresDomainCheckForm.withoutNotValid(raw).trim()
     if (s.regionMatches(0, "CHECK", 0, 5, ignoreCase = true)) {
         s = PostgresDomainCheckForm.predicate(s.substring(5).trim())
     }
