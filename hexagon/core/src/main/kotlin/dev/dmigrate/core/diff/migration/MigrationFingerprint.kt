@@ -219,8 +219,16 @@ object MigrationFingerprint {
      * Post-Compare meldete trotzdem Drift. Ein Schema mit Zahlen-`default` mit nachlaufender Null
      * oder Exponent und jedes Schema mit `boolean`-Default auf SQLite hasht anders; alle anderen
      * hashen bis auf den Algorithmus-Tag wie zuvor.
+     *
+     * v23: **der Basistyp einer Domain mit Laenge oder Array** (Issue #58; `v22` gehoert dem Slice
+     * zu #55). [dev.dmigrate.core.diff.CustomTypeBaseType.canonical] trennt `char`/`varchar` von
+     * `text`, traegt die Laenge von `varchar(n)`, `char(n)`, `timestamp(n)`, `time(n)`, `bit(n)` in
+     * der Klammer (`varchar` ohne Laenge ist `text`, `char` ist `char(1)`) und haengt bei einem
+     * Array `[]` an. `base=` einer Domain mit solchem Basistyp hasht damit anders; Schemas ohne
+     * Domain und Domains ueber `integer`, `text` oder `decimal` hashen bis auf den Algorithmus-Tag
+     * wie zuvor.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v21"
+    const val ALGORITHM: String = "schema-fingerprint-v23"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
