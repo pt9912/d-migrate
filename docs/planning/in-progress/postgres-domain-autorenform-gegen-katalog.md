@@ -1,12 +1,11 @@
 # PostgreSQL: Domain in Autorenform gegen Katalogform (Issue #52)
 
-> **Status:** Draft mit Scope (2026-10-25), nach drei Reviews. Aus Issue #52, abgegrenzt von
+> **Status:** In Umsetzung (2026-10-25); Draft mit Scope nach drei Reviews. Aus Issue #52, abgegrenzt von
 > #51 (`custom-type-fields-leer-gegen-null.md`, Nachtrag „Offen“): dort ging es um `fields`,
 > `ordinal` und `description`; die Domain-Abweichung blieb offen. Ein Verweis dieses Plans
 > auf den Vorgänger bleibt ein Dateiname; wandert der Vorgänger nach `done/`, ist der
 > Nachtrag dort auf „erledigt durch #52“ nachzuführen.
-> **Vorbedingung:** keine. **Aktivierung** (Move nach `../in-progress/`) beim ersten
-> Implementierungs-Commit.
+> **Vorbedingung:** keine. Aktiviert mit dem Implementierungs-Commit.
 
 ## Ziel
 
@@ -170,3 +169,42 @@ Nicht-Ziel: `AlterCustomType` für PostgreSQL rendern (`ALTER DOMAIN`); Composit
   `MODULES=`, `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"`,
   `make solid-suppression-gate`, `make docs-check`; bei einem ADR `make doc-immutable
   RANGE=origin/main..HEAD`.
+
+## Nachtrag P0/P1/P2 (2026-10-25)
+
+**P0 (Messung, ungefixt, 20 Fälle; Soll in Autorenform, Reader-Ausgabe, Diff-Felder):**
+
+| Fall | Reader | Diff vorher |
+| --- | --- | --- |
+| `integer`/`bigint`/`smallint` mit `CHECK (VALUE > 0)` | `…/32/0` bzw. `64/0`, `16/0`; `(VALUE > 0)` | precision, scale, check (bei `bigint` auch baseType) |
+| `real`, `double precision` | `float/24/null`, `float/53/null`; `(VALUE > (0)::double precision)` | precision, check |
+| `decimal(10,2)` / `numeric` | `decimal/10/2`; `(VALUE >= (0)::numeric)` | check |
+| `text` | `(length(VALUE) > 0)` | check |
+| `varchar(50)` | `text`; `(length((VALUE)::text) > 0)` | check (als `varchar` auch baseType) |
+| `BETWEEN` / `IN` / `AND` / `OR` | `((VALUE >= 1) AND (VALUE <= 10))` / `= ANY (ARRAY['a'::text, …])` | check |
+| **zwei** CHECKs | nur der letzte (`(VALUE < 10)`) | check — **Reader-Bug** |
+| Domain über Domain | `b` | gleich |
+| Array-Domain | `_int4` | baseType |
+
+**P1 (Entscheidung):** Ursache 1 → **Richtung A** (Reader: `precision`/`scale` nur für `decimal`;
+kein Vergleich in B). Ursache 3 → Neutralform des Basistyps im Vergleich **und** im Fingerabdruck
+(`CustomTypeBaseType`). Ursache 2 → **Reader-Normalform** statt Falten im Vergleich
+(`PostgresDomainCheckForm`): überflüssige äußere Klammern und der Cast an Zahl-/Textliteralen
+entfallen — das ist keine Normalisierung im Migrate-Vergleich und berührt ADR 0056 nicht (kein ADR
+nötig); `BETWEEN`/`IN`/Cast an `VALUE`/`AND`-Klammern bleiben dokumentierte Grenze (**F**), C/D/E sind
+verworfen (fehlende Herkunft/Serverform im Standardfall, ADR 0056/0057). Compare-Seite: unverändert,
+`compareCustomType` ruft `RawTextFolding` weiter nicht auf; der Fehlalarm des Checks entfällt dort mit
+der Reader-Normalform.
+
+**P2:** Fingerabdruck **`schema-fingerprint-v19`** (der Basistyp einer Domain geht in Neutralform ein;
+die Reader-Änderung ändert `precision`/`scale`): ein Rollback-Artefakt einer früheren Version ist neu zu
+erzeugen. Integrationstest (`PostgresCustomTypeFileFormMigrateIntegrationTest`, Domain-Teil): zehn Fälle
+in Autorenform sind gleich (zweiter Lauf `operationsTotal=0`), drei Grenzen blockieren weiter, drei echte
+Änderungen (anderer `CHECK`, andere Genauigkeit, anderer Basistyp) blockieren weiter. Ohne die Änderung
+rot (P0-Tabelle, und `POST_EXECUTE_DRIFT` am Fingerabdruck für `bigint`/`real`/`numeric`/`varchar`).
+
+**Offen / abgetrennt:** Mehrfach-CHECK (Reader behält den letzten) und die verlorene `varchar`-Länge sind
+eigene Befunde; Array-Domain (`_int4` gegen `integer[]`) ist Grenze; ein Test „alte Reverse-Datei mit
+`precision: 32` gegen neuen Reader“ fehlt (so eine Datei gilt nach der Änderung als geändert, bis die
+Zeile entfällt). Der YAML-Parser-Roundtrip ist durch `SchemaNodeParserTest` (Form der Datei-Domain)
+abgedeckt, nicht durch einen Integrationsfall mit echter Datei.

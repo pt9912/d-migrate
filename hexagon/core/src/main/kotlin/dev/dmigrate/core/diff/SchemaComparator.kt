@@ -183,7 +183,8 @@ class SchemaComparator(
             kind = valueChangeOrNull(left.kind, right.kind),
             values = if (left.values.orEmpty() == right.values.orEmpty()) null
                 else ValueChange(left.values.orEmpty(), right.values.orEmpty()),
-            baseType = valueChangeOrNull(left.baseType, right.baseType),
+            baseType = if (CustomTypeBaseType.canonical(left.baseType) == CustomTypeBaseType.canonical(right.baseType)) null
+                else valueChangeOrNull(left.baseType, right.baseType),
             precision = valueChangeOrNull(left.precision, right.precision),
             scale = valueChangeOrNull(left.scale, right.scale),
             check = valueChangeOrNull(left.check, right.check),

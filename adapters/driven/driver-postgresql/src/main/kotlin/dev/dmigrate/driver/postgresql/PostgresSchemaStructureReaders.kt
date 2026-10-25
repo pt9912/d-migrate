@@ -305,11 +305,14 @@ internal fun readPostgresCustomTypes(
     for (row in PostgresMetadataQueries.listDomainTypes(session, schema)) {
         val name = row["typname"] as String
         val baseType = row["base_type"] as? String ?: "text"
+        val neutralBase = PostgresTypeMapping.mapParamType(baseType)
         result[name] = CustomTypeDefinition(
             kind = CustomTypeKind.DOMAIN,
-            baseType = PostgresTypeMapping.mapParamType(baseType),
-            precision = (row["numeric_precision"] as? Number)?.toInt(),
-            scale = (row["numeric_scale"] as? Number)?.toInt(),
+            baseType = neutralBase,
+            // Der Katalog fuellt Genauigkeit und Skala auch fuer `integer` (32/0) und die Gleitkommatypen;
+            // eine Datei schreibt sie nur fuer `decimal` (Issue #52).
+            precision = (row["numeric_precision"] as? Number)?.toInt()?.takeIf { neutralBase == "decimal" },
+            scale = (row["numeric_scale"] as? Number)?.toInt()?.takeIf { neutralBase == "decimal" },
             check = normalizeDomainCheck(row["check_clause"] as? String),
         )
     }
@@ -342,32 +345,15 @@ internal fun readPostgresCustomTypes(
  * `pg_get_constraintdef` liefert den vollständigen Domain-Check inkl. Hülle, z. B.
  * `CHECK ((VALUE > 0))`. Das Modell soll nur das Prädikat halten, damit die
  * Generate-Seite genau einmal `CHECK (...)` wrappt (sonst entsteht
- * `CHECK (CHECK (...))`). Entfernt das führende `CHECK`-Token und – falls die
- * äußerste Klammer das gesamte Prädikat umschließt – genau dieses eine Klammerpaar.
+ * `CHECK (CHECK (...))`). Entfernt das führende `CHECK`-Token und bringt das Prädikat
+ * auf die Autorenform ([PostgresDomainCheckForm]): überflüssige äußere Klammern und
+ * der Cast an Literalen entfallen.
  */
 internal fun normalizeDomainCheck(raw: String?): String? {
     if (raw == null) return null
     var s = raw.trim()
     if (s.regionMatches(0, "CHECK", 0, 5, ignoreCase = true)) {
-        s = s.substring(5).trim()
-        if (s.startsWith("(") && outerParenSpansWhole(s)) {
-            s = s.substring(1, s.length - 1).trim()
-        }
+        s = PostgresDomainCheckForm.predicate(s.substring(5).trim())
     }
     return s.ifEmpty { null }
-}
-
-/** True, wenn die öffnende Klammer an Index 0 erst am letzten Zeichen geschlossen wird. */
-private fun outerParenSpansWhole(s: String): Boolean {
-    var depth = 0
-    for ((i, c) in s.withIndex()) {
-        when (c) {
-            '(' -> depth++
-            ')' -> {
-                depth--
-                if (depth == 0) return i == s.length - 1
-            }
-        }
-    }
-    return false
 }

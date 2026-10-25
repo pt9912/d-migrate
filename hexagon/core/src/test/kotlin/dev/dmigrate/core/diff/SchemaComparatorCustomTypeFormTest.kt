@@ -91,4 +91,38 @@ class SchemaComparatorCustomTypeFormTest : FunSpec({
         // Eine Beschreibung speichert kein Reader: der Vergleich gegen ein Ziel (auch ein file:-Ziel)
         // meldet sie nicht.
     }
+
+    fun domain(base: String?, precision: Int? = null, scale: Int? = null, check: String? = null) =
+        CustomTypeDefinition(
+            kind = CustomTypeKind.DOMAIN, baseType = base, precision = precision, scale = scale, check = check,
+        )
+
+    test("der Basistyp einer Domain: Synonyme und Laengenangaben sind derselbe Typ (#52)") {
+        val same = listOf(
+            "biginteger" to "bigint", "biginteger" to "int8", "integer" to "int4", "integer" to "INT",
+            "smallint" to "int2", "text" to "varchar(50)", "text" to "character varying", "text" to "bpchar",
+            "decimal" to "numeric", "decimal" to "NUMERIC(10, 2)", "float" to "real", "float" to "double precision",
+            "boolean" to "bool",
+        )
+        for ((read, authored) in same) {
+            SchemaComparator().compare(schema(domain(read)), schema(domain(authored))).customTypesChanged.shouldBeEmpty()
+        }
+    }
+
+    test("ein anderer Basistyp bleibt eine Aenderung (#52)") {
+        val different = listOf("integer" to "biginteger", "text" to "integer", "decimal" to "float", "integer" to "smallint")
+        for ((a, b) in different) {
+            SchemaComparator().compare(schema(domain(a)), schema(domain(b))).customTypesChanged shouldHaveSize 1
+        }
+        SchemaComparator().compare(schema(domain(null)), schema(domain("integer"))).customTypesChanged shouldHaveSize 1
+    }
+
+    test("Genauigkeit und Skala eines decimal bleiben eine Aenderung (#52)") {
+        SchemaComparator().compare(schema(domain("decimal", 10, 2)), schema(domain("numeric", 12, 2)))
+            .customTypesChanged shouldHaveSize 1
+        SchemaComparator().compare(schema(domain("decimal", 10, 2)), schema(domain("numeric", 10, 3)))
+            .customTypesChanged shouldHaveSize 1
+        SchemaComparator().compare(schema(domain("decimal", 10, 2)), schema(domain("numeric", 10, 2)))
+            .customTypesChanged.shouldBeEmpty()
+    }
 })

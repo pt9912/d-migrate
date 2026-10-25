@@ -64,6 +64,7 @@ festgehalten.
 | [`sqlite-enum-domain-check-reverse.md`](sqlite-enum-domain-check-reverse.md) | Per-Feature-Plan | Wertevorrat von `ref_type`-Enums auf SQLite gegen eine echte Datenbank erkennen und umsetzen (Issue #48): Soll-Seiten-Aufloesung aus `custom_types`, Reader-Option, Preflight, `schema-fingerprint-v18`; Phasen P0-P5. Entscheidung: ADR 0060. |
 | [`sqlite-neubau-abhaengige-sichten.md`](sqlite-neubau-abhaengige-sichten.md) | Per-Feature-Plan | Tabellen-Neubau auf SQLite mit abhaengigen Sichten (Issue #50): Tabellenbezuege aus dem Sichttext ableiten (Richtung A'), Sichten-Leseweg `extractViewQuery`; Phasen P0-P3. |
 | [`custom-type-fields-leer-gegen-null.md`](custom-type-fields-leer-gegen-null.md) | Per-Feature-Plan | `schema migrate` gegen PostgreSQL plant `AlterCustomType` fuer einen unveraenderten Typ (Issue #51): `compareCustomType` vergleicht Datei-Form gegen Reader-Form (`fields` null gegen leer, Composite-`ordinal`, `description`); Integrationstest gegen PostgreSQL, Handbuch-Hinweis. |
+| [`postgres-domain-autorenform-gegen-katalog.md`](postgres-domain-autorenform-gegen-katalog.md) | Per-Feature-Plan | `schema migrate` gegen PostgreSQL plant `AlterCustomType` fuer eine unveraenderte Domain (Issue #52): Reader liefert `precision`/`scale` und die Katalogform des `CHECK`, die Datei die Autorenform; Reader-Normalform, Basistyp-Neutralform, `schema-fingerprint-v19`. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

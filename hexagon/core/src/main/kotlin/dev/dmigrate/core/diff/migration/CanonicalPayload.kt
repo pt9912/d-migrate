@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.diff.CustomTypeBaseType
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
@@ -133,7 +134,8 @@ internal object CanonicalPayload {
 
     fun customType(t: CustomTypeDefinition): String = buildString {
         append("kind=").append(t.kind.name)
-            .append(SEP).append("base=").append(t.baseType ?: "")
+            // Neutralform: Datei und Reader schreiben denselben Basistyp verschieden (Issue #52).
+            .append(SEP).append("base=").append(CustomTypeBaseType.canonical(t.baseType) ?: "")
             .append(SEP).append("values=").append(t.values?.joinToString(",") ?: "")
             .append(SEP).append("precision=").append(t.precision ?: "")
             .append(SEP).append("scale=").append(t.scale ?: "")

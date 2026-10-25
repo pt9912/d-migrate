@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.EffectivePrimaryKey
 import dev.dmigrate.core.diff.EnumCheckProjection
 import dev.dmigrate.core.diff.RefTypeVocabulary
 import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
+import dev.dmigrate.core.diff.CustomTypeBaseType
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
@@ -190,8 +191,17 @@ object MigrationFingerprint {
      * erzeugtes Artefakt still nicht mehr, und der Betreiber saehe ein
      * blankes `TARGET_STATE_MISMATCH` statt des Hinweises, das Artefakt neu
      * zu erzeugen.
+     *
+     * v19: **der Basistyp einer Domain** (Issue #52). Eine Datei schreibt `bigint`,
+     * `numeric` oder `varchar(50)`, der PostgreSQL-Reader liefert `biginteger`,
+     * `decimal`, `text`; der Abdruck traegt jetzt die Neutralform
+     * ([dev.dmigrate.core.diff.CustomTypeBaseType]), damit der Post-Compare eines
+     * Migrationslaufs nicht an der Schreibweise driftet. Ausserdem liefert der Reader
+     * `precision`/`scale` nur noch fuer `decimal` und den `CHECK` in Autorenform. Eine
+     * Domain traegt damit einen anderen Abdruck; alle anderen Schemas hashen bis auf
+     * den Algorithmus-Tag wie zuvor.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v18"
+    const val ALGORITHM: String = "schema-fingerprint-v19"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -281,7 +291,7 @@ object MigrationFingerprint {
         for ((name, def) in types.entries.sortedBy { it.key }) {
             sb.append("custom_type=").append(name)
                 .append(SEP).append("kind=").append(def.kind.name)
-                .append(SEP).append("base=").append(def.baseType ?: "")
+                .append(SEP).append("base=").append(CustomTypeBaseType.canonical(def.baseType) ?: "")
                 .append(SEP).append("values=").append(def.values?.let(::joinValues) ?: "")
                 .append(SEP).append("precision=").append(def.precision ?: "")
                 .append(SEP).append("scale=").append(def.scale ?: "")

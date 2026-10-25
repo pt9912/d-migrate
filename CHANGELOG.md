@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`schema migrate` auf PostgreSQL blockiert nicht mehr bei einer unveränderten Domain**
+  (Issue #52). Eine Domain, die Datei und Datenbank gleich ausdrücken, aber verschieden
+  schreiben, planten `AlterCustomType` und endeten mit Exit `8`. Der Reader meldet
+  `precision`/`scale` nur noch für `decimal` (der Katalog füllt sie auch für `integer`: 32/0)
+  und bringt den `CHECK` auf die Autorenform zurück (überflüssige äußere Klammern und der
+  Cast an Zahl- und Textliteralen entfallen); der Basistyp gilt in Neutralform (`bigint` =
+  `biginteger`, `numeric` = `decimal`, `varchar(n)` = `text`). Grenzen: `BETWEEN`, `IN (…)`
+  und ein Cast an `VALUE` bleiben in Katalogform und gelten als geändert. Der Fingerabdruck
+  steht auf `schema-fingerprint-v19`; ein Rollback-Artefakt einer früheren Version ist neu
+  zu erzeugen. Ein `schema reverse` schreibt keine `precision`/`scale` mehr an eine Domain
+  über `integer`, `bigint`, `smallint` oder einen Gleitkommatyp.
+
 ## [1.9.1] - 2026-10-25
 
 ### Fixed

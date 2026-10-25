@@ -2585,10 +2585,18 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   anders schreibt als der Katalog (leere `fields`, kein `ordinal`, `required`
   oder `unique` an einem Composite-Feld, eine `description` am Typ). Beim
   Vergleich gegen ein Ziel zählt die `description` eines Typs nicht, denn
-  keine Datenbank speichert sie. Eine **Domain**, deren `check` oder Basistyp die
-  Datei anders schreibt als der Katalog (der liefert `CHECK ((VALUE > 0))` als
-  `(VALUE > 0)` und für `integer` die Genauigkeit 32), gilt weiter als geändert und
-  blockiert wie eine echte Änderung. Eine **echte** Änderung eines benannten Typs
+  keine Datenbank speichert sie. Bei einer **Domain** gilt der Basistyp in seiner Neutralform (`bigint`,
+  `int8` und `biginteger` sind derselbe Typ, ebenso `numeric`/`decimal`,
+  `varchar(50)`/`text`), `precision` und `scale` zählen nur bei `decimal`, und
+  den `check` bringt der Reader auf die Schreibweise zurück, die Sie ihm geben
+  (`VALUE >= 0` statt `((VALUE >= (0)::numeric))`). **Grenzen:** was der Server
+  darüber hinaus umschreibt, bleibt in Katalogform und gilt als geändert —
+  `BETWEEN`, `IN (…)` (der Server macht `= ANY (ARRAY[…])` daraus), ein Cast an
+  `VALUE` (etwa bei einer `varchar`-Domain) und `AND`/`OR` ohne die Klammern,
+  die der Server setzt (`(VALUE > 0) AND (VALUE < 10)`). Die Länge einer
+  `varchar(n)`-Domain und `DEFAULT`/`NOT NULL` einer Domain vergleicht
+  `schema migrate` nicht; hat eine Domain mehrere `CHECK`-Constraints, sieht es
+  nur den letzten. Eine **echte** Änderung eines benannten Typs
   (andere Werte einer Enum, anderer `base_type` oder `check` einer Domain,
   anderer Typ oder weitere Felder eines Composite) plant `schema migrate` als
   `AlterCustomType`; PostgreSQL rendert sie noch nicht, der Plan blockiert mit

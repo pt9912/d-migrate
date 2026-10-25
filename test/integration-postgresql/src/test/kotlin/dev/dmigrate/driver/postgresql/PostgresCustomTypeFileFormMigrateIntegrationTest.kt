@@ -9,6 +9,7 @@ import dev.dmigrate.cli.commands.testing.executeAgainstPool
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.CustomTypeDefinition
+import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationResult
@@ -256,6 +257,80 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
             }
         }
         migrate(typedTo(db, compositeChanged)).exit shouldBe 8
+    }
+
+    // ── Domain in Autorenform (Issue #52): so, wie ein Autor sie schreibt, nicht wie der Katalog ──
+
+    fun authored(base: String, check: String? = null, precision: Int? = null, scale: Int? = null) =
+        CustomTypeDefinition(
+            kind = CustomTypeKind.DOMAIN, baseType = base, check = check, precision = precision, scale = scale,
+            fields = emptyMap(),
+        )
+
+    /** Das Soll: die gelesene Datenbank, die Domain `d` in Autorenform, dazu die eine zusaetzliche Spalte. */
+    fun withAuthoredDomain(db: SchemaDefinition, domain: CustomTypeDefinition) =
+        typedTo(db, db.customTypes + ("d" to domain))
+
+    fun domainTable(vararg ddl: String) = sql(
+        *ddl, "CREATE TABLE t (id integer NOT NULL, v d, PRIMARY KEY (id))", pool = pool,
+    )
+
+    val sameDomains = mapOf(
+        "integer" to ("CREATE DOMAIN d AS integer CHECK (VALUE > 0)" to authored("integer", "VALUE > 0")),
+        "integer ohne check" to ("CREATE DOMAIN d AS integer" to authored("integer")),
+        "bigint" to ("CREATE DOMAIN d AS bigint CHECK (VALUE > 0)" to authored("bigint", "VALUE > 0")),
+        "smallint" to ("CREATE DOMAIN d AS smallint CHECK (VALUE > 0)" to authored("smallint", "VALUE > 0")),
+        "real" to ("CREATE DOMAIN d AS real CHECK (VALUE > 0)" to authored("real", "VALUE > 0")),
+        "decimal(10,2)" to
+            ("CREATE DOMAIN d AS decimal(10,2) CHECK (VALUE >= 0)" to authored("decimal", "VALUE >= 0", 10, 2)),
+        "numeric" to ("CREATE DOMAIN d AS numeric CHECK (VALUE >= 0)" to authored("numeric", "VALUE >= 0")),
+        "text" to ("CREATE DOMAIN d AS text CHECK (length(VALUE) > 0)" to authored("text", "length(VALUE) > 0")),
+        "text mit Literal" to ("CREATE DOMAIN d AS text CHECK (VALUE <> 'x')" to authored("varchar", "VALUE <> 'x'")),
+        "AND mit Klammern" to
+            ("CREATE DOMAIN d AS integer CHECK (VALUE > 0 AND VALUE < 10)" to
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+    )
+    for ((name, case) in sameDomains) {
+        test("Domain in Autorenform ist dieselbe Domain: $name") {
+            domainTable(case.first)
+            val db = read()
+            migratesOnlyTheColumn(withAuthoredDomain(db, case.second))
+        }
+    }
+
+    // Bekannte Grenzen (Handbuch §3.21): der Server schreibt diese Ausdruecke um, der Reader gibt die
+    // Katalogform zurueck. Die Tests halten fest, dass sie weiter blockieren, bis die Faltung entschieden ist.
+    val knownLimits = mapOf(
+        "BETWEEN" to ("CREATE DOMAIN d AS integer CHECK (VALUE BETWEEN 1 AND 10)" to
+            authored("integer", "VALUE BETWEEN 1 AND 10")),
+        "IN" to ("CREATE DOMAIN d AS text CHECK (VALUE IN ('a', 'b'))" to authored("text", "VALUE IN ('a', 'b')")),
+        "Cast an VALUE (varchar)" to ("CREATE DOMAIN d AS varchar(50) CHECK (length(VALUE) > 0)" to
+            authored("varchar", "length(VALUE) > 0")),
+    )
+    for ((name, case) in knownLimits) {
+        test("bekannte Grenze, blockiert weiter: $name") {
+            domainTable(case.first)
+            val db = read()
+            migrate(withAuthoredDomain(db, case.second)).exit shouldBe 8
+        }
+    }
+
+    val realChanges = mapOf(
+        "anderer CHECK" to ("CREATE DOMAIN d AS integer CHECK (VALUE > 0)" to authored("integer", "VALUE >= 0")),
+        "andere Genauigkeit" to ("CREATE DOMAIN d AS decimal(10,2) CHECK (VALUE >= 0)" to
+            authored("decimal", "VALUE >= 0", 12, 2)),
+        "anderer Basistyp" to ("CREATE DOMAIN d AS integer CHECK (VALUE > 0)" to authored("bigint", "VALUE > 0")),
+    )
+    for ((name, case) in realChanges) {
+        test("echte Aenderung einer Domain blockiert weiter: $name") {
+            domainTable(case.first)
+            val db = read()
+            val o = migrate(withAuthoredDomain(db, case.second))
+            withClue("${o.errors} ${o.report.take(600)}") {
+                o.exit shouldBe 8
+                o.report.contains("kind=AlterCustomType") shouldBe true
+            }
+        }
     }
 })
 

@@ -214,4 +214,24 @@ class SchemaNodeParserTest : FunSpec({
         sequence.cycle shouldBe true
         sequence.cache shouldBe 20
     }
+
+    test("a domain without fields parses to the author form the PostgreSQL comparison relies on (#52)") {
+        val root = mapper.readTree(
+            """
+            {
+              "schema_format": "1.0", "name": "d", "version": "1",
+              "custom_types": { "pos": { "kind": "domain", "base_type": "integer", "check": "VALUE > 0" } },
+              "tables": {}
+            }
+            """.trimIndent(),
+        )
+        val type = SchemaNodeParser.parse(root).customTypes.getValue("pos")
+        type.kind shouldBe CustomTypeKind.DOMAIN
+        type.baseType shouldBe "integer"
+        type.check shouldBe "VALUE > 0"
+        type.precision shouldBe null
+        type.scale shouldBe null
+        // Leer, nicht fehlend: der Reader liefert null (Issue #51).
+        type.fields shouldBe emptyMap()
+    }
 })

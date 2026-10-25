@@ -380,15 +380,48 @@ class PostgresSchemaReaderTest : FunSpec({
 
         val domain = result.schema.customTypes["positive"]!!
         domain.kind shouldBe CustomTypeKind.DOMAIN
-        domain.check shouldBe "(VALUE > 0)"
+        domain.check shouldBe "VALUE > 0"
+        // Genauigkeit und Skala fuellt der Katalog auch fuer einen ganzzahligen Basistyp; sie gehoeren nicht ins Modell (#52).
+        domain.precision.shouldBeNull()
+        domain.scale.shouldBeNull()
     }
 
-    test("normalizeDomainCheck strips one CHECK wrapper and is idempotent (I-06)") {
+    test("domain over decimal keeps precision and scale (#52)") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
+            mapOf("typname" to "amount", "base_type" to "numeric", "numeric_precision" to 10,
+                "numeric_scale" to 2, "domain_default" to null, "check_clause" to "CHECK ((VALUE >= (0)::numeric))"),
+        )
+        every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
+
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val domain = reader.read(pool, opts).schema.customTypes["amount"]!!
+
+        domain.baseType shouldBe "decimal"
+        domain.precision shouldBe 10
+        domain.scale shouldBe 2
+        domain.check shouldBe "VALUE >= 0"
+    }
+
+    test("normalizeDomainCheck strips the CHECK wrapper and redundant outer parentheses and is idempotent (I-06, #52)") {
         val once = normalizeDomainCheck("CHECK ((VALUE > 0))")
-        once shouldBe "(VALUE > 0)"
-        // Re-applying must not strip further parentheses (round-trip stable).
-        normalizeDomainCheck(once) shouldBe "(VALUE > 0)"
+        once shouldBe "VALUE > 0"
+        // Re-applying must not change the result (round-trip stable).
+        normalizeDomainCheck(once) shouldBe "VALUE > 0"
         normalizeDomainCheck(null).shouldBeNull()
+    }
+
+    test("normalizeDomainCheck drops the cast on number and text literals only outside quotes (#52)") {
+        normalizeDomainCheck("CHECK ((VALUE > (0)::double precision))") shouldBe "VALUE > 0"
+        normalizeDomainCheck("CHECK ((VALUE >= (-1.5)::numeric))") shouldBe "VALUE >= -1.5"
+        normalizeDomainCheck("CHECK ((VALUE = 'a'::text))") shouldBe "VALUE = 'a'"
+        normalizeDomainCheck("CHECK ((VALUE <> 'x'::character varying))") shouldBe "VALUE <> 'x'"
+        // Ein Cast im Literal ist Text, kein Cast; ein Cast an VALUE bleibt.
+        normalizeDomainCheck("CHECK ((VALUE <> '(0)::numeric'))") shouldBe "VALUE <> '(0)::numeric'"
+        normalizeDomainCheck("CHECK ((length((VALUE)::text) > 0))") shouldBe "length((VALUE)::text) > 0"
+        // Klammern im Literal zaehlen nicht beim Suchen der aeusseren Klammer.
+        normalizeDomainCheck("CHECK ((VALUE <> ')'))") shouldBe "VALUE <> ')'"
     }
 
     test("normalizeDomainCheck keeps predicate with multiple paren groups intact (I-06)") {
