@@ -1,0 +1,19 @@
+schema_format: "1.0"
+name: "matrix-expression-index-current"
+version: "1.0.0"
+
+tables:
+  t:
+    columns:
+      id:
+        type: integer
+        required: true
+      a:
+        type: text
+        max_length: 100
+        required: true
+      b:
+        type: text
+        max_length: 100
+        required: true
+    primary_key: [id]

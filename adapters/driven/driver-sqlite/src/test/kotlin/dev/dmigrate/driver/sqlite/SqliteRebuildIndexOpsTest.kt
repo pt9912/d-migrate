@@ -152,6 +152,16 @@ class SqliteRebuildIndexOpsTest : FunSpec({
         r.sqls().count("CREATE TABLE").shouldBe(0)
     }
 
+    test("Hinweis auf verlorene INCLUDE-Spalten erscheint fuer einen absorbierten Index genau einmal (UP und DOWN)") {
+        val covering = ix("ix_c", "b").copy(includeColumns = listOf("a"))
+        val without = schema("t" to table())
+        val with = schema("t" to table(aRequired = true, indices = listOf(covering)))
+
+        render(without, with, up = true).diagnostics.count { it.code == "W142" } shouldBe 1
+        val back = schema("t" to table(indices = listOf(covering)))
+        render(back, schema("t" to table(aRequired = true)), up = false).diagnostics.count { it.code == "W142" } shouldBe 1
+    }
+
     test("FULLTEXT-Index neben einem Neubau behaelt seinen eigenen Pfad (Strom bleibt gemischt)") {
         val current = schema("t" to table())
         val desired = schema("t" to table(aRequired = true, indices = listOf(ix("ft_b", "b", type = IndexType.FULLTEXT))))

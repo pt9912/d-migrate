@@ -130,7 +130,7 @@ einschließlich Indexname und Eindeutigkeit. (4) Aufwand und Tag-Folge.
   | 11 | FULLTEXT- und Spatial-Index auf der Neubau-Tabelle (`DropIndex`/`AddIndex`) | bleiben auf ihrem Pfad (`emitDrop`/`disableSpatialIndex`); zu messen: Waisen nach dem Neubau, Verhalten des Guards |
 
   Außerdem: sieht die Matrix (`test/cross-dialect-matrix`) das Paar „Datei-`unique` / Datenbank-Index"? Vermutung nein.
-* **P1 Entscheidung:** Richtung gegen die Kriterien. **ADR-/Tag-Bedarf:** aktueller Tag `schema-fingerprint-v21`
+* **P1 Entscheidung:** Richtung gegen die Kriterien. **ADR-/Tag-Bedarf:** aktueller Tag (mit #55) `schema-fingerprint-v22`
   (`MigrationFingerprint` Zeile 223; ADR 0062 nennt `v20`, danach stieg er mit dem Default-Vergleich). (a1) ändert nur Planer und
   Renderer; der Abdruck wird aus dem Schema nach Reader und Projektion gebildet (Zeilen 350/355; Zeile 275 ist nur `algorithm=`), nicht aus dem Plan —
   **vermutlich kein Tag-Bump**, in P1 gegen `MigrationFingerprint` und `MigrationFingerprintTest` zu bestätigen. (b) siehe dort. ADR
@@ -153,7 +153,7 @@ einschließlich Indexname und Eindeutigkeit. (4) Aufwand und Tag-Folge.
 
 ## Nicht-Scope
 
-Ausdrucks-Index-Textform (#55); Neubau mit abhängigen Sichten (#50); Default-Vergleich (#54); Reader-Herkunftsregel aus ADR 0062.
+`WITHOUT ROWID`: ein Neubau aus einer Datei verliert das Merkmal (P0-Fall 7, unabhängig von #60; `spec/neutral-model-spec.md` kennt `without_rowid`), eigener Fehler. `FULLTEXT` neben einem Neubau bleibt Exit 8. Ausdrucks-Index-Textform (#55); Neubau mit abhängigen Sichten (#50); Default-Vergleich (#54); Reader-Herkunftsregel aus ADR 0062.
 
 ## Akzeptanz
 
@@ -215,8 +215,12 @@ und beseitigt Guard-Fehler und Fehler 2 zugleich; (2) ADR 0062 unangetastet; (3)
 Rückrichtung ohne Doppelung (Fall 10 wird grün, in P2 mit `catalog()`-Vergleich belegt); (4) kleinster Aufwand, kein Folge-ADR.
 (b) widerspricht ADR 0062, (c) lässt den Fall blockiert, (a2)/(d) lösen Fehler 2 nicht.
 
-**Fingerabdruck:** kein Tag-Bump. `MigrationFingerprint` bildet den Abdruck aus dem Schema nach Reader und Projektion; (a1)
-ändert Planer und Renderer, nicht das Schema. Kein ADR, daher kein neuer ADR-/Tag-Verbrauch (v25/0067 bleiben frei).
+**Fingerabdruck:** kein Tag-Bump, belegt an `MigrationFingerprint` (`hexagon/core/.../MigrationFingerprint.kt`): `ALGORITHM` Zeile 229
+(`schema-fingerprint-v22`); `project(...)` (ab Zeile 276) baut den Abdruck allein aus `SchemaDefinition`, Typ-/Index-/Generierungs-Kanonisierern
+und Dialektflags (Parameter Zeilen 250-278; Tabellen-`indices` Zeilen 356 und 417-418). Weder `DiffOperation`, `DiffPlanner`-Plan noch
+Renderer-Ausgabe gehen in die Projektion oder die Nutzlast ein. (a1) ändert nur `SqliteRebuildPlanner.classify` und das Eimer-Rendering,
+also keinen dieser Eingänge. Kein ADR. Nummernstand mit main: v22/ADR 0064 verbraucht (#55); v23/0065 (#58) und v24/0066 (#59) reserviert;
+dieser Plan verbraucht nichts (v25/0067 bleiben frei).
 
 **Zusatz zu (a1):** die Prüfungen, die der `simpleOp`-Pfad für Indizes vorschaltet (`INDEX_RAW_TEXT_NOT_PORTABLE`, Hinweise zu
 INCLUDE-Spalten/Bitmap), laufen für absorbierte erzeugende Index-Operationen weiter im Eimer-Rendering; ein nicht portabler
