@@ -40,12 +40,22 @@ das nicht rendert); eine unveränderte Domain blockiert nicht.
 * **Zielformen von `format_type`:** `character varying(50)`, `character(5)`, `numeric(10,2)`, `timestamp(3) without time zone`,
   `bit(n)`, `integer[]`, `character varying(50)[]` → je eine neutrale Zielform festlegen (P0-Tabelle: Reader-Ausgabe → Neutralform
   → `toSql`); die Abbildung trägt die Domain-Funktion, nicht `mapParamType`.
-* **Regression `DomainTypes`/E053:** `DomainTypes.resolveBaseTypeName` und die Prüfung, die Domain-Basistypen kennt (E053), dürfen
-  durch Länge/Array-Suffix nicht neue Fehler erzeugen; P0 prüft Datei-`base_type: varchar(50)` und `integer[]` gegen beide.
+* **Regression `DomainTypes`/E053 — auch die Reader-Seite:** die Reader-Ausgabe läuft ebenfalls durch `DomainTypes.resolveBaseType`
+  (PG-Reverse-Datei gegen `schema generate` für SQLite/MSSQL: `SqliteRefTypeColumns`, `MssqlColumnTypeResolver`). `TYPE_WITH_PARAMS` ist
+  am Ende verankert; `integer[]`, `character varying(50)[]`, `timestamp(3) without time zone` fallen auf `resolveBaseTypeName`, das
+  `null` (E053) liefert; `bpchar` und `[]` fehlen dort. P1 legt fest, ob die Neutralform `[]`/Modifikatoren in `base_type` trägt
+  (dann zieht `DomainTypes` mit) oder eine Regel für Array-Basistypen in anderen Dialekten gilt. P0-Fall: PG-Reverse-Datei mit
+  Länge/Array gegen `schema generate` MSSQL/SQLite, plus Datei-`base_type: varchar(50)`/`integer[]`.
+* **`precision`/`scale`:** ADR 0061 Entscheidung 3 setzt sie nur bei `decimal` als eigene Felder; `format_type` liefert sie in der
+  Klammer. Entscheiden, ob `numeric(10,2)` in die Felder oder in `baseType` geht (nicht beides; berührt `precision(type)` und die
+  `decimal`-Ausnahme in `sameParameters`) — eigene Spalte der P0-Tabelle.
+* **`char` ohne Länge:** in PG gleich `char(1)`, `varchar` ohne Länge unbegrenzt; `sameParameters` behandelt „keine Klammer" bisher
+  als unbekannt. P1-Regel für `char`/`char(1)` und `varchar` gegen `varchar(n)`; P0-Fall.
 * **Bestandsdateien:** alte Reverse-Dateien (`text`) gelten nach der Verschärfung als geändert → mögliche Exit-8-Blockade ohne
   Änderung des Anwenders; Übergangsregel (Hinweis/Notiz) in P1, im Handbuch als Ist-Zustand.
-* **Fingerabdruck:** `CanonicalPayload`/`MigrationFingerprint` tragen `base=` nur als Typname ohne Klammer; trägt der Abdruck
-  die Länge, ändert sich das Layout → neuer Tag (zum Aktivierungszeitpunkt der nächste freie, heute `v22`; koordiniert mit
+* **Fingerabdruck:** `CanonicalPayload`/`MigrationFingerprint` tragen `base=` nur als Typname ohne Klammer; `base=` nutzt `CustomTypeBaseType.canonical`
+  (`CanonicalPayload`, `MigrationFingerprint`); die Trennung `char`/`varchar` und das Abtrennen von `[]` ändern diesen Wert schon, auch
+  ohne Länge im Abdruck → **Tag-Bump zwingend**, neuer Tag (zum Aktivierungszeitpunkt der nächste freie, heute `v22`; koordiniert mit
   `postgres-domain-mehrfach-check.md`, `domain-default-not-null-modell.md`, `sqlite-ausdrucks-index-textform.md`).
 * **ADR:** ein **neuer** ADR (zum Aktivierungszeitpunkt die nächste freie Nummer, heute 0064), der ADR 0061 Entscheidung 3/4
   ergänzt; ein Nachtrag im akzeptierten ADR ist wegen `doc-immutable` nicht möglich. Bezug: [Plan #52](../in-progress/postgres-domain-autorenform-gegen-katalog.md).
@@ -56,7 +66,7 @@ das nicht rendert); eine unveränderte Domain blockiert nicht.
   `numeric(10,2)[]`, `varchar(n)[]`; Domain in einem anderen Schema als `public` (Reader filtert ein Schema); `timestamp(3)`,
   `bit(n)`; `character varying(50)[]`; Datei mit `varchar(50)` gegen Datenbank mit `varchar(254)`; rechtearme Rolle (Quelle `information_schema` liefert NULL?). Je Fall Reader-Ausgabe, Diff gegen die Autorenform,
   Verhalten von `schema generate` für die gelesene Domain (Round-Trip). P0 endet, wenn die Tabelle voll ist.
-* **P1 Entscheidung:** Quelle, `sameParameters`-Regel, Neutralform, Tag/ADR, Übergang für Bestandsdateien (`text` statt
+* **P1 Entscheidung:** Quelle, `sameParameters`-Regel, Neutralform, Tag/ADR (der erste Aktivierungs-Commit nimmt den nächsten freien Tag/ADR, die anderen ziehen um), Übergang für Bestandsdateien (`text` statt
   `varchar(n)` aus früheren Reverse-Läufen).
 * **P2 Umsetzung:** Unit-Tests (Reader, `CustomTypeBaseType`, Abdruck), Integrationstest (zweiter Lauf `operationsTotal` 0,
   Rückweg, echte Änderung der Länge/des Array-Typs blockiert), Test „alte Reverse-Datei gegen neuen Reader".
@@ -66,12 +76,13 @@ das nicht rendert); eine unveränderte Domain blockiert nicht.
 ## Nicht-Scope
 
 Mehrfach-CHECK (`postgres-domain-mehrfach-check.md`); `DEFAULT`/`NOT NULL`/Kollation (`domain-default-not-null-modell.md`);
-`AlterCustomType` rendern; andere Dialekte.
+`AlterCustomType` rendern. Andere Dialekte: keine Verhaltensänderung, per Regressionstest belegt (`sameParameters` gilt für alle).
 
 ## Akzeptanz
 
 * Jede gemessene Fehlerzeile hat einen Test, der ohne die Änderung an der erwarteten Stelle fehlschlägt; absichtlich falsche
   Zusicherung einmal rot gesehen.
+* Zweiter Lauf: `operationsTotal` = 0 (P0-Tabelle als nummerierter Abschnitt in dieser Plandatei).
 * Eine echte Änderung (Länge, Array-Typ, `char` ↔ `varchar`) blockiert weiter (Exit 8, `AlterCustomType`).
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=`,
   `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"` (ganzes Modul, Detekt eingeschlossen),

@@ -35,7 +35,7 @@ die Datei trägt `lower(a)`. Der Vergleich sieht zwei Ausdrücke. Dieselbe Klass
 Ein Rundlauf `schema reverse` → `generate` → `reverse` setzt heute je Zyklus eine Klammerschicht dazu; A macht ihn stabil. Der
 Katalogtext ist mit `sqlite3` geprüft (`((a)+(b))`, `(lower(a))`, `('(' || a)` stehen unverändert in `sqlite_master.sql`).
 
-## Richtung (nach P0 zu entscheiden)
+## Richtung (A erwartet, P1 bestätigt)
 
 * **A — Reader-Normalform:** der Reader entfernt **eine** überflüssige äußere Klammer um einen Index-Ausdruck, wenn sie den
   ganzen Ausdruck umschließt (`(lower(a))` → `lower(a)`; `(a) + (b)` bleibt), und kann das dank der Generator-Regel
@@ -44,7 +44,7 @@ Katalogtext ist mit `sqlite3` geprüft (`((a)+(b))`, `(lower(a))`, `('(' || a)` 
   **Ort:** nicht `SqliteSchemaReader.indexDefinitions` (reicht nur durch), sondern
   `SqliteIndexKeyScanner.keysOf` nach `stripKeyModifiers` (Reihenfolge: erst Modifier `COLLATE`/`DESC`, dann Klammer), mit dem
   Quote-/Kommentar-Skip `skipNonCode` des Scanners — sonst entfernt ein Tiefenzähler bei `('(' || a)` falsch. A ist die exakte
-  Umkehrung von `renderKey`: genau **eine** umschließende Klammer; Datei `(lower(a))` → DB `((lower(a)))` → Reader `(lower(a))`.
+  Umkehrung von `renderKey`: genau **eine** umschließende Klammer; Datei `(lower(a))` → Schlüsseltext im Katalog (den `keysOf` sieht, innerhalb der Listenklammer) `((lower(a)))` → Reader `(lower(a))`.
   Von Hand angelegte `ON t(lower(a))` und `ON t((lower(a)))` werden beide `lower(a)`; Bestandsdatenbanken mit `((…))` werden mitrepariert.
 * **B — Vergleich:** Index-Ausdrücke zielbewusst falten (`TargetProjection.index`, Abdruck-Vertrag) — größer; widerspricht dem
   Kommentar in `RawTextFolding` (Schlüsselausdrücke bleiben auch in `schema compare` wortgleich) und ADR 0056; dialektweiter Eingriff
@@ -52,7 +52,7 @@ Katalogtext ist mit `sqlite3` geprüft (`((a)+(b))`, `(lower(a))`, `('(' || a)` 
 * **C — Generator:** SQLite schreibt keine zusätzlichen Klammern, wo sie nicht nötig sind (ein bloßer Funktionsaufruf):
   ändert die erzeugte DDL und lässt Bestandsdatenbanken (mit `((…))`) weiter abweichen — kein Ersatz für A.
 
-**P0-Fallmenge (abgeschlossen), je Fall Reader-Ausgabe und Operationen gegen die Generator-Datenbank:**
+**P0-Fallmenge (festgelegt), je Fall Reader-Ausgabe und Operationen gegen die Generator-Datenbank:**
 Fehlerzeilen: `((lower(a)))`, `UNIQUE (lower(a), b)`, `(a, (b + 1) DESC)`. Kontrollzeilen (dürfen nicht kippen): `lower(a)` ohne
 Klammer, `(a) + (b)`, `(a + b) * 2`, `('(' || a)`, Ausdruck + `COLLATE`/`DESC`, Prädikat (`WHERE`), mehrere Ausdrücke, Reihenfolge der
 Schlüssel. P0 endet, wenn jede Zeile Reader-Ausgabe und Operationen trägt.
@@ -60,7 +60,7 @@ Schlüssel. P0 endet, wenn jede Zeile Reader-Ausgabe und Operationen trägt.
 **Erwartung Fingerabdruck:** A ändert den Reader-Ausgang jedes SQLite-Ausdrucks-Index, der Abdruck trägt ihn (`expr:` in
 `CanonicalPayload.index`, `IndexColumn.toString()` in `MigrationFingerprint`) → **Tag-Bump erwartet** (Präzedenz ADR 0062, aktuell
 `schema-fingerprint-v21`, nächster freier Tag zum Aktivierungszeitpunkt; **neuer** ADR, nächste freie Nummer, ADR 0062/0063 sind
-eingefroren). Folgen benennen: Rollback-Artefakte älterer Läufe → `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`; Operations-IDs von
+eingefroren; er korrigiert ausdrücklich die Aussage in ADR 0062, der Reader liefere `lower(a)`). Folgen benennen: Rollback-Artefakte älterer Läufe → `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`; Operations-IDs von
 Index-Ops mit Ausdruck ändern sich. Nur Schemas mit SQLite-Ausdrucks-Index sind betroffen.
 
 Nicht-Ziel: `COLLATE` im Modell (die Spalte `a COLLATE NOCASE` ist kein Ausdruck; der Reader lässt `COLLATE` weg — Hinweis im
@@ -75,11 +75,12 @@ Handbuch, kein eigener Folge-Plan); Ausdrucks-Indizes auf anderen Dialekten.
 * **P2 Umsetzung:** Unit-Tests (Reader), SQLite-CLI-Tests (Plan-Only `operationsTotal` 0, `--execute` Exit 0, zweiter Lauf 0,
   Rückweg, echte Ausdrucksänderung bleibt eine Operation). Bestehende Tests erweitern:
   `SqliteIndexKeyScannerTest` (Randfälle), `SqliteExpressionIndexReverseIntegrationTest` (deckt bisher nur `ON t(LOWER(nm))`, nicht die
-  Generator-Form `((…))`). Reverse-Fixtures mit `expression:` prüfen (`test/cross-dialect-matrix/.../F.5/positive/desired.yaml`,
-  `adapters/driven/formats/.../fixtures/schemas/{e-commerce,full-featured}.yaml`); P0 klärt, welche einen SQLite-Reverse-Lauf abdecken.
+  Generator-Form `((…))`). Die vorhandenen Fixtures mit `expression:` (`F.5/positive/desired.yaml`, `e-commerce.yaml`, `full-featured.yaml`) sind CHECK-Ausdrücke,
+  keine Index-Schlüssel und hier belanglos; braucht es eine Matrix-/Format-Fixture, wird eine neue mit Index-`expression` angelegt.
+  SQLite-CLI-Tests: Datei und Modul in P0 benennen (`test/integration-sqlite`).
 * **P3 Doku:** Handbuch (Grenze „Ausdrucks-Index" streichen: `docs/user/anwenderhandbuch.md` um Zeile 2164; nur Ist-Zustand),
-  `CHANGELOG.md` (Parallele um Zeile 36); `spec/ddl-generation-rules.md` §5.1a um die Reader-Regel „entfernt eine umschließende
-  Klammer" ergänzen (Zielbild, wie bei ADR 0061; ohne ADR-Verweis); `spec/schema-reference.md` ergänzen oder bewusst nicht (entscheiden).
+  neuer `CHANGELOG.md`-Eintrag unter der laufenden Entwicklung (kein Rückgriff auf 1.10.0; im Handbuch keine Chronik); Handbuch-Hinweis zu `COLLATE`; `spec/ddl-generation-rules.md` §5.1a um die Reader-Regel „entfernt eine umschließende
+  Klammer" ergänzen (Zielbild, wie bei ADR 0061; ohne ADR-Verweis); `spec/schema-reference.md`: bewusst nicht (dort steht nichts zu Reader-Texten von Index-Ausdrücken); P1 bestätigt.
 
 ## Akzeptanz
 

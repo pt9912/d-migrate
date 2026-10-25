@@ -54,7 +54,7 @@ kannte nur Enums), **Domain mit Länge** (`varchar(32)`: Reader liest `Text()`, 
 * **B — Reader:** nicht tragfähig (die Datenbank trägt die Domain nicht).
 * **Fingerabdruck:** der Abdruck faltet die Domain schon; erwartet **kein** Tag-Bump. P0-Kriterium: Hash vorher/nachher für
   denselben Eingang gleich. Ein ADR nur, wenn der Vergleich Domains neu auflöst (Präzedenz ADR 0060 Wertevorrat; Grenze ADR 0026
-  (struktureller Vergleich kontextfrei"); dann neuer ADR (nächste freie Nummer; ADR 0061 als jüngster Domain-Basistyp-ADR mit prüfen; accepted-ADRs bleiben unberührt) und Klärung, ob
+  (streng/strukturell; die Kontextfreiheit steht im KDoc von `TypeCanonicalizerWiring`); dann neuer ADR (nächste freie Nummer; ADR 0061 als jüngster Domain-Basistyp-ADR mit prüfen; accepted-ADRs bleiben unberührt) und Klärung, ob
   er 0060/0026 ergänzt.
 
 ## Folgen für den Neubau-CAST-Plan (#54)
@@ -70,7 +70,7 @@ Nicht-Ziel: der Neubau-CAST selbst (erledigt in #54 Ursache 2).
 
 ## Phasen
 
-P0 Messung (SQLite-CLI-Test, Matrix oben), P1 Entscheidung (Ort, Präzedenzregel, ADR-Bedarf), P2 Umsetzung mit Tests (Plan-Only 0
+P0 Messung (SQLite-CLI-Test, Matrix oben), P1 Entscheidung (Ort, Präzedenzregel, ADR-Bedarf; ob die aufgelöste Tabelle `RefTypeVocabulary.resolve` nur den Basistyp oder auch den Vorrat liefert; ob die vorhandene Überladung `canonicalize(type, customTypes)` Option (a) verkleinert), P2 Umsetzung mit Tests (Plan-Only 0
 Operationen, `--execute`, zweiter Lauf, Rückweg, echte Änderung des Basistyps bleibt genau ein `AlterCustomType`), P3 Doku
 (Handbuch nur Ist-Zustand; Grenze streichen, `CHANGELOG.md`).
 
@@ -79,7 +79,7 @@ Operationen, `--execute`, zweiter Lauf, Rückweg, echte Änderung des Basistyps 
 * Jede gemessene Fehlerzeile hat einen Test, der ohne die Änderung an der erwarteten Stelle fehlschlägt; absichtlich falsche
   Zusicherung einmal rot gesehen.
 * Zweiter Lauf: `operationsTotal` = 0; Rückweg: Exit 0; Datei gegen Datei mit Basistypwechsel: genau ein `AlterCustomType`,
-  kein `AlterColumnType`; Fingerabdruck vorher/nachher unverändert; Test „Domain über boolean" aus #54 von Exit 8 auf 0.
+  kein `AlterColumnType`; Fingerabdruck vorher/nachher unverändert; der #54-Test „Domain über boolean als bekannte Grenze (Exit 8)" wird in P3 umbenannt und erwartet Exit 0.
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=` (geteilte Signatur im
   Hexagon, `CLAUDE.md`), `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`, `make solid-suppression-gate`,
   `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD`.

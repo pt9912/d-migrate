@@ -30,23 +30,30 @@ Basistyp-Namen `bt.typname`? Nicht annehmen, messen).
 * Der Reader liest die CHECKs **je Constraint** (eine Zeile pro `pg_constraint`, nicht `string_agg` im SQL), normalisiert **jedes**
   Prädikat in Kotlin mit `normalizeDomainCheck` (Cast-/Klammerentfernung arbeitet auf einem einzelnen Prädikat; ein verketteter
   String bräche sie) und fügt sie danach mit `AND`, **jedes in Klammern**, zusammen; ein einzelnes CHECK bleibt unverändert
-  (`n = 1` nicht klammern). Reihenfolge: `ORDER BY conname COLLATE "C"` (stabil) oder `oid` — in P1 entscheiden (Kriterium:
-  Reihenfolge der Autorendatei vs. Katalog; beides ist für `a AND b` semantisch gleich, aber nicht textgleich). Semantik: Domain-CHECKs
+  (`n = 1` nicht klammern). Reihenfolge: deterministisch `ORDER BY conname COLLATE "C"`. **Bekannte Grenze:** das Modell kennt die Namen der Datei
+  nicht; eine Datei mit `a AND b` gegen eine Datenbank mit umgekehrter Namensfolge bleibt ein `AlterCustomType`. Unbenannte CHECKs
+  erhalten Servernamen (`d_check`, `d_check1`) — P0 misst das.
+* **Reader-Aufbau:** mit einer Zeile je Constraint wiederholen sich `typname`, `base_type`, Präzision und `domain_default`; `result`
+  wird nach `typname` gruppiert. Fall „Domain ohne CHECK" (`LEFT JOIN` liefert `check_clause = null`). Reader-Unit-Test mit 0, 1 und
+  n CHECKs (`PostgresMetadataQueriesTest` erwartet bisher rohe Maps). Semantik: Domain-CHECKs
   verwerfen nur bei `false`, `a AND b` ist äquivalent; Constraint-Namen gehen verloren (das Modell kennt eine `check`-Zeichenkette).
 * **Vergleich mit der Autorenform:** der zusammengesetzte Ausdruck `(VALUE > 0) AND (VALUE < 10)` gegen `VALUE > 0 AND
   VALUE < 10` ist die Grenze „`AND` ohne Serverklammern" aus ADR 0061 Entscheidung 2 — dieser Plan beseitigt den Reader-Verlust,
-  nicht diese Grenze. Das Ziel der Akzeptanz ist entsprechend die Klammerform.
+  nicht diese Grenze. Der Akzeptanztest läuft deshalb gegen die Autorenform `(VALUE > 0) AND (VALUE < 10)`; für die Form ohne Klammern bleibt die Grenze.
 * **Round-Trip:** `schema generate` schreibt **einen** `CHECK`; zwei benannte Constraints werden beim Zurückschreiben zu einem
   (zu messen: Drift gegen eine Datenbank, die zwei benannte trägt).
 * `NOT VALID` → Suffix abtrennen, das Prädikat **behalten** (strip-and-keep; ein `NOT VALID`-Constraint prüft Neues weiter) und eine
   `SchemaReadNote` melden; Domain über Domain → die inneren CHECKs auflösen oder als Grenze benennen (P1).
 * **Kopplung `RefTypeVocabulary`:** der Wertelisten-Check (`CHECK (VALUE IN (…))`) wird dort aus dem `check`-String als Wertevorrat
-  erkannt; ein `AND`-Verbund aus mehreren CHECKs darf diese Erkennung nicht verändern. Kopplungstest: Domain mit Wertelisten-CHECK
-  plus zweitem CHECK.
+  erkannt; ein `AND`-Verbund aus mehreren CHECKs darf diese Erkennung nicht verändern. **Sollverhalten (P1 legt es fest):**
+  `EnumCheckProjection.valuesOf` erkennt `IN`-Liste, `= ANY (ARRAY…)` und Gleichheits-OR-Kette; für `(VALUE IN (…)) AND (…)`
+  liefert es voraussichtlich `null`. Entweder zählt der Verbund bewusst als „keine Werteliste", oder die Erkennung zerlegt `AND`
+  (Hexagon-Änderung mit Tag-Folge); auch die Autorenseite mit `AND`-Check gehört dazu. Kopplungstest erst nach dieser Festlegung
+  formulieren. Verweis: `sqlite-enum-domain-check-reverse.md` (in-progress) betrifft denselben Wertelisten-Check.
 * Filter `contype = 'c'` erhalten (NOT NULL, `contype = 'n'`, nicht als CHECK einmischen).
 
 Fingerabdruck: nur der Reader-Ausgang ändert sich (bei Domains mit mehreren CHECKs); die Projektion der Datei nicht. Ob das einen
-Tag-Bump trägt, ist in P1 zu entscheiden (Präzedenz: ADR 0061 hob für die Reader-Normalform an; hier ändert sich der Hash nur
+Tag-Bump trägt, ist in P1 zu entscheiden (`RefTypeVocabularyTest`, `MigrationFingerprintTest`, `IndexPredicateCanonicalisationTest` nageln `schema-fingerprint-v21` fest) (Präzedenz: ADR 0061 hob für die Reader-Normalform an; hier ändert sich der Hash nur
 für den Verlustfall). **Koordination:** die drei PostgreSQL-Domain-Pläne (dieser, `postgres-domain-laenge-array.md`,
 `domain-default-not-null-modell.md`) und `sqlite-ausdrucks-index-textform.md` konkurrieren um den nächsten Tag und die nächste
 ADR-Nummer (heute `schema-fingerprint-v21`, ADR bis 0063). Wer zuerst aktiviert, nimmt den nächsten freien; Domain-Pläne dürfen sich
@@ -56,7 +63,7 @@ ADR-Nummer (heute `schema-fingerprint-v21`, ADR bis 0063). Wer zuerst aktiviert,
 
 * **P0 Messung** (Integrationstest gegen PostgreSQL, Muster `PostgresCustomTypeFileFormMigrateIntegrationTest`): zwei CHECKs
   (benannt/unbenannt, unsortierte Namen, `c10` vor `c2`), drei CHECKs, `NOT VALID`, Domain über Domain mit eigenem CHECK,
-  Domain mit `NOT NULL` + CHECK (PG-Version aus `TestImages.POSTGRESQL` angeben). Je Fall Reader-Ausgabe und Diff gegen die Autorenform.
+  Domain mit `NOT NULL` + CHECK (PG-Version aus `TestImages.POSTGRESQL` angeben; PG 18 legt Domain-NOT-NULL als `contype = 'n'` an, ältere nur als `typnotnull` — bei einer Image-Spanne beide messen). Je Fall Reader-Ausgabe und Diff gegen die Autorenform.
 * **P1 Entscheidung:** Aggregationsform, `NOT VALID`, Domain über Domain, Tag/ADR.
 * **P2 Umsetzung:** Reader-Unit-Test (Zeilen-Stub mit mehreren CHECKs), Integrationstest (zweiter Lauf `operationsTotal` 0,
   Rückweg, echte Änderung eines der CHECKs bleibt `AlterCustomType`).
@@ -72,6 +79,6 @@ ADR-Nummer (heute `schema-fingerprint-v21`, ADR bis 0063). Wer zuerst aktiviert,
 
 * Jede gemessene Fehlerzeile hat einen Test, der ohne die Änderung an der erwarteten Stelle fehlschlägt; absichtlich falsche
   Zusicherung einmal rot gesehen.
-* `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=`,
+* `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module (einmal ohne `MODULES=`, falls eine geteilte Signatur wechselt),
   `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"` (das ganze Modul, Detekt eingeschlossen),
   `make solid-suppression-gate`, `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD`.
