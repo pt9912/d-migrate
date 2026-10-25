@@ -43,6 +43,21 @@ class DomainTypesTest : FunSpec({
         DomainTypes.resolveBaseType("decimal(5,1)", 9, 4) shouldBe NeutralType.Decimal(9, 4)
     }
 
+    test("jeder Basistyp, den der PostgreSQL-Reader mit Laenge schreibt, ergibt einen neutralen Typ (#58)") {
+        DomainTypes.resolveBaseType("varchar(50)", null, null) shouldBe NeutralType.Text(50)
+        DomainTypes.resolveBaseType("varchar", null, null) shouldBe NeutralType.Text()
+        DomainTypes.resolveBaseType("char(5)", null, null) shouldBe NeutralType.Char(5)
+        DomainTypes.resolveBaseType("timestamp(3)", null, null) shouldBe NeutralType.DateTime()
+        DomainTypes.resolveBaseType("timestamptz(3)", null, null) shouldBe NeutralType.DateTime(timezone = true)
+        DomainTypes.resolveBaseType("time(3)", null, null) shouldBe NeutralType.Time
+    }
+
+    test("ein Array-Basistyp hat kein neutrales Gegenstueck, wie zuvor `_int4` (#58)") {
+        for (array in listOf("integer[]", "varchar(50)[]", "decimal(10,2)[]", "_int4")) {
+            DomainTypes.resolveBaseType(array, null, null) shouldBe null
+        }
+    }
+
     test("ein unbekannter Basistyp und ein decimal ohne Praezision haben kein Gegenstueck") {
         DomainTypes.resolveBaseType("money", null, null) shouldBe null
         DomainTypes.resolveBaseType("decimal", null, null) shouldBe null

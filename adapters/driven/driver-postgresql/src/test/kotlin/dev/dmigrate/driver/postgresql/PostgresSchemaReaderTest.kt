@@ -389,8 +389,8 @@ class PostgresSchemaReaderTest : FunSpec({
     test("domain over decimal keeps precision and scale (#52)") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
-            mapOf("typname" to "amount", "base_type" to "numeric", "numeric_precision" to 10,
-                "numeric_scale" to 2, "domain_default" to null, "check_clause" to "CHECK ((VALUE >= (0)::numeric))"),
+            mapOf("typname" to "amount", "base_type" to "numeric", "base_schema" to "pg_catalog",
+                "base_type_sql" to "numeric(10,2)", "check_clause" to "CHECK ((VALUE >= (0)::numeric))"),
         )
         every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
 
@@ -459,12 +459,12 @@ class PostgresSchemaReaderTest : FunSpec({
     test("domain precision and scale are read for decimal only (#52)") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
-            mapOf("typname" to "a", "base_type" to "int8", "numeric_precision" to 64, "numeric_scale" to 0,
-                "domain_default" to null, "check_clause" to null),
-            mapOf("typname" to "b", "base_type" to "float4", "numeric_precision" to 24, "numeric_scale" to null,
-                "domain_default" to null, "check_clause" to null),
-            mapOf("typname" to "c", "base_type" to "int2", "numeric_precision" to 16, "numeric_scale" to 0,
-                "domain_default" to null, "check_clause" to null),
+            mapOf("typname" to "a", "base_type" to "int8", "base_schema" to "pg_catalog",
+                "base_type_sql" to "bigint", "check_clause" to null),
+            mapOf("typname" to "b", "base_type" to "float4", "base_schema" to "pg_catalog",
+                "base_type_sql" to "real", "check_clause" to null),
+            mapOf("typname" to "c", "base_type" to "int2", "base_schema" to "pg_catalog",
+                "base_type_sql" to "smallint", "check_clause" to null),
         )
         every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
         val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
@@ -475,6 +475,32 @@ class PostgresSchemaReaderTest : FunSpec({
             types[name]!!.precision.shouldBeNull()
             types[name]!!.scale.shouldBeNull()
         }
+    }
+
+    test("domain base type keeps length and array from format_type (#58)") {
+        stubEmptyDefaults()
+        fun row(name: String, sql: String, typname: String = "x") = mapOf(
+            "typname" to name, "base_type" to typname, "base_schema" to "pg_catalog",
+            "base_type_sql" to sql, "check_clause" to null,
+        )
+        every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
+            row("v", "character varying(50)"), row("c", "character(5)"), row("ia", "integer[]"),
+            row("va", "character varying(50)[]"), row("na", "numeric(10,2)[]"),
+            row("ts", "timestamp(3) without time zone"),
+            // Basistyp ausserhalb von pg_catalog: der Typname bleibt unqualifiziert.
+            mapOf("typname" to "dd", "base_type" to "v", "base_schema" to "public",
+                "base_type_sql" to "public.v", "check_clause" to null),
+        )
+        every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val types = reader.read(pool, opts).schema.customTypes
+
+        types.mapValues { it.value.baseType } shouldBe mapOf(
+            "v" to "varchar(50)", "c" to "char(5)", "ia" to "integer[]", "va" to "varchar(50)[]",
+            "na" to "decimal(10,2)[]", "ts" to "timestamp(3)", "dd" to "v",
+        )
+        types["na"]!!.precision.shouldBeNull()
     }
 
     test("normalizeDomainCheck keeps predicate with multiple paren groups intact (I-06)") {
