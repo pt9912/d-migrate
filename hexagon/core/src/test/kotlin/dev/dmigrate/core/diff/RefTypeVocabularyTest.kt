@@ -280,7 +280,7 @@ class RefTypeVocabularyTest : FunSpec({
             // Die Felder einer Spalte trennt das ASCII-Unit-Separator-Zeichen (0x1F).
             val sep = "\u001F"
             projection shouldBe """
-                algorithm=schema-fingerprint-v19
+                algorithm=schema-fingerprint-v20
                 custom_types[0]
                 tables[1]
                 table=t

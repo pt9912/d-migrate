@@ -183,6 +183,8 @@ object SqliteMetadataQueries {
             // Skip SQLite autoindex (backing indices for PK/UNIQUE constraints) —
             // UNIQUE-constraint autoindexes are surfaced separately via
             // [listUniqueConstraintIndexes] and fold onto columns/constraints.
+            // Everything else (origin `c`, also a `CREATE UNIQUE INDEX`) is a
+            // real index and stays one (#53).
             if (indexName.startsWith("sqlite_autoindex_")) return@mapNotNull null
             val colRows = keyColumnRows(session, indexName)
             val createSql = session.querySingle(

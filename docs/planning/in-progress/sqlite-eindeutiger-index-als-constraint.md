@@ -1,12 +1,11 @@
 # SQLite: ein eindeutiger Index gilt gegen die Datenbank als geändert (Issue #53)
 
-> **Status:** Draft mit Scope (2026-10-25), nach Review-Runde 3. Aus Issue #53: `schema migrate`
+> **Status:** In Arbeit (2026-10-25; Draft mit Scope nach Review-Runde 3, Entscheidung A, ADR 0062). Aus Issue #53: `schema migrate`
 > gegen SQLite plant für einen unveränderten eindeutigen Index `DropConstraint` + `AddIndex`;
 > `--execute` blockiert mit `TRANSACTION_SCOPE_UNSUPPORTED` (Exit 8). Gleiche Fehlerklasse wie
 > #51/#52 (ein Objekt, das beide Seiten gleich meinen, gilt als geändert), anderer Ort.
 > Schwesterpläne: `sqlite-default-vergleich.md` und `sqlite-neubau-cast-gleiche-speicherklasse.md` (beide #54;
-> teilen sich Fingerabdruck-Tag und ADR-Nummer). **Vorbedingung:** keine. **Aktivierung** (Move nach `../in-progress/`) beim
-> ersten Implementierungs-Commit.
+> teilen sich Fingerabdruck-Tag und ADR-Nummer). **Vorbedingung:** keine. Aktiviert mit dem ersten Implementierungs-Commit.
 
 ## Ziel
 
@@ -154,3 +153,69 @@ Constraint (laufen heute).
   `MODULES=`, `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"` (bei gemeinsamen
   Hilfsfunktionen alle betroffenen Integrationsmodule), `make solid-suppression-gate`, `make docs-check`,
   `make doc-immutable RANGE=origin/main..HEAD`.
+
+## Nachtrag P0/P1/P2 (2026-10-25)
+
+**P0 (Messung, ungefixt; SQLite-CLI-Test mit `schema generate` → Datenbank → `schema reverse` /
+`schema migrate --plan-only` / `--execute` mit einer zusätzlichen Spalte `d`).** Tabelle `t(id, a, b, c)`,
+`ix_t` der eindeutige Index; „Ops“ = `operationsTotal` gegen die Datenbank, „+d“ = `--execute` der Datei
+mit der zusätzlichen Spalte:
+
+| Fall | Reader vorher | Ops vorher | +d vorher | nachher (Ops / +d) |
+| --- | --- | --- | --- | --- |
+| eindeutig, 1 Spalte | `a.unique`, Index fehlt | 2 (Neubau + `CREATE UNIQUE INDEX`) | Exit 8 `TRANSACTION_SCOPE_UNSUPPORTED` | 0 / Exit 0 |
+| eindeutig, 2 und 3 Spalten | Constraint `ix_t` | 2 | Exit 8 | 0 / Exit 0 |
+| eindeutig mit `where` | Index mit `where` | 0 | Exit 0 | 0 / Exit 0 |
+| eindeutig, absteigend | `a.unique`, Richtung verloren | 2 | Exit 8 | 0 / Exit 0 |
+| nicht eindeutig; Spalte `unique: true`; Tabellen-`UNIQUE (a, b)` benannt; Tabellen-`UNIQUE (a)` | wie die Datei | 0 | Exit 0 | 0 / Exit 0 |
+| eindeutig auf Primärschlüsselspalte | Index **fehlt** | 1 (`AddIndex`) | Exit 5 | 0 / Exit 0 |
+| `unique: true` **plus** Index auf derselben Spalte | `a.unique`, Index fehlt | 1 (`AddIndex`) | Exit 5 | 0 / Exit 0 |
+| eindeutig auf Fremdschlüsselspalte; `WITHOUT ROWID` | `a.unique` | 2 | Exit 8 | 0 / Exit 0 |
+| eindeutiger Ausdrucks-Index (`lower(a)`) | Index **fehlt** | 1 (`AddIndex`) | Exit 5 | 2 (Text `(lower(a))` gegen `lower(a)`), Exit 0 — offen, siehe unten |
+| `COLLATE NOCASE` in der Datenbank | `a.unique` (Collation geht verloren) | 2 | Exit 8 | Index; nicht nachgemessen |
+| **neuer** eindeutiger Index (Datenbank ohne) | — | 1 (`CREATE UNIQUE INDEX`) | Exit 5 `POST_EXECUTE_DRIFT` | 1 / Exit 0, danach 0 |
+| Unique entfernt / Spalten geändert | `a.unique` | 2 (Neubau) | — | 2 (`DROP INDEX` + `CREATE INDEX`); `sqlite_master` ohne `UNIQUE` bzw. Index auf `b` |
+| eindeutigen Index streichen | `a.unique` | 1 | Exit 0 | 1 (`DROP INDEX`) |
+| eindeutiger Index auf Tabelle, die im selben Lauf neu gebaut wird (`c` optional) | `a.unique` | 3 | Exit 8 | Neubau + ein `CREATE UNIQUE INDEX`, Exit 0 |
+| Datei Constraint `(a)` / `(a, b)` ↔ Datenbank Index | gleich gefaltet | 0 | Exit 0 | 2 — **bewusste Änderung** (zwei Objekte) |
+| Datei Index ↔ Datenbank Constraint | verschieden | 2 | — | 2 |
+| Bestandsdatei `unique: true` an der Spalte ↔ Datenbank Index | gleich gefaltet | 0 | Exit 0 | 2 — **Grenze** (Bestandsdateien) |
+| Round-Trip `reverse` → `generate` → neue Datenbank → Vergleich mit der Ausgangsdatei | — | 2 | — | 0 |
+| `sqlite_autoindex_`-Präfix am Indexnamen | von SQLite abgelehnt (`object name reserved for internal use`) | — | — | nicht erzeugbar, kein Fall |
+| Spaltennamen anderer Schreibweise (`A`, `B`) | Datei scheitert an der Validierung (Exit 3) | — | — | kein Reader-Thema |
+
+`PRAGMA index_list`: `CREATE UNIQUE INDEX` → `origin = c`, Inline-/Tabellen-`UNIQUE` → `u`, Primärschlüssel
+bei `WITHOUT ROWID` → `pk` (alle drei `unique = 1`). Zwei weitere Folgen derselben Faltung, die der Plan nicht
+kannte: ein eindeutiger Index auf einer Primärschlüsselspalte und ein eindeutiger Ausdrucks-Index gingen im
+Reverse ganz verloren (der alte Filter in `indexDefinitions`), und ein **neu angelegter** eindeutiger Index endete
+mit `POST_EXECUTE_DRIFT`.
+
+**P1 (Entscheidung): A.** Die Herkunft steht im Katalog (`origin`), der Fehler sitzt im Reader. B/D falteten
+beidseitig im Vergleich: ein neuer eindeutiger Index in der Datei wäre ein `AddConstraint` und damit ein
+Tabellenneubau statt eines `CREATE UNIQUE INDEX` — der Exit-8-Weg bliebe, die reine Addition ginge verloren. C
+scheidet aus demselben Grund aus (der Widerspruch im Abschnitt „Richtung“: wo A und B eine Operation ergeben,
+bleibt der Neubau); E ist verworfen. Die Faltung im Vergleich ändert sich nicht, die gemeinsamen
+`SchemaReaderUtils` bleiben unverändert (MySQL, SQL Server, Oracle unberührt, deshalb kein Regressionstest für
+einen weiteren Dialekt nötig). **Bestandsdateien:** eine Datei mit `unique: true` an einer Spalte, deren
+Datenbank einen `CREATE UNIQUE INDEX` führt, plant jetzt einen Neubau (Constraint + `DropIndex`); das Netz
+(Vergleich) wird nicht gebaut und ist in Handbuch und CHANGELOG als Grenze geführt. Fingerabdruck
+**`schema-fingerprint-v20`**, Entscheidung **ADR 0062**.
+
+Umgeschriebene Tests: `SqliteSchemaReaderTest` „single-column UNIQUE is lifted…“ (der Fall `CREATE UNIQUE INDEX
+idx_email` erwartet jetzt einen Index; der Lift gilt dem Inline-`UNIQUE`); neu `SqliteSchemaReaderUniqueIndexTest`
+(Index bleibt Index: eine und drei Spalten, Richtung, Primärschlüsselspalte); die `v19`-Literale in
+`MigrationFingerprintTest`, `RefTypeVocabularyTest`, `IndexPredicateCanonicalisationTest` und
+`MigrationPlanArtifactBuilderTest`. Goldens: keine umgeschrieben (kein Golden trägt einen eindeutigen SQLite-Index
+im Reader-Pfad).
+
+**P2:** `CliSchemaMigrateUniqueIndexSqliteTest` (25 Fälle: unveränderte Zeilen mit `--execute` + zweitem Lauf,
+neuer Index, Unique entfernt/nachgetragen, andere Spalten, gestrichen, Neubau im selben Lauf, Index ↔ Constraint,
+Bestandsdatei, Round-Trip, `schema rollback`). **Rot ohne den Fix** (Reader-Änderung zurückgenommen): 18 der 25
+CLI-Fälle (u. a. Plan mit 2 statt 0 Operationen, `+d` mit Exit 8, neuer Index mit Exit 5, Round-Trip, Rollback)
+und 4 der neuen Reader-Tests; mit dem Fix grün. Spec: `spec/ddl-generation-rules.md` §5.3 (Zurücklesen auf SQLite),
+`spec/schema-reference.md` (`unique` an Spalte gegen Index).
+
+**Offen / abgetrennt:** (1) Der Text eines Ausdrucks-Index (`(lower(a))` aus dem Katalog gegen `lower(a)` aus der
+Datei) gilt als Unterschied (`DROP INDEX` + `CREATE INDEX`, ausführbar); das betrifft den Ausdruck, nicht die
+Eindeutigkeit, und ist hier nicht behandelt. (2) Das Netz für Bestandsdateien ist nicht gebaut. (3) Die
+`COLLATE`-Angabe eines Index kennt das Modell nicht.

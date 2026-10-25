@@ -184,13 +184,11 @@ class SqliteSchemaReaderTest : FunSpec({
 
     // ── Single-column UNIQUE on ColumnDefinition ──
 
-    test("single-column UNIQUE is lifted to ColumnDefinition.unique") {
+    test("single-column UNIQUE constraint is lifted to ColumnDefinition.unique") {
         withDb(
-            "CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT)",
-            "CREATE UNIQUE INDEX idx_email ON t (email)",
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT UNIQUE)",
         ) { pool ->
-            val result = reader.read(pool)
-            result.schema.tables["t"]!!.columns["email"]!!.unique shouldBe true
+            reader.read(pool).schema.tables["t"]!!.columns["email"]!!.unique shouldBe true
         }
     }
 

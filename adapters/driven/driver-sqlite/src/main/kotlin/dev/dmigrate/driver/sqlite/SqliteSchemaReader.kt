@@ -252,8 +252,12 @@ class SqliteSchemaReader : SchemaReader {
         val hasAutoincrement = SqliteTypeMapping.hasAutoincrement(createSql)
         val isWithoutRowid = SqliteTypeMapping.hasWithoutRowid(createSql)
 
-        val singleColUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indices) +
-            SchemaReaderUtils.singleColumnUniqueFromIndices(uniqueConstraintIndexes)
+        // Nur ein `UNIQUE`-Constraint (Ursprung `u`) wird zu `column.unique`. Ein
+        // `CREATE UNIQUE INDEX` (Ursprung `c`) bleibt ein Index: SQLite kann Index
+        // und Constraint nicht ineinander umbauen, ein Vergleich, der sie
+        // gleichsetzt, plante fuer den unveraenderten Index einen Tabellenneubau
+        // (GitHub-Issue #53, ADR 0062).
+        val singleColUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(uniqueConstraintIndexes)
         // VA4/5d Befund 3: SpatiaLite-Registry-Eintrag pro Spalte (case-insensitiv).
         val geometryByColumn = geometryColumns.associateBy { it.column.lowercase() }
 
@@ -304,7 +308,6 @@ class SqliteSchemaReader : SchemaReader {
 
         val constraints = mutableListOf<ConstraintDefinition>()
         constraints += SchemaReaderUtils.buildForeignKeyConstraints(fks)
-        constraints += SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
         constraints += multiColumnUniqueConstraints(tableName, createSql, uniqueConstraintIndexes, constraintNames)
         // CHECK constraints from CREATE TABLE SQL
         val checkScan = SqliteCheckConstraintScanner.scan(createSql)
@@ -363,17 +366,17 @@ class SqliteSchemaReader : SchemaReader {
         geometryColumns: List<SqliteGeometryColumn>,
         fts5Defs: List<SqliteFts5Reverse.Fts5Definition>,
     ): List<IndexDefinition> {
-        // Non-unique, non-autoindex indices
-        val regularIndices = indices.filter { it.where != null || !it.isUnique || it.columns.size > 1 }
-            .filter { it.where != null || !(it.isUnique && it.columns.size > 1) } // multi-col unique already in constraints
-            .map { idx ->
-                IndexDefinition(
-                    name = idx.name,
-                    columns = idx.indexColumns,
-                    unique = idx.isUnique,
-                    where = idx.where,
-                )
-            }
+        // Jeder `CREATE [UNIQUE] INDEX` bleibt ein Index, eindeutig oder nicht. Die
+        // Autoindizes aus `UNIQUE`-Constraints stehen nicht in `indices`
+        // (`listIndices` laesst sie aus) und werden als Constraint/`column.unique` gelesen.
+        val regularIndices = indices.map { idx ->
+            IndexDefinition(
+                name = idx.name,
+                columns = idx.indexColumns,
+                unique = idx.isUnique,
+                where = idx.where,
+            )
+        }
 
         // VA4/5d Befund 3b: der SpatiaLite-Spatial-Index ist eine R*Tree-VirtualTable
         // + das Flag geometry_columns.spatial_index_enabled — KEIN sqlite_master

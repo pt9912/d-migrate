@@ -201,8 +201,16 @@ object MigrationFingerprint {
      * noch fuer `decimal` und den `CHECK` in Autorenform. Eine Domain traegt damit auf
      * **jedem** Dialekt einen anderen Abdruck (auch eine SQLite-Domain mit Basistyp `INTEGER`
      * gegen `integer`); Schemas ohne Domain hashen bis auf den Algorithmus-Tag wie zuvor.
+     *
+     * v20: **ein eindeutiger Index auf SQLite** (Issue #53). Der SQLite-Reader hob jeden
+     * eindeutigen Index ohne Praedikat auf `column.unique` bzw. einen UNIQUE-Constraint und warf
+     * ihn aus `indices`; nur noch ein UNIQUE-Constraint (Ursprung `u` in `PRAGMA index_list`) wird
+     * so gelesen, ein `CREATE UNIQUE INDEX` bleibt ein Index. Eine SQLite-Datenbank mit
+     * eindeutigem Index traegt damit `indices` statt `unique`/Constraint — der Abdruck aendert
+     * sich fuer eine unveraenderte Datenbank. Alle anderen Dialekte und SQLite-Schemas ohne
+     * eindeutigen Index hashen bis auf den Algorithmus-Tag wie zuvor.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v19"
+    const val ALGORITHM: String = "schema-fingerprint-v20"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
