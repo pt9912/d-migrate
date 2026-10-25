@@ -215,7 +215,7 @@ und beseitigt Guard-Fehler und Fehler 2 zugleich; (2) ADR 0062 unangetastet; (3)
 Rückrichtung ohne Doppelung (Fall 10 wird grün, in P2 mit `catalog()`-Vergleich belegt); (4) kleinster Aufwand, kein Folge-ADR.
 (b) widerspricht ADR 0062, (c) lässt den Fall blockiert, (a2)/(d) lösen Fehler 2 nicht.
 
-**Fingerabdruck:** kein Tag-Bump, belegt an `MigrationFingerprint` (`hexagon/core/.../MigrationFingerprint.kt`): `ALGORITHM` Zeile 229
+**Fingerabdruck:** kein Tag-Bump, belegt an `MigrationFingerprint` (`MigrationFingerprint`): `ALGORITHM` Zeile 229
 (`schema-fingerprint-v22`); `project(...)` (ab Zeile 276) baut den Abdruck allein aus `SchemaDefinition`, Typ-/Index-/Generierungs-Kanonisierern
 und Dialektflags (Parameter Zeilen 250-278; Tabellen-`indices` Zeilen 356 und 417-418). Weder `DiffOperation`, `DiffPlanner`-Plan noch
 Renderer-Ausgabe gehen in die Projektion oder die Nutzlast ein. (a1) ändert nur `SqliteRebuildPlanner.classify` und das Eimer-Rendering,
@@ -240,3 +240,10 @@ Index blockiert den Neubau mit `MANUAL_ACTION_REQUIRED`.
   endet für den Fall vor wie nach der Änderung mit Exit 0. Die Abnahme liegt in den CLI-Tests gegen eine echte SQLite-Datenbank.
 * Doku: Handbuch §3.17 (Abweichende Schreibweise, Index neben einem Neubau), `CHANGELOG.md`. `spec/` unberührt: keine Render-Regel
   geändert (dieselben Anweisungen, nur nicht doppelt).
+
+### Rot-Beleg (Review Runde 1)
+
+`isAbsorbedIndexOp` kurz auf `false` gestellt, `:adapters:driving:cli:test`: 10 Tests rot (7 in `CliSchemaMigrateRebuildIndexOpsSqliteTest`:
+Skript UP, Skript DOWN, Fremdschlüssel, neuer Index, entfallender Index, beide Rollbacks; 3 in `CliSchemaMigrateUniqueIndexGapsSqliteTest`:
+mit und ohne weitere Änderung, Rollback). Danach zurückgenommen (`git diff` der Produktivdatei leer).
+Der Hinweis-Test (W142 genau einmal) liegt in `SqliteRebuildIndexOpsTest`.
