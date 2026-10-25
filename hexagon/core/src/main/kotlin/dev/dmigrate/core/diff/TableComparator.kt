@@ -351,7 +351,7 @@ internal class TableComparator(
         // PK ⇒ NOT NULL — `required` vergleicht immer effektiv, auch strikt.
         val requiredDiff = if (effectiveRequiredEqual(name, left, right, absorbed)) null
             else diffValueChangeOrNull(left.required, right.required)
-        val defaultDiff = if (left.default == right.default) null
+        val defaultDiff = if (defaultsEqual(left, right)) null
             else ValueChange(left.default, right.default)
         val uniqueAbsorbed = name in absorbed.uniqueLeft || name in absorbed.uniqueRight
         val uniqueDiff = if (uniqueAbsorbed) null else diffValueChangeOrNull(left.unique, right.unique)
@@ -373,6 +373,19 @@ internal class TableComparator(
             unique = uniqueDiff,
             references = refDiff,
             generation = generationDiff,
+        )
+    }
+
+    /**
+     * Der Default beider Seiten unter der Zielprojektion (Issue #54): Zahlen numerisch, und dort, wo
+     * das Ziel `boolean` auf `integer` faltet, `false`/`true` als `0`/`1`. Strikt (ohne Projektion)
+     * bleibt nur die Zahlen-Gleichheit.
+     */
+    private fun defaultsEqual(left: ColumnDefinition, right: ColumnDefinition): Boolean {
+        val canon = targetProjection?.type ?: { it }
+        return ColumnDefaultProjection.same(
+            ColumnDefaultProjection.project(left.type, left.default, canon),
+            ColumnDefaultProjection.project(right.type, right.default, canon),
         )
     }
 

@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.diff.ColumnDefaultProjection
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.NeutralType
@@ -69,7 +70,7 @@ internal fun geometryType(t: NeutralType.Geometry): String {
 internal fun defaultValue(dv: DefaultValue?): String = when (dv) {
     null -> ""
     is DefaultValue.StringLiteral -> "str:${dv.value}"
-    is DefaultValue.NumberLiteral -> "num:${dv.value}"
+    is DefaultValue.NumberLiteral -> "num:${ColumnDefaultProjection.canonicalNumber(dv.value)}"
     is DefaultValue.BooleanLiteral -> "bool:${dv.value}"
     is DefaultValue.FunctionCall -> "fn:${dv.name}"
     is DefaultValue.SequenceNextVal -> "seq:${dv.sequenceName}"

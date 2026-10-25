@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.diff.ColumnDefaultProjection
 import dev.dmigrate.core.diff.ConstraintDiffContract
 import dev.dmigrate.core.diff.CustomTypeBaseType
 import dev.dmigrate.core.diff.EffectivePrimaryKey
@@ -209,8 +210,17 @@ object MigrationFingerprint {
      * eindeutigem Index traegt damit `indices` statt `unique`/Constraint — der Abdruck aendert
      * sich fuer eine unveraenderte Datenbank. Alle anderen Dialekte und SQLite-Schemas ohne
      * eindeutigen Index hashen bis auf den Algorithmus-Tag wie zuvor.
+     *
+     * v21: **der Spalten-`default`** (Issue #54). Ein Zahlenliteral traegt seine kanonische
+     * Schreibweise ([ColumnDefaultProjection.canonicalNumber]: `2.0` → `2`, `1e3` → `1000`,
+     * unabhaengig von `Int`/`Long`/`Double`), und an einer `boolean`-Spalte wird `false`/`true` zu
+     * `0`/`1`, wo das Ziel `boolean` auf `integer` faltet (SQLite). Beides folgt dem Vergleich
+     * ([dev.dmigrate.core.diff.TableComparator]); sonst plante der Vergleich nichts und der
+     * Post-Compare meldete trotzdem Drift. Ein Schema mit Zahlen-`default` mit nachlaufender Null
+     * oder Exponent und jedes Schema mit `boolean`-Default auf SQLite hasht anders; alle anderen
+     * hashen bis auf den Algorithmus-Tag wie zuvor.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v20"
+    const val ALGORITHM: String = "schema-fingerprint-v21"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -389,7 +399,8 @@ object MigrationFingerprint {
                     .append(SEP).append("required=").append(col.required || colName in effectivePk)
                     // v7: single-column UNIQUE constraints fold onto the column flag.
                     .append(SEP).append("unique=").append(col.unique || colName in folded.uniqueColumns)
-                    .append(SEP).append("default=").append(defaultValue(col.default))
+                    .append(SEP).append("default=")
+                    .append(defaultValue(ColumnDefaultProjection.project(col.type, col.default, canonicalizeType)))
                     // v7: single-column FK constraints fold onto the column reference.
                     .append(SEP).append("references=")
                     .append(reference(col.references).ifEmpty { folded.foldedFkByColumn[colName] ?: "" })
