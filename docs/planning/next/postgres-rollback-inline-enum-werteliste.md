@@ -14,8 +14,8 @@ Ein stilles Exit 0 mit einem Down, der den weit offenen `CHECK` stehen lässt, e
 
 **Zur Meldung `planFullyRollbackable`:** das Feld kommt aus `SchemaMigrateReportBuilder.kt:272-274` und prüft nur die Up-Statements
 auf `FULLY_TRANSACTIONAL`; `true` heißt „transaktional“, **nicht** „rückführbar“. Das Issue deutet das Feld schief; ein Down-Blocker
-schlägt sich dort nicht nieder. Das Down-Signal ist `downBlocked` (`SchemaMigrateRenderPipeline.kt:268`); ein Down-Blocker fließt über
-`mergeDownIntoUp` (`:518-529`) nur in `blockers`/`primaryBlockedReason`. Ob das Feld selbst nachzuschärfen ist, entscheidet P1.
+schlägt sich dort nicht nieder. Das Down-Signal ist `downBlocked` (`SchemaMigrateReportBuilder.kt:268`, aus `renderedDown?.isBlocked`; definiert in `SchemaMigrateRunner.kt:1493`); ein Down-Blocker fließt über
+`mergeDownIntoUp` (`SchemaMigrateRenderPipeline.kt:508-529`) nur in `blockers`/`primaryBlockedReason`. Ob das Feld selbst nachzuschärfen ist, entscheidet P1.
 
 ## Problem (Issue #61, gemeldet für 1.10.0 und 1.9.1; am Code gelesen, noch nicht gemessen)
 
