@@ -54,8 +54,9 @@ Basistyp-Namen `bt.typname`? Nicht annehmen, messen).
 Fingerabdruck: die Projektion der Datei ändert sich nicht, der **Reader-Ausgang** schon — für Live-Datenbanken mit mehreren
 Domain-CHECKs und für Domains mit einem `NOT VALID`-Constraint (vorher stand das Suffix im Ausdruck). Damit ändert sich der Hash
 des gelesenen Schemas. Die Entscheidung: dieser Plan vergibt **keinen eigenen Tag**; die Änderung wird beim Zusammenführen in den Tag
-von #58 (`schema-fingerprint-v23`, ADR 0065) eingefaltet. **Folge:** vor dieser Änderung erzeugte Rollback- und Plan-Artefakte, die
-eine solche Domain enthalten, lehnt der Rollback ab (Exit 8, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`); sie sind neu zu erzeugen.
+von #58 (`schema-fingerprint-v23`, ADR 0065) eingefaltet. **Planungshinweis:** sobald der Tag mit v23 wechselt, lehnt der Rollback Artefakte
+mit einer solchen Domain ab (Exit 8, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`); sie sind dann neu zu erzeugen. Dieser Branch bleibt auf v21
+und verhält sich so noch nicht; die Aussage gehört in Changelog und Handbuch der v23-Änderung.
 Bezug: [Plan #52](postgres-domain-autorenform-gegen-katalog.md). ADR 0061 bleibt unverändert; die dort genannte Grenze „Reader behält
 den letzten CHECK" ist mit #57 aufgehoben.
 
@@ -105,7 +106,7 @@ Gemessen nur auf PG 18 (das einzige Image in `TestImages.POSTGRESQL`); ältere V
   mit mehreren CHECKs und einer `NOT VALID`-Domain; beide sind fingerabdruck-betroffen. Der Eigner faltet die Änderung beim Merge in
   `schema-fingerprint-v23` (ADR 0065, #58) ein; Konsequenz siehe „Fingerabdruck" oben (Artefakte neu erzeugen). Die Tests dieses
   Branches stehen bis dahin auf `schema-fingerprint-v21`.
-* **Grenze der Reihenfolge:** ab zehn unbenannten CHECKs ordnet die C-Kollation `d_check1, d_check10, d_check2, …`; die Reihenfolge
+* **Grenze der Reihenfolge:** ab dem elften unbenannten CHECK (`d_check10`; bis `d_check9` bleibt die Schreibfolge) ordnet die C-Kollation `d_check1, d_check10, d_check2, …`; die Reihenfolge
   weicht dann von der Schreibfolge ab. Im Integrationstest mit elf unbenannten CHECKs festgehalten.
 * **Cross-Dialect-Matrix:** der Punkt im Plan entfällt. Die Matrix läuft im Datei-Modus (Datei gegen Datei, keine Reader) und kann einen
   Reader-Verlust nicht sehen; ein Fixture mit zwei CHECKs auf beiden Seiten wäre ohne die Änderung nicht rot. Die Abdeckung liegt im
