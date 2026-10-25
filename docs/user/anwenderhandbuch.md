@@ -2156,10 +2156,9 @@ sie als normale View erzeugt (Warnung **W103**).
   deshalb keine Operation, und `schema migrate --execute` führt eine additive Änderung
   daneben aus. Index und Constraint sind in SQLite verschiedene Objekte; ein Wechsel ist
   ein Tabellenneubau und gilt als Änderung.
-  - **Bestandsdateien:** hat Ihre Datei aus einem früheren `schema reverse` `unique: true`
-    an einer Spalte, deren Datenbank dafür einen `CREATE UNIQUE INDEX` führt, zeigt
-    `schema migrate --plan-only` ohne Änderung im Schema einen Neubau (Constraint anlegen,
-    Index löschen). Mit einer weiteren Änderung daneben endet `--execute` mit Exit `8`
+  - **Abweichende Schreibweise:** trägt Ihre Datei `unique: true` an einer Spalte, deren
+    Datenbank dafür einen `CREATE UNIQUE INDEX` führt, zeigt `schema migrate --plan-only`
+    ohne Änderung im Schema einen Neubau (Constraint anlegen, Index löschen). Mit einer weiteren Änderung daneben endet `--execute` mit Exit `8`
     (`TRANSACTION_SCOPE_UNSUPPORTED`); die Datenbank bleibt unverändert. Ziehen Sie die Datei
     mit `schema reverse` neu oder schreiben Sie die Spalte als `indices: [{ unique: true }]`.
   - **Grenze Ausdrucks-Index:** ein Index über einen Ausdruck (`lower(a)`) plant `schema migrate` bei jedem Lauf als
@@ -2171,14 +2170,12 @@ sie als normale View erzeugt (Warnung **W103**).
   ein echter Typwechsel (`integer` → `text`) blockiert weiter. `schema compare` (strikt) meldet die
   Verengung weiterhin.
 - **Zahlen-Defaults und `boolean`-Defaults:** Ein `default`, den Datei und Datenbank gleich
-  ausdrücken, ist keine Änderung mehr — auf allen Dialekten, wenn nur die Darstellung der
+  ausdrücken, ist keine Änderung — auf allen Dialekten, wenn nur die Darstellung der
   Zahl abweicht (`0` in der Datei gegen `0` aus dem Katalog, `2.0` gegen `2`, `1e3` gegen
   `1000`), und auf SQLite zusätzlich für `boolean`: SQLite legt `boolean` als `INTEGER` ab,
   `default: false` gilt deshalb gegen `0` in der Datenbank als unverändert. Ein anderer
   Wert, ein hinzugefügter oder ein entfernter Default bleibt eine Änderung. Das gilt auch für
-  `schema compare`: ein Zahlen-Default, der nur in der Darstellung abweicht (`0` gegen `0.0`), ist dort keine Differenz mehr. Der
-  Fingerabdruck steht auf `schema-fingerprint-v21`; ein Rollback-Artefakt einer früheren
-  Version ist neu zu erzeugen. **Grenze:** eine Ganzzahl über der Genauigkeit von
+  `schema compare`: ein Zahlen-Default, der nur in der Darstellung abweicht (`0` gegen `0.0`), ist dort keine Differenz. **Grenze:** eine Ganzzahl über der Genauigkeit von
   `double` (etwa `99999999999999999999` als SQLite-Default) liest SQLite als
   Gleitkommazahl zurück und gilt weiter als verschieden; ebenso liefert der PostgreSQL-Reader einen
   negativen oder großen `bigint`-Default als Text, dort greift die Zahlenregel nicht.
@@ -2590,7 +2587,7 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   Typ-Objekt. Eine Enum steht als `TEXT` + `CHECK` an der Spalte, eine Domain
   als ihr Basistyp + `CHECK` (`VALUE` wird durch die Spalte ersetzt). Der
   `CHECK` ist unbenannt. `CreateCustomType` und `DropCustomType` erzeugen
-  deshalb keine Anweisung; der Lauf ist nicht mehr blockiert. Ändern Sie die
+  deshalb keine Anweisung; der Lauf ist nicht blockiert. Ändern Sie die
   Werte einer Enum oder `base_type`/`check` einer Domain und planen Sie gegen
   ein `file:`-Ziel des bisherigen Schemas, baut `schema migrate` jede Tabelle
   mit einer `ref_type`-Spalte neu auf (neuer `CHECK`, Daten bleiben
@@ -2625,7 +2622,7 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
     `real`/`float`, `jsonb`/`json`, `bytea`/`binary`. `precision` und `scale`
     zählen nur bei `decimal`; eine Datei darf sie am Typ schreiben
     (`numeric(10,2)`) oder als Felder. Eine `precision: 32` an einer
-    `integer`-Domain aus einem früheren `schema reverse` wird ignoriert.
+    `integer`-Domain wird ignoriert.
   - Der Reader bringt den `check` auf die Schreibweise zurück, die Sie ihm geben
     (`VALUE >= 0` statt `((VALUE >= (0)::numeric))`).
   - Die Länge einer `varchar(n)`/`char(n)`-Domain vergleicht `schema migrate`
@@ -2642,7 +2639,7 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   Eine **echte** Änderung eines benannten Typs
   (andere Werte einer Enum, anderer `base_type` oder `check` einer Domain,
   anderer Typ oder weitere Felder eines Composite) plant `schema migrate` als
-  `AlterCustomType`; PostgreSQL rendert sie noch nicht, der Plan blockiert mit
+  `AlterCustomType`; PostgreSQL rendert sie nicht, der Plan blockiert mit
   Exit 8 (`DIALECT_UNSUPPORTED_OPERATION`). Ändern Sie so einen Typ mit
   passendem DDL von Hand (für eine Enum `ALTER TYPE … ADD VALUE`, für eine
   Domain `ALTER DOMAIN`) und lassen Sie `schema migrate` danach den Rest
