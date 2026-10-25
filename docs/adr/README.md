@@ -117,3 +117,4 @@ argumentiert werden.
 | 0061 | [Eine Domain in Autorenform gilt als dieselbe Domain — Reader-Normalform für den `CHECK`, Neutralform für den Basistyp, `schema-fingerprint-v19`](0061-domain-in-autorenform-reader-normalform-und-neutralform-des-basistyps.md) | accepted |
 | 0062 | [Ein eindeutiger Index bleibt auf SQLite ein Index — der Reader unterscheidet `CREATE UNIQUE INDEX` von `UNIQUE`-Constraint, `schema-fingerprint-v20`](0062-sqlite-eindeutiger-index-bleibt-index.md) | accepted |
 | 0063 | [Ein gleicher Spalten-`default` ist keine Änderung — Zahlen numerisch, `boolean` auf `integer` gefaltet, `schema-fingerprint-v21`](0063-default-vergleich-zahlen-numerisch-boolean-auf-integer.md) | accepted |
+| 0065 | [Der Basistyp einer Domain trägt Länge und Array aus dem Katalog — Neutralform mit Klammer und `[]`, `schema-fingerprint-v23`](0065-domain-basistyp-mit-laenge-und-array-aus-dem-katalog.md) | accepted |

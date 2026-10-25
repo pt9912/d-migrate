@@ -2618,24 +2618,34 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   keine Datenbank speichert sie. Für eine **Domain** gilt:
 
   - Der Basistyp zählt in seiner Neutralform: `bigint`, `int8` und `biginteger`
-    sind derselbe Typ, ebenso `numeric`/`decimal`, `varchar`/`char`/`text`,
+    sind derselbe Typ, ebenso `numeric`/`decimal`, `varchar`/`character varying`,
     `real`/`float`, `jsonb`/`json`, `bytea`/`binary`. `precision` und `scale`
     zählen nur bei `decimal`; eine Datei darf sie am Typ schreiben
     (`numeric(10,2)`) oder als Felder. Eine `precision: 32` an einer
     `integer`-Domain wird ignoriert.
+  - Die Länge zählt: `varchar(50)` und `varchar(254)` sind verschieden, ebenso
+    `char(n)` und `varchar(n)` und `timestamp(3)` gegen `timestamp`. Ohne Klammer
+    gilt der Standard des Typs: `varchar` ist unbegrenzt und damit `text`, `char`
+    ist `char(1)`, `timestamp` und `time` sind `(6)`. Das gilt für alle
+    Dialekte, auch für `schema compare` zweier Dateien.
+  - Ein Array (`integer[]`, `varchar(50)[]`) zählt als eigener Typ; `int4[]` und
+    `integer[]` sind gleich. Mehrdimensionale Arrays (`integer[][]`) unterscheidet
+    der Katalog nicht von `integer[]`.
   - Der Reader bringt den `check` auf die Schreibweise zurück, die Sie ihm geben
     (`VALUE >= 0` statt `((VALUE >= (0)::numeric))`).
-  - Die Länge einer `varchar(n)`/`char(n)`-Domain vergleicht `schema migrate`
-    nur, wenn Datei und Katalog sie beide nennen; der Katalog tut es nicht. Auch
-    `DEFAULT` und `NOT NULL` einer Domain vergleicht es nicht.
+  - `DEFAULT` und `NOT NULL` einer Domain vergleicht `schema migrate` nicht.
 
   **Grenzen:** was der Server darüber hinaus umschreibt, bleibt in Katalogform
   und gilt als geändert und blockiert: `BETWEEN`, `IN (…)` (der Server macht
   `= ANY (ARRAY[…])` daraus), ein Cast an `VALUE` (etwa bei einer
   `varchar`-Domain), `AND`/`OR` ohne die Klammern, die der Server setzt
   (`(VALUE > 0) AND (VALUE < 10)`), Rechnungen mit Cast und negative Zahlen.
-  Eine Array-Domain (`integer[]`) gilt ebenfalls als geändert. Hat eine Domain
-  mehrere `CHECK`-Constraints, sieht `schema migrate` nur den letzten.
+  Hat eine Domain mehrere `CHECK`-Constraints, sieht `schema migrate` nur den
+  letzten. Eine `schema reverse`-Datei, die für eine `varchar(n)`-, `char(n)`-
+  oder Array-Domain nur `text` führt, gilt als geändert und blockiert mit
+  Exit 8; ziehen Sie `schema reverse` neu. Ein Array-Basistyp hat auf MySQL,
+  SQLite, MSSQL und Oracle kein Gegenstück: `schema generate` weist ihn dort
+  als **E053** aus.
   Eine **echte** Änderung eines benannten Typs
   (andere Werte einer Enum, anderer `base_type` oder `check` einer Domain,
   anderer Typ oder weitere Felder eines Composite) plant `schema migrate` als
