@@ -32,7 +32,7 @@ nur `varchar` und `boolean`/`decimal`/`uuid`).
 ### Zu prüfen (P0)
 
 Abgeschlossene Matrix: eine Zeile je Basistyp aus
-[`DomainTypes.resolveBaseTypeName`](../../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/DomainTypes.kt)
+[`DomainTypes.resolveBaseType`](../../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/metadata/DomainTypes.kt) (Zeilenquelle: das `when` in der privaten `resolveBaseTypeName`, alle Basistypen inkl. `char`, `xml`, `timestamptz`, `smallint`; für SQLite maßgeblich `SqliteRefTypeColumns.baseType`; `decimal` ohne `precision` ergibt E053 — eigene Zeile, kein Vergleichsfall)
 mit Spalten *Reverse-Form · Soll · Operationen im Plan-Only · Exit mit `--execute`*. P0 endet, wenn alle Zeilen gefüllt sind.
 Zusätzlich: Gegenproben **Enum-`ref_type`** (kontextfrei `Text()`, soll unbetroffen bleiben), **Domain mit Wertelisten-CHECK**
 (`RefTypeVocabulary.resolve` löst sie zu `Enum(values, refType)` auf, der Wertevorrat-Vergleich greift vor `canon`; der Plan
@@ -54,7 +54,7 @@ kannte nur Enums), **Domain mit Länge** (`varchar(32)`: Reader liest `Text()`, 
 * **B — Reader:** nicht tragfähig (die Datenbank trägt die Domain nicht).
 * **Fingerabdruck:** der Abdruck faltet die Domain schon; erwartet **kein** Tag-Bump. P0-Kriterium: Hash vorher/nachher für
   denselben Eingang gleich. Ein ADR nur, wenn der Vergleich Domains neu auflöst (Präzedenz ADR 0060 Wertevorrat; Grenze ADR 0026
-  „struktureller Vergleich kontextfrei"); dann neuer ADR (nächste freie Nummer, accepted-ADRs bleiben unberührt) und Klärung, ob
+  (struktureller Vergleich kontextfrei"); dann neuer ADR (nächste freie Nummer; ADR 0061 als jüngster Domain-Basistyp-ADR mit prüfen; accepted-ADRs bleiben unberührt) und Klärung, ob
   er 0060/0026 ergänzt.
 
 ## Folgen für den Neubau-CAST-Plan (#54)
