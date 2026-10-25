@@ -121,15 +121,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         for ((colName, col) in table.columns.inOrdinalOrder()) {
             columnLines += generateColumnSql(colName, col, schema, name, notes, skipped)
             // C3: Warn when datetime with timezone is mapped to DATETIME (no TZ support in MySQL)
-            if (col.type is NeutralType.DateTime && (col.type as NeutralType.DateTime).timezone) {
-                notes += TransformationNote(
-                    type = NoteType.WARNING,
-                    code = "W100",
-                    objectName = "$name.$colName",
-                    message = "DATETIME with timezone on column '$colName' mapped to DATETIME in MySQL which does not support time zones.",
-                    hint = "Store timezone information in a separate column or use UTC consistently."
-                )
-            }
+            MysqlTimezoneDegradation.noteFor(name, colName, col.type)?.let { notes += it }
         }
 
         // Inline foreign key constraints (non-circular, from column references)

@@ -2579,6 +2579,17 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
 - **Domain** → PostgreSQL nativ; bei anderen Dialekten nennt der
   Transformations-Report die gewählte Abbildung (SQLite, MySQL, MS SQL Server:
   Basistyp + `CHECK`).
+- **Domain auf MySQL (`schema generate`):** Der `base_type` wird auf den MySQL-Typ des
+  neutralen Typs abgebildet, auch wenn er ein PostgreSQL-Katalogname ist
+  (`int4` → `INT`, `bool` → `TINYINT(1)`, `uuid` → `CHAR(36)`, `jsonb` →
+  `JSON`, `bytea` → `BLOB`); `precision` und `scale` der Domain gelten
+  (`numeric` mit `precision: 12`, `scale: 4` ergibt `DECIMAL(12,4)`). Ein
+  Basistyp ohne Gegenstück (ein Array wie `integer[]`, `bit`, `varbit(n)`,
+  `timetz`, `money`, `interval`, `inet` oder `numeric` ohne `precision`)
+  erscheint als **E053**, die Spalte wird `TEXT`; Sie müssen den Typ dann selbst
+  festlegen. Ein Zeitzonen-Basistyp (`timestamptz`) wird `DATETIME` mit
+  Warnung **W100**. Die Nachkommastellen in `timestamptz(3)` oder `time(3)`
+  übernimmt d-migrate nicht.
 
 **Hinweise:**
 
