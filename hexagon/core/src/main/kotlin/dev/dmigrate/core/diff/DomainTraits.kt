@@ -11,14 +11,24 @@ import dev.dmigrate.core.model.CustomTypeDefinition
  *
  * * Der **Default** wird wie der einer Spalte verglichen ([ColumnDefaultProjection.same]).
  * * `NOT NULL` ist ein Wahrheitswert.
- * * Der **Kollationsname** ist ohne Anfuehrungszeichen und mit Gross-/Kleinschreibung gemeint:
- *   die Datei darf `C` oder `"C"` schreiben, der Katalog liefert `C`.
+ * * Der **Kollationsname** ist ein Bezeichner mit Gross-/Kleinschreibung; ein Punkt gehoert zum
+ *   Namen (`en_US.utf8`). Die Datei darf `C` oder `"C"` schreiben, der Katalog liefert `C`. Eine
+ *   Kollation ausserhalb von `pg_catalog` steht gequotet und qualifiziert (`"app"."ci"`); das
+ *   bleibt unveraendert.
  */
 object DomainTraits {
 
-    /** Der Kollationsname ohne umschliessende Anfuehrungszeichen; `null` ohne Kollation. */
-    fun collation(raw: String?): String? =
-        raw?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotEmpty() }
+    private val SINGLE_QUOTED = Regex("^\"([^\"]*)\"$")
+
+    /**
+     * Der Kollationsname; ein einzelner gequoteter Bezeichner (`"C"`) ohne Anfuehrungszeichen, eine
+     * gequotete Qualifizierung (`"app"."ci"`) unveraendert. `null` ohne Kollation.
+     */
+    fun collation(raw: String?): String? {
+        val trimmed = raw?.trim() ?: return null
+        val name = SINGLE_QUOTED.find(trimmed)?.groupValues?.get(1) ?: trimmed
+        return name.takeIf { it.isNotEmpty() }
+    }
 
     fun collation(type: CustomTypeDefinition): String? = collation(type.collation)
 }

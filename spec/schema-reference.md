@@ -287,8 +287,12 @@ und ignorieren die drei Felder (`NOT NULL` und `DEFAULT` steuert dort die Spalte
   `{ sequence_nextval: … }`).
 * `not_null` gehört der Domain, nicht der Spalte: eine Spalte vom Typ der Domain trägt
   `required` nur, wenn die Spalte selbst `NOT NULL` ist.
-* `collation` ist der Name der Kollation; Anführungszeichen sind optional (`C` und `"C"` sind
-  dieselbe). Die Groß-/Kleinschreibung zählt.
+* `collation` ist der Name der Kollation, als **ein** Bezeichner: `C`, `en_US.utf8` und `de_DE.UTF-8`
+  sind je ein Name (der Punkt gehört dazu); Anführungszeichen sind optional (`C` und `"C"` sind
+  dieselbe). Eine Kollation außerhalb von `pg_catalog` schreiben Sie Schema-qualifiziert und
+  **gequotet**: `"app"."ci"`. Die Groß-/Kleinschreibung zählt. Ein bloßes `app.ci` ist der
+  eine Name `app.ci`, keine Qualifizierung. `COLLATE "default"` gleich der Kollation des
+  Basistyps ist von einer fehlenden Kollation nicht zu unterscheiden.
 
 ---
 

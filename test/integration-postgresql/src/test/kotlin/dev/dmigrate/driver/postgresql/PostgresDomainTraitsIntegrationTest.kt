@@ -50,7 +50,7 @@ class PostgresDomainTraitsIntegrationTest : FunSpec({
     }
 
     beforeEach {
-        sql("DROP SCHEMA public CASCADE", "CREATE SCHEMA public", pool = pool)
+        sql("DROP SCHEMA public CASCADE", "CREATE SCHEMA public", "DROP SCHEMA IF EXISTS \"my.app\" CASCADE", pool = pool)
     }
 
     fun read(): SchemaDefinition = PostgresSchemaReader().read(pool).schema
@@ -149,6 +149,39 @@ class PostgresDomainTraitsIntegrationTest : FunSpec({
         }
         after.customTypes.getValue("d_all").notNull shouldBe true
         after.tables.getValue("t").columns.getValue("b").required shouldBe false
+    }
+
+    test("Kollationen mit Punkt im Namen und ausserhalb von pg_catalog laufen im Kreis") {
+        // Eine echte Nicht-C-Kollation aus pg_catalog, wie das Testimage sie fuehrt (bevorzugt mit Punkt,
+        // etwa `en_US.utf8`; das Alpine-Image fuehrt ICU-Namen wie `en-US-x-icu`).
+        val catalogCollation = pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { st ->
+                st.executeQuery(
+                    """SELECT c.collname FROM pg_collation c JOIN pg_namespace n ON n.oid = c.collnamespace
+                       WHERE n.nspname = 'pg_catalog' AND c.collname NOT IN ('default', 'C', 'POSIX', 'ucs_basic')
+                         AND c.collencoding IN (-1, pg_char_to_encoding('UTF8'))
+                       ORDER BY (c.collname LIKE '%.%') DESC, c.collname LIMIT 1""",
+                ).use { rs -> if (rs.next()) rs.getString(1) else null }
+            }
+        } ?: error("das Testimage fuehrt keine Nicht-C-Kollation in pg_catalog")
+        sql(
+            "CREATE SCHEMA \"my.app\"",
+            "CREATE COLLATION \"my.app\".\"ci.v\" FROM \"C\"",
+            "CREATE DOMAIN d_loc AS text COLLATE \"$catalogCollation\"",
+            "CREATE DOMAIN d_q AS text COLLATE \"my.app\".\"ci.v\"",
+            "CREATE TABLE t (id integer PRIMARY KEY, a d_loc, b d_q)",
+            pool = pool,
+        )
+        val before = read()
+        before.customTypes.getValue("d_loc").collation shouldBe catalogCollation
+        before.customTypes.getValue("d_q").collation shouldBe "\"my.app\".\"ci.v\""
+
+        sql("DROP TABLE t", "DROP DOMAIN d_loc", "DROP DOMAIN d_q", pool = pool)
+        sql(*PostgresDdlGenerator().generate(before).statements.map { it.sql }.toTypedArray(), pool = pool)
+        val after = read()
+        after.customTypes.getValue("d_loc").collation shouldBe catalogCollation
+        after.customTypes.getValue("d_q").collation shouldBe "\"my.app\".\"ci.v\""
+        SchemaComparator().compare(before, after).customTypesChanged.isEmpty() shouldBe true
     }
 
     test("eine unveraenderte Datenbank plant nichts") {

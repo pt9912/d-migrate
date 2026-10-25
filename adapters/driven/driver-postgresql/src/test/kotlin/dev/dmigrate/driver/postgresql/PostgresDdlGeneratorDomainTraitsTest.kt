@@ -34,8 +34,19 @@ class PostgresDdlGeneratorDomainTraitsTest : FunSpec({
             ),
         ) shouldContain """CREATE DOMAIN "d" AS INTEGER DEFAULT 5;"""
         render(
-            CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "text", collation = "app.ci"),
+            CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "text", collation = "\"app\".\"ci\""),
         ) shouldContain """CREATE DOMAIN "d" AS TEXT COLLATE "app"."ci";"""
+    }
+
+    test("ein Kollationsname mit Punkt ist ein Bezeichner, eine gequotete Qualifizierung geht durch") {
+        fun collate(name: String) = render(
+            CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "text", collation = name),
+        )
+        collate("en_US.utf8") shouldContain """COLLATE "en_US.utf8";"""
+        collate("de_DE.UTF-8") shouldContain """COLLATE "de_DE.UTF-8";"""
+        collate("C") shouldContain """COLLATE "C";"""
+        collate("\"C\"") shouldContain """COLLATE "C";"""
+        collate("\"my.app\".\"ci.v\"") shouldContain """COLLATE "my.app"."ci.v";"""
     }
 
     test("ohne die Felder bleibt das DDL wie zuvor") {

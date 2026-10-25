@@ -1275,7 +1275,10 @@ CREATE DOMAIN "code" AS TEXT COLLATE "C" DEFAULT 'x' NOT NULL CHECK (length(VALU
 
 `default`, `not_null` und `collation` einer Domain rendert **nur PostgreSQL**, in der Reihenfolge
 `COLLATE`, `DEFAULT`, `NOT NULL`, `CHECK`. Der Reader liest sie aus dem Katalog: `NOT NULL` aus
-`pg_type.typnotnull`, die Kollation nur, wenn sie von der des Basistyps abweicht, den
+`pg_type.typnotnull`, die Kollation nur, wenn sie von der des Basistyps abweicht (ein Name aus
+`pg_catalog` nackt als ein Bezeichner, `en_US.utf8`; jeder andere gequotet und qualifiziert,
+`"app"."ci"`; der Renderer quotet einen nackten Namen als einen Bezeichner und reicht eine
+gequotete Qualifizierung durch), den
 Standardwert wie den einer Spalte (`'x'::text` wird `x`). Die `NOT NULL`-Eigenschaft einer Domain
 gehört der Domain: eine Spalte vom Typ der Domain gilt als `required` nur, wenn die Spalte selbst
 `NOT NULL` trägt. Ändert sich einer der drei Werte, plant `schema migrate` eine

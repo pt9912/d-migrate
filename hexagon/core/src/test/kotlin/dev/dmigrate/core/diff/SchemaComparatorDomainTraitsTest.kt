@@ -67,6 +67,13 @@ class SchemaComparatorDomainTraitsTest : FunSpec({
         changed(domain(), domain(collation = "C")).single().collation.shouldNotBeNull()
     }
 
+    test("ein Punkt gehoert zum Kollationsnamen, eine gequotete Qualifizierung bleibt erhalten") {
+        changed(domain(collation = "en_US.utf8"), domain(collation = "\"en_US.utf8\"")).shouldBeEmpty()
+        changed(domain(collation = "en_US.utf8"), domain(collation = "en_US")).single().collation.shouldNotBeNull()
+        changed(domain(collation = "\"app\".\"ci\""), domain(collation = "\"app\".\"ci\"")).shouldBeEmpty()
+        changed(domain(collation = "\"app\".\"ci\""), domain(collation = "app.ci")).single().collation.shouldNotBeNull()
+    }
+
     test("eine Aenderung nur an den drei Feldern laesst die uebrigen Unterschiede leer") {
         val diff = changed(domain(), domain(notNull = true)).single()
         diff.check.shouldBeNull()

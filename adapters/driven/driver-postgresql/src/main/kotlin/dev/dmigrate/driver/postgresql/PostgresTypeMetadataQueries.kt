@@ -27,12 +27,12 @@ internal object PostgresTypeMetadataQueries {
                    bt.typname AS base_type,
                    information_schema.domains.numeric_precision,
                    information_schema.domains.numeric_scale,
-                   information_schema.domains.domain_default,
+                   pg_catalog.pg_get_expr(t.typdefaultbin, 0) AS domain_default,
                    t.typnotnull AS not_null,
                    -- Die Kollation nur, wenn sie von der des Basistyps abweicht (Issue #59):
                    -- ohne eigenes COLLATE erbt die Domain `typcollation` des Basistyps.
                    (SELECT CASE WHEN cn.nspname = 'pg_catalog' THEN co.collname
-                                ELSE cn.nspname || '.' || co.collname END
+                                ELSE quote_ident(cn.nspname) || '.' || quote_ident(co.collname) END
                       FROM pg_collation co
                       JOIN pg_namespace cn ON cn.oid = co.collnamespace
                      WHERE co.oid = t.typcollation AND t.typcollation <> bt.typcollation) AS collation_name,

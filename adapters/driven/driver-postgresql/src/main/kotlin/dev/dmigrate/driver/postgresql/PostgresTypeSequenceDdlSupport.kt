@@ -63,9 +63,12 @@ internal class PostgresTypeSequenceDdlSupport(
     private fun neutralBaseType(baseType: String, typeDef: CustomTypeDefinition): NeutralType? =
         resolveNeutralBaseType(baseType, typeDef.precision, typeDef.scale)
 
-    /** `C` -> `"C"`; ein Schema-qualifizierter Name (`s.name`) wird je Teil gequotet. */
+    /**
+     * Ein nackter Name (`C`, `en_US.utf8`) ist ein Bezeichner und wird als einer gequotet; eine
+     * bereits gequotete Qualifizierung (`"app"."ci"`) geht unveraendert durch.
+     */
     private fun quoteCollation(name: String): String =
-        name.split('.').joinToString(".") { quoteIdentifier(it) }
+        if (name.startsWith("\"")) name else quoteIdentifier(name)
 
     /**
      * Rendert den Domain-Basistyp über denselben Typ-Mapper wie Spalten/Composite-Felder,

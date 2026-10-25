@@ -41,8 +41,11 @@ NULL` wurde so zu `ALTER TABLE … ALTER COLUMN … SET NOT NULL`.
    `notNull` als Wahrheitswert, Kollation ohne Anführungszeichen und mit Groß-/Kleinschreibung. Drei neue Felder in
    `CustomTypeDiff`.
 3. **PostgreSQL.** Reader: `typnotnull`, `typcollation` nur bei Abweichung vom Basistyp (außerhalb von
-   `pg_catalog` als `schema.name`), `domain_default` durch dieselbe Normalisierung wie ein Spalten-Default (inkl.
-   `nextval` als `SequenceNextVal`). Renderer: `CREATE DOMAIN … AS t COLLATE … DEFAULT … NOT NULL CHECK (…)`.
+   `pg_catalog` gequotet und qualifiziert als `"schema"."name"`; ein Name aus `pg_catalog` nackt als **ein**
+   Bezeichner, auch mit Punkt: `en_US.utf8`), `domain_default` (`pg_get_expr(typdefaultbin)`, unabhängig vom
+   `information_schema`) durch dieselbe Normalisierung wie ein Spalten-Default (inkl.
+   `nextval` als `SequenceNextVal`). Renderer (ein nackter Kollationsname wird als ein Bezeichner gequotet, eine gequotete Qualifizierung geht
+   durch): `CREATE DOMAIN … AS t COLLATE … DEFAULT … NOT NULL CHECK (…)`.
 4. **`required` aus `attnotnull`.** Die Spalte trägt nur ihr eigenes `NOT NULL`; die Domain-Eigenschaft steht an der
    Domain. Das behebt die falsche Spaltenoperation.
 5. **Andere Dialekte ignorieren die Felder.** MSSQL, MySQL, SQLite und Oracle rendern unverändert (Regressionstest je
