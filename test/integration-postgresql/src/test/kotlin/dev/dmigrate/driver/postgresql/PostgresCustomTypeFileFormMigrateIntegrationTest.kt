@@ -251,11 +251,16 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
 
     // ── Domain in Autorenform (Issue #52): so, wie ein Autor sie schreibt, nicht wie der Katalog ──
 
-    fun authored(base: String, check: String? = null, precision: Int? = null, scale: Int? = null) =
-        CustomTypeDefinition(
-            kind = CustomTypeKind.DOMAIN, baseType = base, check = check, precision = precision, scale = scale,
-            fields = emptyMap(),
-        )
+    fun authored(
+        base: String,
+        check: String? = null,
+        precision: Int? = null,
+        scale: Int? = null,
+        notNull: Boolean = false,
+    ) = CustomTypeDefinition(
+        kind = CustomTypeKind.DOMAIN, baseType = base, check = check, precision = precision, scale = scale,
+        notNull = notNull, fields = emptyMap(),
+    )
 
     /** Das Soll: die gelesene Datenbank, die Domain `d` in Autorenform, dazu die eine zusaetzliche Spalte. */
     fun withAuthoredDomain(db: SchemaDefinition, domain: CustomTypeDefinition) =
@@ -337,7 +342,7 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
                 authored("text", "(VALUE <> 'x') AND (length(VALUE) > 0)")),
         "NOT NULL und zwei CHECKs" to
             ("CREATE DOMAIN d AS integer NOT NULL CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)" to
-                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)", notNull = true)),
     )
     for ((name, case) in multiCheckDomains) {
         test("Domain mit mehreren CHECKs ist dieselbe Domain: $name") {
