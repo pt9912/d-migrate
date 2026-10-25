@@ -195,10 +195,12 @@ Ergebnis eines `INSERT`. `planFullyRollbackable` war in allen Läufen `true`, `d
   wird mit seinem Ist-Namen und den Werten aus `currentSchema` wieder angelegt (`ADD CONSTRAINT "<alt>" CHECK (… IN (…))`), damit der
   Zustand vor dem Up auch bei benanntem CHECK (Fall 7) wiederkehrt.
 * **Datei gegen Datei** (Fall 5b, B, C): die Namen des Ziels sind unbekannt, der Up selbst löst dort nichts. Der Down blockiert, statt ein
-  `ADD` ohne `DROP` zu rendern. Erkennungsmerkmal „Ist-Seite ist ein Katalog“: ein alter Wertevorrat-CHECK **mit Namen** in der Ist-Seite
-  (Beleg) oder `options.postgresContext.serverVersion != null` (der Leser reicht die Serverversion mit; die CLI-Verdrahtung
-  `SchemaMigrateWiring` setzt sie). Eine Textspalte ohne CHECK sieht in Datei und Katalog gleich aus; ohne dieses Merkmal bliebe Fall B
-  ein geratener Name. Ist die Version nicht lesbar, blockiert der Down (konservativ). Das ändert Exit 0 → Exit 8 für `--generate-rollback` mit Wertelistenänderung im Datei-Modus; im
+  `ADD` ohne `DROP` zu rendern. Erkennungsmerkmal „Ist-Seite ist ein Katalog“, nach Fällen: Steht in der Ist-Seite ein alter Wertevorrat-CHECK **mit Namen**, ist das der Beleg
+  und es wird nichts weiter geprüft. Ohne diesen Beleg (Fall B, Fall C aus einer Datei) entscheidet das neue Signal
+  `DdlDialectContext.Postgres.catalogRead`, das `SchemaMigrateRenderPipeline` setzt, wenn die Ist-Seite (`--target`) eine Datenbank ist
+  (`targetOp is CompareOperand.Database`); sonst blockiert der Down. Die Serverversion taugt dafür nicht: `--target-version` setzt sie
+  (`SchemaMigrateRunner.withTargetVersion`) auch bei Datei gegen Datei. Eine Textspalte ohne CHECK sieht in Datei und Katalog gleich aus;
+  ohne dieses Signal bliebe Fall B ein geratener Name. Die Ist-Seite ist `--target`, nicht `--source` (das ist die Soll-Datei). Das ändert Exit 0 → Exit 8 für `--generate-rollback` mit Wertelistenänderung im Datei-Modus; im
   Bericht an den Eigner ausdrücklich genannt.
 * **`planFullyRollbackable`** bleibt unverändert (Transaktionalität des Up); das Handbuch benennt `downBlocked` als Down-Signal.
 * **Spec:** `ddl-generation-rules.md` §12 bekommt die Regel (Zielbild zuerst), dazu Handbuch §3.5 und `CHANGELOG`.

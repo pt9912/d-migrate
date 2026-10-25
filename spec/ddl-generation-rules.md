@@ -2207,7 +2207,9 @@ Werten unter seinem alten Namen wieder an, in dieser Reihenfolge. Das gilt auch,
 Textspalte erst einen Wertevorrat erhält (der Down löst nur) oder ihn verliert (der Down legt nur an).
 Den Namen des vom Up angelegten CHECKs kennt der Renderer nur, wo PostgreSQL ihn sicher vergibt:
 `<tabelle>_<spalte>_check`, wenn kein anderer Constraint der Ist-Seite so heißt und der Name ohne
-Kürzung in 63 Byte passt. Fehlt die Katalogseite (Datei gegen Datei), ist der Name belegt oder
+Kürzung in 63 Byte passt. Die Katalogseite fehlt, wenn die Ist-Seite (`--target`) eine Datei ist (auch mit `--target-version`); steht in der
+Ist-Seite ein alter Wertevorrat-CHECK mit Namen, gilt das als Beleg, und es wird nichts weiter geprüft. Fehlt die
+Katalogseite, ist der Name belegt oder
 würde gekürzt, rendert der Down kein `DROP` mit erratenem Namen, sondern blockiert mit
 `ROLLBACK_NOT_POSSIBLE` (Diagnose `POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN`).
 

@@ -53,9 +53,9 @@ internal object PostgresEnumCheckRollback {
 
         // Ohne Katalogseite kennt der Renderer die Namen des Ziels nicht (eine Datei fuehrt den
         // Wertevorrat inline, ohne Namen; und der Up hat dort nichts loesen koennen). Ein alter CHECK
-        // mit Namen in der Ist-Seite ist der Beleg; sonst muss die Ist-Seite als Katalog gelesen sein:
-        // der Leser reicht dann die Serverversion mit.
-        val catalog = ctx.options.postgresContext?.serverVersion != null
+        // mit Namen in der Ist-Seite ist der Beleg; sonst muss die Ist-Seite aus einer Datenbank gelesen
+        // sein. `--target-version` setzt die Serverversion auch bei Datei gegen Datei und taugt dafuer nicht.
+        val catalog = ctx.options.postgresContext?.catalogRead == true
         val dropName = createdByUp?.let { createdName(ctx.currentSchema, table, column, droppedByUp) }
         val nameUnknown = (droppedByUp == null && !catalog) || (createdByUp != null && dropName == null)
         if (nameUnknown) {

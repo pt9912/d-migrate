@@ -1673,7 +1673,7 @@ zurück.
   Zeilen vorher auf. Den Namen des beim Ausrollen angelegten CHECKs leitet d-migrate
   nur dort ab, wo PostgreSQL ihn sicher vergibt (`<Tabelle>_<Spalte>_check`). Ist der
   Name von einem anderen Constraint belegt, würde PostgreSQL ihn kürzen, oder gibt es
-  keine Datenbank als Quelle (Datei gegen Datei), meldet `--generate-rollback` den Down
+  keine Datenbank als Ist-Seite (`--target`, Datei gegen Datei; auch mit `--target-version`), meldet `--generate-rollback` den Down
   als nicht möglich: `downBlocked: true`, Blocker `ROLLBACK_NOT_POSSIBLE`, Exit 8, und es
   wird nichts ausgeführt. Ohne `--generate-rollback` läuft das Ausrollen wie sonst. Das
   Feld `planFullyRollbackable` im Report meint dabei nur, dass die Anweisungen des

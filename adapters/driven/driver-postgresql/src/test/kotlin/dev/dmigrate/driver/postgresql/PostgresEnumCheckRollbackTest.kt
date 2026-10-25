@@ -56,8 +56,18 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         ),
     )
 
-    /** Die Ist-Seite ist ein gelesener Katalog: der Leser reicht die Serverversion mit. */
-    val liveOptions = DdlGenerationOptions(dialectContext = DdlDialectContext.Postgres(serverVersion = PostgresServerVersion(18, 0)))
+    /** Die Ist-Seite ist ein gelesener Katalog. */
+    val liveOptions = DdlGenerationOptions(
+        dialectContext = DdlDialectContext.Postgres(
+            serverVersion = PostgresServerVersion(18, 0),
+            catalogRead = true,
+        ),
+    )
+
+    /** Datei gegen Datei mit `--target-version`: die Version ist gesetzt, einen Katalog gibt es nicht. */
+    val fileWithVersion = DdlGenerationOptions(
+        dialectContext = DdlDialectContext.Postgres(serverVersion = PostgresServerVersion(16, 4)),
+    )
 
     fun enumOf(vararg v: String) = NeutralType.Enum(values = v.toList())
 
@@ -191,6 +201,24 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         )
         r.isBlocked shouldBe true
         r.blockers.map { it.reason } shouldContain MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
+    }
+
+    test("--target-version does not make a file a catalog (cases A, B and C still block)") {
+        val cases = listOf(
+            Triple(schema(enumOf("a", "b")), schema(enumOf("a", "b", "c")), NeutralType.Text()),
+            Triple(schema(NeutralType.Text()), schema(enumOf("a", "b")), NeutralType.Text()),
+            Triple(schema(enumOf("a", "b")), schema(NeutralType.Text()), NeutralType.Text()),
+        )
+        val changes = listOf(
+            typeChange(enumOf("a", "b"), enumOf("a", "b", "c")),
+            typeChange(NeutralType.Text(), enumOf("a", "b")),
+            typeChange(enumOf("a", "b"), NeutralType.Text()),
+        )
+        cases.zip(changes).forEach { (case, change) ->
+            val r = gen.generateDown(planner.plan(case.first, case.second, change), fileWithVersion)
+            r.blockers.map { it.reason } shouldContain MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
+            r.statements.size shouldBe 0
+        }
     }
 
     test("the Up is unchanged: it drops the old CHECK by its catalog name and adds an unnamed one") {

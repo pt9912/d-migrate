@@ -91,7 +91,7 @@ class PostgresEnumRollbackIntegrationTest : FunSpec({
 
     data class Outcome(val exit: Int, val report: String, val errors: String)
 
-    fun migrate(want: SchemaDefinition, rollbackOutput: Path? = null): Outcome {
+    fun migrate(want: SchemaDefinition, rollbackOutput: Path? = null, targetVersion: String? = null): Outcome {
         val tmp = createTempDirectory("pg-enum-rollback")
         try {
             val errors = mutableListOf<String>()
@@ -116,7 +116,7 @@ class PostgresEnumRollbackIntegrationTest : FunSpec({
                 SchemaMigrateRequest(
                     source = "file:${tmp.resolve("desired.yaml")}", target = "db:placeholder",
                     dialect = DatabaseDialect.POSTGRESQL, report = tmp.resolve("report.json"), execute = true,
-                    rollbackOutput = rollbackOutput, generateRollback = rollbackOutput != null,
+                    rollbackOutput = rollbackOutput, generateRollback = rollbackOutput != null, targetVersion = targetVersion,
                 ),
             )
             return Outcome(exit, report, errors.joinToString("; "))
@@ -342,6 +342,54 @@ class PostgresEnumRollbackIntegrationTest : FunSpec({
                 out.report.contains("POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN") shouldBe true
             }
             checks() shouldBe before
+        } finally {
+            tmp.toFile().deleteRecursively()
+        }
+    }
+
+    test("--target-version does not make a file a catalog: file against file still blocks the Down") {
+        // Beide Seiten Dateien; die ausdrueckliche Version setzt die Serverversion, belegt aber keinen Katalog.
+        val text = schemaOf(mapOf("e" to NeutralType.Text()))
+        val ab = schemaOf(mapOf("e" to enumOf("a", "b")))
+        val abc = schemaOf(mapOf("e" to enumOf("a", "b", "c")))
+        // A: Werteliste erweitert, B: Textspalte erhaelt eine Werteliste, C: Spalte verliert sie.
+        for ((from, want) in listOf(ab to abc, text to ab, ab to text)) {
+            val errors = mutableListOf<String>()
+            var report = ""
+            val exit = SchemaMigrateRunner(
+                fileLoader = { op ->
+                    val file = (op as dev.dmigrate.cli.commands.CompareOperand.File).path.toString()
+                    ResolvedSchemaOperand("f", if (file.endsWith("current.yaml")) from else want, ValidationResult())
+                },
+                comparator = { a, b -> SchemaComparator().compare(a, b) },
+                rendererFor = { d -> if (d == DatabaseDialect.POSTGRESQL) PostgresDiffDdlGenerator() else null },
+                atomicWriter = { _, _ -> },
+                renderReport = { r, _ -> r.toString().also { report = it } },
+                printError = { msg, src -> errors += "[$src] $msg" },
+            ).execute(
+                SchemaMigrateRequest(
+                    source = "desired.yaml", target = "current.yaml", dialect = DatabaseDialect.POSTGRESQL,
+                    planOnly = true, generateRollback = true, targetVersion = "16.4",
+                ),
+            )
+            withClue("${errors.joinToString("; ")} ${report.take(1200)}") {
+                exit shouldBe 8
+                report.contains("POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN") shouldBe true
+            }
+        }
+    }
+
+    test("--target-version against a live database keeps the catalog: the Down renders and restores") {
+        exec(table("e text NOT NULL CHECK (\"e\" IN ('a','b'))"))
+        val before = checks()
+        val tmp = createTempDirectory("pg-enum-rollback-target-version")
+        try {
+            val down = tmp.resolve("down.sql")
+            val up = migrate(schemaOf(mapOf("e" to enumOf("a", "b", "c"))), rollbackOutput = down, targetVersion = "16.4")
+            withClue("${up.errors} ${up.report.take(900)}") { up.exit shouldBe 0 }
+            rollback(down) shouldBe 0
+            checks() shouldBe before
+            accepts("e", "c") shouldBe false
         } finally {
             tmp.toFile().deleteRecursively()
         }

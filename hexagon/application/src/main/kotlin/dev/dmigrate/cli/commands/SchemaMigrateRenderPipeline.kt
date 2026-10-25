@@ -151,6 +151,7 @@ internal class SchemaMigrateRenderPipeline(
         )
         val renderOptions = buildRenderOptions(
             request, dialect, outcomes, preflightPlan, serverVersion, routineCapabilityResolver,
+            catalogRead = targetOp is CompareOperand.Database,
         )
         val renderedUp = renderUp(effectivePlan, overlayPreflight, renderer, renderOptions, outcomes)
         // Hinter allen fuenf Renderern: was keiner von ihnen als fremden
@@ -316,6 +317,7 @@ internal class SchemaMigrateRenderPipeline(
         preflightPlan: MigrationPreflightPlan,
         serverVersion: ServerVersion?,
         routineCapabilityResolver: ((EffectiveRoutineCapability.Valid) -> EffectiveRoutineCapability)?,
+        catalogRead: Boolean,
     ): DdlGenerationOptions {
         val probeOutcome = outcomes.probe
         val castPreflightOutcome = outcomes.cast
@@ -340,6 +342,7 @@ internal class SchemaMigrateRenderPipeline(
             dialect = dialect,
             routineCapability = routineCapability,
             serverVersion = serverVersion,
+            catalogRead = catalogRead,
             mysqlSequenceDeclarations = mysqlSequenceDeclarations,
             probeOutcome = probeOutcome,
             castPreflights = when (castPreflightOutcome) {
@@ -573,6 +576,7 @@ internal class SchemaMigrateRenderPipeline(
             mysqlSequenceDeclarations: List<MysqlSequenceCanonicityDeclaration>,
             probeOutcome: SqliteProbeStage.Outcome?,
             castPreflights: List<SqliteCastPreflightDeclaration>,
+            catalogRead: Boolean = false,
         ): DdlDialectContext {
             return when (dialect) {
                 DatabaseDialect.MYSQL -> DdlDialectContext.MySql(
@@ -622,6 +626,7 @@ internal class SchemaMigrateRenderPipeline(
                 DatabaseDialect.POSTGRESQL -> DdlDialectContext.Postgres(
                     concurrentIndexes = request.pgConcurrentIndexes,
                     serverVersion = serverVersion as? PostgresServerVersion,
+                    catalogRead = catalogRead,
                 )
                 // Oracle traegt die Serverversion: sie entscheidet, ob die
                 // Ruecknahme-Anweisungen `IF EXISTS` fuehren duerfen.

@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (anderer Constraint trägt den Standardnamen, der Name würde gekürzt, Datei gegen Datei), meldet
   `--generate-rollback` den Down als nicht möglich (`downBlocked: true`, `ROLLBACK_NOT_POSSIBLE`,
   Exit 8) und führt nichts aus. **Verhaltensänderung:** `schema migrate --generate-rollback` mit geänderter Werteliste
-  Datei gegen Datei (ohne Datenbank als Quelle) endet jetzt mit Exit 8 (vorher Exit 0 mit fehlerhaftem Down: `ADD CHECK`
+  Datei gegen Datei (ohne Datenbank als Ist-Seite, `--target`; auch mit `--target-version`) endet jetzt mit Exit 8 (vorher Exit 0 mit fehlerhaftem Down: `ADD CHECK`
   ohne `DROP`). `planFullyRollbackable` bleibt „Anweisungen sind transaktional“, nicht
   „Down ist möglich“. Der Up-Text und der Fingerabdruck ändern sich nicht.
 - **`schema migrate` auf SQLite plant keinen `DROP INDEX` + `CREATE INDEX` mehr für einen unveränderten
