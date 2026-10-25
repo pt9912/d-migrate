@@ -117,8 +117,10 @@ es danach. `lower(a)` → `upper(a)` bleibt 2 Operationen (`DropIndex` + `AddInd
 `CliSchemaMigrateUniqueIndexGapsSqliteTest` 1 Test, `ExpressionIndexRoundTripTest` 1 Test; mit der Änderung alle grün.
 Kommentare im Schlüsseltext (`((lower(a) -- c\n))`) entfernt der Reader vor dem Abtragen der Klammer; gemessen vor
 dieser Regel: Klammer blieb stehen, 2 Operationen, Rundlauf wuchs je Zyklus. Restgrenze: ein Kommentar im
-`expression`-Text der Datei gilt als Änderung (2 Operationen), und ein `--`-Kommentar dort erzeugt ungültiges DDL
-(eigener Befund: der Generator klammert wortgleich, der Kommentar verschluckt die schließende Klammer). `COLLATE`
+`expression`-Text der Datei gilt als Änderung (2 Operationen; wegfallen würde das nur durch eine Normalisierung im
+Vergleich/Parser, dialektübergreifend, deshalb offen). Ein `--`-Kommentar dort erzeugte ungültiges DDL (Exit 0): der
+Generator (`IndexColumn.renderKey`, driver-common) setzt die schließende Klammer jetzt auf eine neue Zeile, wenn der
+Ausdruck in einem Zeilenkommentar endet; Text wortgleich, DDL-Goldens unverändert. `COLLATE`
 innerhalb der Klammer bleibt im Text.
 
 ## P1 — Entscheidung (2026-10-25)

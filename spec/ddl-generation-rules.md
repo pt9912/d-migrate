@@ -1111,8 +1111,10 @@ Unterschied. Ein `COLLATE` innerhalb der Klammer bleibt im Text. Die Datei steht
 `reverse → generate → reverse` fügt keine Schicht hinzu, und ein von Hand
 angelegtes `ON t(lower(a))` und `ON t((lower(a)))` lesen gleich. Ein nachgestelltes `COLLATE`
 gehört nicht zum Modell und entfällt beim Zurücklesen.
-Ein `--`-Kommentar im `expression`-Text verschluckt die schließende Klammer des
-Generators; Kommentare gehören nicht in den Ausdruck.
+Endet der `expression`-Text in einem `--`-Zeilenkommentar, setzt der Generator
+die schließende Klammer auf eine neue Zeile (`(lower(a) -- c` ⏎ `)`), damit sie
+nicht zum Kommentar gehört; der Text bleibt wortgleich, in allen Dialekten, die
+Ausdrucks-Schlüssel rendern.
 
 Ein Ausdrucks-Schlüssel zählt **nicht** als Spalte: Typ-Nachschläge
 (Geometrie, LOB) und die Volltext-Quellspalten sehen ihn nicht. Ein
