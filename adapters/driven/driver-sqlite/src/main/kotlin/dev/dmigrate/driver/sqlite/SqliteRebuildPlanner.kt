@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.util.sha256Hex
@@ -38,11 +39,16 @@ internal object SqliteRebuildPlanner {
      * Tabellen, deren Spalten den Typ nutzen: der `CHECK` ueber dem
      * Wertevorrat steht dort, und SQLite ersetzt ihn nur im Neubau. Die
      * Operation gehoert damit in den Eimer jeder dieser Tabellen.
+     *
+     * [current] und [desired] leiten die Sichten (und deren `INSTEAD OF`-Trigger) ab,
+     * die an einer Neubau-Tabelle haengen ([SqliteViewDependencies]): ihre Operationen
+     * gehoeren in den Eimer der Tabelle, auch wenn kein `dependencies` sie nennt.
      */
     fun classify(
         ops: List<DiffOperation>,
         customTypeUsers: Map<String, Set<String>> = emptyMap(),
-        schemas: Pair<dev.dmigrate.core.model.SchemaDefinition?, dev.dmigrate.core.model.SchemaDefinition?>? = null,
+        current: SchemaDefinition? = null,
+        desired: SchemaDefinition? = null,
     ): Classification {
         val rebuildTables = ops.asSequence()
             .filter { isRebuildTrigger(it) }
@@ -52,9 +58,7 @@ internal object SqliteRebuildPlanner {
             return Classification(rebuildBuckets = emptyMap(), simpleOps = ops)
         }
         // Sichten je Neubau-Tabelle, abgeleitet aus dem Sichttext ([SqliteViewDependencies]).
-        val viewsByTable = schemas?.let { (current, desired) ->
-            SqliteViewDependencies.viewsByTable(rebuildTables, current, desired)
-        }.orEmpty()
+        val viewsByTable = SqliteViewDependencies.viewsByTable(rebuildTables, current, desired)
         val buckets = LinkedHashMap<String, MutableList<DiffOperation>>()
         for (table in rebuildTables.sorted()) buckets[table] = mutableListOf()
         val simple = mutableListOf<DiffOperation>()
@@ -108,13 +112,20 @@ internal object SqliteRebuildPlanner {
         return (referenced intersect rebuildTables).minOrNull()
     }
 
-    /** Neubau-Tabellen, an denen die Sicht der Operation laut Sichttext haengt (auch ueber andere Sichten). */
+    /**
+     * Neubau-Tabellen, an denen die Sicht der Operation laut Sichttext haengt (auch ueber
+     * andere Sichten) — bei einer Trigger-Operation die Sicht, auf der der Trigger steht.
+     */
     private fun derivedTableRefs(op: DiffOperation, viewsByTable: Map<String, Set<String>>): Set<String> {
-        val isViewOp = op is DiffOperation.CreateView || op is DiffOperation.DropView ||
-            op is DiffOperation.ReplaceView
-        if (!isViewOp) return emptySet()
-        val view = op.objectRef.path.lastOrNull() ?: return emptySet()
-        return viewsByTable.filterValues { view in it }.keys
+        val names = when (op) {
+            is DiffOperation.CreateView, is DiffOperation.DropView, is DiffOperation.ReplaceView ->
+                listOfNotNull(op.objectRef.path.lastOrNull())
+            is DiffOperation.CreateTrigger -> listOf(op.trigger.table)
+            is DiffOperation.DropTrigger -> listOf(op.trigger.table)
+            is DiffOperation.ReplaceTrigger -> listOf(op.before.table, op.after.table)
+            else -> return emptySet()
+        }
+        return viewsByTable.filterValues { views -> names.any { it in views } }.keys
     }
 
     private fun viewOrTriggerTableRefs(op: DiffOperation): Set<String> = when (op) {
@@ -198,8 +209,8 @@ internal object SqliteRebuildPlanner {
         bucketRisk: OperationRisk,
         sql: SqliteDiffSqlBuilders,
         catalog: SqliteCatalogSnapshot = SqliteCatalogSnapshot.EMPTY,
-        sourceSchema: dev.dmigrate.core.model.SchemaDefinition? = null,
-        targetSchema: dev.dmigrate.core.model.SchemaDefinition? = null,
+        sourceSchema: SchemaDefinition? = null,
+        targetSchema: SchemaDefinition? = null,
     ): SqliteRebuildPlan {
         // Eine Domain-Spalte steht in der Spaltenabbildung mit ihrem Basistyp: aendert
         // sich der Basistyp, ist das eine Umwandlung (CAST), keine gleiche Spalte.
@@ -221,9 +232,13 @@ internal object SqliteRebuildPlanner {
             risk = bucketRisk,
             mapping = mapping,
             indexesToRecreate = target.indices,
-            dependentViewsToDrop = collectDependentViews(sourceSchema, table),
+            // Geloescht wird, was eine der beiden Seiten kennt: eine Sicht, die das Soll neu anlegt
+            // (oder ein zweiter Eimer ein zweites Mal), darf nicht schon stehen.
+            dependentViewsToDrop = (collectDependentViews(sourceSchema, table) +
+                collectDependentViews(targetSchema, table)).distinctBy { it.name },
             dependentViewsToRecreate = collectDependentViews(targetSchema, table),
-            dependentTriggersToDrop = collectDependentTriggers(sourceSchema, table),
+            dependentTriggersToDrop = (collectDependentTriggers(sourceSchema, table) +
+                collectDependentTriggers(targetSchema, table)).distinctBy { it.name },
             dependentTriggersToRecreate = collectDependentTriggers(targetSchema, table),
             preflight = buildPreflightChecks(table, source, mapping, resolvedTempName, catalog),
             customTypes = targetSchema?.customTypes.orEmpty(),
@@ -386,7 +401,7 @@ internal object SqliteRebuildPlanner {
      * null (legacy callers that don't pass schemas).
      */
     private fun collectDependentViews(
-        schema: dev.dmigrate.core.model.SchemaDefinition?,
+        schema: SchemaDefinition?,
         table: String,
     ): List<NamedViewDefinition> {
         if (schema == null) return emptyList()
@@ -413,13 +428,15 @@ internal object SqliteRebuildPlanner {
      * name component.
      */
     private fun collectDependentTriggers(
-        schema: dev.dmigrate.core.model.SchemaDefinition?,
+        schema: SchemaDefinition?,
         table: String,
     ): List<NamedTriggerDefinition> {
         if (schema == null) return emptyList()
+        // Auch ein `INSTEAD OF`-Trigger auf einer mitgenommenen Sicht: er stirbt mit ihr.
+        val owners = SqliteViewDependencies.viewNamesOf(schema, table) + table
         return schema.triggers.entries
             .asSequence()
-            .filter { (_, trigger) -> trigger.table == table }
+            .filter { (_, trigger) -> trigger.table in owners }
             .map { (key, trigger) ->
                 // Parse only when the key looks canonical; tolerate
                 // hand-written file paths where the map-key already is

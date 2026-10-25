@@ -241,5 +241,13 @@ class SqliteTypeMappingTest : FunSpec({
         SqliteTypeMapping.extractViewQuery("create temp view if not exists v as select 1") shouldBe "select 1"
         SqliteTypeMapping.extractViewQuery("CREATE VIEW \"x AS y\" AS SELECT a AS b FROM t") shouldBe
             "SELECT a AS b FROM t"
+        // Kommentare im Kopf, `AS(` und `AS` vor einem Kommentar, Tab und CRLF nach AS.
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW v -- Notiz\nAS SELECT 1") shouldBe "SELECT 1"
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW v /* c */ (a) AS SELECT 1") shouldBe "SELECT 1"
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW v AS(SELECT 1)") shouldBe "(SELECT 1)"
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW v AS/* c */SELECT 1") shouldBe "/* c */SELECT 1"
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW v AS\t\r\nSELECT 1") shouldBe "SELECT 1"
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW \"v\" (\"a)\", b) AS SELECT 1, 2") shouldBe "SELECT 1, 2"
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW `v` AS SELECT 1") shouldBe "SELECT 1"
     }
 })

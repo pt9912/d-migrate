@@ -594,6 +594,12 @@ aktuellen CLI-Funktionsumfangs.
 
 Für `schema generate` ist der Rebuild-Workaround also **nicht relevant** — er gehört zum `schema migrate`-Pfad.
 
+**Abhängige Sichten und Trigger.** Ein Rebuild löscht vor `DROP TABLE` jede Sicht, die die Tabelle
+im Abfragetext nennt (Bezeichner-Scan ohne Literale und Kommentare, auch über andere Sichten,
+unabhängig von `dependencies`), samt ihrer `INSTEAD OF`-Trigger, und legt sie nach dem `RENAME` aus
+dem Soll-Schema wieder an. Das `DROP VIEW IF EXISTS` steht auch vor einer Sicht, die nur das Soll
+kennt; eine Überschätzung (gleichnamiger Spaltenname) kostet nur ein unnötiges Löschen und Anlegen.
+
 ### 3.8 MSSQL (SQL Server)
 
 ```sql

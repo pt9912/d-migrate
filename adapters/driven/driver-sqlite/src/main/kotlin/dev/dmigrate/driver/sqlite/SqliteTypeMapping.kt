@@ -344,15 +344,17 @@ internal object SqliteTypeMapping {
 
     /**
      * Kopf einer Sicht: `CREATE [TEMP] VIEW [IF NOT EXISTS] [schema.]name [(spalten)] AS`.
-     * Das `AS` trennt von der Abfrage, gleich ob Leerzeichen oder Zeilenumbruch folgt; ein
-     * `AS` im Namen (in Anfuehrungszeichen) oder in der Abfrage ist nicht gemeint.
+     * Das `AS` trennt von der Abfrage, gleich ob Leerzeichen, Zeilenumbruch, Kommentar
+     * oder `(` folgt; ein `AS` im Namen (in Anfuehrungszeichen) oder in der Abfrage ist
+     * nicht gemeint. Zwischen den Teilen duerfen Kommentare stehen.
      */
+    private const val VIEW_WS = """(?:\s|--[^\n]*(?:\n|$)|/\*.*?\*/)"""
     private val VIEW_HEAD = Regex(
-        """^\s*CREATE\s+(?:TEMP(?:ORARY)?\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?""" +
-            """(?:(?:"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*]|[^\s."`\[(]+)\s*\.\s*)?""" +
-            """(?:"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*]|[^\s."`\[(]+)\s*""" +
-            """(?:\((?:[^()]|\([^()]*\))*\)\s*)?AS(?=\s)\s*""",
-        RegexOption.IGNORE_CASE,
+        """^$VIEW_WS*CREATE$VIEW_WS+(?:TEMP(?:ORARY)?$VIEW_WS+)?VIEW$VIEW_WS+(?:IF$VIEW_WS+NOT$VIEW_WS+EXISTS$VIEW_WS+)?""" +
+            """(?:(?:"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*]|[^\s."`\[(]+)$VIEW_WS*\.$VIEW_WS*)?""" +
+            """(?:"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*]|[^\s."`\[(]+)$VIEW_WS*""" +
+            """(?:\((?:[^()"]|"(?:[^"]|"")*"|\([^()]*\))*\)$VIEW_WS*)?AS(?=[\s(/-])""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
     )
 
     fun extractViewQuery(createSql: String): String? =

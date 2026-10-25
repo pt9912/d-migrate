@@ -42,6 +42,7 @@ class CliSchemaMigrateViewRebuildSqliteTest : FunSpec({
         declare: Boolean,
         extraTable: Boolean = false,
         viewOverView: Boolean = false,
+        withJoin: Boolean = extraTable,
     ): String {
         val deps = if (declare) "\n            dependencies: { tables: [t], columns: { t: [id, n] } }" else ""
         val second = if (extraTable) {
@@ -54,7 +55,7 @@ class CliSchemaMigrateViewRebuildSqliteTest : FunSpec({
         } else {
             ""
         }
-        val joined = if (extraTable) {
+        val joined = if (withJoin) {
             """
           v_tu:
             query: "SELECT t.id AS tid, u.m AS m FROM t JOIN u ON u.id = t.id"
@@ -83,6 +84,8 @@ class CliSchemaMigrateViewRebuildSqliteTest : FunSpec({
         views:
           v_t:
             query: "SELECT id, n FROM t"$deps
+          v_x:
+            query: "SELECT 1 AS one"
 $joined$stacked""".trimIndent() + "\n"
     }
 
@@ -137,7 +140,8 @@ $joined$stacked""".trimIndent() + "\n"
             scalar(db, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'n' AND \"notnull\" = 0") shouldBe "1"
             // Ein zweiter Lauf ist ohne Operationen.
             migrate(dir, after, db, "again") shouldBe 0
-            Files.readString(dir.resolve("again.json")) shouldNotContain "POST_EXECUTE_DRIFT"
+            // Ein zweiter Lauf ist ohne Operationen: die Sicht gilt nicht mehr als geaendert.
+            Files.readString(dir.resolve("again.json")) shouldContain "\"operationsTotal\":0"
         }
     }
 
@@ -157,6 +161,25 @@ $joined$stacked""".trimIndent() + "\n"
         scalar(db, "SELECT count(*) FROM v_top") shouldBe "2"
         scalar(db, "SELECT m FROM v_tu WHERE tid = 1") shouldBe "10"
         migrate(dir, after, db, "again") shouldBe 0
+        Files.readString(dir.resolve("again.json")) shouldContain "\"operationsTotal\":0"
+    }
+
+    test("eine neue Sicht ueber zwei neu gebaute Tabellen wird einmal angelegt") {
+        val dir = Files.createTempDirectory("cli-migrate-view-rebuild-new")
+        val before = dir.resolve("a.yaml").also {
+            Files.writeString(it, yaml(required = true, declare = false, extraTable = true, withJoin = false))
+        }
+        val after = dir.resolve("b.yaml").also {
+            Files.writeString(it, yaml(required = false, declare = false, extraTable = true, withJoin = true))
+        }
+        val db = database(dir, before)
+        exec(db, "INSERT INTO u (id, m) VALUES (1, 10)")
+
+        migrate(dir, after, db, "up") shouldBe 0
+
+        scalar(db, "SELECT m FROM v_tu WHERE tid = 1") shouldBe "10"
+        migrate(dir, after, db, "again") shouldBe 0
+        Files.readString(dir.resolve("again.json")) shouldContain "\"operationsTotal\":0"
     }
 
     test("Plan-Only meldet keinen TRANSACTION_SCOPE_UNSUPPORTED") {
@@ -175,7 +198,9 @@ $joined$stacked""".trimIndent() + "\n"
         script shouldContain "DROP VIEW IF EXISTS \"v_t\""
         // Die Sicht verschwindet vor `DROP TABLE` und kommt nach dem `RENAME` zurueck.
         (script.indexOf("\nDROP VIEW IF EXISTS") < script.indexOf("\nDROP TABLE")) shouldBe true
-        (script.indexOf("\nCREATE VIEW") > script.indexOf("\nALTER TABLE")) shouldBe true
+        (script.indexOf("\nCREATE VIEW \"v_t\"") > script.indexOf("\nALTER TABLE")) shouldBe true
+        // Eine Sicht, die die Tabelle nicht nennt, bleibt unberuehrt.
+        script shouldNotContain "v_x"
     }
 
     test("schema rollback stellt Tabelle und Sicht wieder her") {
@@ -192,12 +217,17 @@ $joined$stacked""".trimIndent() + "\n"
             "--report", dir.resolve("plan.json").toString(),
         ) shouldBe 0
         exec(db, *sqlStatements(up).toTypedArray())
+        // Auch die Down-Richtung nimmt die Sicht um den Neubau mit.
+        val downScript = Files.readString(down)
+        (downScript.indexOf("\nDROP VIEW IF EXISTS \"v_t\"") in 0 until downScript.indexOf("\nDROP TABLE")) shouldBe true
+        (downScript.indexOf("\nCREATE VIEW \"v_t\"") > downScript.indexOf("\nALTER TABLE")) shouldBe true
 
         run(
             "schema", "rollback", "--source", down.toString(), "--target", "db:sqlite://$db",
             "--execute", "--allow-destructive",
         ) shouldBe 0
         scalar(db, "SELECT count(*) FROM v_t") shouldBe "2"
+        scalar(db, "SELECT sql FROM sqlite_master WHERE name = 'v_t'") shouldContain "SELECT id, n FROM t"
         scalar(db, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'n' AND \"notnull\" = 1") shouldBe "1"
     }
 })

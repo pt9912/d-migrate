@@ -21,8 +21,16 @@ class SqliteViewDependenciesTest : FunSpec({
             "d" to view("SELECT * FROM [t]"),
             "e" to view("SELECT * FROM main.t"),
             "f" to view("SELECT * FROM other"),
+            "g" to view("SELECT * FROM \"main\".\"t\""),
         )
-        SqliteViewDependencies.viewNamesOf(s, "t") shouldBe setOf("a", "b", "c", "d", "e")
+        SqliteViewDependencies.viewNamesOf(s, "t") shouldBe setOf("a", "b", "c", "d", "e", "g")
+        // Gross-/Kleinschreibung gilt auch fuer den Tabellennamen im Schema.
+        SqliteViewDependencies.viewNamesOf(s, "T") shouldBe setOf("a", "b", "c", "d", "e", "g")
+    }
+
+    test("Ueberschaetzung ist erlaubt: ein Spaltenname oder Alias gleichen Namens zaehlt") {
+        val s = schema("alias" to view("SELECT x AS t FROM other"), "fn" to view("SELECT t(1) FROM other"))
+        SqliteViewDependencies.viewNamesOf(s, "t") shouldBe setOf("alias", "fn")
     }
 
     test("Literal und Kommentar loesen keinen Bezug aus") {
@@ -51,6 +59,21 @@ class SqliteViewDependenciesTest : FunSpec({
         )
         SqliteViewDependencies.viewNamesOf(s, "t") shouldBe setOf("decl")
         SqliteViewDependencies.viewNamesOf(null, "t") shouldBe emptySet()
+    }
+
+    test("dependencies.views zaehlen, Zyklen und Selbstbezug terminieren") {
+        val s = schema(
+            "base" to view("SELECT 1 FROM t"),
+            "up" to view(null, DependencyInfo(views = listOf("base"))),
+            "self" to view("SELECT * FROM self, base"),
+            "loopA" to view("SELECT * FROM loopB, t"),
+            "loopB" to view("SELECT * FROM loopA"),
+        )
+        SqliteViewDependencies.viewNamesOf(s, "t") shouldBe setOf("base", "up", "self", "loopA", "loopB")
+    }
+
+    test("viewsByTable ohne Schema ist leer") {
+        SqliteViewDependencies.viewsByTable(setOf("t"), null, null) shouldBe emptyMap()
     }
 
     test("viewsByTable vereint Ist und Soll") {

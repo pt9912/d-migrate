@@ -91,7 +91,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         } else {
             emptyMap()
         }
-        val classification = SqliteRebuildPlanner.classify(ops, customTypeUsers, diff.currentSchema to diff.desiredSchema)
+        val classification = SqliteRebuildPlanner.classify(ops, customTypeUsers, diff.currentSchema, diff.desiredSchema)
 
         // Render rebuild buckets first (they belong to TABLES phase),
         // then the rest in original (already topo-sorted) order.

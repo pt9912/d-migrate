@@ -13,8 +13,9 @@ import dev.dmigrate.core.model.SchemaDefinition
  * oder `dependencies.tables` sie nennt. Eine Sicht ueber eine Sicht haengt
  * transitiv an der Tabelle.
  *
- * Eine Ueberschaetzung ist harmlos (die Sicht wird geloescht und neu
- * angelegt), eine Unterschaetzung laesst den Neubau am `RENAME` scheitern.
+ * Eine Ueberschaetzung ist harmlos (die Sicht wird geloescht und neu angelegt;
+ * auch ein Spaltenname oder Alias gleichen Namens zaehlt als Bezug), eine
+ * Unterschaetzung laesst den Neubau am `RENAME` scheitern.
  */
 internal object SqliteViewDependencies {
 
@@ -50,5 +51,9 @@ internal object SqliteViewDependencies {
         current: SchemaDefinition?,
         desired: SchemaDefinition?,
     ): Map<String, Set<String>> =
-        tables.associateWith { viewNamesOf(current, it) + viewNamesOf(desired, it) }
+        if (current == null && desired == null) {
+            emptyMap()
+        } else {
+            tables.associateWith { viewNamesOf(current, it) + viewNamesOf(desired, it) }
+        }
 }

@@ -189,7 +189,10 @@ class SqliteRebuildH3aTest : FunSpec({
         r.isBlocked shouldBe false
         val sqls = r.statements.map { it.sql }
         sqls.any { it.startsWith("CREATE VIEW \"v_new\"") } shouldBe true
-        sqls.any { it.startsWith("DROP VIEW IF EXISTS \"v_new\"") } shouldBe false
+        // Ein idempotentes DROP geht voraus: haengt die Sicht an zwei Neubau-Tabellen, legt der
+        // erste Eimer sie an, und der zweite darf nicht an "already exists" scheitern (#50).
+        val dropViewIdx = sqls.indexOfFirst { it.startsWith("DROP VIEW IF EXISTS \"v_new\"") }
+        (dropViewIdx in 0 until sqls.indexOfFirst { it.startsWith("DROP TABLE") }) shouldBe true
         val createViewIdx = sqls.indexOfFirst { it.startsWith("CREATE VIEW \"v_new\"") }
         val renameIdx = sqls.indexOfFirst { it.contains("RENAME TO \"users\"") }
         (createViewIdx > renameIdx) shouldBe true
@@ -387,7 +390,8 @@ class SqliteRebuildH3aTest : FunSpec({
             sourceSchema = sourceSchema,
             targetSchema = targetSchema,
         )
-        plan.dependentViewsToDrop.map { it.name } shouldBe listOf("v_legacy")
+        // Geloescht wird, was eine Seite kennt: auch die neue Sicht, falls sie schon steht.
+        plan.dependentViewsToDrop.map { it.name } shouldBe listOf("v_legacy", "v_new")
         plan.dependentViewsToRecreate.map { it.name } shouldBe listOf("v_new")
         plan.dependentTriggersToDrop.map { it.name } shouldBe listOf("t1")
         plan.dependentTriggersToRecreate.shouldBeEmpty()

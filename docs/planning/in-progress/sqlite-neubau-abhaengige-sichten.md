@@ -164,8 +164,8 @@ welche Sichten ein Neubau mitnimmt, und das gegebenenfalls nachziehen.
   table" (Fall 2) — nicht nur am Exit-Code. Die neuen Tests werden einmal mit absichtlich
   falscher Zusicherung rot gesehen (`CLAUDE.md`, „Grün heißt nicht geprüft").
 - Kein Quoting-/Groß-Kleinschreibungs-Fehler beim Ableiten der Tabellenbezüge
-  (`"T"`, `` `t` ``, `[t]`, Schema-Präfix `main.t`); Namen in Literalen, Kommentaren und
-  als Funktionsname lösen keinen Bezug aus.
+  (`"T"`, `` `t` ``, `[t]`, Schema-Präfix `main.t`); Namen in Literalen und Kommentaren
+  lösen keinen Bezug aus (ein Spaltenname, Alias oder Funktionsname gleichen Namens zählt als Bezug — erlaubte Überschätzung, getestet).
 - `make docker-test`, `make docker-check` (betroffene Module, einmal ohne `MODULES=`),
   `make integration` (setzt `-PintegrationTests` selbst), `make solid-suppression-gate`,
   `make docs-check` grün.
@@ -190,3 +190,12 @@ Tabellen steht in beiden Eimern: jeder loescht sie vor `DROP TABLE` und legt sie
 **Nicht geaendert:** Eine *deklarierte* Tabellenabhaengigkeit ohne Spaltenangaben blockiert
 eine Spaltenaenderung weiter mit `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS` (Plan §6.3); der
 Test deklariert deshalb `columns`. Triggerrumpf-Bezuege bleiben Nicht-Scope.
+
+**Nach dem Review (3 Durchgaenge, Befunde behoben):** (M1) `dependentViewsToDrop` ist die
+Vereinigung beider Seiten — jede neu angelegte Sicht wird vorher idempotent geloescht, damit
+der zweite Eimer einer Sicht ueber zwei Neubau-Tabellen nicht an "already exists" scheitert.
+(M2) `extractViewQuery` liest Kommentare im Kopf, `AS(`, `AS/*…*/` und CRLF. (M3) `INSTEAD OF`-Trigger
+auf einer mitgenommenen Sicht werden mit ihr geloescht und neu angelegt; ihre Operationen
+fallen in den Eimer der Tabelle. Der zweite Lauf wird auf `operationsTotal: 0` geprueft.
+Sabotage-Check: ohne Union-Drop und Trigger-Erweiterung werden fuenf Tests rot.
+Nicht getestet bleibt `SELECT *` (Abfragetext unveraendert, SQLite expandiert beim Anlegen neu).
