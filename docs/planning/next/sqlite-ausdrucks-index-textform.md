@@ -3,7 +3,7 @@
 > **Status:** Draft mit Scope (2026-10-25), Ursache gemessen. Befund aus der Umsetzung von
 > `sqlite-eindeutiger-index-als-constraint.md` (#53, ADR 0062): für einen Ausdrucks-Index plant `schema migrate` bei
 > jedem Lauf `DROP INDEX` + `CREATE INDEX` (ausführbar, Exit 0). **Vorbedingung:** keine. **Aktivierung** (Move nach
-> `../in-progress/`) beim ersten Implementierungs-Commit; dann GitHub-Issue anlegen und hier verlinken.
+> `../in-progress/`) beim ersten Implementierungs-Commit. GitHub-Issue: [#55](https://github.com/pt9912/d-migrate/issues/55).
 
 ## Ziel
 

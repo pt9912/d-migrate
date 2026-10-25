@@ -3,7 +3,7 @@
 > **Status:** Draft mit Scope (2026-10-25). Abgetrennt aus dem früheren Sammelplan. Reine Modell- und Spec-Frage:
 > `CustomTypeDefinition` kennt weder `DEFAULT` noch `NOT NULL` noch eine Kollation einer Domain; eine Änderung daran ist im Diff
 > unsichtbar. Der Plan ist eine **Entscheidungs-/Messvorlage** (P0 misst, P1 entscheidet), noch keine Umsetzung. **Vorbedingung:** Entscheidung, ob das Modell erweitert wird (P1). **Aktivierung** (Move nach `../in-progress/`)
-> beim ersten Implementierungs-Commit; Issue schon jetzt anlegen (P0/P1 laufen ohne Implementierung) und hier verlinken.
+> beim ersten Implementierungs-Commit. GitHub-Issue: [#59](https://github.com/pt9912/d-migrate/issues/59).
 
 ## Ziel
 

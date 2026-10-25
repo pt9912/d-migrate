@@ -6,7 +6,7 @@
 > Neubau, auch ohne jede Änderung. Gemessen ist nur `varchar` (nicht betroffen) gegen `boolean`/`decimal`/`uuid`
 > (betroffen); nach dem Code ist **jeder** Basistyp betroffen, dessen Reverse-Form nicht `Text()` ist (P0 misst die Matrix).
 > **Vorbedingung:** keine. **Aktivierung** (Move nach `../in-progress/`) beim ersten Implementierungs-Commit.
-> Noch kein GitHub-Issue; beim Aktivieren anlegen und hier verlinken.
+> GitHub-Issue: [#56](https://github.com/pt9912/d-migrate/issues/56).
 
 ## Ziel
 

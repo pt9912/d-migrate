@@ -2,7 +2,7 @@
 
 > **Status:** Draft mit Scope (2026-10-25). Abgetrennt aus dem früheren Sammelplan; ändert die Neutralform des Basistyps und den
 > `schema reverse`-Vertrag (ADR 0061 Entscheidung 3 und 4). **Vorbedingung:** keine. **Aktivierung** (Move nach
-> `../in-progress/`) beim ersten Implementierungs-Commit; dann GitHub-Issue anlegen und hier verlinken.
+> `../in-progress/`) beim ersten Implementierungs-Commit. GitHub-Issue: [#58](https://github.com/pt9912/d-migrate/issues/58).
 
 ## Ziel
 
