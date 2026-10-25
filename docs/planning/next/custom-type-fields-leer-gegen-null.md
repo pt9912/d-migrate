@@ -1,15 +1,15 @@
-# Custom Types: leere gegen fehlende `fields` im Vergleich (Issue #51)
+# Custom Types: Datei-Form gegen Reader-Form im Vergleich (Issue #51)
 
-> **Status:** Draft mit Scope (2026-10-25). Aus Issue #51: `schema migrate` gegen
-> PostgreSQL plant `AlterCustomType` fuer eine unveraenderte Aufzaehlung und blockiert.
-> **Vorbedingung:** keine. **Aktivierung** (Move nach `../in-progress/`) beim ersten
-> Implementierungs-Commit.
+> **Status:** Draft mit Scope (2026-10-25), nach drei Reviews. Aus Issue #51:
+> `schema migrate` gegen PostgreSQL plant `AlterCustomType` für einen unveränderten Typ
+> und blockiert. **Vorbedingung:** keine. **Aktivierung** (Move nach `../in-progress/`) beim
+> ersten Implementierungs-Commit.
 
 ## Ziel
 
 Ein benannter Typ (`custom_types`), der in Datei und Datenbank gleich ist, erzeugt keine
 `AlterCustomType`-Operation — gleich, wie die Datei ihn schreibt. `schema migrate` gegen
-PostgreSQL fuehrt dann eine rein additive Aenderung (eine Spalte mehr) aus.
+PostgreSQL führt dann eine rein additive Änderung (eine Spalte mehr) aus.
 
 ## Problem
 
@@ -22,66 +22,113 @@ Spalte `extra`. Zwei Messungen, eine Variable:
 | `fields = null` (handgebautes Schema) | Exit 0, nur `AddColumn` |
 | `fields = emptyMap()` (so liefert es der Datei-Parser) | Exit 8, `AlterCustomType` (`MANUAL_REQUIRED`, nicht gerendert), `customTypesChanged = [fields: null → {}]` |
 
+Ein Test mit handgebautem Soll (`fields = null`) bleibt auch ohne Fix grün — der Test muss das
+Soll über den Datei-Parser erzeugen oder `fields = emptyMap()` setzen.
+
 ### Ursache
 
 * Der Datei-Parser setzt `fields = parseColumns(childNode["fields"])`
-  (`SchemaNodeStructureParsers.kt`, `parseCustomTypes`) und liefert fuer ein fehlendes
-  Feld eine **leere** Map.
-* Der PostgreSQL-Reader laesst `fields` bei einem Enum **unbelegt** (`null`).
-* `SchemaComparator.compareCustomType` vergleicht `left.fields == right.fields` ohne
-  Angleichung; `values` vergleicht es dagegen mit `orEmpty()`. `null != {}` — der Typ gilt als
-  geaendert, obwohl nichts anders ist.
-* Der Fingerabdruck ist nicht betroffen (`CanonicalPayload` schreibt `fields?.size ?: 0`).
+  ([`SchemaNodeStructureParsers.kt`](../../../adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/SchemaNodeStructureParsers.kt),
+  `parseCustomTypes`); `parseNamedObjectMap` liefert für einen fehlenden Knoten eine **leere** Map.
+* Der PostgreSQL-Reader lässt `fields` bei Enum und Domain **unbelegt** (`null`)
+  ([`PostgresSchemaStructureReaders.kt`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresSchemaStructureReaders.kt)).
+* [`SchemaComparator.compareCustomType`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/SchemaComparator.kt)
+  vergleicht `left.fields == right.fields` ohne Angleichung; `values` vergleicht es mit
+  `orEmpty()`. `null != {}`.
+* Der Fingerabdruck ist nicht betroffen
+  ([`CanonicalPayload`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/migration/CanonicalPayload.kt)
+  schreibt `fields?.size ?: 0`).
 
-Dieselbe Asymmetrie trifft jeden Typ ohne Felder (Enum, Domain) auf jedem Dialekt, dessen
-Reader `fields` leer laesst. SQLite liest keine Typ-Objekte (der Typ kommt nur aus der Datei),
-deshalb fiel es dort nicht auf.
+Nur der PostgreSQL-Reader erzeugt überhaupt `CustomTypeDefinition` (MySQL, MSSQL und Oracle
+lesen keine Typ-Objekte; ihre Typen kommen nur aus der Datei, dort ist es leer gegen leer).
+SQLite ebenso — deshalb fiel es dort nicht auf. Der Fehler ist also **PostgreSQL-spezifisch**.
+
+### Weitere Quellen desselben Symptoms (aus dem Review, vor P0 zu messen)
+
+Ein Typ gilt als geändert, sobald **irgendein** Feld abweicht — nicht nur `fields`:
+
+1. **Composite, `ordinal`:** der Reader setzt `ordinal = Index + 1`
+   ([`ColumnDefinition.ordinal`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/model/ColumnDefinition.kt)
+   ist „bewusst nicht Teil von schema compare“), eine handgeschriebene Datei trägt es nicht.
+   Die Map-Gleichheit der `ColumnDefinition` (data class) schließt es ein.
+2. **Composite, Feldattribute:** der Reader füllt nur `type` und `ordinal`; `required`,
+   `default`, `description` an einem Datei-Feld bleiben eine „Änderung“.
+3. **`description`:** der Reader liest sie für Typen nicht, die Datei darf sie tragen;
+   der Fingerabdruck lässt sie weg, der Vergleich nicht (Widerspruch).
+4. **Domain:** `baseType` (`mapParamType`), `check` (`normalizeDomainCheck`), `precision`/`scale`
+   kommen vom Reader in Katalogform, die Datei in Autorenform; `compareCustomType` kennt weder
+   Projektion noch Folding.
+5. **Enum, `values`:** Reihenfolge (die Liste ist ordnungsabhängig) — Reader-Reihenfolge
+   (`enumsortorder`) gegen Datei.
+
+Außer `fields` fand das Review in `compareTable`/`compareColumn` keine zweite
+`null`-gegen-leer-Stelle (Listen und Maps dort haben Defaults `emptyList()`/`emptyMap()`,
+`TableMetadata()` ist gleichgesetzt, `ConstraintDefinition.columns` löst kein Falsch-Positiv aus).
 
 ### Antwort auf Frage (b) aus dem Issue
 
-`AlterCustomType` ist fuer PostgreSQL **absichtlich** nicht in der Matrix
-(`PostgresDiffDdlGenerator`: `OpCategory.UNSUPPORTED`); eine **echte** Aenderung eines
-benannten Typs (neue Werte, andere Basis) blockiert dort weiterhin mit Exit 8. Das Handbuch
-sagt es bisher nicht.
+`AlterCustomType` ist für PostgreSQL **nicht in der ersten Matrix**
+([`PostgresDiffDdlGenerator`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGenerator.kt):
+`OpCategory.UNSUPPORTED`, Diagnose `POSTGRES_RENDER_SKIP`); eine **echte** Änderung eines
+benannten Typs (neue Werte, andere Basis) blockiert dort mit Exit 8. Es gibt dazu weder
+einen ADR noch eine Spec-Regel (grep in `spec/` und `docs/adr/` ohne Treffer für PostgreSQL),
+und das Handbuch nennt die Grenze bisher nicht.
 
 ## Richtung
 
-**A — Vergleich angleichen (gewaehlt).** `compareCustomType` behandelt `fields` wie `values`:
-`left.fields.orEmpty() == right.fields.orEmpty()`. Eine Stelle, alle Dialekte, kein
-Reader- oder Parser-Vertrag betroffen.
+**A — Vergleich angleichen (gewählt).** `compareCustomType` behandelt die Darstellungs-
+unterschiede, die Reader und Parser legitim erzeugen, als gleich: `fields` mit `orEmpty()`,
+Felder ohne `ordinal`. Über `description`, Domain-Felder und Enum-Reihenfolge entscheidet
+P0 nach Messung (jeweils: angleichen, wenn die Datei-Form legitim ist und die Datenbank sie
+nicht zurückliefert; sonst als Befund festhalten). Eine Stelle, alle Dialekte, kein
+Reader- oder Parser-Vertrag betroffen. Ein Eintrag bei ADR 0055 (zielbewusster Vergleich) ist
+nur nötig, wenn P0 ein allgemeines Muster „fehlend gleich leer“ für den ganzen Vergleich findet.
 
-**B — Reader und Parser auf eine Form bringen.** `null` normalisieren (Parser liefert `null`
-statt leer, oder Reader leer). Streut ueber mehrere Module, und jede neue Quelle kann die
-Asymmetrie neu einfuehren. Verworfen.
+**B — Reader und Parser auf eine Form bringen.** Streut über mehrere Module, und jede neue
+Quelle kann die Asymmetrie neu einführen. Verworfen.
 
-Nicht-Ziel: `AlterCustomType` fuer PostgreSQL rendern (eigener Umfang, eigene Entscheidung).
+Nicht-Ziel: `AlterCustomType` für PostgreSQL rendern (`ALTER TYPE … ADD VALUE`), eigener Umfang.
 
 ## Phasen
 
-* **P0 Messung:** erledigt (oben). Offen: gibt es weitere `null`-gegen-leer-Felder in
-  `compareCustomType`/`compareTable`/`compareColumn` (`ColumnDefinition`, `TableDefinition`
-  mit Listen und Maps), die dasselbe Muster haben? Pruefen und, wenn ja, im selben Zug
-  angleichen oder als Befund festhalten.
-* **P1 Umsetzung:** `compareCustomType`; Unit-Test im Core (`fields` `null` gegen leer gleich,
-  `null` gegen gefuellt verschieden, Composite mit echten Feldern unveraendert).
-* **P2 Integration:** Test gegen PostgreSQL (Muster `PostgresEnumMigrateConvergenceIntegrationTest`),
-  `ref_type`-Enum + additive Spalte: Exit 0, `AddColumn` allein, zweiter Lauf ohne Operationen;
-  eine echte Aenderung der Werte blockiert weiter (`AlterCustomType`, Exit 8). Auch Domain.
-* **P3 Doku:** Anwenderhandbuch (§ eigene Datentypen): `schema migrate` auf PostgreSQL
-  aendert einen benannten Typ nicht (`AlterCustomType` blockiert), unveraenderte Typen sind
-  kein Hindernis; `CHANGELOG.md`; `spec/` pruefen, ob eine Regel zu `AlterCustomType` auf
-  PostgreSQL steht.
+* **P0 Messung** (Integrationstest gegen PostgreSQL, Soll über den Datei-Parser): je Fall
+  eine Probe mit „Datei-Form gegen Reader-Form“ — Enum (2 und 3 Werte), Composite (ohne
+  `ordinal`; mit `required`/`default` am Feld), Domain (`base_type`, `check`, `precision`),
+  Typ mit `description`. Ergebnis je Fall: gleich / `AlterCustomType`. Abbruchkriterium: nur
+  die Felder von `CustomTypeDefinition` (acht) und die Felder der Composite-Spalten; was
+  darüber hinausgeht (Spalte, Tabelle), ist Befund für ein Folge-Issue.
+* **P1 Umsetzung:** `compareCustomType` nach P0; Unit-Tests im Core: `fields` `null` gegen leer
+  gleich, leer gegen gefüllt verschieden (beide Richtungen), Composite mit/ohne `ordinal`
+  gleich, echte Feldänderung (anderer Typ) verschieden, je gemessener weiterer Fall. Die
+  Konsumenten von `CustomTypeDiff.fields` (`OperationMapperSchemaObjects`, die
+  `*DiffCustomTypeOps` der Treiber) lesen ihr `fields` nur bei `COMPOSITE`; in P1 gegenlesen.
+* **P2 Integration** (Muster `PostgresEnumMigrateConvergenceIntegrationTest`, aber mit
+  Datei-Parser-Soll): `ref_type`-Enum + additive Spalte → Exit 0, `AddColumn` allein; zweiter
+  Lauf ohne Operationen (`operationsTotal: 0`, kein `POST_EXECUTE_DRIFT`); Rückweg
+  (`--generate-rollback`, `schema rollback`) Exit 0; eine **echte** Änderung der Werte blockiert
+  weiter (Exit 8, `DIALECT_UNSUPPORTED_OPERATION`, `AlterCustomType`, und `fields` steht nicht
+  im Diff); Domain und Composite je einmal; `file:`-Ziel bleibt unverändert (dort sieht die
+  Operation weiter, ADR 0060).
+* **P3 Doku:** Anwenderhandbuch §3.21 „Eigene Datentypen definieren“ (Anknüpfung bei
+  `CreateCustomType`/`DropCustomType`): was heute gilt — auf PostgreSQL ändert `schema migrate`
+  einen benannten Typ nicht (`AlterCustomType` blockiert mit Exit 8); die Aussage „unveränderte
+  Typen sind kein Hindernis“ erst mit dem Fix-Commit. `CHANGELOG.md` (Fixed). Spec: es gibt keine
+  Regel zu `AlterCustomType` auf PostgreSQL; ob eine Zeile in `spec/ddl-generation-rules.md`
+  gehört (Zielbild: PostgreSQL rendert es noch nicht), entscheidet P3.
 
 ## Nicht-Scope
 
-* `AlterCustomType` auf PostgreSQL rendern (`ALTER TYPE … ADD VALUE`).
-* Andere Vergleichsfehler ausser `fields`, soweit P0 sie nicht als gleichartig belegt.
+* `AlterCustomType` auf PostgreSQL rendern.
+* `null`/leer-Asymmetrien außerhalb von `CustomTypeDefinition` (Folge-Issue, wenn P0 welche findet).
 
 ## Akzeptanz
 
-* Test gegen echtes PostgreSQL schlaegt ohne die Aenderung an der erwarteten Stelle fehl
-  (`AlterCustomType`, Exit 8, `fields: null → {}`) und wird mit ihr gruen.
+* Der Integrationstest schlägt ohne die Änderung an der erwarteten Stelle fehl
+  (`AlterCustomType`, Exit 8, `fields: null → {}`) und wird mit ihr grün; dasselbe je
+  Composite-/Description-Fall, den P0 als Fehler misst.
 * Die neuen Tests werden einmal mit absichtlich falscher Zusicherung rot gesehen.
-* `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module,
-  `make integration` fuer `:test:integration-postgresql:test`, `make solid-suppression-gate`,
-  `make docs-check`.
+* Kein ADR betroffen (`make doc-immutable RANGE=origin/main..HEAD` trotzdem vor dem Push).
+* `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal
+  ohne `MODULES=` (die `test/integration-*`-Module bauen sonst nicht mit, Detekt eingeschlossen),
+  `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"`,
+  `make solid-suppression-gate`, `make docs-check`.
