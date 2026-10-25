@@ -177,3 +177,62 @@ Ausdrucks-Index-Textform (#55); Neubau mit abhängigen Sichten (#50); Default-Ve
 Index (Entscheidung 3 aus ADR 0062) bleiben Änderungen, je ein Test; Folge-ADR vorhanden, Tag-Entscheidung (Ort der Faltung) belegt.
 
 **(c):** §3.17 benennt „Exit 8 auch allein" mit den beiden Auswegen; kein Code; `make docs-check`. Kein Matrix- und kein Rollback-Test.
+
+## Nachtrag P0 und P1 (2026-10-25)
+
+### P0 Messung (SQLite-CLI-Test, Datenbank aus SQL, Datei als YAML; je Fall Plan, `--execute`, Skript ohne Guard per JDBC, DOWN-Skript)
+
+Das Wegwerf-Messprogramm lief über `schema migrate --output/--rollback-output` und führte die geschriebenen Skripte direkt
+per JDBC auf einer Kopie der Datenbank aus (trigger-bewusster Anweisungsteiler). Alle Fälle: der Plan endet mit Exit 0,
+die Datenbank bleibt bei Exit 8 unverändert.
+
+| # | Fall | Gemessen |
+| - | ---- | -------- |
+| 1 | allein | Plan 2 Operationen (`AddConstraint`, `DropIndex`); `--execute` Exit 8; Skript ohne Guard: Neubau läuft (`u INTEGER UNIQUE`), danach `DROP INDEX "ix_u"` scheitert mit `no such index: ix_u` (Fehler 2 bestätigt) |
+| 2 | plus `AddColumn` an `t` | wie 1 (Exit 8) |
+| 3 | plus `AddColumn` an `x` | Exit 8, unabhängig vom Index; das DOWN trägt `ALTER TABLE x DROP COLUMN`; bleibt nach dem Fix |
+| 4 | neuer Index `ix_b` neben Nullability-Neubau | Exit 8; das Skript legt `ix_b` zweimal an (einmal im Neubau aus `indexesToRecreate`, einmal als `simpleOp`), ohne Guard: `index ix_b already exists`; das DOWN endet mit `DROP INDEX "ix_b"` nach dem Neubau, der ihn nicht mehr anlegt: `no such index` |
+| 5 | `DropIndex ix_b` neben Neubau | Exit 8; ohne Guard `no such index: ix_b`; das DOWN legt `ix_b` zweimal an: `already exists` |
+| 6 | unveränderter Index im Neubau | Exit 0, Index nach dem Lauf vorhanden, genau ein `CREATE INDEX` in UP und DOWN, keine Operation im zweiten Lauf (Erwartung bestätigt, bleibt Regression) |
+| 7 | `WITHOUT ROWID` | wie 1. **Zusatzbefund:** der Neubau-`CREATE TABLE` aus einer Datei trägt kein `WITHOUT ROWID` (die Datei kennt es nicht); unabhängig von #60, nicht Teil dieses Plans |
+| 8 | `u` mit Fremdschlüssel auf `p(id)` | wie 1; der Fremdschlüssel steht im Neubau-`CREATE TABLE`, `PRAGMA foreign_keys` wie im Neubau üblich |
+| 9 | Ausdrucks-Index `lower(b)` | Exit 8; Reihenfolge `CREATE`, `DROP`, `CREATE` läuft zufällig durch (#55-Drop+Create); das DOWN schreibt `(((lower(b))))` (Klammern, #55 Nicht-Scope) |
+| 10 | DOWN des Falls 1 | scheitert: `CREATE UNIQUE INDEX "ix_u"` steht zweimal (Neubau und `simpleOp`), `index ix_u already exists` (Ist-Zustand bestätigt) |
+| 11a | `FULLTEXT` weg neben Neubau | Exit 8; der Neubau trägt FTS5 samt Triggern selbst ab (`DROP ... IF EXISTS` vor `DROP TABLE`), die `simpleOp` wiederholt das; das DOWN legt FTS5 zweimal an (`table "ft_b" already exists`) |
+| 11b | `FULLTEXT` neu neben Neubau | Exit 8; FTS5 samt Triggern wird zweimal angelegt (`table "ft_b" already exists`) |
+| 11c | Spatial neben Neubau | Exit 8 schon vor dem Neubau (`E052`: Spatial-Profil `none`); keine Aussage über den Neubau-Pfad |
+
+Die Matrix (`test/cross-dialect-matrix`) kennt das Paar Datei-`unique` / Datenbank-Index nicht (siehe P2).
+
+Abweichung von der Erwartung: der FULLTEXT-Fall (11a/11b) hat dieselbe Wurzel und dieselbe Doppelung wie Plain-Indizes; der Neubau
+räumt FTS5 selbst ab und legt es neu an. Absorbieren wäre dort ebenfalls möglich, ist aber `sqlite-fulltext-rebuild-*` und
+bleibt außerhalb (Grenze von (a1) unverändert, Befund für einen Folgeplan).
+
+### P1 Entscheidung
+
+**(a1) für Plain-/BTREE-Indizes.** Kriterien: (1) wirkt für jeden Auslöser „Neubau + Index-Operation derselben Tabelle" (Fälle 1, 2, 4, 5)
+und beseitigt Guard-Fehler und Fehler 2 zugleich; (2) ADR 0062 unangetastet; (3) Rückweg treu: das DOWN baut die Zielsicht der
+Rückrichtung ohne Doppelung (Fall 10 wird grün, in P2 mit `catalog()`-Vergleich belegt); (4) kleinster Aufwand, kein Folge-ADR.
+(b) widerspricht ADR 0062, (c) lässt den Fall blockiert, (a2)/(d) lösen Fehler 2 nicht.
+
+**Fingerabdruck:** kein Tag-Bump. `MigrationFingerprint` bildet den Abdruck aus dem Schema nach Reader und Projektion; (a1)
+ändert Planer und Renderer, nicht das Schema. Kein ADR, daher kein neuer ADR-/Tag-Verbrauch (v25/0067 bleiben frei).
+
+**Zusatz zu (a1):** die Prüfungen, die der `simpleOp`-Pfad für Indizes vorschaltet (`INDEX_RAW_TEXT_NOT_PORTABLE`, Hinweise zu
+INCLUDE-Spalten/Bitmap), laufen für absorbierte erzeugende Index-Operationen weiter im Eimer-Rendering; ein nicht portabler
+Index blockiert den Neubau mit `MANUAL_ACTION_REQUIRED`.
+
+### P2/P3 Umsetzung (Stand)
+
+* Planer: `SqliteRebuildPlanner.isAbsorbedIndexOp` nimmt `AddIndex`/`DropIndex` einer Neubau-Tabelle in den Eimer, ausgenommen
+  `FULLTEXT` und Geometrie-Indizes. Renderer: `SqliteDiffSimpleOps.checkAbsorbedIndexOps` führt für die erzeugenden Index-Operationen
+  des Eimers die Rohtext-Prüfung (`INDEX_RAW_TEXT_NOT_PORTABLE`) und die INCLUDE-/Bitmap-Hinweise weiter aus.
+* Tests: `SqliteRebuildPlannerTest` (Pin umgedreht, fremde Tabelle, FULLTEXT, Geometrie), `SqliteRebuildIndexOpsTest` (UP/DOWN-Zählung,
+  Scope-Klassifizierer, Rohtext-Blocker), `CliSchemaMigrateUniqueIndexGapsSqliteTest` (beide Pin-Tests auf Exit 0, Rollback mit
+  `catalog()`-Vergleich), `CliSchemaMigrateRebuildIndexOpsSqliteTest` (Skript UP/DOWN ohne Guard per JDBC, Fälle 3-6 und 8, Rollback,
+  Fremdtabelle und FULLTEXT bleiben Exit 8). Die Tests zu Fehlerzeile (2)-(4) schlagen ohne die Änderung fehl (gesehen).
+* **Matrix:** kein Punkt. `test/cross-dialect-matrix` rendert Datei gegen Datei im Plan-only-Modus (`SchemaMigrateRunner` ohne Datenbank,
+  kein `--execute`, kein Guard); das Paar Datei-`unique` / Datenbank-Index und Exit 8 kommen dort nicht vor, und ein Plan-only-Lauf
+  endet für den Fall vor wie nach der Änderung mit Exit 0. Die Abnahme liegt in den CLI-Tests gegen eine echte SQLite-Datenbank.
+* Doku: Handbuch §3.17 (Abweichende Schreibweise, Index neben einem Neubau), `CHANGELOG.md`. `spec/` unberührt: keine Render-Regel
+  geändert (dieselben Anweisungen, nur nicht doppelt).

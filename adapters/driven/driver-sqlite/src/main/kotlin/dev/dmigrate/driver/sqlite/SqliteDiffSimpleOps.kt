@@ -284,6 +284,30 @@ internal object SqliteDiffSimpleOps {
         }
     }
 
+    /**
+     * Die erzeugenden Index-Operationen eines Neubau-Eimers (UP: `AddIndex`, DOWN: `DropIndex`) legt der
+     * Neubau selbst an; die Pruefungen des Einzelpfads (Rohtext, Hinweise zu INCLUDE/Bitmap) laufen hier
+     * trotzdem. `false`: ein Index ist nicht darstellbar, der Eimer wird nicht gerendert.
+     */
+    fun checkAbsorbedIndexOps(bucket: List<DiffOperation>, ctx: SqliteDiffRenderContext): Boolean {
+        var allPortable = true
+        for (op in bucket) {
+            val (table, index) = when {
+                ctx.direction == SqliteRenderDirection.UP && op is DiffOperation.AddIndex ->
+                    op.objectRef.path[0] to op.index
+                ctx.direction == SqliteRenderDirection.DOWN && op is DiffOperation.DropIndex ->
+                    op.objectRef.path[0] to op.index
+                else -> continue
+            }
+            if (!guardRawIndexText(op, index, ctx)) {
+                allPortable = false
+            } else {
+                noteCoveringDegradation(op, ctx, table, index)
+            }
+        }
+        return allPortable
+    }
+
     fun renderDropIndex(op: DiffOperation.DropIndex, ctx: SqliteDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == SqliteRenderDirection.DOWN) {

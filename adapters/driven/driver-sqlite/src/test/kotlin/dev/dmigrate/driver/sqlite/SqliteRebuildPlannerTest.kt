@@ -63,25 +63,67 @@ class SqliteRebuildPlannerTest : FunSpec({
         c.simpleOps.shouldBeEmpty()
     }
 
-    test("Index ops on a rebuild table stay as simple ops (run after rebuild)") {
+    fun ageToInteger(table: String, index: IndexDefinition? = null, dropped: IndexDefinition? = null) = SchemaDiff(
+        tablesChanged = listOf(
+            TableDiff(
+                name = table,
+                columnsChanged = listOf(
+                    dev.dmigrate.core.diff.ColumnDiff(
+                        name = "age",
+                        type = ValueChange(NeutralType.SmallInt, NeutralType.Integer),
+                    ),
+                ),
+                indicesAdded = listOfNotNull(index),
+                indicesRemoved = listOfNotNull(dropped),
+            ),
+        ),
+    )
+
+    test("Index ops on a rebuild table are absorbed into the bucket (the rebuild recreates the target indexes)") {
+        val idx = IndexDefinition(name = "i", columns = listOf(IndexColumn("c")), type = IndexType.BTREE)
+        val gone = IndexDefinition(name = "j", columns = listOf(IndexColumn("d")), type = IndexType.BTREE)
+        val ops = planner.plan(emptySchema(), emptySchema(), ageToInteger("u", index = idx, dropped = gone)).operations
+        val c = SqliteRebuildPlanner.classify(ops)
+        val bucket = c.rebuildBuckets.getValue("u")
+        bucket.any { it is DiffOperation.AlterColumnType } shouldBe true
+        bucket.any { it is DiffOperation.AddIndex } shouldBe true
+        bucket.any { it is DiffOperation.DropIndex } shouldBe true
+        c.simpleOps.shouldBeEmpty()
+    }
+
+    test("an index op of another table stays a simple op next to a rebuild") {
         val idx = IndexDefinition(name = "i", columns = listOf(IndexColumn("c")), type = IndexType.BTREE)
         val diff = SchemaDiff(
             tablesChanged = listOf(
-                TableDiff(
-                    name = "u",
-                    columnsChanged = listOf(
-                        dev.dmigrate.core.diff.ColumnDiff(
-                            name = "age",
-                            type = ValueChange(NeutralType.SmallInt, NeutralType.Integer),
-                        ),
-                    ),
-                    indicesAdded = listOf(idx),
-                ),
+                ageToInteger("u").tablesChanged.single(),
+                TableDiff(name = "w", indicesAdded = listOf(idx)),
             ),
         )
-        val ops = planner.plan(emptySchema(), emptySchema(), diff).operations
+        val c = SqliteRebuildPlanner.classify(planner.plan(emptySchema(), emptySchema(), diff).operations)
+        c.rebuildBuckets.getValue("u").any { it is DiffOperation.AddIndex } shouldBe false
+        c.simpleOps.single().let { it is DiffOperation.AddIndex && it.objectRef.path[0] == "w" } shouldBe true
+    }
+
+    test("FULLTEXT index ops keep their own path next to a rebuild") {
+        val ft = IndexDefinition(name = "ft", columns = listOf(IndexColumn("c")), type = IndexType.FULLTEXT)
+        val ops = planner.plan(emptySchema(), emptySchema(), ageToInteger("u", index = ft)).operations
         val c = SqliteRebuildPlanner.classify(ops)
-        c.rebuildBuckets.getValue("u").any { it is DiffOperation.AlterColumnType } shouldBe true
+        c.rebuildBuckets.getValue("u").any { it is DiffOperation.AddIndex } shouldBe false
+        c.simpleOps.any { it is DiffOperation.AddIndex } shouldBe true
+    }
+
+    test("a geometry index keeps its own path next to a rebuild") {
+        val sp = IndexDefinition(name = "sp", columns = listOf(IndexColumn("g")), type = IndexType.BTREE)
+        val table = TableDefinition(
+            columns = mapOf(
+                "age" to ColumnDefinition(NeutralType.Integer),
+                "g" to ColumnDefinition(NeutralType.Geometry()),
+            ),
+        )
+        val schema = SchemaDefinition(name = "App", version = "1", tables = mapOf("u" to table))
+        val ops = planner.plan(schema, schema, ageToInteger("u", index = sp)).operations
+        val c = SqliteRebuildPlanner.classify(ops, current = schema, desired = schema)
+        c.rebuildBuckets.getValue("u").any { it is DiffOperation.AddIndex } shouldBe false
         c.simpleOps.any { it is DiffOperation.AddIndex } shouldBe true
     }
 
