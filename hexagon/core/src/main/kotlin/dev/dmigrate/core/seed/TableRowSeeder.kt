@@ -3,6 +3,7 @@ package dev.dmigrate.core.seed
 import dev.dmigrate.core.dependency.FkEdge
 import dev.dmigrate.core.dependency.sortTablesByDependency
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -36,6 +37,8 @@ private class TableSeedContext(
     val valuePools: Map<Pair<String, String>, List<Any?>>,
     val usedValues: MutableMap<String, MutableSet<Any?>>,
     val rules: SeedRuleSet?,
+    /** Spalten, deren Werte eindeutig sein muessen: `unique`, ein einspaltiger UNIQUE-Constraint oder ein einspaltiger eindeutiger Index. */
+    val uniqueColumns: Set<String> = emptySet(),
     /** AE-6: pro Spalte einmalig (Fisher-Yates) gemischte, dann konsumierte `values`-Warteschlange für `unique`. */
     val valueQueues: MutableMap<String, ArrayDeque<Any?>> = mutableMapOf(),
 )
@@ -100,6 +103,21 @@ class TableRowSeeder(
             edges
         }
 
+    /**
+     * Eine Spalte ist eindeutig, wenn sie `unique` traegt oder allein einen UNIQUE-Constraint bzw. einen eindeutigen
+     * Index ohne Praedikat und Ausdruck bildet. SQLite liefert Eindeutigkeit seit #53 am Index (`CREATE UNIQUE INDEX`),
+     * nicht mehr an der Spalte; ein mehrspaltiger Schluessel bleibt unberuecksichtigt (Nicht-Scope).
+     */
+    private fun uniqueColumnsOf(table: TableDefinition): Set<String> {
+        val fromConstraints = table.constraints
+            .filter { it.type == ConstraintType.UNIQUE && it.columns?.size == 1 }
+            .mapNotNull { it.columns?.single() }
+        val fromIndices = table.indices
+            .filter { it.unique && it.where == null && it.columns.size == 1 && it.columns.single().expression == null }
+            .map { it.columns.single().name }
+        return table.columns.filterValues { it.unique }.keys + fromConstraints + fromIndices
+    }
+
     private fun seedTable(
         tableName: String,
         table: TableDefinition,
@@ -114,6 +132,7 @@ class TableRowSeeder(
             valuePools = valuePools,
             usedValues = mutableMapOf(),
             rules = rules,
+            uniqueColumns = uniqueColumnsOf(table),
         )
         val rows = ArrayList<Map<String, Any?>>(count)
         repeat(count) {
@@ -177,7 +196,7 @@ class TableRowSeeder(
                     "dort wurden aber noch keine Werte generiert (FK-Reihenfolge inkonsistent).",
             )
         }
-        if (!column.unique) return pool.random(random)
+        if (columnName !in ctx.uniqueColumns) return pool.random(random)
 
         val used = ctx.usedValues.getOrPut(columnName) { mutableSetOf() }
         repeat(MAX_UNIQUE_ATTEMPTS) {
@@ -198,7 +217,7 @@ class TableRowSeeder(
             return applyRule(entry.rule, columnName, column, ctx)
         }
 
-        val mustBeUnique = column.unique || column.type is NeutralType.Identifier
+        val mustBeUnique = columnName in ctx.uniqueColumns || column.type is NeutralType.Identifier
         if (!mustBeUnique) return ctx.generator.generate(column.type)
 
         val used = ctx.usedValues.getOrPut(columnName) { mutableSetOf() }
@@ -234,7 +253,7 @@ class TableRowSeeder(
                     "der nicht zum Spaltentyp ${column.type} passt.",
             )
         }
-        val mustBeUnique = column.unique || column.type is NeutralType.Identifier
+        val mustBeUnique = columnName in ctx.uniqueColumns || column.type is NeutralType.Identifier
         return if (mustBeUnique) sampleValuesWithoutReplacement(rule, columnName, ctx) else sampleValuesWeighted(rule)
     }
 

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Der SQLite-Reader meldet einen Index, dessen Ausdrucksschlüssel sich nicht auflösen lässt, als Notiz `R206`**
+  (Folge von #53). Er fiel bisher ohne jede Meldung aus dem Schema heraus. **`data seed` hält jetzt auch eine Spalte
+  eindeutig, die nur über einen einspaltigen `UNIQUE`-Constraint oder einen einspaltigen eindeutigen Index eindeutig ist**
+  (SQLite liefert Eindeutigkeit seit #53 am Index, nicht mehr an der Spalte); ein mehrspaltiger Schlüssel bleibt
+  unberücksichtigt.
+
 - **`schema migrate --execute` auf SQLite blockiert nicht mehr bei einem unveränderten
   eindeutigen Index** (Issue #53). Datei und Datenbank mit demselben `CREATE UNIQUE INDEX`
   planten `DropConstraint` + `AddIndex` (Tabellenneubau); kam eine weitere additive Änderung

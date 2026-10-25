@@ -176,9 +176,17 @@ object SqliteMetadataQueries {
         }
     }
 
-    fun listIndices(session: JdbcMetadataSession, table: String): List<IndexProjection> {
+    /**
+     * Die Indizes einer Tabelle ([indices]) und die, deren Schluessel sich nicht aufloesen liessen ([unresolved]):
+     * ein Ausdrucks-Index, dessen Text der Scanner nicht in Schluessel zerlegt. Er faellt aus [indices] heraus —
+     * lieber gar nicht als verkuerzt — und wird vom Reader als Notiz gemeldet, nicht still verworfen.
+     */
+    data class IndexListing(val indices: List<IndexProjection>, val unresolved: List<String>)
+
+    fun listIndices(session: JdbcMetadataSession, table: String): IndexListing {
+        val unresolved = mutableListOf<String>()
         val indexRows = session.queryList("PRAGMA index_list(${SqlIdentifiers.quoteStringLiteral(table, DatabaseDialect.SQLITE)})")
-        return indexRows.mapNotNull { idx ->
+        val indices = indexRows.mapNotNull { idx ->
             val indexName = idx["name"] as String
             // Skip SQLite autoindex (backing indices for PK/UNIQUE constraints) —
             // UNIQUE-constraint autoindexes are surfaced separately via
@@ -200,7 +208,10 @@ object SqliteMetadataQueries {
             }
             // Bleibt eine Ausdrucksposition unaufgeloest, waere der Index
             // verkuerzt statt unvollstaendig gemeldet -- lieber gar nicht.
-            if (keys.isEmpty() || keys.any { it == null }) return@mapNotNull null
+            if (keys.isEmpty() || keys.any { it == null }) {
+                unresolved += indexName
+                return@mapNotNull null
+            }
             IndexProjection(
                 name = indexName,
                 columns = keys.filterNotNull(),
@@ -215,6 +226,7 @@ object SqliteMetadataQueries {
                     .toSet(),
             )
         }
+        return IndexListing(indices, unresolved)
     }
 
     /**

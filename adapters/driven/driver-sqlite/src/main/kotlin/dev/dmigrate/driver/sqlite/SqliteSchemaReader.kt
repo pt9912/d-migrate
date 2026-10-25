@@ -244,7 +244,9 @@ class SqliteSchemaReader : SchemaReader {
             session, tableName,
             foreignKeyNaming(tableName, createSql, constraintNames),
         )
-        val indices = SqliteMetadataQueries.listIndices(session, tableName)
+        val indexListing = SqliteMetadataQueries.listIndices(session, tableName)
+        val indices = indexListing.indices
+        notes += unresolvedIndexNotes(tableName, indexListing.unresolved)
         // AP4: UNIQUE-Constraint-Autoindizes (origin 'u') — vorher komplett
         // verworfen (Fidelity-Bug: Reverse verlor inline-UNIQUE ganz).
         val uniqueConstraintIndexes = SqliteMetadataQueries.listUniqueConstraintIndexes(session, tableName)
@@ -359,6 +361,17 @@ class SqliteSchemaReader : SchemaReader {
      * FTS5-Landschaft. Ausgelagert, weil `readTable` sonst ueber die
      * Laengenschwelle liefe — drei Quellen, ein Ergebnis.
      */
+    /** R206: ein Index, dessen Ausdrucksschluessel sich nicht aufloesen liess, fehlt im Schema -- und sagt das. */
+    private fun unresolvedIndexNotes(tableName: String, names: List<String>): List<SchemaReadNote> =
+        names.map { name ->
+            SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING, code = "R206",
+                objectName = "$tableName.$name",
+                message = "Index '$name' not carried on reverse: its key expression could not be resolved",
+                hint = "Declare the index in the schema file by hand; schema migrate does not see it",
+            )
+        }
+
     private fun indexDefinitions(
         indices: List<IndexProjection>,
         columnNames: Set<String>,

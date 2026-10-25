@@ -1,6 +1,10 @@
 package dev.dmigrate.core.seed
 
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
@@ -80,6 +84,33 @@ class TableRowSeederTest : FunSpec({
         val result = seederFor(3).seedAll(schema, countPerTable = 50)
         val values = result.getValue("codes").map { it.getValue("code") }
         values.toSet() shouldHaveSize values.size
+    }
+
+    val codeColumn = mapOf("code" to ColumnDefinition(type = NeutralType.SmallInt, required = true))
+    val codeIndex = IndexDefinition(columns = listOf(IndexColumn("code")))
+
+    fun hasNoDuplicates(table: TableDefinition): Boolean {
+        val rows = seederFor(3).seedAll(schemaOf("codes" to table), countPerTable = 60).getValue("codes")
+        val values = rows.map { it.getValue("code") }
+        return values.toSet().size == values.size
+    }
+
+    test("eine Spalte mit eindeutigem Index (ohne Praedikat) enthaelt keine Duplikate (#53)") {
+        hasNoDuplicates(
+            TableDefinition(columns = codeColumn, indices = listOf(codeIndex.copy(unique = true))),
+        ) shouldBe true
+    }
+
+    test("eine Spalte mit einspaltigem UNIQUE-Constraint enthaelt keine Duplikate") {
+        val unique = ConstraintDefinition("uq", ConstraintType.UNIQUE, columns = listOf("code"))
+        hasNoDuplicates(TableDefinition(columns = codeColumn, constraints = listOf(unique))) shouldBe true
+    }
+
+    test("ein nicht eindeutiger Index macht die Spalte nicht eindeutig") {
+        val table = TableDefinition(columns = codeColumn, indices = listOf(codeIndex))
+        val rows = seederFor(3).seedAll(schemaOf("codes" to table), countPerTable = 400).getValue("codes")
+        // SmallInt hat ein endliches Wertefenster; ohne Eindeutigkeit ist bei 400 Zeilen mit Duplikaten zu rechnen.
+        rows.map { it.getValue("code") }.let { it.toSet().size < it.size } shouldBe true
     }
 
     test("unique exhaustion throws SeedUniquenessExhaustedException") {
