@@ -288,10 +288,11 @@ docker-oci-build:
 # Abgesichert ist das anderswo: `build.yml` faehrt `make ci-build` auf
 # denselben Commits, und `docker-gates` prueft Coverage ueber die eigene
 # Stage `coverage-verify`.
+DOCKER_RUNTIME_BUILD = $(DOCKER) build --target runtime \
+	  --build-arg GRADLE_TASKS="assemble $(CLI_PROJECT):installDist"
+
 docker-build:
-	$(DOCKER) build --target runtime \
-	  --build-arg GRADLE_TASKS="assemble $(CLI_PROJECT):installDist" \
-	  -t $(IMAGE):$(IMAGE_TAG) .
+	$(DOCKER_RUNTIME_BUILD) -t $(IMAGE):$(IMAGE_TAG) .
 
 # Targeted module check inside the Dockerfile `build` stage.
 #   make docker-check                            # whole repo (slower than docker-build)
@@ -389,17 +390,24 @@ golden-update:
 	$(DOCKER) build --target golden-update -t $(IMAGE):golden-update .
 	$(DOCKER) run --rm $(IMAGE):golden-update | tar xf -
 
-docker-smoke: docker-build
-	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --version
-	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --help
-	# Exercise a real subcommand so the smoke fails loud if the image ships the
-	# wrong entrypoint (e.g. the ast-grep stage): `--version`/`--help` alone pass
-	# on ANY entrypoint, but `schema --help` only resolves against the real CLI.
-	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) schema --help
-	# Die Drittanbieter-Hinweise reisen mit dem Image, weil der Treiber es tut
-	# (ojdbc11 unter den Oracle FUTC). Eine Datei im Repository erfuellt die
-	# Pflicht fuer niemanden, der nur das Image zieht.
-	$(DOCKER) run --rm --entrypoint sh $(IMAGE):$(IMAGE_TAG) -c 'test -s /opt/d-migrate/THIRD-PARTY-NOTICES.md'
+# Das Image wird ueber seine ID gestartet, nicht ueber den Tag: zwei Worktrees, die gleichzeitig bauen, ueberschrieben sonst
+# `$(IMAGE):$(IMAGE_TAG)` zwischen Bauen und `docker run`, und der Smoke prueft das Image des anderen. Der Tag wird
+# weiterhin gesetzt (Bequemlichkeit), ist aber nicht Teil der Pruefung.
+#
+# Die Pruefungen:
+# - `--version`/`--help` bestehen auf JEDEM Entrypoint; `schema --help` loest nur gegen das echte CLI auf und faellt laut
+#   durch, wenn das Image den falschen Entrypoint liefert (z. B. die ast-grep-Stage).
+# - Die Drittanbieter-Hinweise reisen mit dem Image, weil der Treiber es tut (ojdbc11 unter den Oracle FUTC). Eine Datei im
+#   Repository erfuellt die Pflicht fuer niemanden, der nur das Image zieht.
+docker-smoke:
+	@iid="$$(mktemp)"; trap 'rm -f "$$iid"' EXIT; \
+	$(DOCKER_RUNTIME_BUILD) --iidfile "$$iid" -t $(IMAGE):$(IMAGE_TAG) . || exit 1; \
+	img="$$(cat "$$iid")"; \
+	set -x; \
+	$(DOCKER) run --rm "$$img" --version && \
+	$(DOCKER) run --rm "$$img" --help && \
+	$(DOCKER) run --rm "$$img" schema --help && \
+	$(DOCKER) run --rm --entrypoint sh "$$img" -c 'test -s /opt/d-migrate/THIRD-PARTY-NOTICES.md'
 
 # Gebaut wird im Container; im Arbeitsbaum entstehen Gradle-Ausgaben nur durch
 # einen IDE-Import mit lokalem Gradle. `build/` ist ueberall gitignored, ein

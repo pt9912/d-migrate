@@ -27,9 +27,8 @@ lautlos. Für solche Fragen den Client von Testcontainers nehmen
 
 Mehrere Worktrees dürfen gleichzeitig bauen: `make integration` taggt sein Image je Repo-Pfad
 (`d-migrate-integration-test:<Pfad-Hash>`, überschreibbar mit `DMIGRATE_INTEGRATION_IMAGE`), sonst startete das
-`docker run` nach dem Bauen das Image eines anderen Worktrees. Targets mit festem Namen und anschließendem `docker run`
-(`make docker-smoke` mit `IMAGE_TAG=dev`) bekommen dafür einen eigenen `IMAGE_TAG=`; `docker-check`/`docker-test` bauen nur
-und sind unkritisch. Der Arbeitsspeicher bleibt die Grenze (8 GB: höchstens zwei schwere Gradle-Läufe gleichzeitig).
+`docker run` nach dem Bauen das Image eines anderen Worktrees. `make docker-smoke` startet sein Image über die Image-ID (`--iidfile`), nicht über den Tag;
+`docker-check`/`docker-test` bauen nur und sind unkritisch. Der Arbeitsspeicher bleibt die Grenze (8 GB: höchstens zwei schwere Gradle-Läufe gleichzeitig).
 
 `MODULES=` lässt die `test/integration-*`-Module **aus**, auch die
 Kompilierung. Wer eine geteilte Signatur im Hexagon ändert (Modell, Port,
