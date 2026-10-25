@@ -2161,8 +2161,12 @@ sie als normale View erzeugt (Warnung **W103**).
     ohne Änderung im Schema einen Neubau (Constraint anlegen, Index löschen). Mit einer weiteren Änderung daneben endet `--execute` mit Exit `8`
     (`TRANSACTION_SCOPE_UNSUPPORTED`); die Datenbank bleibt unverändert. Ziehen Sie die Datei
     mit `schema reverse` neu oder schreiben Sie die Spalte als `indices: [{ unique: true }]`.
-  - **Grenze Ausdrucks-Index:** ein Index über einen Ausdruck (`lower(a)`) plant `schema migrate` bei jedem Lauf als
-    `DROP INDEX` + `CREATE INDEX`, obwohl Datei und Datenbank dasselbe beschreiben (ausführbar, Exit `0`).
+  - **Ausdrucks-Index:** ein Index über einen Ausdruck (`lower(a)`) erzeugt keine Operation, wenn Datei und Datenbank
+    ihn gleich ausdrücken. `schema reverse` schreibt den Ausdruck ohne die eine äußere Klammer, die der Generator setzt;
+    Klammern, die zum Ausdruck gehören (`(a) || (b)`), bleiben. Eine Datei mit `(lower(a))` gilt gegen die
+    Datenbank als geändert: schreiben Sie `lower(a)` oder ziehen Sie die Datei mit `schema reverse` neu.
+    `COLLATE` gehört nicht zum Modell: `a COLLATE NOCASE` ist ein Schlüssel auf der Spalte `a`, und `schema reverse`
+    lässt `COLLATE` weg.
 - **SQLite, Tabellenneubau und Spaltentypen:** SQLite legt viele Typen in derselben Speicherklasse
   ab (`text(n)`, `char`, `date`, `uuid`, `json`, … als `TEXT`, `boolean` als `INTEGER`, `decimal`
   als `REAL`). `schema migrate` plant eine Verengung wie `text(64)` → `text(32)` deshalb nicht als

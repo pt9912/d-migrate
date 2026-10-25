@@ -1,0 +1,58 @@
+schema_format: "1.0"
+name: "matrix-expression-index-desired"
+version: "1.0.0"
+
+# Ausdrucks-Indizes der P0-Fallmenge (Issue #55): jeder Ausdruck steht so, wie ihn
+# ein Autor schreibt; der Generator klammert ihn, der SQLite-Reader nimmt diese
+# Klammer wieder ab.
+tables:
+  t:
+    columns:
+      id:
+        type: integer
+        required: true
+      a:
+        type: text
+        max_length: 100
+        required: true
+      b:
+        type: text
+        max_length: 100
+        required: true
+    primary_key: [id]
+    indices:
+      - name: ix_call
+        columns:
+          - expression: "lower(a)"
+      - name: ix_unique_mixed
+        unique: true
+        columns:
+          - expression: "lower(a)"
+          - name: b
+      - name: ix_desc
+        columns:
+          - name: a
+          - expression: "b + 1"
+            direction: desc
+      - name: ix_two_parts
+        columns:
+          - expression: "(a) || (b)"
+      - name: ix_outer
+        columns:
+          - expression: "(a || b) || 'x'"
+      - name: ix_string
+        columns:
+          - expression: "'(' || a"
+      - name: ix_multi
+        columns:
+          - expression: "lower(a)"
+          - expression: "upper(b)"
+      - name: ix_order
+        columns:
+          - expression: "lower(a)"
+          - name: b
+          - expression: "upper(a)"
+      - name: ix_where
+        columns:
+          - expression: "lower(a)"
+        where: "b IS NOT NULL"
