@@ -2174,13 +2174,14 @@ sie als normale View erzeugt (Warnung **W103**).
   ausdrücken, ist keine Änderung mehr — auf allen Dialekten, wenn nur die Darstellung der
   Zahl abweicht (`0` in der Datei gegen `0` aus dem Katalog, `2.0` gegen `2`, `1e3` gegen
   `1000`), und auf SQLite zusätzlich für `boolean`: SQLite legt `boolean` als `INTEGER` ab,
-  `default: false` gilt deshalb gegen `0` in der Datenbank als unverändert. Früher plante
-  `schema migrate` für solche Spalten bei jedem Lauf ein `AlterColumnDefault`. Ein anderer
-  Wert, ein hinzugefügter oder ein entfernter Default bleibt eine Änderung. Der
+  `default: false` gilt deshalb gegen `0` in der Datenbank als unverändert. Ein anderer
+  Wert, ein hinzugefügter oder ein entfernter Default bleibt eine Änderung. Das gilt auch für
+  `schema compare`: ein Zahlen-Default, der nur in der Darstellung abweicht (`0` gegen `0.0`), ist dort keine Differenz mehr. Der
   Fingerabdruck steht auf `schema-fingerprint-v21`; ein Rollback-Artefakt einer früheren
   Version ist neu zu erzeugen. **Grenze:** eine Ganzzahl über der Genauigkeit von
   `double` (etwa `99999999999999999999` als SQLite-Default) liest SQLite als
-  Gleitkommazahl zurück und gilt weiter als verschieden.
+  Gleitkommazahl zurück und gilt weiter als verschieden; ebenso liefert der PostgreSQL-Reader einen
+  negativen oder großen `bigint`-Default als Text, dort greift die Zahlenregel nicht.
 - Vollständige View-Felder (inkl. `columns`, `dependencies`): [Anhang F.11](#f11-views).
 
 ### 3.18 Trigger, Procedures und Functions mitnehmen
@@ -2624,7 +2625,7 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
     `real`/`float`, `jsonb`/`json`, `bytea`/`binary`. `precision` und `scale`
     zählen nur bei `decimal`; eine Datei darf sie am Typ schreiben
     (`numeric(10,2)`) oder als Felder. Eine `precision: 32` an einer
-    `integer`-Domain aus einem früheren `schema reverse` stört nicht mehr.
+    `integer`-Domain aus einem früheren `schema reverse` wird ignoriert.
   - Der Reader bringt den `check` auf die Schreibweise zurück, die Sie ihm geben
     (`VALUE >= 0` statt `((VALUE >= (0)::numeric))`).
   - Die Länge einer `varchar(n)`/`char(n)`-Domain vergleicht `schema migrate`

@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.diff.ColumnDefaultProjection
 import dev.dmigrate.core.diff.TableComparator
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.model.ColumnDefinition
@@ -144,7 +145,7 @@ internal object RenameIntraObjectDeltaSynthesizer {
                 dependencies = setOf(candidateId),
             )
         }
-        if (before.default != after.default) {
+        if (!ColumnDefaultProjection.same(before.default, after.default)) {
             ops += DiffOperation.AlterColumnDefault(
                 id = OperationIdFactory.makeId(
                     "AlterColumnDefault", ref, "${before.default}->${after.default}",

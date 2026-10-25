@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.diff.ColumnDefaultProjection
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
@@ -430,7 +431,7 @@ internal object RenameOverlayMapper {
         if (before.type != after.type) out += "type ${before.type} -> ${after.type}"
         if (before.required != after.required) out += "required ${before.required} -> ${after.required}"
         if (before.unique != after.unique) out += "unique ${before.unique} -> ${after.unique}"
-        if (before.default != after.default) out += "default ${before.default} -> ${after.default}"
+        if (!ColumnDefaultProjection.same(before.default, after.default)) out += "default ${before.default} -> ${after.default}"
         if (before.references != after.references) {
             out += "references ${before.references} -> ${after.references}"
         }

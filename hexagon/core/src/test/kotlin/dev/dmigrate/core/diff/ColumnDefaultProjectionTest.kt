@@ -114,7 +114,7 @@ class ColumnDefaultProjectionTest : FunSpec({
             MigrationFingerprint.compute(schema(type, default), canonicalizeType = canon)
 
         test("dieselbe Zahl hasht gleich, gleich welcher Zahlentyp") {
-            fp(NeutralType.Integer, num(0)) shouldBe fp(NeutralType.Integer, num(0L))
+            fp(NeutralType.Integer, num(5)) shouldBe fp(NeutralType.Integer, num(5.0))
             fp(NeutralType.Float(), num(1)) shouldBe fp(NeutralType.Float(), num(1.0))
             fp(NeutralType.Decimal(10, 2), num(2.0)) shouldBe fp(NeutralType.Decimal(10, 2), num(2))
             fp(NeutralType.Decimal(10, 2), num(1e3)) shouldBe fp(NeutralType.Decimal(10, 2), num(1000L))
@@ -132,6 +132,32 @@ class ColumnDefaultProjectionTest : FunSpec({
                 fp(NeutralType.Integer, num(0L), canon)
             (fp(NeutralType.BooleanType, DefaultValue.BooleanLiteral(false)) ==
                 fp(NeutralType.Integer, num(0L))) shouldBe false
+        }
+    }
+
+    context("canonicalNumber und Gleichheit an den Raendern") {
+        test("kanonische Schreibweise ohne Exponent und nachlaufende Nullen") {
+            ColumnDefaultProjection.canonicalNumber(2.0) shouldBe "2"
+            ColumnDefaultProjection.canonicalNumber(1e3) shouldBe "1000"
+            ColumnDefaultProjection.canonicalNumber(-0.0) shouldBe "0"
+            ColumnDefaultProjection.canonicalNumber(1.50) shouldBe "1.5"
+            ColumnDefaultProjection.canonicalNumber(1.0E20) shouldBe "100000000000000000000"
+        }
+
+        test("NaN und Unendlich fallen auf den Text zurueck und sind nur sich selbst gleich") {
+            ColumnDefaultProjection.canonicalNumber(Double.NaN) shouldBe "NaN"
+            ColumnDefaultProjection.canonicalNumber(Double.POSITIVE_INFINITY) shouldBe "Infinity"
+            ColumnDefaultProjection.same(num(Double.NaN), num(0)) shouldBe false
+            ColumnDefaultProjection.same(num(Double.POSITIVE_INFINITY), num(Double.NEGATIVE_INFINITY)) shouldBe false
+        }
+
+        test("eine Ganzzahl ueber 2^53 wird nicht mit der gerundeten Kommazahl gleichgesetzt") {
+            ColumnDefaultProjection.same(num(9007199254740993L), num(9007199254740992.0)) shouldBe false
+            ColumnDefaultProjection.same(num(9007199254740992L), num(9007199254740992.0)) shouldBe true
+        }
+
+        test("0.1 + 0.2 ist nicht 0.3") {
+            ColumnDefaultProjection.same(num(0.1 + 0.2), num(0.3)) shouldBe false
         }
     }
 })

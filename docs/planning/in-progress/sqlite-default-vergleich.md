@@ -1,13 +1,11 @@
 # SQLite: ein gleicher Default gilt als geändert (Issue #54, Ursache 1)
 
-> **Status:** In Arbeit (2026-10-25); umgesetzt, siehe „Nachtrag P0/P1/P2“. Zuvor Draft mit Scope, nach Review-Runde 3. Aus Issue #54: `schema migrate` gegen
+> **Status:** Umgesetzt (2026-10-26), siehe „Nachtrag P0/P1/P2“. Aus Issue #54: `schema migrate` gegen
 > SQLite plant für eine unveränderte `integer`-/`boolean`-/`decimal`-Spalte mit `default` ein
 > `AlterColumnDefault`. Das Issue hat zwei unabhängige Ursachen; sie sind auf zwei Pläne geteilt: dieser (Defaults)
 > und `sqlite-neubau-cast-gleiche-speicherklasse.md` (der Neubau blockiert an einer Spalte, deren Speicherklasse
 > gleich bleibt, `SQLITE_CAST_NOT_WHITELISTED`). Fehlerklasse wie #51/#52/#53. Schwesterplan: `sqlite-eindeutiger-index-als-constraint.md`
 > (#53).
-> **Vorbedingung:** keine. Aktiviert (nach `in-progress/` verschoben) mit dem ersten
-> Implementierungs-Commit.
 
 ## Ziel
 
@@ -181,4 +179,14 @@ als Text.
 
 **Stand der Messung:** Die P0-Zeilen mit Exit 8 (`decimal` `0`, `boolean`) sind vor dem Merge des Schwesterplans
 `sqlite-neubau-cast-gleiche-speicherklasse.md` gemessen; die Tests dieses Plans laufen nach dem Rebase auf dessen
-Stand grün (Gates unten im Abschlussbericht des Implementierungslaufs, nicht hier).
+Stand grün (`make docker-check` für Core, Application, Formats, `driver-sqlite` und CLI; `make integration` für
+`:test:integration-sqlite:test`; Gesamtläufe nach dem Merge auf `main` siehe CHANGELOG/Commit).
+
+**Review-Nachtrag.** Behoben: die Rename-Pfade (`RenameIntraObjectDeltaSynthesizer`, `RenameOverlayMapper`) vergleichen den
+Default jetzt über `ColumnDefaultProjection.same` (vorher roh, sie planten bei umbenannten Spalten ein falsches
+`AlterColumnDefault`); `ColumnDefaultProjectionTest` hat Randfälle für `canonicalNumber` (2^53, NaN, Unendlich, `-0.0`,
+`0.1 + 0.2`), der Fall `Int 0` gegen `Long 0` (war ohne Fix grün) ist durch `Int 5` gegen `Double 5.0` ersetzt.
+**Offen:** (1) Die Faltung gilt nur an `NeutralType.BooleanType`; eine Domain-/Enum-Spalte mit boolean-Basistyp bleibt
+falsch-verschieden (sicher, aber unvollständig). (2) Die Fingerabdruck-Faltung wurde nicht eigens sabotiert; der PG/MySQL-
+Rot-Beleg ist die P0-Messung vor dem Fix. (3) Auf CLI-Ebene fehlen `current_timestamp` gegen `datetime('now')`, negatives
+`decimal`/`float` und `schema compare` strikt.
