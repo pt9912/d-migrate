@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     gibt `base_type` roh aus (für ein Array, `timestamptz(3)`, `timetz`, `varbit(7)` ungültiges DDL, wie zuvor).
   - Der Fingerabdruck steht auf `schema-fingerprint-v23`; ein Rollback-Artefakt einer früheren Version
     ist neu zu erzeugen.
+- **Der PostgreSQL-Reader liest alle `CHECK`-Constraints einer Domain** (Folge von #52, Issue #57). Bisher gewann
+  der zuletzt gelesene: `CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)`
+  lieferte nur `VALUE < 10`, und `schema migrate` sah eine Datei mit beiden `CHECK`s als geändert. Der `check` ist jetzt
+  `(VALUE > 0) AND (VALUE < 10)`, geordnet nach Constraint-Name; ein einzelner `CHECK` bleibt unverändert. Ein
+  `NOT VALID`-Constraint behält sein Prädikat (bisher stand `NOT VALID` im Ausdruck und ergab ungültiges DDL) und
+  meldet `R407`. Folgen: eine Domain mit `IN`-Werteliste plus weiterem `CHECK` gilt nicht mehr als Werteliste.
 
 ## [1.10.0] - 2026-10-25
 

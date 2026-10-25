@@ -2647,8 +2647,7 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   `= ANY (ARRAY[…])` daraus), ein Cast an `VALUE` (etwa bei einer
   `varchar`-Domain), `AND`/`OR` ohne die Klammern, die der Server setzt
   (`(VALUE > 0) AND (VALUE < 10)`), Rechnungen mit Cast und negative Zahlen.
-  Hat eine Domain mehrere `CHECK`-Constraints, sieht `schema migrate` nur den
-  letzten. Eine `schema reverse`-Datei, die für eine `varchar(n)`-, `char(n)`-
+  Eine `schema reverse`-Datei, die für eine `varchar(n)`-, `char(n)`-
   oder Array-Domain nur `text` führt, gilt als geändert und blockiert mit
   Exit 8; ziehen Sie `schema reverse` neu. Gegen SQLite und MSSQL erzeugt
   `schema generate` aus `timestamp(3)`/`time(3)` einen Typ ohne Genauigkeit. Ein Array-Basistyp hat auf
@@ -2658,6 +2657,17 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   (`integer[]`) und für `timestamptz(3)`, `timetz`, `varbit(7)` entsteht dort
   ungültiges DDL ohne Notiz. Prüfen Sie das erzeugte MySQL-Skript für solche
   Domains.
+
+  Hat eine Domain mehrere `CHECK`-Constraints, liest `schema migrate` alle und
+  fasst sie nach Constraint-Name geordnet zu einem Ausdruck zusammen, jedes
+  Prädikat in Klammern: `(VALUE > 0) AND (VALUE < 10)`. Schreiben Sie den
+  `check` in der Datei in genau dieser Form, gilt die Domain als unverändert;
+  die Namen der Constraints führt das Schema nicht. Bei mehr als zehn
+  unbenannten `CHECK`s folgt die Reihenfolge der Namen (`d_check1`, `d_check10`,
+  `d_check2`), nicht der Schreibfolge. Ein `NOT VALID`-Constraint
+  zählt mit seinem Prädikat, die Meldung `R407` weist ihn aus. Ein
+  Wertelisten-`CHECK` (`VALUE IN (…)`) neben einem weiteren `CHECK` gilt nicht
+  als Werteliste.
   Eine **echte** Änderung eines benannten Typs
   (andere Werte einer Enum, anderer `base_type` oder `check` einer Domain,
   anderer Typ oder weitere Felder eines Composite) plant `schema migrate` als

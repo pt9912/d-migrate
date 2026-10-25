@@ -20,6 +20,12 @@ internal object PostgresTypeMetadataQueries {
             .mapValues { (_, value) -> value.map { it["enumlabel"] as String } }
     }
 
+    /**
+     * Eine Zeile je `CHECK`-Constraint einer Domain (`contype = 'c'`; ein Domain-`NOT NULL`, ab PostgreSQL 18
+     * `contype = 'n'`, ist kein CHECK), eine Zeile ohne `conname`/`check_clause` fuer eine Domain ohne CHECK.
+     * Sortiert nach Typ und Constraint-Name in C-Kollation, damit die Reihenfolge des verbundenen Ausdrucks
+     * nicht von der Datenbankkollation abhaengt.
+     */
     fun listDomainTypes(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
@@ -29,6 +35,7 @@ internal object PostgresTypeMetadataQueries {
                    -- Laenge, Genauigkeit und Array stehen nur hier, und ohne Recht an der Domain
                    -- (anders als in den Sichten des SQL-Standards) auch fuer jede Rolle.
                    pg_catalog.format_type(t.typbasetype, t.typtypmod) AS base_type_sql,
+                   c.conname,
                    pg_catalog.pg_get_constraintdef(c.oid) AS check_clause
             FROM pg_type t
             JOIN pg_namespace n ON n.oid = t.typnamespace
@@ -37,7 +44,7 @@ internal object PostgresTypeMetadataQueries {
             LEFT JOIN pg_constraint c ON c.contypid = t.oid AND c.contype = 'c'
             WHERE t.typtype = 'd' AND n.nspname = ?
               AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.deptype = 'e' AND d.objid = t.oid)
-            ORDER BY t.typname
+            ORDER BY t.typname, c.conname COLLATE "C"
             """.trimIndent(), schemaName,
         )
     }

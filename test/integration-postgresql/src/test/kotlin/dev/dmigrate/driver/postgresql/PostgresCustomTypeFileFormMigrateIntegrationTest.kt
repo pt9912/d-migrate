@@ -312,6 +312,128 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         }
     }
 
+    // ── Mehrere CHECK-Constraints einer Domain (Issue #57): je Constraint gelesen, nach Namen (C-Kollation)
+    // geordnet, mit AND verbunden, jedes Praedikat in Klammern. PostgreSQL 18 (TestImages.POSTGRESQL). ──
+
+    val multiCheckDomains = mapOf(
+        "zwei benannte CHECKs" to
+            ("CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)" to
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+        "zwei benannte CHECKs, Namen entgegen der Schreibfolge" to
+            ("CREATE DOMAIN d AS integer CONSTRAINT c2 CHECK (VALUE < 10) CONSTRAINT c1 CHECK (VALUE > 0)" to
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+        "drei CHECKs, c10 vor c2" to
+            ("CREATE DOMAIN d AS integer CONSTRAINT c2 CHECK (VALUE > 0) CONSTRAINT c10 CHECK (VALUE < 100) " +
+                "CONSTRAINT c1 CHECK (VALUE <> 5)" to
+                authored("integer", "(VALUE <> 5) AND (VALUE < 100) AND (VALUE > 0)")),
+        "zwei unbenannte CHECKs (d_check, d_check1)" to
+            ("CREATE DOMAIN d AS integer CHECK (VALUE > 0) CHECK (VALUE < 10)" to
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+        "benannt und unbenannt" to
+            ("CREATE DOMAIN d AS integer CHECK (VALUE > 0) CONSTRAINT zz CHECK (VALUE < 10)" to
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+        "zwei CHECKs mit Literalen und Funktion" to
+            ("CREATE DOMAIN d AS text CONSTRAINT a1 CHECK (VALUE <> 'x') CONSTRAINT a2 CHECK (length(VALUE) > 0)" to
+                authored("text", "(VALUE <> 'x') AND (length(VALUE) > 0)")),
+        "NOT NULL und zwei CHECKs" to
+            ("CREATE DOMAIN d AS integer NOT NULL CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)" to
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+    )
+    for ((name, case) in multiCheckDomains) {
+        test("Domain mit mehreren CHECKs ist dieselbe Domain: $name") {
+            domainTable(case.first)
+            val db = read()
+            withClue("gelesen: ${db.customTypes["d"]?.check}") {
+                db.customTypes.getValue("d").check shouldBe case.second.check
+            }
+            migratesOnlyTheColumn(withAuthoredDomain(db, case.second))
+        }
+    }
+
+    test("Grenze: ab zehn unbenannten CHECKs ordnet die C-Kollation d_check1, d_check10, d_check2") {
+        val checks = (1..11).joinToString(" ") { "CHECK (VALUE <> $it)" }
+        domainTable("CREATE DOMAIN d AS integer $checks")
+        // Servernamen: d_check (1), d_check1 (2) ... d_check10 (11); C-Reihenfolge: d_check, d_check1, d_check10, d_check2 ...
+        val order = listOf(1, 2, 11) + (3..10)
+        read().customTypes.getValue("d").check shouldBe order.joinToString(" AND ") { "(VALUE <> $it)" }
+    }
+
+    test("Domain mit mehreren CHECKs: die Aenderung eines der CHECKs blockiert weiter") {
+        domainTable("CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)")
+        val db = read()
+        val o = migrate(withAuthoredDomain(db, authored("integer", "(VALUE > 0) AND (VALUE < 11)")))
+        withClue("${o.errors} ${o.report.take(600)}") {
+            o.exit shouldBe 8
+            o.report.contains("kind=AlterCustomType") shouldBe true
+        }
+    }
+
+    test("Domain mit zwei CHECKs gegen eine Datei, die nur den ersten fuehrt, blockiert (kein stiller Verlust)") {
+        domainTable("CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)")
+        val db = read()
+        migrate(withAuthoredDomain(db, authored("integer", "VALUE > 0"))).exit shouldBe 8
+        migrate(withAuthoredDomain(db, authored("integer", "VALUE < 10"))).exit shouldBe 8
+    }
+
+    test("Domain mit mehreren CHECKs: der Rueckweg stellt den Ausgangszustand her") {
+        domainTable("CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)")
+        val db = read()
+        val tmp = createTempDirectory("pg-domain-multi-rollback")
+        try {
+            val down = tmp.resolve("down.sql")
+            val up = migrate(withAuthoredDomain(db, authored("integer", "(VALUE > 0) AND (VALUE < 10)")), rollbackOutput = down)
+            withClue("${up.errors} ${up.report.take(900)}") { up.exit shouldBe 0 }
+
+            val exit = SchemaRollbackRunner(
+                dbLoader = { _, _ -> ResolvedSchemaOperand("live-pg", read(), ValidationResult(), dialect = DatabaseDialect.POSTGRESQL) },
+                executor = { _, statements, _ -> executeAgainstPool(pool, statements) },
+                printError = { msg, src -> System.err.println("[$src] $msg") },
+            ).execute(
+                SchemaRollbackRequest(source = down, target = "db:placeholder", execute = true, allowDestructive = true),
+            )
+            exit shouldBe 0
+            read().customTypes.getValue("d").check shouldBe "(VALUE > 0) AND (VALUE < 10)"
+        } finally {
+            tmp.toFile().deleteRecursively()
+        }
+    }
+
+    test("NOT VALID: das Praedikat bleibt, das Suffix faellt weg, eine Note meldet es") {
+        domainTable(
+            "CREATE DOMAIN d AS integer",
+            "ALTER DOMAIN d ADD CONSTRAINT nv CHECK (VALUE > 0) NOT VALID",
+        )
+        val result = PostgresSchemaReader().read(pool)
+        result.schema.customTypes.getValue("d").check shouldBe "VALUE > 0"
+        val notes = result.notes.filter { it.code == "R407" }
+        notes.map { it.objectName } shouldBe listOf("d")
+        migratesOnlyTheColumn(withAuthoredDomain(result.schema, authored("integer", "VALUE > 0")))
+    }
+
+    test("NOT VALID neben einem gueltigen CHECK: beide bleiben, die Note nennt nur den ungueltigen") {
+        domainTable(
+            "CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0)",
+            "ALTER DOMAIN d ADD CONSTRAINT c2 CHECK (VALUE < 10) NOT VALID",
+        )
+        val result = PostgresSchemaReader().read(pool)
+        result.schema.customTypes.getValue("d").check shouldBe "(VALUE > 0) AND (VALUE < 10)"
+        result.notes.filter { it.code == "R407" }.single().message.contains("c2") shouldBe true
+    }
+
+    test("Domain ueber Domain: der innere CHECK bleibt an der inneren Domain, der aeussere an der aeusseren") {
+        domainTable(
+            "CREATE DOMAIN b AS integer CHECK (VALUE > 0)",
+            "CREATE DOMAIN d AS b CHECK (VALUE < 10)",
+        )
+        val db = read()
+        db.customTypes.getValue("b").check shouldBe "VALUE > 0"
+        val outer = db.customTypes.getValue("d")
+        outer.baseType shouldBe "b"
+        // Der Server schreibt den Cast an VALUE (bekannte Grenze, siehe unten); die Reader-Form bleibt Katalogform.
+        outer.check shouldBe "(VALUE)::integer < 10"
+        migratesOnlyTheColumn(withAuthoredDomain(db, authored("b", "(VALUE)::integer < 10")))
+    }
+
     test("Domain ueber Domain in Autorenform ist dieselbe Domain") {
         domainTable("CREATE DOMAIN b AS integer CHECK (VALUE > 0)", "CREATE DOMAIN d AS b")
         val db = read()

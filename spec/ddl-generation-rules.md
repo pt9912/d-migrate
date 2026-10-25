@@ -1306,6 +1306,15 @@ Ein Array-Basistyp hat in MySQL, SQLite, MSSQL und Oracle kein neutrales Gegenst
 jedem dieser Dialekte als E053 ausgewiesen, nie roh durchgereicht; dasselbe gilt für einen
 Basistyp ohne Gegenstück (`timestamptz(3)`, `timetz`, `varbit(7)`) in MySQL.
 
+Hat eine Domain mehrere `CHECK`-Constraints, liest der Reader **alle**: jeden einzeln auf die
+Schreibweise eines Autors gebracht, nach Constraint-Name in C-Kollation geordnet (`c10` vor `c2`)
+und mit `AND` verbunden, jedes Prädikat in Klammern (`(VALUE > 0) AND (VALUE < 10)`); ein einzelner
+`CHECK` bleibt unverändert. Die Namen der Constraints trägt das Modell nicht. Bei mehr als zehn unbenannten `CHECK`s ordnet die C-Kollation
+`d_check1`, `d_check10`, `d_check2`, die Reihenfolge weicht dann von der Schreibfolge ab. Ein Wertelisten-`CHECK`
+im `AND`-Verbund gilt nicht als Werteliste. Ein `NOT VALID`-Constraint behält sein Prädikat
+(er prüft Neues weiter), das Suffix entfällt, die Note `R407` meldet ihn. Der `CHECK` einer Domain
+über einer Domain bleibt an seiner Domain; die innere trägt ihren eigenen.
+
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
 Bei SQLite steht der CHECK **unbenannt** (`"n" INTEGER NOT NULL CHECK ("n" >= 0)`),
 ebenso der CHECK einer Enum mit `ref_type`, in `schema generate` wie in

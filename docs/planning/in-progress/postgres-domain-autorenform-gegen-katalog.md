@@ -227,7 +227,7 @@ Typmodifikatoren, Array-Casts, Rechenoperatoren und negative Zahlen in Ruhe (Bug
 `character varying(10)` gefunden und behoben); der Vergleich ignoriert `precision`/`scale` bei
 Nicht-`decimal` (alte Reverse-Dateien); Tests: `knownLimits` prüfen `AlterCustomType`, mehr Messzeilen
 (`double precision`, `bpchar`, Domain über Domain, `OR`, Array-Domain), Rückweg für Domains.
-**Folge-Slices:** Mehrfach-CHECK in [`postgres-domain-mehrfach-check.md`](../next/postgres-domain-mehrfach-check.md),
+**Folge-Slices:** Mehrfach-CHECK in [`postgres-domain-mehrfach-check.md`](postgres-domain-mehrfach-check.md),
 `varchar`-Länge und Array-Domain in [`postgres-domain-laenge-array.md`](postgres-domain-laenge-array.md),
 `DEFAULT`/`NOT NULL`/Kollation in [`domain-default-not-null-modell.md`](../next/domain-default-not-null-modell.md).
 Der `schema reverse`-Test (Ausgabe ohne `precision: 32`, `YamlSchemaWriterTest`) und der Parser-Roundtrip
