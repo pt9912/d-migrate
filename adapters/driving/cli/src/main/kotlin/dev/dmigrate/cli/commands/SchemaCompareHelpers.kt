@@ -132,6 +132,11 @@ internal object SchemaCompareHelpers {
         diff.check?.let { changes += "check: changed" }
         diff.description?.let { changes += "description: changed" }
         diff.fields?.let { changes += "fields: changed" }
+        diff.default?.let {
+            changes += "default: ${CompareValueText.of(it.before)} -> ${CompareValueText.of(it.after)}"
+        }
+        diff.notNull?.let { changes += "notNull: ${it.before} -> ${it.after}" }
+        diff.collation?.let { changes += "collation: ${it.before} -> ${it.after}" }
         return changes
     }
 }

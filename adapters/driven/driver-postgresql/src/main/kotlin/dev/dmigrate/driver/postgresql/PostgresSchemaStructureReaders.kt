@@ -96,7 +96,10 @@ private fun readPostgresTable(
         // meldete als einziger Leser `required: true`, und ein Vergleich gegen
         // eine Schemadatei, die `required` an der PK-Spalte weglaesst, zeigte
         // deshalb einen Unterschied, den niemand herstellen kann.
-        val required = !isPrimaryKeyColumn && (row["is_nullable"] as String) == "NO"
+        // `column_not_null` ist `pg_attribute.attnotnull`: das NOT NULL einer Domain bleibt an der
+        // Domain (Issue #59). Fehlt die Spalte im Ergebnis (Fixture), gilt `is_nullable`.
+        val columnNotNull = row["column_not_null"] as? Boolean ?: ((row["is_nullable"] as String) == "NO")
+        val required = !isPrimaryKeyColumn && columnNotNull
         val unique = if (isPrimaryKeyColumn) false else columnName in singleColumnUnique
         val colDefault = row["column_default"] as? String
         val defaultValue = when {
@@ -314,6 +317,9 @@ internal fun readPostgresCustomTypes(
             precision = (row["numeric_precision"] as? Number)?.toInt()?.takeIf { neutralBase == "decimal" },
             scale = (row["numeric_scale"] as? Number)?.toInt()?.takeIf { neutralBase == "decimal" },
             check = normalizeDomainCheck(row["check_clause"] as? String),
+            default = readDomainDefault(row["domain_default"] as? String),
+            notNull = row["not_null"] as? Boolean ?: false,
+            collation = (row["collation_name"] as? String)?.takeIf { it.isNotEmpty() },
         )
     }
 
@@ -340,6 +346,17 @@ internal fun readPostgresCustomTypes(
 
     return result
 }
+
+/**
+ * Der Katalogtext `domain_default` (`5`, `'x'::text`, `nextval('s'::regclass)`) wie der Default einer
+ * Spalte: Literal, bekannte Funktion oder die benannte Sequenz (Issue #59).
+ */
+internal fun readDomainDefault(raw: String?): DefaultValue? =
+    if (PostgresTypeMapping.isSerialDefault(raw)) {
+        PostgresTypeMapping.sequenceNameFromNextval(raw)?.let { DefaultValue.SequenceNextVal(it) }
+    } else {
+        PostgresTypeMapping.parseDefault(raw)
+    }
 
 /**
  * `pg_get_constraintdef` liefert den vollständigen Domain-Check inkl. Hülle, z. B.

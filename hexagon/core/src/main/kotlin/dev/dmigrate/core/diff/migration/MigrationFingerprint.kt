@@ -3,6 +3,7 @@ package dev.dmigrate.core.diff.migration
 import dev.dmigrate.core.diff.ColumnDefaultProjection
 import dev.dmigrate.core.diff.ConstraintDiffContract
 import dev.dmigrate.core.diff.CustomTypeBaseType
+import dev.dmigrate.core.diff.DomainTraits
 import dev.dmigrate.core.diff.EffectivePrimaryKey
 import dev.dmigrate.core.diff.EnumCheckProjection
 import dev.dmigrate.core.diff.RefTypeVocabulary
@@ -219,8 +220,15 @@ object MigrationFingerprint {
      * Post-Compare meldete trotzdem Drift. Ein Schema mit Zahlen-`default` mit nachlaufender Null
      * oder Exponent und jedes Schema mit `boolean`-Default auf SQLite hasht anders; alle anderen
      * hashen bis auf den Algorithmus-Tag wie zuvor.
+     *
+     * v24: **`default`, `not_null` und Kollation einer Domain** (Issue #59). Sie stehen im Abdruck
+     * nur, wenn gesetzt ([DomainTraits]); ein Typ ohne sie hasht wie zuvor. Der PostgreSQL-Reader
+     * liest sie jetzt und bildet `required` einer Spalte aus `attnotnull` -- die Domain-`NOT NULL`
+     * rechnet er nicht mehr in die Spalte ein --, damit ein Schema mit Domain-`NOT NULL` anders
+     * hasht. Andere Dialekte hashen benannte Typen nicht (`projectsCustomTypes`) und sehen von den
+     * Feldern nichts.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v21"
+    const val ALGORITHM: String = "schema-fingerprint-v24"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -315,8 +323,19 @@ object MigrationFingerprint {
                 .append(SEP).append("precision=").append(CustomTypeBaseType.precision(def) ?: "")
                 .append(SEP).append("scale=").append(CustomTypeBaseType.scale(def) ?: "")
                 .append(SEP).append("check=").append(def.check ?: "")
-                .append('\n')
+            appendDomainTraits(sb, def)
+            sb.append('\n')
         }
+    }
+
+    /**
+     * v24: `default`, `not_null` und Kollation einer Domain (Issue #59). Nur wenn gesetzt, damit
+     * ein Typ ohne sie wie zuvor hasht.
+     */
+    private fun appendDomainTraits(sb: StringBuilder, def: CustomTypeDefinition) {
+        if (def.default != null) sb.append(SEP).append("default=").append(defaultValue(def.default))
+        if (def.notNull) sb.append(SEP).append("not_null=true")
+        DomainTraits.collation(def)?.let { sb.append(SEP).append("collation=").append(it) }
     }
 
     // ── Tables ──────────────────────────────────────────────────────

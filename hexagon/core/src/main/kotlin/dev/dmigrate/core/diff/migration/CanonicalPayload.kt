@@ -1,6 +1,7 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.CustomTypeBaseType
+import dev.dmigrate.core.diff.DomainTraits
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
@@ -140,10 +141,21 @@ internal object CanonicalPayload {
             .append(SEP).append("precision=").append(CustomTypeBaseType.precision(t) ?: "")
             .append(SEP).append("scale=").append(CustomTypeBaseType.scale(t) ?: "")
             .append(SEP).append("check=").append(t.check ?: "")
+        appendDomainTraits(t)
         append(SEP).append("fields[").append(t.fields?.size ?: 0).append(']')
         t.fields?.entries?.sortedBy { it.key }?.forEach { (name, col) ->
             append(SEP).append(name).append('=').append(column(col))
         }
+    }
+
+    /**
+     * `default`, `not_null` und Kollation einer Domain (Issue #59): nur wenn gesetzt, damit die
+     * Operations-ID eines Typs ohne sie unveraendert bleibt.
+     */
+    private fun StringBuilder.appendDomainTraits(t: CustomTypeDefinition) {
+        if (t.default != null) append(SEP).append("default=").append(defaultValue(t.default))
+        if (t.notNull) append(SEP).append("not_null=true")
+        DomainTraits.collation(t)?.let { append(SEP).append("collation=").append(it) }
     }
 
     fun view(v: ViewDefinition): String = buildString {

@@ -1,0 +1,23 @@
+schema_format: "1.0"
+name: "matrix-domain-traits-desired"
+version: "1.0.0"
+
+custom_types:
+  code:
+    kind: domain
+    base_type: text
+    check: "length(VALUE) > 0"
+    default: "x"
+    not_null: true
+    collation: "C"
+
+tables:
+  items:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      label:
+        type: text
+        max_length: 20
+    primary_key: [id]

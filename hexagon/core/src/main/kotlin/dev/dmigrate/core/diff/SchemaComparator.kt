@@ -199,7 +199,15 @@ class SchemaComparator(
             fields = if (sameFields(left.fields, right.fields)) null
                 else ValueChange(left.fields, right.fields),
         )
-        return if (diff.hasChanges()) diff else null
+        // Ein Ziel ohne Domain (alles ausser PostgreSQL) fuehrt die drei Felder nicht (TargetProjection).
+        if (targetProjection?.comparesDomainTraits == false) return if (diff.hasChanges()) diff else null
+        val withTraits = diff.copy(
+            default = if (ColumnDefaultProjection.same(left.default, right.default)) null
+                else ValueChange(left.default, right.default),
+            notNull = valueChangeOrNull(left.notNull, right.notNull),
+            collation = valueChangeOrNull(DomainTraits.collation(left), DomainTraits.collation(right)),
+        )
+        return if (withTraits.hasChanges()) withTraits else null
     }
 
     private fun compareView(

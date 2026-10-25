@@ -640,6 +640,7 @@ class SchemaMigrateRunner(
                 DialectCapabilities.forDialect(prep.effectiveDialect).rendersAutoIncrementAsIdentity,
             constraintName = capabilityConstraintNameCanonicalizer(prep.effectiveDialect),
             resolvesRefTypeVocabulary = capabilityResolvesRefTypeVocabulary(prep.effectiveDialect),
+            comparesDomainTraits = capabilityProjectsCustomTypes(prep.effectiveDialect),
         )
         val authorship = OverlayRawTextAuthorship.of(mergedOverlays)
         val serverForm = (prep.targetOp as? CompareOperand.Database)?.let { db ->

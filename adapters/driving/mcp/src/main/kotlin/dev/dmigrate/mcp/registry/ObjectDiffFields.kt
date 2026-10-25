@@ -42,6 +42,9 @@ internal object ObjectDiffFields {
         "check" to diff.check,
         "description" to diff.description,
         "fields" to diff.fields,
+        "default" to diff.default,
+        "not_null" to diff.notNull,
+        "collation" to diff.collation,
     )
 
     fun of(diff: FunctionDiff): List<Pair<String, ValueChange<*>?>> = listOf(
