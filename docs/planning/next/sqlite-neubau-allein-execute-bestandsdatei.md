@@ -48,7 +48,7 @@ gegen einen Laufzeitfehler mitten im Lauf. P0 führt die Anweisungsfolge ohne Gu
 **Dasselbe Muster beim neuen Index (kein „gelöster Fall").** Ein **neuer** Index auf einer im selben Lauf neu gebauten Tabelle ist
 heute **nicht** gelöst: `indexesToRecreate = target.indices` (`SqliteRebuildPlanner` Zeile 254) enthält den neuen Index bereits,
 das `AddIndex` aus `simpleOps` legt ihn danach ein zweites Mal an („already exists"), und der Guard blockiert schon vorher mit
-Exit 8 (Pin-Test `CliSchemaMigrateUniqueIndexGapsSqliteTest` um Zeile 212). Beide Richtungen — Index weg, Index neu — haben dieselbe
+Exit 8. Für diesen Fall gibt es **keinen** bestehenden Pin-Test (P0.4 legt ihn an). Beide Richtungen — Index weg, Index neu — haben dieselbe
 Wurzel: Index-Operationen auf einer Neubau-Tabelle sind weder absorbiert noch dedupliziert, obwohl der Neubau die Indizes der
 Zielsicht selbst neu anlegt.
 
@@ -57,7 +57,10 @@ dasselbe Objekt als `column.unique`. ADR 0062 Entscheidung 3: ein Wechsel Index 
 
 **Handbuch und Pin-Tests auf `main`.** Die falsche Zeile in §3.17 („Mit einer weiteren Änderung daneben endet `--execute` mit
 Exit `8`", Exit 8 gilt auch allein) und ein Test „Bestandsdatei … ohne weitere Aenderung endet mit Exit 8" werden getrennt auf
-`main` committet (Sofortmaßnahme, nicht Teil dieses Plans). Diese Tests und der Test um Zeile 212 sind **grün mit dem Fehler**: sie
+`main` committet (Sofortmaßnahme, nicht Teil dieses Plans). Pin-Tests
+(Bestand): `CliSchemaMigrateUniqueIndexGapsSqliteTest` um Zeile 212 („unique an der Spalte gegen eindeutigen Index: --execute mit
+weiterer Aenderung endet mit Exit 8", `colUnique=true, withD=true`) pinnt P0-Fall 2 (`AddConstraint` + `DropIndex` + `AddColumn`), nicht
+„neuer Index neben Neubau". Der Pin-Test „ohne weitere Aenderung" (P0-Fall 1) kommt auf `main` (Commit folgt). Beide sind **grün mit dem Fehler**: sie
 pinnen den Ist-Zustand. Mit dem Fix müssen sie **umgeschrieben** werden (Exit 0); sie sind kein „rot ohne Änderung"-Beleg.
 `--plan-only` meldete laut Issue „zehn Anweisungen" — Angabe des Reporters, nicht nachgemessen (P0).
 
@@ -71,6 +74,12 @@ pinnen den Ist-Zustand. Mit dem Fix müssen sie **umgeschrieben** werden (Exit 0
   Rückplans den ursprünglichen Index wiederherstellen (P0-Frage). Kippt `SqliteRebuildPlannerTest` Zeile 65 (umdrehen: Index-Ops
   sind im Eimer). Nur unter dieser Bedingung gilt: löst jeden Auslöser „Neubau + Index-Operation derselben Tabelle", auch den neuen Index.
   Der Guard bleibt für echte Mischungen (Neubau + `AddColumn` einer **anderen** Tabelle, #50).
+* **Einschränkung von (a1): nur Plain-/BTREE-Indizes.** `SqliteDiffSimpleOps` (Zeilen 242–248) routet `DropIndex` für `FULLTEXT` über
+  `SqliteFullTextExpansion.emitDrop` (FTS5-Virtual-Table plus drei Trigger) und bei Geometrie über
+  `SqliteSpatialDiffOps.disableSpatialIndex`. `DROP TABLE` räumt eine FTS5-Table nicht weg; ein stilles Absorbieren hinterließe Waisen.
+  Wiederanlegen läuft über `emitFullTextIndexRecreate`; für Spatial ist es unklar (P0). Diese Typen behalten ihren Pfad (ihr Zusammenspiel mit dem Neubau
+  ist `sqlite-fulltext-rebuild-*` und bleibt dort); der Guard bleibt für sie. Die Aussage „absorbiertes `DropIndex` = keine Anweisung" gilt
+  nur für Plain-/BTREE-Indizes.
 * **(a2) `STREAM_OWNED`-Klammer um Neubau und Index-Operationen.** Die Index-Anweisungen werden innerhalb des Stroms als
   `STREAM_OWNED` gerendert. Löst Fehler 1, nicht Fehler 2 (`DROP INDEX` ohne `IF EXISTS` scheitert weiter, `AddIndex` doppelt) —
   nur zusammen mit `IF EXISTS`/Deduplizierung tragfähig, und dann ist (a1) einfacher. Nur als Rückfall, falls (a1) die
@@ -101,38 +110,42 @@ einschließlich Indexname und Eindeutigkeit. (4) Aufwand und Tag-Folge.
 ## Phasen
 
 * **P0 Messung** (SQLite-CLI-Test; je Fall `--plan-only`, `--execute`, zweiter Lauf, Rollback; Katalog-Snapshot vorher/nachher).
-  Zusätzlich je Fall die Anweisungsfolge **ohne Guard** ausführen (Fehler 2 beobachten). Erwartung vor der Messung in Klammern;
+  Zusätzlich je Fall die Anweisungsfolge **ohne Guard** ausführen (Fehler 2 beobachten). Mechanismus: `--plan-only --output` schreibt
+  das Skript, ein Testhelfer führt es direkt per JDBC gegen die Datenbank aus; alternativ ein Renderer-Unit-Test auf der Anweisungsfolge.
+  Die Akzeptanz „schlägt ohne Änderung fehl" setzt einen dieser beiden Wege voraus. Erwartung vor der Messung in Klammern;
   weicht das Ergebnis ab, ist das der Befund.
 
   | # | Fall | Erwartung heute |
   | - | ---- | --------------- |
   | 1 | allein: Datei `unique: true`, Datenbank `CREATE UNIQUE INDEX` | Exit 8; ohne Guard `DROP INDEX` scheitert („no such index") |
   | 2 | wie 1 plus `AddColumn` an `t` | Exit 8 (wie 1) |
-  | 3 | wie 1 plus `AddColumn` an einer **anderen** Tabelle | Exit 8 durch den Neubau-Strom + Fremdanweisung (#50), unabhängig vom Index |
-  | 4 | `AddIndex` (neuer, nicht eindeutiger Index der Datei) neben einem Neubau derselben Tabelle | Exit 8; ohne Guard „already exists" (Ziel-Index steckt schon in `indexesToRecreate`) |
+  | 3 | wie 1 plus `AddColumn` an einer **anderen** Tabelle | Exit 8 durch den Neubau-Strom + Fremdanweisung (#50), unabhängig vom Index; bleibt nach dem Fix; gehört in die Klassifizierer-Tests, nicht in die Index-Matrix |
+  | 4 | `AddIndex` (neuer, nicht eindeutiger Index der Datei) neben einem Neubau derselben Tabelle, Neubau-Auslöser fest: `AlterColumnNullability` einer Spalte | Exit 8; ohne Guard „already exists" (Ziel-Index steckt schon in `indexesToRecreate`) |
   | 5 | `DropIndex` eines **anderen, nicht eindeutigen** Index der Neubau-Tabelle | Exit 8; ohne Guard „no such index" |
-  | 6 | Erhalt eines unveränderten Ziel-Index im Neubau | `CREATE INDEX` aus `indexesToRecreate`, Index nach dem Lauf vorhanden, keine Operation im zweiten Lauf |
+  | 6 | Erhalt eines unveränderten Ziel-Index im Neubau, Auslöser fest: `AlterColumnNullability` (sonst kein Neubau) | `CREATE INDEX` aus `indexesToRecreate`, Index nach dem Lauf vorhanden, keine Operation im zweiten Lauf |
   | 7 | `WITHOUT ROWID`-Tabelle | wie 1; Neubau erhält `WITHOUT ROWID` (zu messen) |
   | 8 | `u` ist Quelle/Ziel eines Fremdschlüssels | wie 1; `PRAGMA foreign_keys`-Verhalten im Neubau zu messen |
   | 9 | Ausdrucks-Index (`lower(a)`, #55) auf der Neubau-Tabelle | Index bleibt in `indexesToRecreate`; wegen #55 plant der Vergleich zusätzlich Drop+Create — Erwartung: Exit 8; **streichen**, falls #55 vor P0 fehlt oder der Fall nichts Eigenes zeigt |
-  | 10 | Rollback nach einem Lauf, der den Neubau ausgeführt hat (nach Fix) | Hypothese: das DOWN stellt den Index wieder her, `catalog()` gleicht dem Stand vor dem Lauf — **offene P0-Frage, nicht angenommen** |
+  | 10 | Rollback: das DOWN-Skript des Falls 1 (aus `--plan-only --output`, Rückplan) | **Ist-Zustand:** das DOWN scheitert („already exists": `AddIndex ix_u` als `simpleOp` nach dem Neubau, `indexesToRecreate` enthält `ix_u` schon). Ob das DOWN nach dem Fix den Index wiederherstellt, ist vor dem Fix **nicht messbar** und wird in P2 geprüft |
+  | 11 | FULLTEXT- und Spatial-Index auf der Neubau-Tabelle (`DropIndex`/`AddIndex`) | bleiben auf ihrem Pfad (`emitDrop`/`disableSpatialIndex`); zu messen: Waisen nach dem Neubau, Verhalten des Guards |
 
   Außerdem: sieht die Matrix (`test/cross-dialect-matrix`) das Paar „Datei-`unique` / Datenbank-Index"? Vermutung nein.
 * **P1 Entscheidung:** Richtung gegen die Kriterien. **ADR-/Tag-Bedarf:** aktueller Tag `schema-fingerprint-v21`
   (`MigrationFingerprint` Zeile 223; ADR 0062 nennt `v20`, danach stieg er mit dem Default-Vergleich). (a1) ändert nur Planer und
-  Renderer; der Abdruck wird aus dem Schema nach Reader und Projektion gebildet (Zeilen 275/350/411), nicht aus dem Plan —
+  Renderer; der Abdruck wird aus dem Schema nach Reader und Projektion gebildet (Zeilen 350/411; Zeile 275 ist nur `algorithm=`), nicht aus dem Plan —
   **vermutlich kein Tag-Bump**, in P1 gegen `MigrationFingerprint` und `MigrationFingerprintTest` zu bestätigen. (b) siehe dort. ADR
   nur bei (b) oder wenn (a1) eine Regel festlegt, die ADR 0062 berührt. Nummern: **zum Aktivierungszeitpunkt der nächste freie**;
   nicht vorab, die heute absehbaren sind für #55/#58/#59 vergeben.
 * **P2 Umsetzung mit Tests** (für (a1); bei (c) nur Regression):
   * Planer-Unit-Test: `classify` absorbiert `AddIndex`/`DropIndex` der Neubau-Tabelle, nicht die einer anderen;
     `SqliteRebuildPlannerTest` Zeile 65 **umdrehen**.
-  * Renderer-Test: genau ein `CREATE INDEX` je Ziel-Index, kein `DROP INDEX` eines mit der Tabelle verschwundenen Index.
+  * Renderer-Test: genau ein `CREATE INDEX` je Ziel-Index, kein `DROP INDEX` eines mit der Tabelle verschwundenen **Plain-/BTREE**-Index; FULLTEXT/Spatial unverändert (P0.11).
   * Klassifizierer-Test: Neubau + Index derselben Tabelle ist kein gemischter Strom; Neubau + fremde Anweisung bleibt abgelehnt.
   * CLI-Tests: `--execute` **allein** Exit 0, Datenbank trägt den Constraint statt des Index; **zweiter Lauf** `operationsTotal` 0;
     **Rückweg** mit `catalog()`-Vergleich gegen den Stand vor dem Lauf; Fälle 3–6 aus P0.
-  * **Pin-Tests umschreiben** (Exit 8 → Exit 0): „Bestandsdatei … ohne weitere Aenderung" und der Test um Zeile 212.
-  * **Matrix-Test:** den Cross-Dialect-Matrix-Test um das Datei-/Datenbank-Paar erweitern (`--execute`, zweiter Lauf `operationsTotal`
+  * **Pin-Tests umschreiben** (Exit 8 → Exit 0): P0-Fall 1 („ohne weitere Aenderung", von `main`) und P0-Fall 2 (Test um Zeile 212); für P0.4 ist ein neuer Test zu schreiben, kein Pin vorhanden.
+  * **Rollback** (nach dem Fix): DOWN-Skript läuft, `catalog()`-Snapshot gleicht dem Stand vor dem Lauf.
+  * **Matrix-Test** (nur (a1)/(b); bei (c) entfällt er): den Cross-Dialect-Matrix-Test um das Datei-/Datenbank-Paar erweitern (`--execute`, zweiter Lauf `operationsTotal`
     0); zuerst als Fixture, rot ohne die Änderung, grün mit ihr. Kann die Matrix das Paar nicht ausdrücken, ist das die Lücke, die P2 zuerst schließt.
 * **P3 Doku:** Handbuch §3.17 (Absatz „Abweichende Schreibweise", nur Ist-Zustand nach der Entscheidung), `CHANGELOG.md`; `spec/`
   nur, falls eine Render-Regel betroffen ist (`spec/ddl-generation-rules.md`, SQLite-Neubau) — sonst nicht anfassen. ADR 0062
@@ -144,14 +157,23 @@ Ausdrucks-Index-Textform (#55); Neubau mit abhängigen Sichten (#50); Default-Ve
 
 ## Akzeptanz
 
-* Der Fall des Issues (P0.1) endet mit der gewählten Richtung messbar: (a1) `--execute` Exit 0, Datenbank trägt den Constraint,
-  zweiter Lauf `operationsTotal` 0, Rollback gleicht dem Stand vor dem Lauf (`catalog()`-Snapshot); (c) Exit 8 ist im Handbuch benannt, mit Auswegen.
-* **Fehlerzeilen, je mit Test:** (1) Exit 8 allein (P0.1), (2) `DROP INDEX` nach dem Neubau scheitert (P0.1/5, ohne Guard),
-  (3) `AddIndex` neben Neubau scheitert doppelt (P0.4), (4) Rollback-Treue (P0.10). Neue Tests zu (2)/(3) schlagen ohne die Änderung
-  fehl; absichtlich falsche Zusicherung einmal rot gesehen.
-* **Ausnahme:** die bestehenden Pin-Tests (Exit 8 allein, Test um Zeile 212, `SqliteRebuildPlannerTest` Zeile 65) sind grün mit dem Fehler
-  und werden mit dem Fix umgeschrieben; sie zählen nicht als „rot ohne Änderung".
-* Das Handbuch sagt in keinem Zustand „nur mit einer weiteren Änderung" für diesen Fall.
-* `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module (einmal ohne `MODULES=`, falls eine geteilte Signatur wechselt),
-  `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`, `make solid-suppression-gate`, `make docs-check`,
-  `make doc-immutable RANGE=origin/main..HEAD`.
+**Gemeinsam:** das Handbuch sagt in keinem Zustand „nur mit einer weiteren Änderung" für diesen Fall; `make docs-check`,
+`make doc-immutable RANGE=origin/main..HEAD`.
+
+**(a1):**
+* P0.1: `--execute` Exit 0, Datenbank trägt den Constraint statt des Index, zweiter Lauf `operationsTotal` 0.
+* P0.2, P0.4, P0.5, P0.6: Exit 0 bzw. unverändert korrekt; Fall 3 bleibt Exit 8 (Klassifizierer-Test); FULLTEXT/Spatial (P0.11) unverändert.
+* **Rollback-Treue (nach P2 messbar):** DOWN-Skript läuft, `catalog()`-Snapshot gleicht dem Stand vor dem Lauf, mit Indexname und Eindeutigkeit.
+* **Fehlerzeilen, je mit Test:** (1) Exit 8 allein, (2) `DROP INDEX` nach dem Neubau scheitert, (3) `AddIndex` neben Neubau scheitert
+  doppelt, (4) das DOWN scheitert heute. Neue Tests zu (2)/(3)/(4) laufen über den in P0 genannten Mechanismus (Skript per JDBC bzw.
+  Renderer-Test) und schlagen ohne die Änderung fehl; absichtlich falsche Zusicherung einmal rot gesehen.
+* **Ausnahme:** die Pin-Tests (Fall 1 von `main`, Fall 2 Zeile 212, `SqliteRebuildPlannerTest` Zeile 65) sind grün mit dem Fehler und
+  werden umgeschrieben; sie zählen nicht als „rot ohne Änderung".
+* `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module (einmal ohne `MODULES=`, falls eine geteilte Signatur
+  wechselt), `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`, `make solid-suppression-gate`.
+
+**(b):** messbar: Datei-`unique` gegen Datenbank-Index (dieselben Spalten) liefert in `schema migrate --plan-only` **0 Operationen** und
+`schema compare` „gleich"; ein Wechsel mit **anderen** Spalten, ein neuer eindeutiger Index der Datei und ein `UNIQUE`-Constraint gegen
+Index (Entscheidung 3 aus ADR 0062) bleiben Änderungen, je ein Test; Folge-ADR vorhanden, Tag-Entscheidung (Ort der Faltung) belegt.
+
+**(c):** §3.17 benennt „Exit 8 auch allein" mit den beiden Auswegen; kein Code; `make docs-check`. Kein Matrix- und kein Rollback-Test.
