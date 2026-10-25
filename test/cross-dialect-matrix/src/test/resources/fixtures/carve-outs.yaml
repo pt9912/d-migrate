@@ -581,7 +581,7 @@ carve_outs:
     dialect: "*"
     kind: rollback
     permanent: true
-    reason: "Der Rueckweg (Datei zurueck auf die Reverse-Form) wird im CLI-Test mit --execute geprueft."
+    reason: "Der Rueckweg (ueber `schema migrate` gegen die Vorversion der Datei, nicht ueber `schema rollback`) wird im CLI-Test mit --execute geprueft."
     planRef: docs/planning/in-progress/sqlite-domain-spalte-basistyp-vergleich.md
     ownerTests:
       - adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateDomainColumnSqliteTest.kt

@@ -111,7 +111,7 @@ Nicht-Ziel: echte Typwechsel (`integer` → `text`), `Date` → `DateTime` (scho
   `text(32)` Datei→Datei ist in P1 entschieden und getestet; eine echte Typänderung neben einer gefalteten Spalte lässt
   nur die echte in `castBlocked`.
 * **Reihenfolge-Pflicht:** P0 (Tabelle im Plan-Nachtrag) vor P1 vor P2.
-* Ein Neubau mit unveränderter `text(n)`-/`boolean`-/`decimal`-/`uuid`-Spalte: `--execute` Exit 0, Daten erhalten,
+* Ein Neubau mit unveränderter (nicht-Domain) `text(n)`-/`boolean`-/`decimal`-/`uuid`-Spalte: `--execute` Exit 0, Daten erhalten,
   zweiter Lauf `operationsTotal` 0.
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=`,
   `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`, `make solid-suppression-gate`,
@@ -137,7 +137,7 @@ Spalten, dazu je eine Tabelle mit **einer** Spalte). Stand **vor** dem Fix:
 | `float` (double), `smallint`, `biginteger`, `binary` | gleich gelesen | 0 | nein |
 | `enum` (Regressionsprobe) | durch `onlyVocabularyDiffers` ausgenommen | 0 | nein |
 | Domain über `varchar` (Text) | `Text()` → `Text()` | 0 | nein |
-| Domain über `boolean` / `decimal` / `uuid` | `Integer`/`Float`/`Text` → Domain | 8 | ja, **und** `AlterColumnType` im Plan |
+| Domain über `boolean` / `decimal` (mit `precision`) | `Integer`/`Float` → Domain | 8 | ja, **und** `AlterColumnType` im Plan (Stand #56: behoben; Domain über `uuid` war nie betroffen, `Text()` → `Text()`, Exit 0) |
 | alle Spalten zusammen | | 8 | 18 Einträge |
 | Fremddatenbank gleich (`VARCHAR(64)`, `CHAR(10)`, `DATE`, `BOOLEAN`, `DECIMAL(10,2)`, `DATETIME`) + Neubau | `Text(64)`, `Char(10)`, … gelesen, gleich geschrieben | 0 | nein |
 | Fremddatenbank `VARCHAR(64)` → `text(32)` + Neubau | `Text(64)` → `Text(32)` | 8 | ja |
@@ -153,10 +153,11 @@ Der **Ursprungsbefund bestätigt sich**: jede Spalte, deren `toSql`-Ergebnis zur
 ergibt, blockiert den Neubau. Dazu zwei Befunde, die der Plan nicht kannte:
 
 * `float` mit `single` blockiert ebenfalls (`Float(DOUBLE)` gelesen).
-* Eine Domain über `boolean`, `decimal` oder `uuid` plant **bei jedem Lauf** ein `AlterColumnType` (der
-  Vergleich hält `Integer` aus der Datenbank gegen `Enum(refType)` der Datei für verschieden, auch ohne
-  jede Änderung; zweiter Lauf ohne Änderung: weiter `operationsTotal` > 0). Das ist ein eigener Befund des
-  ziel-bewussten Vergleichs, kein Planerfehler; er bleibt außerhalb dieses Plans (siehe „Offen“).
+* Eine Domain über `boolean` oder `decimal` (nach der Messung in #56 auch über `integer`, `biginteger`, `smallint`,
+  `real`, `float`, `binary`; **nicht** über `uuid`, dessen Reverse-Form `Text()` ist — die ursprüngliche Angabe
+  „`uuid`“ war falsch) plante **bei jedem Lauf** ein `AlterColumnType` (der Vergleich hielt `Integer` aus der Datenbank
+  gegen `Enum(refType)` der Datei für verschieden, auch ohne jede Änderung). Eigener Befund des ziel-bewussten
+  Vergleichs, kein Planerfehler; behoben in Issue #56 (Stand #56, siehe „Offen“).
 
 Rename plus gefaltete Spalte: `--rename-column` führt im Messaufbau zusätzlich zu
 `RENAME_DEPENDENCY_UNPROJECTABLE` (Exit 8) auch ohne Neubau; die Umbenennung selbst erreicht den Planer nur als
@@ -219,7 +220,7 @@ ihr Aufrufkreis ändert sich.
 zu prüfen (aufgelöster Basistyp gegen die Cast-Matrix); Unit-Tests: `text` → `integer` blockiert, `integer` → `biginteger`
 wird gecastet, unveränderter Basistyp wird kopiert. (2) *Folge-Slices:*
 [`sqlite-domain-spalte-basistyp-vergleich.md`](sqlite-domain-spalte-basistyp-vergleich.md) (eine Domain über
-`boolean`/`decimal`/`uuid` plant bei jedem Lauf `AlterColumnType`). (3) Nicht per CLI getestet: Rename plus Neubau
+`boolean`/`decimal` — und weitere Basistypen, nicht `uuid` — plante bei jedem Lauf `AlterColumnType`; Stand #56 behoben). (3) Nicht per CLI getestet: Rename plus Neubau
 (`RENAME_DEPENDENCY_UNPROJECTABLE` in diesem Messaufbau).
 
 **Test-Nachtrag (Lücken aus dem Review, nur Tests).**

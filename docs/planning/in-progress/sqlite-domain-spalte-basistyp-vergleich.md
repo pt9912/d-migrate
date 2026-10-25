@@ -181,4 +181,5 @@ unbemerkt (`Enum(refType)` kontextfrei `Text()` = `Text()`); sie gilt jetzt als 
   kein Typ-Objekt, `CreateCustomType` (rendert nichts, `SQLITE_CUSTOM_TYPE_AT_COLUMN`) steht bei **jedem** Lauf im Plan, auch
   für `varchar`, das nie betroffen war. Gemessen wird deshalb: im Plan nur `CreateCustomType` (kein `AlterColumnType`, kein
   Neubau). Die Matrix prüft nur Exit-Codes.
+* **Review-Nachtrag (Runde 1):** `SqliteDomainFingerprintTest` pinnt den Abdruck einer Domain-Spalte (boolean, decimal(10,2)) über den schema-bewussten Kanonisierer auf feste Hashes; gemessen mit dem Produktionscode von `main` (Änderung zurückgesetzt) und mit der Änderung — gleich. Matrix `H.1` über alle Dialekte gemessen: SQLite, SQL Server, Oracle Exit 0 (gepinnt), PostgreSQL und MySQL Exit 8 (`DIALECT_UNSUPPORTED_OPERATION`, Carve-out). Der Sweep-Umbau (Treiber laden, ziel-bewusster Vergleich) lief über das ganze Modul grün; `MatrixSweepTest` räumt die Registry danach.
 * Doku: `docs/user/anwenderhandbuch.md` (SQLite-Hinweis zu Enum/Domain), `CHANGELOG.md` (Unreleased).

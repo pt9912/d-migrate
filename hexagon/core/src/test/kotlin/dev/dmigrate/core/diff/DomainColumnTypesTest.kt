@@ -79,4 +79,23 @@ class DomainColumnTypesTest : FunSpec({
         result.tablesChanged.shouldBeEmpty()
         result.customTypesChanged.single().name shouldBe "d"
     }
+
+    test("projected ohne Custom Types ist leer und ruft die Projektion nicht auf") {
+        val projected = DomainColumnTypes.projected(
+            table(domainColumn), emptyMap(), table(NeutralType.Integer),
+        ) { _, _ -> error("darf nicht aufgerufen werden") }
+
+        projected shouldBe emptyMap()
+    }
+
+    test("projected nimmt nur Domains ohne ref_type-Gegenseite auf") {
+        val customTypes = mapOf("d" to domain("integer"), "e" to CustomTypeDefinition(CustomTypeKind.ENUM, values = listOf("a")))
+        val project: (NeutralType, Map<String, CustomTypeDefinition>) -> NeutralType = { _, _ -> NeutralType.Integer }
+
+        DomainColumnTypes.projected(table(domainColumn), customTypes, table(NeutralType.Integer), project) shouldBe
+            mapOf("n" to NeutralType.Integer)
+        DomainColumnTypes.projected(table(domainColumn), customTypes, table(domainColumn), project) shouldBe emptyMap()
+        DomainColumnTypes.projected(table(NeutralType.Enum(refType = "e")), customTypes, table(NeutralType.Text()), project) shouldBe
+            emptyMap()
+    }
 })

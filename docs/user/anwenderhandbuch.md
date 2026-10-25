@@ -2591,7 +2591,8 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   Datei und Datenbank gleich ausdrücken, plant keine Typänderung
   (`AlterColumnType`) und löst keinen Tabellenneubau aus — gleich, über welchen
   Basistyp die Domain geht (`integer`, `boolean`, `decimal`, `float`, `binary`,
-  `text`, …). Ändern Sie die
+  `text`, …). Der Plan führt bei jedem Lauf eine `CreateCustomType`-Operation
+  für die Domain; sie rendert nichts und löst keinen Neubau aus. Ändern Sie die
   Werte einer Enum oder `base_type`/`check` einer Domain und planen Sie gegen
   ein `file:`-Ziel des bisherigen Schemas, baut `schema migrate` jede Tabelle
   mit einer `ref_type`-Spalte neu auf (neuer `CHECK`, Daten bleiben

@@ -48,6 +48,7 @@ internal class MatrixSweepRunner {
     init {
         // Die CLI laedt die Treiber beim Start. Ohne sie projiziert der Runner Typen ueber die Identitaet
         // (`registryTypeCanonicalizer`), und der Sweep prueft einen Vergleich, den es in der CLI nicht gibt.
+        // `loadAll()` ueberschreibt je Dialekt nur und ist wiederholbar; `MatrixSweepTest` raeumt die Registry danach.
         DatabaseDriverRegistry.loadAll()
     }
     /**
