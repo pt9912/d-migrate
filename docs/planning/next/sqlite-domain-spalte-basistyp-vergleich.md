@@ -1,6 +1,6 @@
 # SQLite: eine Domain-Spalte über boolean, decimal oder uuid gilt bei jedem Lauf als geändert (Folge von #54)
 
-> **Status:** Draft mit Scope (2026-10-26). Befund aus der Umsetzung von
+> **Status:** Draft mit Scope (2026-10-25). Befund aus der Umsetzung von
 > [`sqlite-neubau-cast-gleiche-speicherklasse.md`](../in-progress/sqlite-neubau-cast-gleiche-speicherklasse.md) (#54): Domain-Spalten über `boolean`, `decimal` oder `uuid`
 > planen bei **jedem** `schema migrate` ein `AlterColumnType` und blockieren damit (über die Cast-Matrix) den
 > Neubau, auch ohne jede Änderung. Gemessen ist nur `varchar` (nicht betroffen) gegen `boolean`/`decimal`/`uuid`
@@ -79,7 +79,7 @@ Operationen, `--execute`, zweiter Lauf, Rückweg, echte Änderung des Basistyps 
 * Jede gemessene Fehlerzeile hat einen Test, der ohne die Änderung an der erwarteten Stelle fehlschlägt; absichtlich falsche
   Zusicherung einmal rot gesehen.
 * Zweiter Lauf: `operationsTotal` = 0; Rückweg: Exit 0; Datei gegen Datei mit Basistypwechsel: genau ein `AlterCustomType`,
-  kein `AlterColumnType`; Fingerabdruck vorher/nachher unverändert; der #54-Test „Domain über boolean als bekannte Grenze (Exit 8)" wird in P3 umbenannt und erwartet Exit 0.
+  kein `AlterColumnType`; Fingerabdruck vorher/nachher unverändert; der #54-Test „Domain ueber boolean: der Neubau blockiert wegen des Dauer-AlterColumnType (bekannte Grenze)" (`adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateRebuildFoldedGapsSqliteTest.kt`) wird in P3 umbenannt und erwartet Exit 0.
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=` (geteilte Signatur im
   Hexagon, `CLAUDE.md`), `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`, `make solid-suppression-gate`,
   `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD`.

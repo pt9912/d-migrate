@@ -1,6 +1,6 @@
 # PostgreSQL: der Reader verliert bei einer Domain die Länge und den Array-Basistyp (Folge von #52)
 
-> **Status:** Draft mit Scope (2026-10-26). Abgetrennt aus dem früheren Sammelplan; ändert die Neutralform des Basistyps und den
+> **Status:** Draft mit Scope (2026-10-25). Abgetrennt aus dem früheren Sammelplan; ändert die Neutralform des Basistyps und den
 > `schema reverse`-Vertrag (ADR 0061 Entscheidung 3 und 4). **Vorbedingung:** keine. **Aktivierung** (Move nach
 > `../in-progress/`) beim ersten Implementierungs-Commit; dann GitHub-Issue anlegen und hier verlinken.
 
@@ -25,7 +25,7 @@ das nicht rendert); eine unveränderte Domain blockiert nicht.
 
 * **Quelle `format_type(t.typbasetype, t.typtypmod)`** aus `pg_catalog` statt `information_schema`: liefert
   `character varying(50)`, `character(5)`, `integer[]`, `numeric(10,2)`, `timestamp(3) without time zone`; der Composite-Zweig
-  nutzt sie schon (`PostgresTypeMetadataQueries`, Zeile um 55). Keine Rechteabhängigkeit. **Bevorzugt.**
+  nutzt sie schon (`PostgresTypeMetadataQueries`, Composite-Zweig). Keine Rechteabhängigkeit. **Bevorzugt.**
 * **`mapParamType` nicht erweitern:** es wird auch von den Routinen-Readern benutzt (Parameter-/Rückgabetypen von Funktionen);
   eine Änderung dort verschöbe deren Fingerabdrücke. Die Domain-Abbildung bekommt eine eigene Funktion.
 * **Neutralform** ([`CustomTypeBaseType`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/CustomTypeBaseType.kt)):
@@ -83,6 +83,8 @@ Mehrfach-CHECK (`postgres-domain-mehrfach-check.md`); `DEFAULT`/`NOT NULL`/Kolla
 * Jede gemessene Fehlerzeile hat einen Test, der ohne die Änderung an der erwarteten Stelle fehlschlägt; absichtlich falsche
   Zusicherung einmal rot gesehen.
 * Zweiter Lauf: `operationsTotal` = 0 (P0-Tabelle als nummerierter Abschnitt in dieser Plandatei).
+* Eine PG-Reverse-Datei mit Länge oder Array erzeugt gegen `schema generate` SQLite/MSSQL keinen neuen E053.
+* Die Zusage „keine Verhaltensänderung in anderen Dialekten" ist das Ergebnis der P1-Entscheidung zum `sameParameters`-Umfang.
 * Eine echte Änderung (Länge, Array-Typ, `char` ↔ `varchar`) blockiert weiter (Exit 8, `AlterCustomType`).
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=`,
   `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"` (ganzes Modul, Detekt eingeschlossen),

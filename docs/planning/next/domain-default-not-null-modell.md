@@ -3,7 +3,7 @@
 > **Status:** Draft mit Scope (2026-10-25). Abgetrennt aus dem früheren Sammelplan. Reine Modell- und Spec-Frage:
 > `CustomTypeDefinition` kennt weder `DEFAULT` noch `NOT NULL` noch eine Kollation einer Domain; eine Änderung daran ist im Diff
 > unsichtbar. Der Plan ist eine **Entscheidungs-/Messvorlage** (P0 misst, P1 entscheidet), noch keine Umsetzung. **Vorbedingung:** Entscheidung, ob das Modell erweitert wird (P1). **Aktivierung** (Move nach `../in-progress/`)
-> beim ersten Implementierungs-Commit; dann GitHub-Issue anlegen und hier verlinken.
+> beim ersten Implementierungs-Commit; Issue schon jetzt anlegen (P0/P1 laufen ohne Implementierung) und hier verlinken.
 
 ## Ziel
 
@@ -27,7 +27,7 @@ getragen werden — und den Vertrag dafür festzuschreiben.
 * **A — Modell erweitern:** `default`/`not_null`/`collation` an `CustomTypeDefinition`. Vertragsänderung quer durch
   **`spec/schema-reference.md` (zuerst)**, `spec/schema.json`, Datei-Parser/-Writer, Vergleich, Fingerabdruck
   (`CanonicalPayload`, `MigrationFingerprint`), alle Dialekte mit Domains (PostgreSQL nativ; MSSQL/MySQL/SQLite rendern Basistyp
-  + CHECK inline — dort ist `NOT NULL`/`DEFAULT` an der Spalte eine andere Sache), Renderer, Reverse. Neuer Fingerabdruck-Tag (nächster freier, heute `v22`) und ADR (nächste freie, heute 0064) —
+  + CHECK inline — dort ist `NOT NULL`/`DEFAULT` an der Spalte eine andere Sache), Renderer, Reverse. Neuer Fingerabdruck-Tag (aktuell `v21`, nächster freier `v22`) und ADR (nächste freie, heute 0064) —
   koordiniert mit `postgres-domain-mehrfach-check.md` und `postgres-domain-laenge-array.md` (ein gemeinsamer Bump möglich).
   Vollständige Dateiliste (zusätzlich `PostgresTypeMetadataQueries`: `NOT NULL` braucht `pg_type.typnotnull`, die Kollation `typcollation`; Reader-Fixtures `PostgresSchemaReaderTest` mit `domain_default` ziehen mit): `spec/schema-reference.md` (zuerst) → `spec/schema.json` → Modell/Parser/Writer → Vergleich → Abdruck →
   Renderer/Reverse **inkl. Oracle** und aller Dialekte mit Domains → Code → Handbuch (Reihenfolge Spec → Code → Handbuch).
@@ -42,7 +42,7 @@ getragen werden — und den Vertrag dafür festzuschreiben.
 ## Phasen
 
 P0 Messung (die Entscheidung hängt an ihr; PostgreSQL: Domain mit `DEFAULT`, `NOT NULL`, Kollation; was liest der Reader, was rendert `schema generate`, Verhalten
-von `schema migrate` bei einer Änderung daran; Anwenderbedarf: gibt es ein Issue?), P1 Wahl unter A/A+/A-PG/Read-only/B/B+ (Aufwand in
+von `schema migrate` bei einer Änderung daran; Anwenderbedarf: gibt es ein Issue? Kein Bedarf → B oder B+ ohne weitere Messung), P1 Wahl unter A/A+/A-PG/Read-only/B/B+ (Aufwand in
 Dateien/Dialekten schätzen; ADR), P2 Umsetzung nach P1, P3 Doku (Spec zuerst).
 
 ## Akzeptanz

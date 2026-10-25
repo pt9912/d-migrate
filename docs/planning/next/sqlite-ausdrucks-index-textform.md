@@ -1,6 +1,6 @@
 # SQLite: ein Ausdrucks-Index gilt gegen die Datenbank als geändert (Folge von #53)
 
-> **Status:** Draft mit Scope (2026-10-26), Ursache gemessen. Befund aus der Umsetzung von
+> **Status:** Draft mit Scope (2026-10-25), Ursache gemessen. Befund aus der Umsetzung von
 > `sqlite-eindeutiger-index-als-constraint.md` (#53, ADR 0062): für einen Ausdrucks-Index plant `schema migrate` bei
 > jedem Lauf `DROP INDEX` + `CREATE INDEX` (ausführbar, Exit 0). **Vorbedingung:** keine. **Aktivierung** (Move nach
 > `../in-progress/`) beim ersten Implementierungs-Commit; dann GitHub-Issue anlegen und hier verlinken.
@@ -54,7 +54,7 @@ Katalogtext ist mit `sqlite3` geprüft (`((a)+(b))`, `(lower(a))`, `('(' || a)` 
 
 **P0-Fallmenge (festgelegt), je Fall Reader-Ausgabe und Operationen gegen die Generator-Datenbank:**
 Fehlerzeilen: `((lower(a)))`, `UNIQUE (lower(a), b)`, `(a, (b + 1) DESC)`. Kontrollzeilen (dürfen nicht kippen): `lower(a)` ohne
-Klammer, `(a) + (b)`, `(a + b) * 2`, `('(' || a)`, Ausdruck + `COLLATE`/`DESC`, Prädikat (`WHERE`), mehrere Ausdrücke, Reihenfolge der
+Klammer, handgeschriebenes `ON t((a))` (wird zu `a`, einer Spalte gleich — bewusst festhalten), `(a) + (b)`, `(a + b) * 2`, `('(' || a)`, Ausdruck + `COLLATE`/`DESC`, Prädikat (`WHERE`), mehrere Ausdrücke, Reihenfolge der
 Schlüssel. P0 endet, wenn jede Zeile Reader-Ausgabe und Operationen trägt.
 
 **Erwartung Fingerabdruck:** A ändert den Reader-Ausgang jedes SQLite-Ausdrucks-Index, der Abdruck trägt ihn (`expr:` in

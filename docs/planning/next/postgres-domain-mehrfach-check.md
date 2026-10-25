@@ -1,6 +1,6 @@
 # PostgreSQL: der Reader verliert bei einer Domain alle CHECKs bis auf den letzten (Folge von #52)
 
-> **Status:** Draft mit Scope (2026-10-26). Abgetrennt aus dem früheren Sammelplan zu Domain-Länge/-Array (dort in drei Pläne
+> **Status:** Draft mit Scope (2026-10-25). Abgetrennt aus dem früheren Sammelplan zu Domain-Länge/-Array (dort in drei Pläne
 > geteilt). Kleiner Reader-Fehler ohne Vertragsänderung. **Vorbedingung:** keine. **Aktivierung** (Move nach
 > `../in-progress/`) beim ersten Implementierungs-Commit; dann GitHub-Issue anlegen und hier verlinken.
 > Bezug: ADR 0061 („Weiter nicht erkannt": mehrere CHECKs).
@@ -79,6 +79,7 @@ ADR-Nummer (heute `schema-fingerprint-v21`, ADR bis 0063). Wer zuerst aktiviert,
 
 * Jede gemessene Fehlerzeile hat einen Test, der ohne die Änderung an der erwarteten Stelle fehlschlägt; absichtlich falsche
   Zusicherung einmal rot gesehen.
+* Die P1-Entscheidung zur Wertelisten-Kopplung (`RefTypeVocabulary`) ist umgesetzt und getestet.
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module (einmal ohne `MODULES=`, falls eine geteilte Signatur wechselt),
   `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"` (das ganze Modul, Detekt eingeschlossen),
   `make solid-suppression-gate`, `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD`.
