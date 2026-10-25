@@ -6,6 +6,7 @@ import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.sqlite.SqliteDriver
+import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -217,5 +218,57 @@ class CliSchemaMigrateExpressionIndexSqliteTest : FunSpec({
 
         scalar(db, "SELECT sql FROM sqlite_master WHERE name = 'ix_t'") shouldContain "lower(a)"
         operations(dir, before, db, "after-rollback") shouldBe 0
+    }
+
+    // Ein Kommentar im Katalogtext ist semantisch leer und entfaellt (Zeilenkommentar wie Blockkommentar).
+    for ((label, key) in listOf(
+        "Zeilenkommentar" to "(lower(a) -- c\n)",
+        "Blockkommentar" to "(lower(a) /* c */)",
+        "Kommentar hinter der Klammer" to "(lower(a)) /* c */",
+    )) {
+        test("von Hand, $label im Schluessel: keine Operation, Rundlauf stabil") {
+            val dir = Files.createTempDirectory("cli-migrate-expr-index-comment")
+            val db = handwritten(dir, "CREATE INDEX ix_t ON t ($key)")
+            val text = yaml(index("[{ expression: \"lower(a)\" }]"))
+
+            operations(dir, text, db, "plan") shouldBe 0
+
+            val first = dir.resolve("first.yaml")
+            run("schema", "reverse", "--source", "sqlite://$db", "--output", first.toString()) shouldBe 0
+            val create = dir.resolve("again.sql")
+            run(
+                "schema", "generate", "--source", first.toString(), "--target", "sqlite", "--output",
+                create.toString(),
+            ) shouldBe 0
+            val second = dir.resolve("second.sqlite")
+            exec(second, *sqlStatements(create).toTypedArray())
+            val again = dir.resolve("second.yaml")
+            run("schema", "reverse", "--source", "sqlite://$second", "--output", again.toString()) shouldBe 0
+
+            Files.readString(again).substringAfter("indices:") shouldBe Files.readString(first).substringAfter("indices:")
+            operations(dir, text, second, "plan2") shouldBe 0
+        }
+    }
+
+    // Restgrenze: der Kommentar steht im expression-Text der DATEI. Der Reader liefert den Ausdruck ohne Kommentar,
+    // beide gelten als verschieden (wie bei COLLATE).
+    test("Grenze: Kommentar im expression-Text der Datei gilt gegen die Datenbank als Aenderung") {
+        val dir = Files.createTempDirectory("cli-migrate-expr-index-file-comment")
+        val db = handwritten(dir, "CREATE INDEX ix_t ON t ((lower(a)))")
+
+        operations(dir, yaml(index("[{ expression: \"lower(a) /* c */\" }]")), db, "plan") shouldBe 2
+    }
+
+    // Eigener Befund (nicht hier behoben): der Generator rendert den Ausdruck wortgleich in Klammern; ein
+    // `--`-Kommentar im Text verschluckt die schliessende Klammer, das erzeugte DDL ist ungueltig.
+    test("Befund: Zeilenkommentar im expression-Text erzeugt ungueltiges DDL") {
+        val dir = Files.createTempDirectory("cli-migrate-expr-index-line-comment")
+        val create = dir.resolve("create.sql")
+        run(
+            "schema", "generate", "--source",
+            write(dir, "a.yaml", yaml(index("[{ expression: \"lower(a) -- c\" }]"))).toString(),
+            "--target", "sqlite", "--output", create.toString(),
+        ) shouldBe 0
+        shouldThrowAny { exec(dir.resolve("db.sqlite"), *sqlStatements(create).toTypedArray()) }
     }
 })

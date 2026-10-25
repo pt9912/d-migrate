@@ -34,7 +34,7 @@ internal object SqliteIndexKeyScanner {
         val open = topLevelOpenParen(createSql) ?: return null
         val close = matchingCloseParen(createSql, open) ?: return null
         return splitTopLevel(createSql.substring(open + 1, close))
-            .map { unwrapKey(stripKeyModifiers(it)) }
+            .map { unwrapKey(stripKeyModifiers(stripComments(it))) }
             .takeIf { keys -> keys.isNotEmpty() && keys.all { it.isNotBlank() } }
     }
 
@@ -103,23 +103,40 @@ internal object SqliteIndexKeyScanner {
      * Die exakte Umkehrung von `IndexColumn.renderKey`: genau **eine** Klammer,
      * und nur, wenn sie den ganzen Schluessel umschliesst. `(a) + (b)` und
      * `('(' || a)` -- dessen Klammer in der Zeichenkette zaehlt nicht -- bleiben
-     * unberuehrt, ein `((x))` verliert nur die aeussere Schicht. Traegt der
-     * Schluessel einen Kommentar, bleibt er unberuehrt: ein Zeilenkommentar
-     * verschluckte beim Wiederrendern die schliessende Klammer.
+     * unberuehrt, ein `((x))` verliert nur die aeussere Schicht. Kommentare sind
+     * zu diesem Zeitpunkt bereits entfernt ([stripComments]).
      */
     private fun unwrapKey(key: String): String {
-        val enclosed = key.startsWith("(") && matchingCloseParen(key, 0) == key.length - 1 && !hasComment(key)
+        val enclosed = key.startsWith("(") && matchingCloseParen(key, 0) == key.length - 1
         return if (enclosed) key.substring(1, key.length - 1).trim().ifEmpty { key } else key
     }
 
-    private fun hasComment(key: String): Boolean {
+    /**
+     * Ein Kommentar in einem Schluessel ist semantisch leer, kann aber den
+     * Rest verschlucken (`-- c` bis zum Zeilenende, auch die schliessende
+     * Klammer des Generators). Er entfaellt; an seiner Stelle bleibt hoechstens
+     * ein Leerzeichen, damit `a /* c */ + b` zu `a + b` wird (nicht zu
+     * `a  + b`) und `a/* c */b` nicht zu `ab` zusammenwaechst. Kommentarzeichen
+     * in Zeichenketten und gequoteten Bezeichnern bleiben (`skipNonCode`
+     * unterscheidet beides). Ein Schluessel ohne Kommentar bleibt unveraendert.
+     */
+    private fun stripComments(key: String): String {
+        val out = StringBuilder()
         var i = 0
         while (i < key.length) {
-            if (key.startsWith("--", i) || key.startsWith("/*", i)) return true
+            val isComment = key.startsWith("--", i) || key.startsWith("/*", i)
             val skipped = skipNonCode(key, i)
-            i = if (skipped > i) skipped else i + 1
+            when {
+                isComment -> {
+                    if (out.isNotEmpty() && !out.last().isWhitespace()) out.append(' ')
+                    i = skipped
+                    while (i < key.length && key[i].isWhitespace()) i++
+                }
+                skipped > i -> { out.append(key, i, skipped); i = skipped }
+                else -> { out.append(key[i]); i++ }
+            }
         }
-        return false
+        return out.toString().trim()
     }
 
     /**

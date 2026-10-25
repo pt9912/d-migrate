@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Der Reader entfernt genau **eine** Klammer, die den ganzen Schlüssel umschließt; Klammern im Ausdruck
     (`(a) || (b)`, `(a + b) * 2`) und in Zeichenketten bleiben. `schema reverse` schreibt den Ausdruck ohne die
     äußere Klammer; der Rundlauf `reverse → generate → reverse` ist stabil.
+  - Kommentare (`--`, `/* */`) im Katalogtext eines Ausdrucks entfallen beim Zurücklesen; ein Kommentar im
+    `expression`-Text der Datei bleibt ein Unterschied.
   - Eine Änderung des Ausdrucks (`lower(a)` → `upper(a)`) bleibt `DropIndex` + `AddIndex`.
   - Der Fingerabdruck steht auf `schema-fingerprint-v22`; ein Rollback-Artefakt einer früheren Version ist neu zu
     erzeugen. Betroffen sind nur Schemas mit SQLite-Ausdrucks-Index.

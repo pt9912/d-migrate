@@ -58,9 +58,8 @@ Klammer, handgeschriebenes `ON t((a))` (wird zu `a`, einer Spalte gleich — bew
 Schlüssel. P0 endet, wenn jede Zeile Reader-Ausgabe und Operationen trägt.
 
 **Erwartung Fingerabdruck:** A ändert den Reader-Ausgang jedes SQLite-Ausdrucks-Index, der Abdruck trägt ihn (`expr:` in
-`CanonicalPayload.index`, `IndexColumn.toString()` in `MigrationFingerprint`) → **Tag-Bump erwartet** (Präzedenz ADR 0062, aktuell
-`schema-fingerprint-v21`, nächster freier Tag zum Aktivierungszeitpunkt; **neuer** ADR, nächste freie Nummer, ADR 0062/0063 sind
-eingefroren; er korrigiert ausdrücklich die Aussage in ADR 0062, der Reader liefere `lower(a)`). Folgen benennen: Rollback-Artefakte älterer Läufe → `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`; Operations-IDs von
+`CanonicalPayload.index`, `IndexColumn.toString()` in `MigrationFingerprint`) → **Tag-Bump erwartet** (Präzedenz ADR 0062; entschieden in P1:
+`schema-fingerprint-v22`, **neuer** ADR 0064; ADR 0062/0063 sind eingefroren; er korrigiert ausdrücklich die Aussage in ADR 0062, der Reader liefere `lower(a)`). Folgen benennen: Rollback-Artefakte älterer Läufe → `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`; Operations-IDs von
 Index-Ops mit Ausdruck ändern sich. Nur Schemas mit SQLite-Ausdrucks-Index sind betroffen.
 
 Nicht-Ziel: `COLLATE` im Modell (die Spalte `a COLLATE NOCASE` ist kein Ausdruck; der Reader lässt `COLLATE` weg — Hinweis im
@@ -116,8 +115,11 @@ es danach. `lower(a)` → `upper(a)` bleibt 2 Operationen (`DropIndex` + `AddInd
 **Rot ohne die Änderung (gemessen, Review-Runde 1):** mit abgeschalteter Klammer-Entfernung in `keysOf` sind rot:
 `SqliteIndexKeyScannerTest` 8 Tests, `CliSchemaMigrateExpressionIndexSqliteTest` 23 Tests,
 `CliSchemaMigrateUniqueIndexGapsSqliteTest` 1 Test, `ExpressionIndexRoundTripTest` 1 Test; mit der Änderung alle grün.
-Ein Schlüssel mit Kommentar (`((lower(a) -- c\n))`) behält seine Klammer, weil ein Zeilenkommentar beim
-Wiederrendern die schließende Klammer verschluckte; `COLLATE` innerhalb der Klammer bleibt im Text.
+Kommentare im Schlüsseltext (`((lower(a) -- c\n))`) entfernt der Reader vor dem Abtragen der Klammer; gemessen vor
+dieser Regel: Klammer blieb stehen, 2 Operationen, Rundlauf wuchs je Zyklus. Restgrenze: ein Kommentar im
+`expression`-Text der Datei gilt als Änderung (2 Operationen), und ein `--`-Kommentar dort erzeugt ungültiges DDL
+(eigener Befund: der Generator klammert wortgleich, der Kommentar verschluckt die schließende Klammer). `COLLATE`
+innerhalb der Klammer bleibt im Text.
 
 ## P1 — Entscheidung (2026-10-25)
 

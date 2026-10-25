@@ -48,9 +48,9 @@ class SqliteIndexKeyScannerTest : FunSpec({
             listOf("a", "LOWER(nm)")
     }
 
-    test("a comment between the keys is skipped") {
+    test("a comment between the keys is removed") {
         SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(a /* the key */, b)") shouldBe
-            listOf("a /* the key */", "b")
+            listOf("a", "b")
     }
 
     test("an unbalanced statement yields nothing rather than a guess") {
@@ -91,10 +91,25 @@ class SqliteIndexKeyScannerTest : FunSpec({
             listOf("lower(a)", "b", "upper(c)")
     }
 
-    test("a key with a comment keeps its parenthesis — a line comment would swallow the closing one") {
-        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a) -- c\n))") shouldBe listOf("(lower(a) -- c\n)")
-        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a) /* c */))") shouldBe listOf("(lower(a) /* c */)")
-        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a)) /* c */)") shouldBe listOf("(lower(a)) /* c */")
+    test("a comment in a key is removed before the parenthesis — a line comment would swallow the closing one") {
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a) -- c\n))") shouldBe listOf("lower(a)")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a) /* c */))") shouldBe listOf("lower(a)")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a)) /* c */)") shouldBe listOf("lower(a)")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a)) -- c\n, b)") shouldBe listOf("lower(a)", "b")
+    }
+
+    test("removing a comment leaves single spaces, not doubled ones, and does not glue tokens") {
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((a /* c */ + b))") shouldBe listOf("a + b")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((a/* c */+ b))") shouldBe listOf("a + b")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((a /* x */ /* y */ + b -- z\n))") shouldBe listOf("a + b")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(a /* c */ DESC)") shouldBe listOf("a")
+    }
+
+    test("comment characters inside strings and quoted names stay") {
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(('--' || a))") shouldBe listOf("'--' || a")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(('/*' || a))") shouldBe listOf("'/*' || a")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((\"a--b\" /* c */))") shouldBe listOf("\"a--b\"")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(([a/*b]))") shouldBe listOf("[a/*b]")
     }
 
     test("a closing parenthesis inside a quoted name or string does not end the key") {

@@ -42,7 +42,7 @@ Katalog (`sqlite_master.sql`) führt den Text unverändert, der Reader gab den S
 **A.** Die Klammer ist die exakte Umkehrung von `renderKey` und deshalb gefahrlos zu entfernen; die
 Normalform liegt im Reader, der Vergleich bleibt wortgleich (Präzedenz ADR 0061).
 
-1. **Ort:** `SqliteIndexKeyScanner.keysOf`, nach dem Abtragen von `COLLATE`/`ASC`/`DESC`, mit dem
+1. **Ort:** `SqliteIndexKeyScanner.keysOf`, nach dem Abtragen von Kommentaren und `COLLATE`/`ASC`/`DESC`, mit dem
    Quote- und Kommentar-Skip des Scanners. Beispiele beziehen sich auf den Schlüssel innerhalb der
    Listenklammer von `CREATE INDEX … ON t (…)`: `(lower(a))` → `lower(a)`. Entfernt wird **eine** Klammer, und nur, wenn die zur
    öffnenden gehörende schließende Klammer das letzte Zeichen des Schlüssels ist. `(a) + (b)`,
@@ -55,9 +55,13 @@ Normalform liegt im Reader, der Vergleich bleibt wortgleich (Präzedenz ADR 0061
 3. **`COLLATE`** bleibt außerhalb des Modells: `a COLLATE NOCASE` ist kein Ausdruck, der Reader lässt ein
    **nachgestelltes** `COLLATE` weg (unverändert). Steht es innerhalb der Klammer (`((a COLLATE NOCASE))`),
    bleibt es im Text; es entfällt nur die Klammer.
-   Trägt der Schlüssel einen Kommentar, bleibt die Klammer stehen: ein Zeilenkommentar verschluckte beim
-   Wiederrendern die schließende Klammer.
-4. **Fingerabdruck-Bump.** `ALGORITHM` steigt von `schema-fingerprint-v21` auf `v22`: `expr:` in
+4. **Kommentare** (`-- …` und `/* … */`) im Schlüsseltext sind semantisch leer und können beim Wiederrendern die
+   schließende Klammer verschlucken. Der Reader entfernt sie vor dem Abtragen der Klammer (Quote-/Kommentar-Skip des
+   Scanners: Kommentarzeichen in Zeichenketten und gequoteten Bezeichnern bleiben); an ihrer Stelle bleibt höchstens
+   ein Leerzeichen (`a /* c */ + b` → `a + b`). Damit liest `ON t((lower(a) -- c\n))` als `lower(a)`, und der Rundlauf
+   bleibt stabil. **Restgrenze:** steht der Kommentar im `expression`-Text der **Datei** (`lower(a) /* c */`),
+   unterscheidet sich die Datei vom kommentarfreien Reader-Ergebnis und gilt als Änderung — wie bei `COLLATE`.
+5. **Fingerabdruck-Bump.** `ALGORITHM` steigt von `schema-fingerprint-v21` auf `v22`: `expr:` in
    `CanonicalPayload.index` und `IndexColumn.toString()` tragen den Reader-Ausgang. Nur Schemas mit
    SQLite-Ausdrucks-Index hashen anders (und die Operations-IDs ihrer Index-Operationen); alle anderen
    bis auf den Tag wie zuvor. Ein Artefakt vor `v22` liefert die bestehende Meldung
