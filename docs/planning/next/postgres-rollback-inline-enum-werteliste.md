@@ -9,14 +9,19 @@
 ## Ziel
 
 `schema migrate --generate-rollback` auf PostgreSQL liefert nach einer **erweiterten Werteliste** einer Inline-Enum-Spalte
-entweder ein Down-Skript, das den alten `CHECK` wiederherstellt, oder meldet den Plan als nicht vollständig rückführbar.
-Ein Exit 0 mit `planFullyRollbackable: true` und unverändert weit offenem `CHECK` entfällt.
+entweder ein Down-Skript, das den alten `CHECK` wiederherstellt, oder blockiert den Down ausdrücklich (`downBlocked: true`, Blocker `ROLLBACK_NOT_POSSIBLE`, Exit 8).
+Ein stilles Exit 0 mit einem Down, der den weit offenen `CHECK` stehen lässt, entfällt.
+
+**Zur Meldung `planFullyRollbackable`:** das Feld kommt aus `SchemaMigrateReportBuilder.kt:272-274` und prüft nur die Up-Statements
+auf `FULLY_TRANSACTIONAL`; `true` heißt „transaktional“, **nicht** „rückführbar“. Das Issue deutet das Feld schief; ein Down-Blocker
+schlägt sich dort nicht nieder. Das Down-Signal ist `downBlocked` (`SchemaMigrateRenderPipeline.kt:268`); ein Down-Blocker fließt über
+`mergeDownIntoUp` (`:518-529`) nur in `blockers`/`primaryBlockedReason`. Ob das Feld selbst nachzuschärfen ist, entscheidet P1.
 
 ## Problem (Issue #61, gemeldet für 1.10.0 und 1.9.1; am Code gelesen, noch nicht gemessen)
 
 Tabelle `t (id integer, e enum values [a, b] required default a)`, Datenbank aus `schema generate --target postgresql`
 (`e TEXT … CHECK ("e" IN ('a','b'))`), Datei mit `values: [a, b, c]`. Der Up-Pfad erweitert den CHECK; `down.sql` enthält nur
-`ALTER TABLE "t" ALTER COLUMN "e" TYPE TEXT;`, `schema rollback --execute --allow-destructive` endet mit Exit 0, der CHECK lautet
+`ALTER TABLE "t" ALTER COLUMN "e" TYPE TEXT;`, der Report meldet `planFullyRollbackable: true` (Transaktionalität des Up, kein Rückführbarkeitsbefund), `schema rollback --execute --allow-destructive` endet mit Exit 0, der CHECK lautet
 weiter `= ANY (ARRAY['a','b','c'])`, `INSERT … 'c'` gelingt. Auf SQLite lehnt die Datenbank `c` nach dem Rollback ab.
 
 **Wie der Up-Pfad den CHECK ersetzt:**
@@ -40,7 +45,7 @@ das für `UP` das **Ist-** (`currentSchema`), für `DOWN` das **Soll-Schema** (`
 * **Folge für den Fix:** wer nur L1 behebt, erzeugt `ADD CHECK (… IN ('a','b'))` **ohne** `DROP` — alter (erweiterter) und neuer
   CHECK stehen nebeneinander; wer nur L2 behebt, löst den CHECK und lässt die Spalte ungeprüft. Option (a) muss **beide** Lücken
   schließen.
-* **L3 — die Meldung.** `AlterColumnType` ist `AUTOMATIC_WITH_DATA_RISK` (`DiffOperation.kt:172`); der Blocker
+* **L3 — keine Meldung.** `AlterColumnType` ist `AUTOMATIC_WITH_DATA_RISK` (`DiffOperation.kt:172`); der Blocker
   `ROLLBACK_NOT_POSSIBLE` entsteht im Renderer nur für `NOT_REVERSIBLE` (`PostgresDiffDdlGenerator.kt:77-96`). Ein Down, das sein Ziel
   verfehlt, löst keinen Blocker aus; der Renderer prüft sein Ergebnis nicht gegen den Zustand vor dem Up.
 
@@ -67,11 +72,16 @@ Endgültig in P1.
 unbekannt, und der Kommentar an `enumValueCheckName` (`PostgresDiffRenderContext.kt:328-337`) warnt vor erratenen Namen (Kollision,
 Ziffernanhang, Kürzung). Kandidaten:
 1. Name aus dem **Ist-Namen** ableiten — sicher nur, wenn der alte Name durch den `DROP` frei wird (der Up löst den alten CHECK vor
-   dem Anlegen, der neue bekäme dann denselben Servernamen); in P0 messen, auch bei Kollision und langen Namen.
+   dem Anlegen, der neue bekäme dann denselben Servernamen); in P0 messen, auch bei Kollision und langen Namen. **Greift nicht**
+   bei einem vom Nutzer benannten Alt-CHECK (P0-Fall 7): der Up legt den neuen CHECK unbenannt an (`<tabelle>_<spalte>_check`), der
+   abgeleitete Name trifft ihn nicht.
 2. Der Up legt den CHECK **explizit benannt** an (`EnumValueCheck.namedClause`, `ck_<tabelle>_<spalte>`): der Down kennt den Namen.
    Ändert den Up-Text, DDL-Goldens und Renderer-Unit-Tests — berührt damit den Up-Pfad (Ausnahme vom Nicht-Scope, Eigner-Entscheidung)
    und kann Drift gegen bestehende Datenbanken mit Servernamen erzeugen.
-3. `DROP CONSTRAINT IF EXISTS` mit abgeleitetem Namen, und wo der Name nicht sicher ist, Fallback auf (b).
+3. `DROP CONSTRAINT IF EXISTS` mit abgeleitetem Namen, und wo der Name nicht sicher ist, Fallback auf (b). **Gefahr:** `IF EXISTS`
+   läuft bei falschem Namen still durch → `ADD` ohne `DROP`.
+
+Kandidat 1 und 3 sind für den benannten Alt-CHECK nur mit Fallback (b) oder mit Kandidat 2 abgesichert.
 
 ## Phasen
 
@@ -84,7 +94,9 @@ Ziffernanhang, Kürzung). Kandidaten:
   3. **Inline** (`values`) gegen **benannte Domain/`ref_type`** (nativer Enum-Typ, `AlterCustomType`-Pfad) — Gegenprobe, dass dieser
      Pfad nicht betroffen ist;
   4. **mehrere** Enum-Spalten in einer Tabelle, nur eine geändert, und zwei geändert;
-  5. Rollback **nach `--execute`** (echter Hin-und-Rückweg) und Rollback gegen eine Datei (`file:`);
+  5. Rollback **nach `--execute`** (echter Hin-und-Rückweg) und Rollback gegen eine Datei (`file:`). Erwartung: im `file:`-Modus ist
+     `currentSchema` eine Datei mit Inline-Werten (der Renderer liest sie aus `op.before`), im Live-Modus die Datenbank mit
+     `= ANY (ARRAY[…])` (der Renderer braucht `EnumCheckProjection.valuesOf`); beide Wege messen;
   6. **Gegenprobe SQLite**, dasselbe Schema (Soll: `c` abgelehnt);
   7. benannter vom Nutzer geschriebener CHECK statt Generate-Form (Servername vs. `ck_…`);
   8. Werteliste **und** Typ gleichzeitig geändert;
@@ -92,17 +104,20 @@ Ziffernanhang, Kürzung). Kandidaten:
   10. **mehrere** Wertelisten-CHECKs an einer Spalte;
   11. `NOT VALID`-CHECK;
   12. gelesene Form `= ANY (ARRAY[…])` (Katalog) gegen die Generate-Form `IN (…)`; Name des Up-CHECK nach Ausführung (Namensfrage).
-  Ergebnis: L1/L2/L3 bestätigt oder verworfen, mit Messwerten im Plan.
+  Für (b) zusätzlich: greift die Exit-8-Abbildung für einen **Down**-Blocker (`downBlocked`, `mergeDownIntoUp`) wirklich, oder endet
+  der Lauf mit Exit 0?
+  Ergebnis: eine **Messtabelle im Plan** (Fall, `op.before`/`after`, `down.sql`, `downBlocked`, Exit, Katalogzustand), L1/L2/L3
+  bestätigt oder verworfen.
 * **P1 Entscheidung:** Option (a)/(b)/(c); ob `op.before` Werte tragen muss; ADR-/Tag-Bedarf. Nummern **zum Aktivierungszeitpunkt
   nächster freier** ADR und nächster freier `schema-fingerprint-v…`-Tag (nicht vorab festlegen; andere Pläne konkurrieren darum).
-  Greift die Lösung nur den Adapter-Renderer an, ändert sich Abdruck und Hexagon nicht → kein Tag, vermutlich kein ADR (Eigner
-  bestätigt). Außerdem: wird die Rollback-Spec (`spec/` Rollback-/Migrationsregeln, `ddl-generation-rules.md`) berührt?
+  Greift die Lösung nur den Adapter-Renderer an, ändert sich Abdruck und Hexagon nicht → kein Tag; ob ein ADR nötig ist, bestätigt der
+  Eigner in P1 (Bestätigung steht aus). Außerdem: wird die Rollback-Spec (`spec/` Rollback-/Migrationsregeln, `ddl-generation-rules.md`) berührt?
 * **P2 Umsetzung mit Tests:**
   * Integrationstest gegen PostgreSQL: Up erweitern, `down.sql` anwenden, `INSERT … 'c'` wird von der Datenbank abgelehnt, `a`/`b`
     gelingen; CHECK-Definition im Katalog entspricht dem Zustand vor dem Up. Rot ohne die Änderung (der aktuelle Befund), absichtlich
     falsche Zusicherung einmal rot gesehen.
   * Fälle aus P0 (verkürzt, mehrere Spalten, benannter CHECK) je ein Test; bei Option (b) zusätzlich: Exit 8,
-    `planFullyRollbackable: false`, `ROLLBACK_NOT_POSSIBLE` mit klarer Meldung.
+    `downBlocked: true`, `primaryBlockedReason`/Blocker `ROLLBACK_NOT_POSSIBLE` mit klarer Meldung.
   * Renderer-Unit-Test (`PostgresDiffDdlGenerator` DOWN): erwartete Statements in Reihenfolge `DROP CONSTRAINT` → `ADD CHECK`.
   * **Matrix** (`test/cross-dialect-matrix`): `Kind.ROLLBACK` setzt `generateRollback = true` und fängt die `.rollback.sql` in
     `rollbackBody`. Die Zelle läuft aber **file-zu-file im planOnly-Modus** (`MatrixSweepRunner.kt:163-170`): beide Seiten sind
@@ -127,14 +142,14 @@ eigener `open/`-Eintrag. `AlterCustomType` (nativer PG-Enum) und `ref_type`-Roll
 ## Akzeptanz
 
 * Nach `schema migrate --execute --generate-rollback` und `schema rollback --execute --allow-destructive` auf PostgreSQL lehnt die
-  Datenbank `INSERT … 'c'` ab (Option a) **oder** der Migrate endet mit Exit 8 und `planFullyRollbackable: false` (Option b). Der Fall
-  „Exit 0, `planFullyRollbackable: true`, CHECK unverändert" tritt nicht mehr auf — belegt durch den Integrationstest.
+  Datenbank `INSERT … 'c'` ab (Option a) **oder** der Migrate endet mit Exit 8, `downBlocked: true` und Blocker `ROLLBACK_NOT_POSSIBLE` (Option b). Der Fall
+  „Exit 0 und CHECK unverändert weit offen“ tritt nicht mehr auf — belegt durch den Integrationstest.
 * Verkürzte Werteliste: nach dem Rollback ist der zuvor abgelehnte Wert wieder erlaubt.
-* Jede P0-Fallzeile, die einen Fehler misst, hat einen Test, der ohne die Änderung fehlschlägt; ausgenommen sind die grünen
+* Jede Fehlerzeile der P0-Messtabelle hat einen Test, der ohne die Änderung fehlschlägt; ausgenommen sind die grünen
   Gegenproben (Fall 3 `ref_type`/native Enum, Fall 6 SQLite), die grün bleiben müssen. Absichtlich falsche Zusicherung einmal rot gesehen.
 * Die Matrix-Zelle (benannter Up-CHECK bzw. Blocker-Zelle) oder die dokumentierte Begründung, warum keine anlegbar ist, steht; im
   Integrationstest liefert nach dem Rollback ein zweiter Migrate `operationsTotal` 0.
 * Handbuch beschreibt nur das gelieferte Verhalten; `CHANGELOG.md` nennt #61.
-* Gates: `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module (einmal ohne `MODULES=`, falls eine geteilte
-  Signatur wechselt), `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"`, `make solid-suppression-gate`,
+* Gates: `make docker-check` der betroffenen Module (einmal ohne `MODULES=`, also über das ganze Repo, falls eine geteilte
+  Signatur wechselt; umfasst die Tests), `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"`, `make solid-suppression-gate`,
   `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD`.
