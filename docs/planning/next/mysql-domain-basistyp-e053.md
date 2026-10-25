@@ -97,7 +97,7 @@ Notiz trägt oder als Grenze benannt wird, entscheidet P1 — nicht stillschweig
 * **P0 Messung.** Zwei Stufen, damit nicht alles gegen MySQL läuft:
   1. **Unit-Test ohne MySQL** für reine Mapper-Ausgaben: jede Zeile aus `resolveBaseTypeName` (`integer`, `int4`, `bigint`, `int8`,
      `smallint`, `int2`, `boolean`, `bool`, `real`, `float4`, `float`, `float8`, `double precision`, `numeric`, `text`,
-     `character varying`, `char`, `uuid`, `json`, `jsonb`, `xml`, `bytea`, `date`, `time`, `timestamp`, `timestamptz`) plus
+     `character varying`, `varchar`, `char`, `decimal`, `uuid`, `json`, `jsonb`, `xml`, `bytea`, `date`, `time`, `time without time zone`, `timestamp`, `timestamptz`, `timestamp with time zone`) plus
      Arrays und die Typen ohne Gegenstück: heute erzeugtes DDL und Soll (B/C) festhalten.
   2. **Messung gegen echtes MySQL** (`test/integration-mysql`, `TestImages.MYSQL` = `mysql:9.7.2`) nur dort, wo die Annahme vom
      Typnamen abhängt: `bit`/`bit(n)`, `numeric` mit/ohne `precision`, `bool`, `int4`, `int8`, `float8`, `timestamptz(3)` — nimmt MySQL das DDL an, mit
@@ -152,7 +152,7 @@ Abweichung zeigt, dann eigener Plan).
 * Jede gemessene Fehlerzeile hat einen Test, der ohne die Änderung an der erwarteten Stelle fehlschlägt; absichtlich falsche
   Zusicherung einmal rot gesehen.
 * Matrix-Test (`test/cross-dialect-matrix`) deckt MySQL für Domains ab, rot vor der Änderung; Array bleibt auf MySQL kein
-  Sonderfall mehr.
+  Sonderfall mehr (setzt das Array-Fixture aus #58 voraus; sonst per Rebase-Nachführung, sobald #58 liegt).
 * `MigrationFingerprint` unverändert (kein Tag-Bump), oder die Gegenentscheidung steht in P1 mit Tag und ADR.
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module (`:adapters:driven:driver-mysql`,
   `:adapters:driven:driver-common`; einmal ohne `MODULES=`, falls eine geteilte Signatur wechselt),
