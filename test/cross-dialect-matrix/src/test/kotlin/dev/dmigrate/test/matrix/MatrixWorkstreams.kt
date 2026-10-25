@@ -41,7 +41,7 @@ internal object MatrixWorkstreams {
     )
 
     /**
-     * The full plan-doc workstream catalogue (22 entries). Order
+     * The full plan-doc workstream catalogue (23 entries). Order
      * matches the plan-doc table of contents.
      */
     val ALL: List<String> = listOf(

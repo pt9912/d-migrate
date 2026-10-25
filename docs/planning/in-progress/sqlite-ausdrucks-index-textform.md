@@ -113,6 +113,12 @@ ohne Klammer), kippt nur die Form mit zusätzlicher Klammer.
 Der Rundlauf `schema reverse` → `generate` → `reverse` war vorher nicht stabil (je Zyklus eine Klammerschicht mehr) und ist
 es danach. `lower(a)` → `upper(a)` bleibt 2 Operationen (`DropIndex` + `AddIndex`), `(a) || (b)` → `(a) || (a)` ebenso.
 
+**Rot ohne die Änderung (gemessen, Review-Runde 1):** mit abgeschalteter Klammer-Entfernung in `keysOf` sind rot:
+`SqliteIndexKeyScannerTest` 8 Tests, `CliSchemaMigrateExpressionIndexSqliteTest` 23 Tests,
+`CliSchemaMigrateUniqueIndexGapsSqliteTest` 1 Test, `ExpressionIndexRoundTripTest` 1 Test; mit der Änderung alle grün.
+Ein Schlüssel mit Kommentar (`((lower(a) -- c\n))`) behält seine Klammer, weil ein Zeilenkommentar beim
+Wiederrendern die schließende Klammer verschluckte; `COLLATE` innerhalb der Klammer bleibt im Text.
+
 ## P1 — Entscheidung (2026-10-25)
 
 **A**, wie erwartet: die Messung zeigt eine einzige Ursache (die Klammer des Generators) und keinen Fall, in dem das

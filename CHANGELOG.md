@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`schema migrate` auf SQLite plant keinen `DROP INDEX` + `CREATE INDEX` mehr für einen unveränderten
   Ausdrucks-Index** (Issue #55, Folge von #53). Der Generator klammert jeden Ausdrucks-Schlüssel
-  (`((lower(a)))`); der SQLite-Reader gab ihn mit dieser Klammer zurück (`(lower(a))`), die Datei trägt
+  (`ON t ((lower(a)))`); der SQLite-Reader gab ihn mit dieser Klammer zurück (`(lower(a))`), die Datei trägt
   `lower(a)`. Jetzt gilt:
   - Der Reader entfernt genau **eine** Klammer, die den ganzen Schlüssel umschließt; Klammern im Ausdruck
     (`(a) || (b)`, `(a + b) * 2`) und in Zeichenketten bleiben. `schema reverse` schreibt den Ausdruck ohne die

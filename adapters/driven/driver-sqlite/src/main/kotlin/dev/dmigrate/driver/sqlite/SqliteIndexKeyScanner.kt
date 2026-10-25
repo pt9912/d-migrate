@@ -103,11 +103,23 @@ internal object SqliteIndexKeyScanner {
      * Die exakte Umkehrung von `IndexColumn.renderKey`: genau **eine** Klammer,
      * und nur, wenn sie den ganzen Schluessel umschliesst. `(a) + (b)` und
      * `('(' || a)` -- dessen Klammer in der Zeichenkette zaehlt nicht -- bleiben
-     * unberuehrt, ein `((x))` verliert nur die aeussere Schicht.
+     * unberuehrt, ein `((x))` verliert nur die aeussere Schicht. Traegt der
+     * Schluessel einen Kommentar, bleibt er unberuehrt: ein Zeilenkommentar
+     * verschluckte beim Wiederrendern die schliessende Klammer.
      */
     private fun unwrapKey(key: String): String {
-        val enclosed = key.startsWith("(") && matchingCloseParen(key, 0) == key.length - 1
+        val enclosed = key.startsWith("(") && matchingCloseParen(key, 0) == key.length - 1 && !hasComment(key)
         return if (enclosed) key.substring(1, key.length - 1).trim().ifEmpty { key } else key
+    }
+
+    private fun hasComment(key: String): Boolean {
+        var i = 0
+        while (i < key.length) {
+            if (key.startsWith("--", i) || key.startsWith("/*", i)) return true
+            val skipped = skipNonCode(key, i)
+            i = if (skipped > i) skipped else i + 1
+        }
+        return false
     }
 
     /**

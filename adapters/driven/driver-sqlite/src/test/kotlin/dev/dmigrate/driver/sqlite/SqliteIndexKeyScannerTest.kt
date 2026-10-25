@@ -90,4 +90,20 @@ class SqliteIndexKeyScannerTest : FunSpec({
         SqliteIndexKeyScanner.keysOf("CREATE UNIQUE INDEX ix ON t((lower(a)), b, (upper(c))) WHERE b > 0") shouldBe
             listOf("lower(a)", "b", "upper(c)")
     }
+
+    test("a key with a comment keeps its parenthesis — a line comment would swallow the closing one") {
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a) -- c\n))") shouldBe listOf("(lower(a) -- c\n)")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a) /* c */))") shouldBe listOf("(lower(a) /* c */)")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a)) /* c */)") shouldBe listOf("(lower(a)) /* c */")
+    }
+
+    test("a closing parenthesis inside a quoted name or string does not end the key") {
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((\"a)\"))") shouldBe listOf("\"a)\"")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(([a)]))") shouldBe listOf("[a)]")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(('it''s('))") shouldBe listOf("'it''s('")
+    }
+
+    test("COLLATE inside the parenthesis stays — only the parenthesis goes") {
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((a COLLATE NOCASE))") shouldBe listOf("a COLLATE NOCASE")
+    }
 })

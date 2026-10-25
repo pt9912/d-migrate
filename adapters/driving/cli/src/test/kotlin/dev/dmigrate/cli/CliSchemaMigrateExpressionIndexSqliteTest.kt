@@ -107,6 +107,8 @@ class CliSchemaMigrateExpressionIndexSqliteTest : FunSpec({
         "eindeutig, Ausdruck und Spalte" to index("[{ expression: \"lower(a)\" }, { name: b }]", unique = true),
         "Spalte und Ausdruck absteigend" to
             index("[{ name: a }, { expression: \"(b + 1)\", direction: desc }]"),
+        "Spalte und Ausdruck absteigend, ohne Klammer" to
+            index("[{ name: a }, { expression: \"b + 1\", direction: desc }]"),
         "zwei Klammerteile" to index("[{ expression: \"(a) || (b)\" }]"),
         "Klammer vor dem Rest" to index("[{ expression: \"(a || b) || 'x'\" }]"),
         "Klammer in der Zeichenkette" to index("[{ expression: \"'(' || a\" }]"),

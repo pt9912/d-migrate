@@ -9,7 +9,7 @@ informed: adapters/driven/driver-sqlite (SqliteIndexKeyScanner), hexagon/core (M
 # Der SQLite-Reader entfernt die umschließende Klammer eines Ausdrucks-Index-Schlüssels — `schema-fingerprint-v22`
 
 > **Status: accepted (2026-10-25).** Der SQLite-Reader gibt einen Ausdrucks-Schlüssel ohne die eine
-> Klammer zurück, die der Generator um jeden Ausdruck setzt (`((lower(a)))` → `lower(a)`). Der
+> Klammer zurück, die der Generator um jeden Ausdruck setzt (im Katalog `ON t ((lower(a)))`; der Schlüssel innerhalb der Listenklammer `(lower(a))` → `lower(a)`). Der
 > Reader-Ausgang jedes SQLite-Ausdrucks-Index ändert sich, der Algorithmus-Tag steigt auf `v22`.
 > **Korrigiert** die Aussage in [ADR 0062](0062-sqlite-eindeutiger-index-bleibt-index.md), der Reader
 > liefere `lower(a)`: er lieferte `(lower(a))`.
@@ -43,7 +43,8 @@ Katalog (`sqlite_master.sql`) führt den Text unverändert, der Reader gab den S
 Normalform liegt im Reader, der Vergleich bleibt wortgleich (Präzedenz ADR 0061).
 
 1. **Ort:** `SqliteIndexKeyScanner.keysOf`, nach dem Abtragen von `COLLATE`/`ASC`/`DESC`, mit dem
-   Quote- und Kommentar-Skip des Scanners. Entfernt wird **eine** Klammer, und nur, wenn die zur
+   Quote- und Kommentar-Skip des Scanners. Beispiele beziehen sich auf den Schlüssel innerhalb der
+   Listenklammer von `CREATE INDEX … ON t (…)`: `(lower(a))` → `lower(a)`. Entfernt wird **eine** Klammer, und nur, wenn die zur
    öffnenden gehörende schließende Klammer das letzte Zeichen des Schlüssels ist. `(a) + (b)`,
    `(a + b) * 2` und `('(' || a)` bleiben unberührt (eine Klammer in einer Zeichenkette zählt nicht);
    `((x))` verliert nur die äußere Schicht.
@@ -51,8 +52,11 @@ Normalform liegt im Reader, der Vergleich bleibt wortgleich (Präzedenz ADR 0061
    Bestandsdatenbanken mit `((…))` werden mitrepariert. Ein handgeschriebenes `ON t((a))` meldet
    der Katalog als Spalte `a` (`PRAGMA index_xinfo` liefert einen Namen); es ist einer Spalte gleich, so gewollt und
    unverändert. Eine Datei mit `expression: a` bleibt gegen die Spalte ein Unterschied.
-3. **`COLLATE`** bleibt außerhalb des Modells: `a COLLATE NOCASE` ist kein Ausdruck, der Reader lässt
-   `COLLATE` weg (unverändert).
+3. **`COLLATE`** bleibt außerhalb des Modells: `a COLLATE NOCASE` ist kein Ausdruck, der Reader lässt ein
+   **nachgestelltes** `COLLATE` weg (unverändert). Steht es innerhalb der Klammer (`((a COLLATE NOCASE))`),
+   bleibt es im Text; es entfällt nur die Klammer.
+   Trägt der Schlüssel einen Kommentar, bleibt die Klammer stehen: ein Zeilenkommentar verschluckte beim
+   Wiederrendern die schließende Klammer.
 4. **Fingerabdruck-Bump.** `ALGORITHM` steigt von `schema-fingerprint-v21` auf `v22`: `expr:` in
    `CanonicalPayload.index` und `IndexColumn.toString()` tragen den Reader-Ausgang. Nur Schemas mit
    SQLite-Ausdrucks-Index hashen anders (und die Operations-IDs ihrer Index-Operationen); alle anderen

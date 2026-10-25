@@ -1101,12 +1101,13 @@ aus dem gelesenen Schema, statt verkürzt darin zu stehen.
 **Klammer des Generators.** Der Generator klammert jeden Ausdrucks-Schlüssel
 (`renderKey`, Abschnitt oben), weil PostgreSQL und MySQL es verlangen; der
 SQLite-Reader nimmt genau **eine** Klammer wieder ab, wenn sie den ganzen
-Schlüssel umschließt (`((lower(a)))` → `lower(a)`, nach dem Abtragen von
+Schlüssel umschließt (der Schlüssel innerhalb der Listenklammer, `(lower(a))` → `lower(a)`, nach dem Abtragen von
 `COLLATE`/`ASC`/`DESC`). Klammern im Ausdruck (`(a) || (b)`, `(a + b) * 2`)
 und in Zeichenketten (`'(' || a`) bleiben stehen; `((x))` verliert nur die
-äußere Schicht. Die Datei steht damit ohne Klammer (`lower(a)`), ein Rundlauf
+äußere Schicht. Trägt der Schlüssel einen Kommentar, bleibt die Klammer stehen.
+Ein `COLLATE` innerhalb der Klammer bleibt im Text; nur ein nachgestelltes entfällt. Die Datei steht damit ohne Klammer (`lower(a)`), ein Rundlauf
 `reverse → generate → reverse` fügt keine Schicht hinzu, und ein von Hand
-angelegtes `ON t(lower(a))` und `ON t((lower(a)))` lesen gleich. `COLLATE`
+angelegtes `ON t(lower(a))` und `ON t((lower(a)))` lesen gleich. Ein nachgestelltes `COLLATE`
 gehört nicht zum Modell und entfällt beim Zurücklesen.
 
 Ein Ausdrucks-Schlüssel zählt **nicht** als Spalte: Typ-Nachschläge
