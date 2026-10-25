@@ -183,3 +183,19 @@ unbemerkt (`Enum(refType)` kontextfrei `Text()` = `Text()`); sie gilt jetzt als 
   Neubau). Die Matrix prüft nur Exit-Codes.
 * **Review-Nachtrag (Runde 1/2):** `SqliteDomainFingerprintWiringTest` (`hexagon/application`) bildet den Abdruck über die echte Verdrahtung (`registrySchemaAwareCanonicalizer` und die `capability*`-Projektionen wie in `SchemaMigrateRunner.endpointFingerprints`) und sagt Gleichheit aus: Domain über `boolean`/`decimal`/`integer` = Spalte mit direktem Basistyp; ein Basistypwechsel ändert den Abdruck. Feste Hashes pinnt er bewusst nicht (sie enthalten die Algorithmus-Version). Zuvor war ein fester Hash einmal mit dem Produktionscode von `main` und einmal mit der Änderung gemessen und gleich. Matrix `H.1` über alle Dialekte: siehe „Gates“.
 * Doku: `docs/user/anwenderhandbuch.md` (SQLite-Hinweis zu Enum/Domain), `CHANGELOG.md` (Unreleased).
+
+## Gates (nach dem Merge mit `main`, Stand #55 = v22; 2026-10-25)
+
+| Gate | Ergebnis |
+| --- | --- |
+| `make docker-test` (ganzes Repo) | Exit 0 |
+| `make docker-check` ohne `MODULES=` (geteilte Signatur `TargetProjection` im Hexagon) | Exit 0 |
+| `make docker-test MODULES=":test:cross-dialect-matrix"` (alle Workstreams inkl. `H.1`, `expression-index`) | Exit 0 |
+| `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"` (läuft mit `-PintegrationTests`) | Exit 0 |
+| `make solid-suppression-gate` | OK |
+| `make docs-check` | 0 Befunde |
+| `make doc-immutable RANGE=main..HEAD` | 0 Befunde |
+
+Matrix `H.1` je Dialekt (Messung): SQLite, SQL Server und Oracle Exit 0 (gepinnt, im vollen Lauf grün); PostgreSQL und MySQL
+Exit 8 (`DIALECT_UNSUPPORTED_OPERATION`, gemessen mit entfernten Carve-outs; Carve-out bleibt). Die SQLite-Zelle ohne die
+Änderung (Verdrahtungszeile im Runner auskommentiert): Exit 8 (`SQLITE_CAST_NOT_WHITELISTED`), mit der Änderung Exit 0.
