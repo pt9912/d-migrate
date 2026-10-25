@@ -219,6 +219,13 @@ Reihenfolge innerhalb einer Spalte:
 <quoted_name> <type> [NOT NULL] [DEFAULT <value>] [UNIQUE] [<inline_constraint>]
 ```
 
+**Vergleich von Zahlen-Defaults.** Ein Zahlenliteral als `default` gilt als gleich, wenn
+es **numerisch** gleich ist, gleich in welcher Darstellung: `0` in der Datei und `0` aus dem
+Katalog, `2.0` und `2`, `1e3` und `1000`. Das gilt für alle Dialekte und für `schema compare`
+wie für `schema migrate`; ein Default, der nur in der Darstellung abweicht, ist kein
+`AlterColumnDefault`. Ein hinzugefügter oder entfernter Default und ein anderer Wert bleiben
+Änderungen.
+
 ### 3.2a Berechnete Spalten
 
 Eine Spalte mit `generation.type: computed` wird als berechnete gerendert. Der
@@ -462,7 +469,12 @@ Besonderheiten:
 - `mode: always` → W163: SQLite kennt keinen Modus, und AUTOINCREMENT nimmt
   einen ausdrücklich gesetzten Wert an. `mode: by_default` meldet nichts; im
   zusammengesetzten Schlüssel sagt W135 das Stärkere, und W163 entfällt dort
-- `boolean` → `INTEGER`, Defaults `true`/`false` → `1`/`0`
+- `boolean` → `INTEGER`, Defaults `true`/`false` → `1`/`0`. Beim **Zurücklesen** kommt
+  `INTEGER` mit Default `0`/`1` zurück, nie `boolean`; der Vergleich von `schema migrate`
+  faltet deshalb an einer `boolean`-Spalte der Datei `false`/`true` auf `0`/`1`, und der
+  Default `false` gilt gegen `0` in der Datenbank als unverändert. Die Faltung wirkt nur,
+  wo der Zieldialekt `boolean` auf `integer` abbildet (SQLite); die übrigen Dialekte
+  vergleichen `false`/`true` wie zuvor
 - `json` → `TEXT` (JSON-Funktionen verfügbar ab 3.38)
 - `array` → `TEXT` + W162 (kein nativer Array-Typ): die Spalte verliert ihre
   Array-Eigenschaft, ein Reverse liest `text` ohne Elementart zurück. Derselbe
