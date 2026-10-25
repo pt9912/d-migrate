@@ -184,7 +184,7 @@ unbemerkt (`Enum(refType)` kontextfrei `Text()` = `Text()`); sie gilt jetzt als 
 * **Review-Nachtrag (Runde 1/2):** `SqliteDomainFingerprintWiringTest` (`hexagon/application`) bildet den Abdruck über die echte Verdrahtung (`registrySchemaAwareCanonicalizer` und die `capability*`-Projektionen wie in `SchemaMigrateRunner.endpointFingerprints`) und sagt Gleichheit aus: Domain über `boolean`/`decimal`/`integer` = Spalte mit direktem Basistyp; ein Basistypwechsel ändert den Abdruck. Feste Hashes pinnt er bewusst nicht (sie enthalten die Algorithmus-Version). Zuvor war ein fester Hash einmal mit dem Produktionscode von `main` und einmal mit der Änderung gemessen und gleich. Matrix `H.1` über alle Dialekte: siehe „Gates“.
 * Doku: `docs/user/anwenderhandbuch.md` (SQLite-Hinweis zu Enum/Domain), `CHANGELOG.md` (Unreleased).
 
-## Gates (nach dem Merge mit `main`, Stand #55 = v22; 2026-10-25)
+## Gates (nach dem zweiten Merge mit `main`, Stand #55 bis #59; 2026-10-25)
 
 | Gate | Ergebnis |
 | --- | --- |
