@@ -84,6 +84,22 @@ class RefTypeVocabularyTest : FunSpec({
             RefTypeVocabulary.vocabularyOf(domainOf("VALUE >= 0")) shouldBe null
         }
 
+        test("ein Verbund mehrerer Domain-CHECKs zaehlt als keine Werteliste (Reader-Form, #57)") {
+            fun domainOf(check: String) = CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "text", check = check)
+
+            // Der Reader verbindet mehrere CHECKs als `(a) AND (b)`. Der Wertevorrat steht dann nicht mehr
+            // allein im CHECK; die Erkennung zerlegt `AND` bewusst nicht.
+            RefTypeVocabulary.vocabularyOf(domainOf("(VALUE = ANY (ARRAY['a', 'b'])) AND (length(VALUE) < 5)")) shouldBe null
+            RefTypeVocabulary.vocabularyOf(domainOf("(length(VALUE) < 5) AND (VALUE IN ('a', 'b'))")) shouldBe null
+            RefTypeVocabulary.vocabularyOf(domainOf("(VALUE IN ('a')) AND (VALUE IN ('a', 'b'))")) shouldBe null
+            // Ein einzelner CHECK bleibt eine Werteliste, auch in der Klammerform des Servers.
+            RefTypeVocabulary.vocabularyOf(domainOf("(VALUE IN ('a', 'b'))")) shouldBe listOf("a", "b")
+
+            val tables = mapOf("t" to TableDefinition(columns = mapOf("d" to refColumn("dom"))))
+            val customTypes = mapOf("dom" to domainOf("(VALUE IN ('a', 'b')) AND (length(VALUE) < 5)"))
+            RefTypeVocabulary.resolve(tables, customTypes) shouldBe tables
+        }
+
         test("Domain ohne Werteliste, Composite, unbekannter Typ und Inline-Enum bleiben unberuehrt") {
             val tables = mapOf(
                 "t" to TableDefinition(
@@ -280,7 +296,7 @@ class RefTypeVocabularyTest : FunSpec({
             // Die Felder einer Spalte trennt das ASCII-Unit-Separator-Zeichen (0x1F).
             val sep = "\u001F"
             projection shouldBe """
-                algorithm=schema-fingerprint-v22
+                algorithm=schema-fingerprint-v24
                 custom_types[0]
                 tables[1]
                 table=t

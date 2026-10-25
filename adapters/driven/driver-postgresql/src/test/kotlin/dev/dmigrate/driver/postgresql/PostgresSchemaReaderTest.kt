@@ -389,8 +389,8 @@ class PostgresSchemaReaderTest : FunSpec({
     test("domain over decimal keeps precision and scale (#52)") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
-            mapOf("typname" to "amount", "base_type" to "numeric", "numeric_precision" to 10,
-                "numeric_scale" to 2, "domain_default" to null, "check_clause" to "CHECK ((VALUE >= (0)::numeric))"),
+            mapOf("typname" to "amount", "base_type" to "numeric", "base_schema" to "pg_catalog",
+                "base_type_sql" to "numeric(10,2)", "check_clause" to "CHECK ((VALUE >= (0)::numeric))"),
         )
         every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
 
@@ -459,12 +459,12 @@ class PostgresSchemaReaderTest : FunSpec({
     test("domain precision and scale are read for decimal only (#52)") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
-            mapOf("typname" to "a", "base_type" to "int8", "numeric_precision" to 64, "numeric_scale" to 0,
-                "domain_default" to null, "check_clause" to null),
-            mapOf("typname" to "b", "base_type" to "float4", "numeric_precision" to 24, "numeric_scale" to null,
-                "domain_default" to null, "check_clause" to null),
-            mapOf("typname" to "c", "base_type" to "int2", "numeric_precision" to 16, "numeric_scale" to 0,
-                "domain_default" to null, "check_clause" to null),
+            mapOf("typname" to "a", "base_type" to "int8", "base_schema" to "pg_catalog",
+                "base_type_sql" to "bigint", "check_clause" to null),
+            mapOf("typname" to "b", "base_type" to "float4", "base_schema" to "pg_catalog",
+                "base_type_sql" to "real", "check_clause" to null),
+            mapOf("typname" to "c", "base_type" to "int2", "base_schema" to "pg_catalog",
+                "base_type_sql" to "smallint", "check_clause" to null),
         )
         every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
         val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,

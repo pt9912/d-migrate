@@ -96,7 +96,10 @@ private fun readPostgresTable(
         // meldete als einziger Leser `required: true`, und ein Vergleich gegen
         // eine Schemadatei, die `required` an der PK-Spalte weglaesst, zeigte
         // deshalb einen Unterschied, den niemand herstellen kann.
-        val required = !isPrimaryKeyColumn && (row["is_nullable"] as String) == "NO"
+        // `column_not_null` ist `pg_attribute.attnotnull`: das NOT NULL einer Domain bleibt an der
+        // Domain (Issue #59). Fehlt die Spalte im Ergebnis (Fixture), gilt `is_nullable`.
+        val columnNotNull = row["column_not_null"] as? Boolean ?: ((row["is_nullable"] as String) == "NO")
+        val required = !isPrimaryKeyColumn && columnNotNull
         val unique = if (isPrimaryKeyColumn) false else columnName in singleColumnUnique
         val colDefault = row["column_default"] as? String
         val defaultValue = when {
@@ -302,18 +305,22 @@ internal fun readPostgresCustomTypes(
         result[name] = CustomTypeDefinition(kind = CustomTypeKind.ENUM, values = values)
     }
 
-    for (row in PostgresMetadataQueries.listDomainTypes(session, schema)) {
-        val name = row["typname"] as String
-        val baseType = row["base_type"] as? String ?: "text"
-        val neutralBase = PostgresTypeMapping.mapParamType(baseType)
+    val domainRows = PostgresMetadataQueries.listDomainTypes(session, schema)
+    for ((name, rows) in domainRows.groupBy { it["typname"] as String }) {
+        // Je Constraint eine Zeile; Basistyp, Default, NOT NULL und Kollation wiederholen sich.
+        val row = rows.first()
+        val base = domainBaseType(row)
         result[name] = CustomTypeDefinition(
             kind = CustomTypeKind.DOMAIN,
-            baseType = neutralBase,
-            // Der Katalog fuellt Genauigkeit und Skala auch fuer `integer` (32/0) und die Gleitkommatypen;
-            // eine Datei schreibt sie nur fuer `decimal` (Issue #52).
-            precision = (row["numeric_precision"] as? Number)?.toInt()?.takeIf { neutralBase == "decimal" },
-            scale = (row["numeric_scale"] as? Number)?.toInt()?.takeIf { neutralBase == "decimal" },
-            check = normalizeDomainCheck(row["check_clause"] as? String),
+            baseType = base.baseType,
+            // Genauigkeit und Skala nennt `format_type` nur fuer `numeric(p,s)`; eine Datei schreibt sie
+            // nur fuer `decimal` (Issue #52).
+            precision = base.precision,
+            scale = base.scale,
+            check = domainCheckOf(name, rows, notes),
+            default = readDomainDefault(row["domain_default"] as? String),
+            notNull = row["not_null"] as? Boolean ?: false,
+            collation = (row["collation_name"] as? String)?.takeIf { it.isNotEmpty() },
         )
     }
 
@@ -342,6 +349,58 @@ internal fun readPostgresCustomTypes(
 }
 
 /**
+ * Der Basistyp einer Domain. Ein Typ aus `pg_catalog` kommt aus `format_type` mit Länge und Array
+ * ([PostgresDomainBaseType]); eine Domain über einem Typ außerhalb (andere Domain, Erweiterungstyp)
+ * behält den unqualifizierten Typnamen, denn `format_type` qualifiziert ihn je nach `search_path`.
+ */
+private fun domainBaseType(row: Map<String, Any?>): PostgresDomainBaseType.Mapped {
+    val formatted = row["base_type_sql"] as? String
+    if (formatted != null && row["base_schema"] == "pg_catalog") return PostgresDomainBaseType.map(formatted)
+    return PostgresDomainBaseType.Mapped(PostgresTypeMapping.mapParamType(row["base_type"] as? String ?: "text"))
+}
+
+/**
+ * Der CHECK einer Domain aus ihren Zeilen (je Constraint eine): jedes Prädikat einzeln auf die Autorenform
+ * gebracht, danach verbunden ([PostgresDomainCheckForm.conjunction]). Ein `NOT VALID`-Constraint behält sein
+ * Prädikat (er prüft Neues weiter); `R407` meldet ihn.
+ */
+private fun domainCheckOf(
+    typeName: String,
+    rows: List<Map<String, Any?>>,
+    notes: MutableList<SchemaReadNote>,
+): String? {
+    val predicates = mutableListOf<String>()
+    for (row in rows) {
+        val raw = row["check_clause"] as? String ?: continue
+        if (PostgresDomainCheckForm.isNotValid(raw)) {
+            val constraint = row["conname"] as? String ?: "?"
+            notes += SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "R407",
+                objectName = typeName,
+                message = "CHECK constraint '$constraint' of domain '$typeName' is NOT VALID; " +
+                    "it is read as a regular CHECK.",
+                hint = "A NOT VALID constraint still checks new and changed values but not existing rows; " +
+                    "the schema file cannot express that difference.",
+            )
+        }
+        normalizeDomainCheck(raw)?.let { predicates += it }
+    }
+    return PostgresDomainCheckForm.conjunction(predicates)
+}
+
+/**
+ * Der Katalogtext `domain_default` (`5`, `'x'::text`, `nextval('s'::regclass)`) wie der Default einer
+ * Spalte: Literal, bekannte Funktion oder die benannte Sequenz (Issue #59).
+ */
+internal fun readDomainDefault(raw: String?): DefaultValue? =
+    if (PostgresTypeMapping.isSerialDefault(raw)) {
+        PostgresTypeMapping.sequenceNameFromNextval(raw)?.let { DefaultValue.SequenceNextVal(it) }
+    } else {
+        PostgresTypeMapping.parseDefault(raw)
+    }
+
+/**
  * `pg_get_constraintdef` liefert den vollständigen Domain-Check inkl. Hülle, z. B.
  * `CHECK ((VALUE > 0))`. Das Modell soll nur das Prädikat halten, damit die
  * Generate-Seite genau einmal `CHECK (...)` wrappt (sonst entsteht
@@ -351,7 +410,7 @@ internal fun readPostgresCustomTypes(
  */
 internal fun normalizeDomainCheck(raw: String?): String? {
     if (raw == null) return null
-    var s = raw.trim()
+    var s = PostgresDomainCheckForm.withoutNotValid(raw).trim()
     if (s.regionMatches(0, "CHECK", 0, 5, ignoreCase = true)) {
         s = PostgresDomainCheckForm.predicate(s.substring(5).trim())
     }

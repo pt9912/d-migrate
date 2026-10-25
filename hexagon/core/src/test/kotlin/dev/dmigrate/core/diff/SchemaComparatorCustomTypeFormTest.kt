@@ -100,7 +100,7 @@ class SchemaComparatorCustomTypeFormTest : FunSpec({
     test("der Basistyp einer Domain: Synonyme und Laengenangaben sind derselbe Typ (#52)") {
         val same = listOf(
             "biginteger" to "bigint", "biginteger" to "int8", "integer" to "int4", "integer" to "INT",
-            "smallint" to "int2", "text" to "varchar(50)", "text" to "character varying", "text" to "bpchar",
+            "smallint" to "int2", "text" to "varchar", "text" to "character varying", "varchar(50)" to "character varying(50)",
             "decimal" to "numeric", "float" to "real", "float" to "double precision",
             "boolean" to "bool", "json" to "jsonb", "binary" to "bytea",
         )
@@ -139,8 +139,9 @@ class SchemaComparatorCustomTypeFormTest : FunSpec({
             .customTypesChanged.shouldBeEmpty()
     }
 
-    test("Laenge eines Typs: verglichen nur, wenn beide Seiten sie tragen (#52)") {
-        SchemaComparator().compare(schema(domain("varchar(50)")), schema(domain("text"))).customTypesChanged.shouldBeEmpty()
+    test("Laenge eines Typs gehoert zum Typ: varchar(50) ist nicht text und nicht varchar (#58)") {
+        SchemaComparator().compare(schema(domain("varchar(50)")), schema(domain("text"))).customTypesChanged shouldHaveSize 1
+        SchemaComparator().compare(schema(domain("varchar(50)")), schema(domain("varchar"))).customTypesChanged shouldHaveSize 1
         SchemaComparator().compare(schema(domain("varchar(50)")), schema(domain("varchar(50)")))
             .customTypesChanged.shouldBeEmpty()
         SchemaComparator().compare(schema(domain("varchar(50)")), schema(domain("varchar(254)")))

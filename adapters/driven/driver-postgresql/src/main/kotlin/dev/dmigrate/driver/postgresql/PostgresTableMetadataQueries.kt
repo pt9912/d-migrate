@@ -67,7 +67,16 @@ internal object PostgresTableMetadataQueries {
                       JOIN pg_namespace ns ON ns.oid = rel.relnamespace
                      WHERE ns.nspname = c.table_schema
                        AND rel.relname = c.table_name
-                       AND a.attname = c.column_name) AS generated_kind
+                       AND a.attname = c.column_name) AS generated_kind,
+                   -- `is_nullable` rechnet das NOT NULL einer Domain in die Spalte ein; das
+                   -- gehoert der Domain (Issue #59). Die Spalte selbst sagt nur `attnotnull`.
+                   (SELECT a.attnotnull
+                      FROM pg_attribute a
+                      JOIN pg_class rel ON rel.oid = a.attrelid
+                      JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+                     WHERE ns.nspname = c.table_schema
+                       AND rel.relname = c.table_name
+                       AND a.attname = c.column_name) AS column_not_null
             FROM information_schema.columns c
             WHERE table_schema = ? AND table_name = ?
             ORDER BY ordinal_position

@@ -1,0 +1,73 @@
+schema_format: "1.0"
+name: "pg-reverse-domain-base-types"
+version: "1.0.0"
+
+custom_types:
+  d_varchar:
+    kind: domain
+    base_type: "varchar(50)"
+  d_char:
+    kind: domain
+    base_type: "char(5)"
+  d_varchar_plain:
+    kind: domain
+    base_type: "varchar"
+  d_timestamp:
+    kind: domain
+    base_type: "timestamp(3)"
+  d_timestamptz:
+    kind: domain
+    base_type: "timestamptz(3)"
+  d_time:
+    kind: domain
+    base_type: "time(3)"
+  d_text:
+    kind: domain
+    base_type: "text"
+  d_int_array:
+    kind: domain
+    base_type: "integer[]"
+  d_varchar_array:
+    kind: domain
+    base_type: "varchar(50)[]"
+  d_numeric_array:
+    kind: domain
+    base_type: "decimal(10,2)[]"
+
+tables:
+  t:
+    columns:
+      id:
+        type: integer
+        required: true
+      c_d_varchar:
+        type: enum
+        ref_type: d_varchar
+      c_d_char:
+        type: enum
+        ref_type: d_char
+      c_d_varchar_plain:
+        type: enum
+        ref_type: d_varchar_plain
+      c_d_timestamp:
+        type: enum
+        ref_type: d_timestamp
+      c_d_timestamptz:
+        type: enum
+        ref_type: d_timestamptz
+      c_d_time:
+        type: enum
+        ref_type: d_time
+      c_d_text:
+        type: enum
+        ref_type: d_text
+      c_d_int_array:
+        type: enum
+        ref_type: d_int_array
+      c_d_varchar_array:
+        type: enum
+        ref_type: d_varchar_array
+      c_d_numeric_array:
+        type: enum
+        ref_type: d_numeric_array
+    primary_key: [id]

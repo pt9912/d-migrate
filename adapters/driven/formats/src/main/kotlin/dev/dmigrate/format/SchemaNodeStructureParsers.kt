@@ -302,5 +302,8 @@ internal fun parseCustomTypes(node: JsonNode?): Map<String, CustomTypeDefinition
             scale = childNode.optionalInt("scale"),
             check = childNode.optionalText("check"),
             description = childNode.optionalText("description"),
+            default = parseDefault(childNode["default"]),
+            notNull = childNode.boolOrDefault("not_null", false),
+            collation = childNode.optionalText("collation"),
         )
     }

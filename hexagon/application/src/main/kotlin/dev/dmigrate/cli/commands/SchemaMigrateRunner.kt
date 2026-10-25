@@ -641,6 +641,7 @@ class SchemaMigrateRunner(
             constraintName = capabilityConstraintNameCanonicalizer(prep.effectiveDialect),
             resolvesRefTypeVocabulary = capabilityResolvesRefTypeVocabulary(prep.effectiveDialect),
             typeWithCustomTypes = registryDomainAwareCanonicalizer(prep.effectiveDialect),
+            comparesDomainTraits = capabilityProjectsCustomTypes(prep.effectiveDialect),
         )
         val authorship = OverlayRawTextAuthorship.of(mergedOverlays)
         val serverForm = (prep.targetOp as? CompareOperand.Database)?.let { db ->

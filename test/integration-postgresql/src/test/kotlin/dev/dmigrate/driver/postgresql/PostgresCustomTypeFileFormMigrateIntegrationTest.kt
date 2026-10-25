@@ -282,6 +282,24 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         "text" to ("CREATE DOMAIN d AS text CHECK (length(VALUE) > 0)" to authored("text", "length(VALUE) > 0")),
         "bpchar(5)" to ("CREATE DOMAIN d AS char(5) CHECK (length(VALUE) > 0)" to authored("char(5)", "length(VALUE) > 0")),
         "text mit Literal" to ("CREATE DOMAIN d AS text CHECK (VALUE <> 'x')" to authored("varchar", "VALUE <> 'x'")),
+        // Laenge und Array (Issue #58): die Datenbank liefert sie, die Datei schreibt Synonyme.
+        "varchar(50)" to ("CREATE DOMAIN d AS varchar(50)" to authored("varchar(50)")),
+        "character varying(50) als Synonym" to ("CREATE DOMAIN d AS varchar(50)" to authored("character varying(50)")),
+        "varchar ohne Laenge" to ("CREATE DOMAIN d AS varchar" to authored("varchar")),
+        "varchar ohne Laenge, als text" to ("CREATE DOMAIN d AS varchar" to authored("text")),
+        "char(5)" to ("CREATE DOMAIN d AS char(5)" to authored("char(5)")),
+        "char ohne Laenge ist char(1)" to ("CREATE DOMAIN d AS char" to authored("char(1)")),
+        "timestamp(3)" to ("CREATE DOMAIN d AS timestamp(3)" to authored("timestamp(3)")),
+        "timestamp ohne Genauigkeit" to ("CREATE DOMAIN d AS timestamp" to authored("timestamp(6)")),
+        "timestamptz(3)" to ("CREATE DOMAIN d AS timestamptz(3)" to authored("timestamp(3) with time zone")),
+        "time(3)" to ("CREATE DOMAIN d AS time(3)" to authored("time(3)")),
+        "bit(5)" to ("CREATE DOMAIN d AS bit(5)" to authored("bit(5)")),
+        "integer[]" to ("CREATE DOMAIN d AS integer[]" to authored("integer[]")),
+        "integer[] als int4[]" to ("CREATE DOMAIN d AS integer[]" to authored("int4[]")),
+        "integer[][] gleich integer[]" to ("CREATE DOMAIN d AS integer[][]" to authored("integer[]")),
+        "text[]" to ("CREATE DOMAIN d AS text[]" to authored("text[]")),
+        "numeric(10,2)[]" to ("CREATE DOMAIN d AS numeric(10,2)[]" to authored("numeric(10,2)[]")),
+        "varchar(50)[]" to ("CREATE DOMAIN d AS varchar(50)[]" to authored("character varying(50)[]")),
         "AND, Klammern wie der Server sie setzt" to
             ("CREATE DOMAIN d AS integer CHECK (VALUE > 0 AND VALUE < 10)" to
                 authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
@@ -292,6 +310,128 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
             val db = read()
             migratesOnlyTheColumn(withAuthoredDomain(db, case.second))
         }
+    }
+
+    // ── Mehrere CHECK-Constraints einer Domain (Issue #57): je Constraint gelesen, nach Namen (C-Kollation)
+    // geordnet, mit AND verbunden, jedes Praedikat in Klammern. PostgreSQL 18 (TestImages.POSTGRESQL). ──
+
+    val multiCheckDomains = mapOf(
+        "zwei benannte CHECKs" to
+            ("CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)" to
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+        "zwei benannte CHECKs, Namen entgegen der Schreibfolge" to
+            ("CREATE DOMAIN d AS integer CONSTRAINT c2 CHECK (VALUE < 10) CONSTRAINT c1 CHECK (VALUE > 0)" to
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+        "drei CHECKs, c10 vor c2" to
+            ("CREATE DOMAIN d AS integer CONSTRAINT c2 CHECK (VALUE > 0) CONSTRAINT c10 CHECK (VALUE < 100) " +
+                "CONSTRAINT c1 CHECK (VALUE <> 5)" to
+                authored("integer", "(VALUE <> 5) AND (VALUE < 100) AND (VALUE > 0)")),
+        "zwei unbenannte CHECKs (d_check, d_check1)" to
+            ("CREATE DOMAIN d AS integer CHECK (VALUE > 0) CHECK (VALUE < 10)" to
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+        "benannt und unbenannt" to
+            ("CREATE DOMAIN d AS integer CHECK (VALUE > 0) CONSTRAINT zz CHECK (VALUE < 10)" to
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+        "zwei CHECKs mit Literalen und Funktion" to
+            ("CREATE DOMAIN d AS text CONSTRAINT a1 CHECK (VALUE <> 'x') CONSTRAINT a2 CHECK (length(VALUE) > 0)" to
+                authored("text", "(VALUE <> 'x') AND (length(VALUE) > 0)")),
+        "NOT NULL und zwei CHECKs" to
+            ("CREATE DOMAIN d AS integer NOT NULL CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)" to
+                authored("integer", "(VALUE > 0) AND (VALUE < 10)")),
+    )
+    for ((name, case) in multiCheckDomains) {
+        test("Domain mit mehreren CHECKs ist dieselbe Domain: $name") {
+            domainTable(case.first)
+            val db = read()
+            withClue("gelesen: ${db.customTypes["d"]?.check}") {
+                db.customTypes.getValue("d").check shouldBe case.second.check
+            }
+            migratesOnlyTheColumn(withAuthoredDomain(db, case.second))
+        }
+    }
+
+    test("Grenze: ab zehn unbenannten CHECKs ordnet die C-Kollation d_check1, d_check10, d_check2") {
+        val checks = (1..11).joinToString(" ") { "CHECK (VALUE <> $it)" }
+        domainTable("CREATE DOMAIN d AS integer $checks")
+        // Servernamen: d_check (1), d_check1 (2) ... d_check10 (11); C-Reihenfolge: d_check, d_check1, d_check10, d_check2 ...
+        val order = listOf(1, 2, 11) + (3..10)
+        read().customTypes.getValue("d").check shouldBe order.joinToString(" AND ") { "(VALUE <> $it)" }
+    }
+
+    test("Domain mit mehreren CHECKs: die Aenderung eines der CHECKs blockiert weiter") {
+        domainTable("CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)")
+        val db = read()
+        val o = migrate(withAuthoredDomain(db, authored("integer", "(VALUE > 0) AND (VALUE < 11)")))
+        withClue("${o.errors} ${o.report.take(600)}") {
+            o.exit shouldBe 8
+            o.report.contains("kind=AlterCustomType") shouldBe true
+        }
+    }
+
+    test("Domain mit zwei CHECKs gegen eine Datei, die nur den ersten fuehrt, blockiert (kein stiller Verlust)") {
+        domainTable("CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)")
+        val db = read()
+        migrate(withAuthoredDomain(db, authored("integer", "VALUE > 0"))).exit shouldBe 8
+        migrate(withAuthoredDomain(db, authored("integer", "VALUE < 10"))).exit shouldBe 8
+    }
+
+    test("Domain mit mehreren CHECKs: der Rueckweg stellt den Ausgangszustand her") {
+        domainTable("CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)")
+        val db = read()
+        val tmp = createTempDirectory("pg-domain-multi-rollback")
+        try {
+            val down = tmp.resolve("down.sql")
+            val up = migrate(withAuthoredDomain(db, authored("integer", "(VALUE > 0) AND (VALUE < 10)")), rollbackOutput = down)
+            withClue("${up.errors} ${up.report.take(900)}") { up.exit shouldBe 0 }
+
+            val exit = SchemaRollbackRunner(
+                dbLoader = { _, _ -> ResolvedSchemaOperand("live-pg", read(), ValidationResult(), dialect = DatabaseDialect.POSTGRESQL) },
+                executor = { _, statements, _ -> executeAgainstPool(pool, statements) },
+                printError = { msg, src -> System.err.println("[$src] $msg") },
+            ).execute(
+                SchemaRollbackRequest(source = down, target = "db:placeholder", execute = true, allowDestructive = true),
+            )
+            exit shouldBe 0
+            read().customTypes.getValue("d").check shouldBe "(VALUE > 0) AND (VALUE < 10)"
+        } finally {
+            tmp.toFile().deleteRecursively()
+        }
+    }
+
+    test("NOT VALID: das Praedikat bleibt, das Suffix faellt weg, eine Note meldet es") {
+        domainTable(
+            "CREATE DOMAIN d AS integer",
+            "ALTER DOMAIN d ADD CONSTRAINT nv CHECK (VALUE > 0) NOT VALID",
+        )
+        val result = PostgresSchemaReader().read(pool)
+        result.schema.customTypes.getValue("d").check shouldBe "VALUE > 0"
+        val notes = result.notes.filter { it.code == "R407" }
+        notes.map { it.objectName } shouldBe listOf("d")
+        migratesOnlyTheColumn(withAuthoredDomain(result.schema, authored("integer", "VALUE > 0")))
+    }
+
+    test("NOT VALID neben einem gueltigen CHECK: beide bleiben, die Note nennt nur den ungueltigen") {
+        domainTable(
+            "CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0)",
+            "ALTER DOMAIN d ADD CONSTRAINT c2 CHECK (VALUE < 10) NOT VALID",
+        )
+        val result = PostgresSchemaReader().read(pool)
+        result.schema.customTypes.getValue("d").check shouldBe "(VALUE > 0) AND (VALUE < 10)"
+        result.notes.filter { it.code == "R407" }.single().message.contains("c2") shouldBe true
+    }
+
+    test("Domain ueber Domain: der innere CHECK bleibt an der inneren Domain, der aeussere an der aeusseren") {
+        domainTable(
+            "CREATE DOMAIN b AS integer CHECK (VALUE > 0)",
+            "CREATE DOMAIN d AS b CHECK (VALUE < 10)",
+        )
+        val db = read()
+        db.customTypes.getValue("b").check shouldBe "VALUE > 0"
+        val outer = db.customTypes.getValue("d")
+        outer.baseType shouldBe "b"
+        // Der Server schreibt den Cast an VALUE (bekannte Grenze, siehe unten); die Reader-Form bleibt Katalogform.
+        outer.check shouldBe "(VALUE)::integer < 10"
+        migratesOnlyTheColumn(withAuthoredDomain(db, authored("b", "(VALUE)::integer < 10")))
     }
 
     test("Domain ueber Domain in Autorenform ist dieselbe Domain") {
@@ -337,8 +477,7 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         "OR ohne Klammern" to ("CREATE DOMAIN d AS integer CHECK (VALUE < 0 OR VALUE > 10)" to
             authored("integer", "VALUE < 0 OR VALUE > 10")),
         "Cast an VALUE (varchar)" to ("CREATE DOMAIN d AS varchar(50) CHECK (length(VALUE) > 0)" to
-            authored("varchar", "length(VALUE) > 0")),
-        "Array-Domain" to ("CREATE DOMAIN d AS integer[]" to authored("integer[]")),
+            authored("varchar(50)", "length(VALUE) > 0")),
     )
     for ((name, case) in knownLimits) {
         test("bekannte Grenze, blockiert weiter: $name") {
@@ -352,6 +491,55 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         }
     }
 
+    test("der Reader nennt Laenge und Array des Basistyps (Neutralform, Issue #58)") {
+        sql(
+            "CREATE DOMAIN d_v AS varchar(50)", "CREATE DOMAIN d_c AS char(5)", "CREATE DOMAIN d_u AS varchar",
+            "CREATE DOMAIN d_a AS integer[]", "CREATE DOMAIN d_va AS varchar(50)[]", "CREATE DOMAIN d_na AS numeric(10,2)[]",
+            "CREATE DOMAIN d_n AS numeric(10,2)", "CREATE DOMAIN d_ts AS timestamp(3)", "CREATE DOMAIN d_dd AS d_v",
+            pool = pool,
+        )
+        read().customTypes.mapValues { (_, t) -> t.baseType } shouldBe mapOf(
+            "d_v" to "varchar(50)", "d_c" to "char(5)", "d_u" to "text", "d_a" to "integer[]",
+            "d_va" to "varchar(50)[]", "d_na" to "decimal(10,2)[]", "d_n" to "decimal", "d_ts" to "timestamp(3)",
+            "d_dd" to "d_v",
+        )
+        read().customTypes.getValue("d_n").let { it.precision shouldBe 10; it.scale shouldBe 2 }
+    }
+
+    test("der Reader nennt die Laenge auch ohne Recht an der Domain (kein information_schema)") {
+        sql(
+            "DROP ROLE IF EXISTS poor", "CREATE ROLE poor LOGIN PASSWORD 'poor'",
+            "CREATE DOMAIN d AS varchar(50)", "REVOKE USAGE ON DOMAIN d FROM PUBLIC",
+            "GRANT USAGE ON SCHEMA public TO poor", pool = pool,
+        )
+        val poorPool = HikariConnectionPoolFactory.create(
+            ConnectionConfig(
+                dialect = DatabaseDialect.POSTGRESQL, host = container.host, port = container.firstMappedPort,
+                database = container.databaseName, user = "poor", password = "poor",
+            ),
+        )
+        try {
+            PostgresSchemaReader().read(poorPool).schema.customTypes.getValue("d").baseType shouldBe "varchar(50)"
+        } finally {
+            poorPool.close()
+            sql("DROP DOMAIN d", "DROP OWNED BY poor", "DROP ROLE poor", pool = pool)
+        }
+    }
+
+    test("Rundlauf: die gelesene Domain, als DDL gerendert, ergibt dieselbe Domain") {
+        val ddl = listOf(
+            "CREATE DOMAIN d_v AS varchar(50)", "CREATE DOMAIN d_c AS char(5)", "CREATE DOMAIN d_a AS integer[]",
+            "CREATE DOMAIN d_va AS varchar(50)[]", "CREATE DOMAIN d_ts AS timestamp(3)", "CREATE DOMAIN d_n AS numeric(10,2)",
+        )
+        sql(*ddl.toTypedArray(), pool = pool)
+        val first = read()
+        val statements = PostgresDdlGenerator().generate(first, dev.dmigrate.driver.DdlGenerationOptions())
+            .statements.map { it.sql }
+        sql("DROP SCHEMA public CASCADE", "CREATE SCHEMA public", *statements.toTypedArray(), pool = pool)
+        read().customTypes.mapValues { (_, t) -> t.baseType } shouldBe first.customTypes.mapValues { (_, t) -> t.baseType }
+        read().customTypes.getValue("d_v").baseType shouldBe "varchar(50)"
+    }
+
     val realChanges = mapOf(
         "anderer CHECK" to ("CREATE DOMAIN d AS integer CHECK (VALUE > 0)" to authored("integer", "VALUE >= 0")),
         "andere Genauigkeit" to ("CREATE DOMAIN d AS decimal(10,2) CHECK (VALUE >= 0)" to
@@ -359,6 +547,19 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         "anderer Basistyp" to ("CREATE DOMAIN d AS integer CHECK (VALUE > 0)" to authored("bigint", "VALUE > 0")),
         "andere Genauigkeit, eingebettet" to ("CREATE DOMAIN d AS decimal(10,2) CHECK (VALUE >= 0)" to
             authored("NUMERIC(12,2)", "VALUE >= 0")),
+        // Laenge und Array (Issue #58)
+        "andere Laenge" to ("CREATE DOMAIN d AS varchar(50)" to authored("varchar(254)")),
+        "Laenge gegen text" to ("CREATE DOMAIN d AS varchar(50)" to authored("text")),
+        "Laenge gegen unbegrenzt" to ("CREATE DOMAIN d AS varchar(50)" to authored("varchar")),
+        "char gegen varchar" to ("CREATE DOMAIN d AS char(5)" to authored("varchar(5)")),
+        "andere char-Laenge" to ("CREATE DOMAIN d AS char(5)" to authored("char(6)")),
+        "andere Genauigkeit bei timestamp" to ("CREATE DOMAIN d AS timestamp(3)" to authored("timestamp")),
+        "andere bit-Laenge" to ("CREATE DOMAIN d AS bit(5)" to authored("bit(6)")),
+        "Array gegen Skalar" to ("CREATE DOMAIN d AS integer" to authored("integer[]")),
+        "Skalar gegen Array" to ("CREATE DOMAIN d AS integer[]" to authored("integer")),
+        "anderer Array-Elementtyp" to ("CREATE DOMAIN d AS integer[]" to authored("bigint[]")),
+        "andere Laenge im Array" to ("CREATE DOMAIN d AS varchar(50)[]" to authored("varchar(60)[]")),
+        "andere Genauigkeit im Array" to ("CREATE DOMAIN d AS numeric(10,2)[]" to authored("numeric(12,2)[]")),
     )
     for ((name, case) in realChanges) {
         test("echte Aenderung einer Domain blockiert weiter: $name") {
