@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`DEFAULT`, `NOT NULL` und Kollation einer Domain stehen im Modell** (Issue #59). Eine Domain
+  trägt `default`, `not_null` und `collation` (Datei, `spec/schema-reference.md`); nur PostgreSQL
+  wertet sie aus. `schema reverse` liest sie aus dem Katalog, `schema generate` schreibt sie in
+  `CREATE DOMAIN`, und `schema migrate` vergleicht sie. MySQL, SQLite, SQL Server und Oracle
+  ignorieren die Felder.
+  - Behoben: eine Spalte vom Typ einer `NOT NULL`-Domain kam mit `required: true` zurück; ein
+    `ALTER DOMAIN … DROP NOT NULL` plante dadurch ein irreführendes
+    `ALTER TABLE … SET NOT NULL`. Das `NOT NULL` gehört jetzt der Domain, `required` der Spalte
+    nur ihr eigenes.
+  - Eine Änderung an einem der drei Felder blockiert gegen PostgreSQL mit Exit `8`
+    (`DIALECT_UNSUPPORTED_OPERATION`): ein `ALTER DOMAIN`-Renderer fehlt weiterhin.
+  - Der Fingerabdruck steht auf `schema-fingerprint-v24`; ein Rollback-Artefakt einer früheren
+    Version ist neu zu erzeugen.
+
 ## [1.10.0] - 2026-10-25
 
 ### Fixed

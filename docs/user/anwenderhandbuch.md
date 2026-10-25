@@ -2626,8 +2626,17 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   - Der Reader bringt den `check` auf die Schreibweise zurück, die Sie ihm geben
     (`VALUE >= 0` statt `((VALUE >= (0)::numeric))`).
   - Die Länge einer `varchar(n)`/`char(n)`-Domain vergleicht `schema migrate`
-    nur, wenn Datei und Katalog sie beide nennen; der Katalog tut es nicht. Auch
-    `DEFAULT` und `NOT NULL` einer Domain vergleicht es nicht.
+    nur, wenn Datei und Katalog sie beide nennen; der Katalog tut es nicht.
+  - `default`, `not_null` und `collation` einer Domain (`DEFAULT`, `NOT NULL`,
+    abweichende Kollation) liest `schema reverse` aus dem Katalog, `schema generate`
+    schreibt sie in `CREATE DOMAIN`, und `schema migrate` vergleicht sie. Der Standardwert
+    zählt wie der einer Spalte (`5` und `5.0` sind gleich); die Kollation ohne
+    Anführungszeichen, `C` und `"C"` sind dieselbe. Ändert sich einer der drei Werte,
+    blockiert der Plan wie jede Domain-Änderung mit Exit 8 — ändern Sie die Domain per
+    `ALTER DOMAIN` von Hand. Das `NOT NULL` gehört der Domain: eine Spalte vom Typ der
+    Domain erscheint in `schema reverse` nur mit `required: true`, wenn die Spalte selbst
+    `NOT NULL` trägt. Auf MySQL, SQLite, SQL Server und Oracle, die keine Domain
+    kennen, haben die drei Felder keine Wirkung.
 
   **Grenzen:** was der Server darüber hinaus umschreibt, bleibt in Katalogform
   und gilt als geändert und blockiert: `BETWEEN`, `IN (…)` (der Server macht
