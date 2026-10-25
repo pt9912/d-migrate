@@ -114,3 +114,4 @@ argumentiert werden.
 | 0058 | [Ein beim Reverse verlorener SRID ist eine Warnung, kein Blocker](0058-verlorener-srid-beim-reverse-ist-warnung.md) | accepted |
 | 0059 | [Kein SDKMAN-Kanal — Workflow und Plan entfallen](0059-kein-sdkman-kanal.md) | accepted |
 | 0060 | [Der Wertevorrat eines `ref_type`-Enums auf SQLite wird gegen eine Datenbank aufgelöst, `schema-fingerprint-v18`](0060-sqlite-ref-type-enum-wertevorrat-gegen-datenbank.md) | accepted |
+| 0061 | [Eine Domain in Autorenform gilt als dieselbe Domain — Reader-Normalform für den `CHECK`, Neutralform für den Basistyp, `schema-fingerprint-v19`](0061-domain-in-autorenform-reader-normalform-und-neutralform-des-basistyps.md) | accepted |

@@ -1,7 +1,9 @@
 package dev.dmigrate.format
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.DefaultValue
@@ -233,5 +235,36 @@ class SchemaNodeParserTest : FunSpec({
         type.scale shouldBe null
         // Leer, nicht fehlend: der Reader liefert null (Issue #51).
         type.fields shouldBe emptyMap()
+    }
+
+    test("a decimal domain parses to the author form and compares equal to the reader form (#52)") {
+        fun parse(typeJson: String) = SchemaNodeParser.parse(
+            mapper.readTree(
+                """
+                { "schema_format": "1.0", "name": "d", "version": "1",
+                  "custom_types": { "amount": $typeJson }, "tables": {} }
+                """.trimIndent(),
+            ),
+        )
+        val separate = parse("""{ "kind": "domain", "base_type": "decimal", "precision": 10, "scale": 2, "check": "VALUE >= 0" }""")
+        val embedded = parse("""{ "kind": "domain", "base_type": "NUMERIC(10,2)", "check": "VALUE >= 0" }""")
+
+        val type = separate.customTypes.getValue("amount")
+        type.baseType shouldBe "decimal"
+        type.precision shouldBe 10
+        type.scale shouldBe 2
+        type.fields shouldBe emptyMap()
+        embedded.customTypes.getValue("amount").baseType shouldBe "NUMERIC(10,2)"
+
+        // So liefert der PostgreSQL-Reader dieselbe Domain: fields fehlend, Neutralform.
+        val read = separate.copy(
+            customTypes = mapOf(
+                "amount" to CustomTypeDefinition(
+                    kind = CustomTypeKind.DOMAIN, baseType = "decimal", precision = 10, scale = 2, check = "VALUE >= 0",
+                ),
+            ),
+        )
+        SchemaComparator().compare(read, separate).customTypesChanged shouldBe emptyList()
+        SchemaComparator().compare(read, embedded).customTypesChanged shouldBe emptyList()
     }
 })

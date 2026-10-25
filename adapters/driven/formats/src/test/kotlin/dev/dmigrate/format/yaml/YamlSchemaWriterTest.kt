@@ -3,6 +3,7 @@ package dev.dmigrate.format.yaml
 import dev.dmigrate.core.model.*
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -159,5 +160,27 @@ class YamlSchemaWriterTest : FunSpec({
         yaml shouldNotContain "skipped_objects"
         yaml shouldNotContain "severity"
         yaml shouldNotContain "action_required"
+    }
+
+    test("a domain as the PostgreSQL reader returns it writes no precision and scale unless it is decimal (#52)") {
+        val schema = SchemaDefinition(
+            name = "S", version = "1",
+            customTypes = mapOf(
+                "pos" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "integer", check = "VALUE > 0"),
+                "amount" to CustomTypeDefinition(
+                    kind = CustomTypeKind.DOMAIN, baseType = "decimal", precision = 10, scale = 2, check = "VALUE >= 0",
+                ),
+            ),
+        )
+        val out = ByteArrayOutputStream().also { codec.write(it, schema) }.toString(Charsets.UTF_8)
+        val pos = out.substringAfter("pos:").substringBefore("amount:")
+        val amount = out.substringAfter("amount:")
+
+        pos shouldContain "base_type: integer"
+        pos shouldContain "check: VALUE > 0"
+        pos shouldNotContain "precision"
+        pos shouldNotContain "scale"
+        amount shouldContain "precision: 10"
+        amount shouldContain "scale: 2"
     }
 })
