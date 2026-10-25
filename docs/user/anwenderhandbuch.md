@@ -2172,11 +2172,6 @@ sie als normale View erzeugt (Warnung **W103**).
     (`TRANSACTION_SCOPE_UNSUPPORTED`, die Datenbank bleibt unverändert).
   - **Grenze `WITHOUT ROWID`:** ein Neubau aus einer Datei legt die Tabelle ohne `WITHOUT ROWID` neu an, auch
     wenn die Datenbank sie so führt; die Datei kennt das Merkmal nicht. Betrifft jeden Neubau, nicht nur diesen Fall.
-    Datenbank dafür einen `CREATE UNIQUE INDEX` führt, zeigt `schema migrate --plan-only`
-    ohne Änderung im Schema einen Neubau (Constraint anlegen, Index löschen). `--execute` endet
-    damit — auch ohne weitere Änderung daneben — mit Exit `8`
-    (`TRANSACTION_SCOPE_UNSUPPORTED`); die Datenbank bleibt unverändert. Ziehen Sie die Datei
-    mit `schema reverse` neu oder schreiben Sie die Spalte als `indices: [{ unique: true }]`.
   - **Ausdrucks-Index:** ein Index über einen Ausdruck (`lower(a)`) erzeugt keine Operation, wenn Datei und Datenbank
     ihn gleich ausdrücken. `schema reverse` schreibt den Ausdruck ohne die eine äußere Klammer, die der Generator setzt;
     Klammern, die zum Ausdruck gehören (`(a) || (b)`), bleiben. Eine Datei mit `(lower(a))` gilt gegen die

@@ -131,9 +131,9 @@ einschließlich Indexname und Eindeutigkeit. (4) Aufwand und Tag-Folge.
 
   Außerdem: sieht die Matrix (`test/cross-dialect-matrix`) das Paar „Datei-`unique` / Datenbank-Index"? Vermutung nein.
 * **P1 Entscheidung:** Richtung gegen die Kriterien. **ADR-/Tag-Bedarf:** aktueller Tag (mit #55) `schema-fingerprint-v22`
-  (`MigrationFingerprint` Zeile 223; ADR 0062 nennt `v20`, danach stieg er mit dem Default-Vergleich). (a1) ändert nur Planer und
-  Renderer; der Abdruck wird aus dem Schema nach Reader und Projektion gebildet (Zeilen 350/355; Zeile 275 ist nur `algorithm=`), nicht aus dem Plan —
-  **vermutlich kein Tag-Bump**, in P1 gegen `MigrationFingerprint` und `MigrationFingerprintTest` zu bestätigen. (b) siehe dort. ADR
+  (`MigrationFingerprint` `ALGORITHM` Zeile 229; ADR 0062 nennt `v20`, danach stieg er mit dem Default-Vergleich). (a1) ändert nur Planer und
+  Renderer; der Abdruck wird aus dem Schema nach Reader und Projektion gebildet (Zeilen 356 und 417-418; Zeile 281 schreibt nur `algorithm=`), nicht aus dem Plan —
+  **vermutlich kein Tag-Bump** (in P1 bestätigt, siehe Nachtrag). (b) siehe dort. ADR
   nur bei (b) oder wenn (a1) eine Regel festlegt, die ADR 0062 berührt. Nummern: **zum Aktivierungszeitpunkt der nächste freie**;
   nicht vorab, die heute absehbaren sind für #55/#58/#59 vergeben.
 * **P2 Umsetzung mit Tests** (für (a1); bei (c) nur Regression):
@@ -216,8 +216,8 @@ Rückrichtung ohne Doppelung (Fall 10 wird grün, in P2 mit `catalog()`-Vergleic
 (b) widerspricht ADR 0062, (c) lässt den Fall blockiert, (a2)/(d) lösen Fehler 2 nicht.
 
 **Fingerabdruck:** kein Tag-Bump, belegt an `MigrationFingerprint` (`MigrationFingerprint`): `ALGORITHM` Zeile 229
-(`schema-fingerprint-v22`); `project(...)` (ab Zeile 276) baut den Abdruck allein aus `SchemaDefinition`, Typ-/Index-/Generierungs-Kanonisierern
-und Dialektflags (Parameter Zeilen 250-278; Tabellen-`indices` Zeilen 356 und 417-418). Weder `DiffOperation`, `DiffPlanner`-Plan noch
+(`schema-fingerprint-v22`); `project(...)` (ab Zeile 270, `algorithm=` Zeile 281) baut den Abdruck allein aus `SchemaDefinition`, Typ-/Index-/Generierungs-Kanonisierern
+und Dialektflags (Parameter Zeilen 270-278; Tabellen-`indices` Zeilen 356 und 417-418). Weder `DiffOperation`, `DiffPlanner`-Plan noch
 Renderer-Ausgabe gehen in die Projektion oder die Nutzlast ein. (a1) ändert nur `SqliteRebuildPlanner.classify` und das Eimer-Rendering,
 also keinen dieser Eingänge. Kein ADR. Nummernstand mit main: v22/ADR 0064 verbraucht (#55); v23/0065 (#58) und v24/0066 (#59) reserviert;
 dieser Plan verbraucht nichts (v25/0067 bleiben frei).
