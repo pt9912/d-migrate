@@ -1,11 +1,12 @@
 # SQLite: ein eindeutiger Index gilt gegen die Datenbank als geändert (Issue #53)
 
-> **Status:** Draft mit Scope (2026-10-26). Aus Issue #53: `schema migrate` gegen SQLite plant für
-> einen unveränderten eindeutigen Index `DropConstraint` + `AddIndex`; `--execute` blockiert mit
-> `TRANSACTION_SCOPE_UNSUPPORTED` (Exit 8). Gleiche Fehlerklasse wie #51/#52 (ein Objekt, das
-> beide Seiten gleich meinen, gilt als geändert), anderer Ort.
-> **Vorbedingung:** keine. **Aktivierung** (Move nach `../in-progress/`) beim ersten
-> Implementierungs-Commit.
+> **Status:** Draft mit Scope (2026-10-25), nach Review-Runde 1. Aus Issue #53: `schema migrate`
+> gegen SQLite plant für einen unveränderten eindeutigen Index `DropConstraint` + `AddIndex`;
+> `--execute` blockiert mit `TRANSACTION_SCOPE_UNSUPPORTED` (Exit 8). Gleiche Fehlerklasse wie
+> #51/#52 (ein Objekt, das beide Seiten gleich meinen, gilt als geändert), anderer Ort.
+> Schwesterplan: `sqlite-default-vergleich-und-neubau-cast.md` (#54, teilt sich Reader und
+> Fingerabdruck-Tag). **Vorbedingung:** keine. **Aktivierung** (Move nach `../in-progress/`) beim
+> ersten Implementierungs-Commit.
 
 ## Ziel
 
@@ -16,88 +17,118 @@ aus, statt mit Exit 8 zu blockieren.
 ## Problem
 
 Nachgestellt mit dem SQLite-CLI-Test (`schema generate` → Datenbank → `schema migrate --plan-only`
-mit **demselben** Schema); Fälle nach dem Muster der Messungen in
-`custom-type-fields-leer-gegen-null.md`:
+mit **demselben** Schema):
 
 | Index in Datei | Operationen gegen die erzeugte Datenbank |
 | --- | --- |
-| eindeutig, **eine** Spalte, ohne Prädikat (`unique: true`) | `DropConstraint ["t","_unique_j"]`, `AddIndex ["t","ix_t"]` |
+| eindeutig, **eine** Spalte, ohne Prädikat | `DropConstraint ["t","_unique_j"]`, `AddIndex ["t","ix_t"]` |
 | eindeutig, **zwei** Spalten, ohne Prädikat | `DropConstraint ["t","ix_t"]`, `AddIndex ["t","ix_t"]` |
 | eindeutig mit Prädikat (`where`) | keine |
 | nicht eindeutig | keine |
 | Spalte mit `unique: true` (kein Index) | keine |
 
-Auf PostgreSQL geht derselbe Fall. Mit `--execute` und einer weiteren additiven Änderung (`AddColumn`)
-liegen `DropConstraint`/`AddIndex` mit dem `AddColumn` in einem Strom, was
-`MigrationStreamClassifier.unsupportedTransactionScopeReason` ablehnt
-(`TRANSACTION_SCOPE_UNSUPPORTED`; Mischumfang wie in #50).
+Der Reporter nennt als Kontrolle PostgreSQL 18.6: derselbe Fall geht dort (Plan, Ausführung, Rückführung
+Exit 0); nicht von uns nachgemessen.
 
-### Spuren im Code (Ursache in P0 zu bestätigen)
+**Warum Exit 8.** Allein sind `DropConstraint` + `AddIndex` ausführbar (der Plan, `--plan-only`, endet mit
+Exit 0). Auf SQLite ist `DropConstraint` ein Tabellenneubau (`STREAM_OWNED`); kommt eine weitere
+Nicht-Neubau-Operation dazu (`AddColumn`), liegen zwei Umfänge in einem Strom, was
+`MigrationStreamClassifier.unsupportedTransactionScopeReason` ablehnt (`TRANSACTION_SCOPE_UNSUPPORTED`;
+derselbe Mischumfang wie in #50).
 
-* Der Reader
-  ([`SqliteSchemaReader`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSchemaReader.kt))
-  liest UNIQUE-Constraint-Autoindizes („AP4“, Zeilen um 248–256, 308, 415) und filtert eindeutige
-  Mehrspalten-Indizes aus den Indizes heraus („multi-col unique already in constraints“, Zeile um 368).
-  Ein `CREATE UNIQUE INDEX` (Ursprung `c` in `PRAGMA index_list`) sieht aus wie ein
-  Tabellen-`UNIQUE`; das Reverse macht daraus einen Constraint beziehungsweise `column.unique`, die
-  Datei beschreibt einen Index.
-* Der Vergleich
-  ([`TableComparator`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/TableComparator.kt),
-  `NormalizedConstraints.singleColumnUnique`, `syntheticUniqueConstraint` → `_unique_<spalte>`) kennt
-  Spalten-`unique` und Constraint, setzt aber den **Index** mit `unique: true` nicht mit ihnen gleich.
-  Beim Zweispalten-Fall trägt der `DropConstraint` den Namen des Index (`ix_t`) — ein Hinweis, dass der
-  Reader den Index unter dem Indexnamen als Constraint zurückgibt.
+### Ursache (am Code bestätigt, in P0 mit der Messung zu belegen)
+
+* **Eine Spalte:** [`SqliteSchemaReader`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSchemaReader.kt)
+  faltet jeden eindeutigen Index ohne Prädikat über
+  [`SchemaReaderUtils.singleColumnUniqueFromIndices`](../../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/SchemaReaderUtils.kt)
+  auf `column.unique` (Zeilen um 255–256) und wirft ihn aus `indices` (Filter um 366–370). Der Vergleich
+  sieht links `column.unique`, rechts nicht → `DropConstraint` mit dem synthetischen Namen `_unique_j`
+  (`TableComparator.syntheticUniqueConstraint`); der Index der Datei fehlt links → `AddIndex`.
+* **Mehrere Spalten:** `buildMultiColumnUniqueFromIndices` (Zeile um 308) macht den Index unter dem
+  **Indexnamen** zum Constraint → `DropConstraint ["t","ix_t"]`.
+* Die Autoindizes aus einem `UNIQUE`-Constraint (`PRAGMA index_list`-Ursprung `u`) liefert
+  `SqliteMetadataQueries.listUniqueConstraintIndexes`; `listIndices` lässt Ursprung `c` (ein
+  `CREATE UNIQUE INDEX`) durch. Die Reader-Faltung unterscheidet die beiden Herkünfte nicht.
+* Die anderen Reader (MySQL, MSSQL, Oracle) rufen dieselben `SchemaReaderUtils`-Funktionen
+  (`MysqlSchemaReader`, `MssqlSchemaReader`, `OracleSchemaReader`); eine Änderung dort wirkt auf sie.
 
 ## Richtung (nach P0 zu entscheiden)
 
-* **A — Reader:** nur ein Autoindex mit Ursprung `u` (aus einem `UNIQUE`-Constraint) wird Constraint
-  oder `column.unique`; ein Index mit Ursprung `c` bleibt ein Index. Wirkt in `schema reverse` und
-  `schema compare` (Reverse-Vertrag), löst die Ursache. Ein Reverse einer Datenbank mit `CREATE UNIQUE
-  INDEX` schreibt dann einen Index statt eines Constraints.
-* **B — Vergleich:** ein eindeutiger Index ohne Prädikat und ein einspaltiger/mehrspaltiger
-  `UNIQUE`-Constraint über dieselben Spalten gelten als gleich (zielbewusst, SQLite). Reverse bleibt;
-  der Vergleich faltet. Auf anderen Dialekten sind Index und Constraint verschiedene Objekte (PostgreSQL:
-  `DROP CONSTRAINT` gegen `DROP INDEX`) — das Gate wäre dialektbezogen, mit Vertragsfolge für
-  Operationen (`AddIndex` ersetzt keinen Constraint).
-* **C — Beides:** A für die Herkunft, B als Netz für Datenbanken, die tatsächlich einen Constraint
-  tragen, während die Datei einen Index schreibt (oder umgekehrt) — dann ist die Aussage „gleiche
-  Eindeutigkeit“ legitim, aber der Umbau ist nur auf SQLite möglich (kein `ALTER TABLE ADD/DROP
-  CONSTRAINT`).
+* **A — Reader: Herkunft beachten.** Nur ein Autoindex mit Ursprung `u` wird Constraint/`column.unique`;
+  ein Index mit Ursprung `c` bleibt ein Index. Löst die Ursache, wirkt in `schema reverse` und
+  `schema compare` (Reverse-Vertrag). **Kosten:** kippt festgeschriebene Reader-Tests
+  (`SqliteSchemaReaderTest` „single-column UNIQUE is lifted to ColumnDefinition.unique“ nimmt ausdrücklich
+  `CREATE UNIQUE INDEX idx_email` als Fall, weitere Tests und Goldens mit eindeutigem Index — Liste in P1)
+  und ändert die Auslegung in den Kommentaren von `listIndices` und `SqliteSchemaReader`
+  („UNIQUE-Autoindex ist Constraint“). **Bestandsdateien:** eine Datei aus einem früheren
+  `schema reverse` einer Datenbank mit `CREATE UNIQUE INDEX` trägt `unique: true` an der Spalte oder einen
+  Constraint; nach A liest derselbe Stand als Index, der Vergleich plant `AddConstraint` (Neubau) +
+  `DropIndex` — ein neues Exit-8-Risiko genau für Bestandsanwender. Das ist die eigentliche
+  Abwägung gegen C.
+* **B — Vergleich:** ein eindeutiger Index ohne Prädikat und ein `UNIQUE`-Constraint/`column.unique` über
+  dieselben Spalten gelten als gleich (zielbewusst, SQLite). Reverse bleibt. **Kosten:** der Index-Vertrag
+  steckt in drei Projektionen — Vergleich (`TableComparator`/`TableIndexComparator`),
+  `MigrationFingerprint` (`foldConstraints` faltet einen einspaltigen Constraint auf `column.unique`, einen
+  eindeutigen Index nicht) und `CanonicalPayload`. Faltet nur der Vergleich, driftet der Post-Compare nach
+  `--execute` und der `schema rollback`-Check am Abdruck. B ändert damit den Abdruck-Vertrag (Tag-Bump).
+  Gate dialektbezogen (nur SQLite; die anderen Reader laufen über dieselben Hilfsfunktionen).
+* **C — beides:** A für die Herkunft, B als Netz für Bestandsdateien. **Widerspruch, den P1 auflösen
+  muss:** SQLite kann Index und Constraint nicht ineinander umbauen (kein `ALTER TABLE ADD/DROP CONSTRAINT`);
+  wo A und B trotzdem eine Operation ergeben, bleibt nur der Tabellenneubau — genau der Exit-8-Weg, der
+  vermieden werden soll. C lohnt nur, wenn B die Operation dort ganz entfallen lässt.
 
-Nicht-Ziel: `UNIQUE`-Constraints, die wirklich als Constraint in der Datenbank stehen und in der Datei
-als Constraint stehen (laufen heute).
+Nicht-Ziel: `UNIQUE`-Constraints, die in der Datenbank als Constraint stehen und in der Datei als
+Constraint (laufen heute).
 
 ## Phasen
 
 * **P0 Messung** (SQLite-CLI-Test + Reader-Unit-Test; Muster `CliSchemaMigrateViewRebuildSqliteTest`):
-  feste Fallliste mit (Datei, was der Reader liefert, Operationen): eindeutiger Index 1 Spalte / 2 / 3
-  Spalten; mit `where`; mit `COLLATE`/absteigend; Index über Ausdruck; `unique: true` an der Spalte;
-  Tabellen-`UNIQUE (a, b)`; **Datei mit Constraint, Datenbank mit Index** und umgekehrt; benannter
-  Constraint; Fremdschlüsselspalte mit Index. Dazu `PRAGMA index_list` (Ursprung `c`/`u`/`pk`). Die
-  Reader-Ausgabe je Fall festhalten. P0 endet, wenn die Tabelle voll ist.
-* **P1 Entscheidung:** A, B oder C nach der Messung; Auswirkung auf `schema reverse`-Goldens und
-  `schema compare`; ob ein Fingerabdruck-Bump (`v20`) nötig ist (der Reader-Ausgang ändert sich);
-  ADR-Bedarf (Reader-Vertrag, Anknüpfung ADR 0061/0060).
-* **P2 Umsetzung** nach P1: Unit-Tests (Reader, Comparator), SQLite-CLI-Tests (Plan-Only `operationsTotal`
-  0 für den unveränderten Fall, `--execute` mit additiver Änderung Exit 0, zweiter Lauf ohne Operationen,
-  Rückweg `schema rollback`), echte Änderung (anderer Index, andere Spalten, Unique entfernt) bleibt
-  sichtbar.
-* **P3 Doku:** Anwenderhandbuch (SQLite-Indizes, nur Ist-Zustand), `CHANGELOG.md`;
-  `spec/ddl-generation-rules.md` (Index/UNIQUE auf SQLite) und `spec/schema-reference.md` prüfen.
+  feste Fallliste, je Zeile (Datei, Reader-Ausgabe, Operationen, `--execute`-Exit mit weiterer additiver
+  Änderung):
+  eindeutiger Index über 1/2/3 Spalten; mit `where`; absteigend/`COLLATE`; Ausdrucks-Index; `unique: true` an
+  der Spalte; Tabellen-`UNIQUE (a, b)`; **Datei Constraint ↔ Datenbank Index** und umgekehrt; benannter
+  Constraint; Index auf einer PK-Spalte; Spalten-`unique` **plus** Index auf derselben Spalte; Index auf einer
+  Fremdschlüsselspalte; `WITHOUT ROWID`; Spaltennamen in anderer Groß-/Kleinschreibung; Indexname mit
+  `sqlite_autoindex_`-Präfix; Round-Trip `schema reverse` → `schema generate` → neue Datenbank → Vergleich;
+  Index auf einer Tabelle, die im selben Lauf neu gebaut wird (kein doppelter Eindeutigkeitsschutz). Dazu
+  `PRAGMA index_list` (Ursprung `c`/`u`/`pk`). P0 endet, wenn jede Zeile eine feste Zusicherung hat; neue
+  Fälle gehen in einen Folgeplan.
+* **P1 Entscheidung:** A, B oder C nach der Messung; die Liste der umzuschreibenden Reader-Tests/Goldens;
+  die Aussage zu Bestandsdateien; **Fingerabdruck-Tag:** der Reader-Ausgang ändert sich bei A und C (Bump
+  praktisch sicher), B ändert die Projektion (Bump); die Nummer vergibt der zuerst gemergte der Schwesterpläne
+  #53/#54 (`v20`), der andere nimmt `v21`; jeder führt seinen Absatz am `ALGORITHM`. **ADR 0062 ist Pflicht**
+  (Reader-Normalform und Abdruck ändern sich, wie bei #52/ADR 0061); Bezüge:
+  [ADR 0057](../../adr/0057-schema-compare-eine-semantik-herkunft-kein-unterschied.md) (ein Name, den ein
+  Server nicht führt, ist kein Unterschied) und
+  [ADR 0026](../../adr/0026-fingerprint-kanonisierung-post-compare.md) (Abdruck/Post-Compare); akzeptierte
+  ADRs bleiben im Kern unverändert (`doc-immutable`).
+* **P2 Umsetzung** nach P1. Die Spec-Regel ändert sich **mit** dem Code, nicht danach: `spec/ddl-generation-rules.md`
+  §5.1 (Zeilen um 1090: „eindeutiger Ausdrucks-Index bleibt Index mit `unique`“) für SQLite um den Wortlaut der
+  neuen Regel ergänzen (z. B. „nur Ursprung `u` wird Constraint“), `spec/schema-reference.md` (Zeilen um 69 und
+  198: `unique` an der Spalte gegen `unique` am Index). Tests: Reader, Comparator, Fingerabdruck; SQLite-CLI
+  (`operationsTotal` 0 für jede unveränderte Zeile, `--execute` mit additiver Änderung Exit 0, zweiter Lauf 0,
+  Rückweg `schema rollback` ohne Drift); echte Änderung (anderer Index, andere Spalten, Unique entfernt/neu)
+  bleibt eine Operation.
+* **P3 Doku:** Anwenderhandbuch (SQLite-Indizes, nur Ist-Zustand), `CHANGELOG.md`; Bestandsdateien-Hinweis,
+  falls A gewählt wird.
 
 ## Nicht-Scope
 
-* `UNIQUE`-Constraints auf anderen Dialekten.
+* `UNIQUE`-Constraints auf anderen Dialekten (Verhalten dort darf sich nicht ändern — Regressionstest, wenn
+  gemeinsame `SchemaReaderUtils` angefasst werden).
 * Der Neubau selbst (Reihenfolge, Temp-Namen) — nur dass er nicht ausgelöst wird.
 
 ## Akzeptanz
 
 * Jede in P0 als Fehler gemessene Zeile hat einen Test, der ohne die Änderung an der erwarteten Stelle
-  fehlschlägt (`DropConstraint`/`AddIndex`, bei `--execute` zusätzlich Exit 8
+  fehlschlägt (`DropConstraint`/`AddIndex`; mit weiterer additiver Änderung bei `--execute` zusätzlich Exit 8
   `TRANSACTION_SCOPE_UNSUPPORTED`); die neuen Tests werden einmal mit absichtlich falscher Zusicherung rot
   gesehen.
-* Eine echte Änderung eines eindeutigen Index bleibt eine Operation.
+* Jede unveränderte Zeile: `operationsTotal` 0, `--execute` Exit 0, zweiter Lauf 0, `schema rollback` ohne
+  Drift. Eine echte Änderung eines eindeutigen Index bleibt eine Operation.
+* Die bewusst umgeschriebenen Reader-Tests/Goldens sind in P1 aufgelistet und im Commit begründet.
+* Bei geänderten gemeinsamen Hilfsfunktionen: Regressionstest für mindestens einen weiteren Dialekt.
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne
-  `MODULES=`, `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`,
-  `make solid-suppression-gate`, `make docs-check`; bei einem ADR `make doc-immutable
-  RANGE=origin/main..HEAD`.
+  `MODULES=`, `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"` (bei gemeinsamen
+  Hilfsfunktionen alle betroffenen Integrationsmodule), `make solid-suppression-gate`, `make docs-check`,
+  `make doc-immutable RANGE=origin/main..HEAD`.
