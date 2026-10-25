@@ -25,12 +25,16 @@ internal object SqliteIndexKeyScanner {
      * Die Schluessel in Deklarationsreihenfolge, ohne `ASC`/`DESC` und ohne
      * `COLLATE <name>`: beides steht im Modell als eigenes Feld, im Text
      * mitzunehmen ergaebe einen Ausdruck, den kein Zieldialekt kennt.
+     *
+     * Eine Klammer, die den ganzen Ausdruck umschliesst, entfaellt: der
+     * Generator klammert jeden Ausdruck-Schluessel (`((lower(a)))`), die Datei
+     * traegt ihn ohne (`lower(a)`).
      */
     fun keysOf(createSql: String): List<String>? {
         val open = topLevelOpenParen(createSql) ?: return null
         val close = matchingCloseParen(createSql, open) ?: return null
         return splitTopLevel(createSql.substring(open + 1, close))
-            .map { stripKeyModifiers(it) }
+            .map { unwrapKey(stripKeyModifiers(it)) }
             .takeIf { keys -> keys.isNotEmpty() && keys.all { it.isNotBlank() } }
     }
 
@@ -93,6 +97,17 @@ internal object SqliteIndexKeyScanner {
         }
         parts += current.toString().trim()
         return parts.filter { it.isNotEmpty() }
+    }
+
+    /**
+     * Die exakte Umkehrung von `IndexColumn.renderKey`: genau **eine** Klammer,
+     * und nur, wenn sie den ganzen Schluessel umschliesst. `(a) + (b)` und
+     * `('(' || a)` -- dessen Klammer in der Zeichenkette zaehlt nicht -- bleiben
+     * unberuehrt, ein `((x))` verliert nur die aeussere Schicht.
+     */
+    private fun unwrapKey(key: String): String {
+        val enclosed = key.startsWith("(") && matchingCloseParen(key, 0) == key.length - 1
+        return if (enclosed) key.substring(1, key.length - 1).trim().ifEmpty { key } else key
     }
 
     /**

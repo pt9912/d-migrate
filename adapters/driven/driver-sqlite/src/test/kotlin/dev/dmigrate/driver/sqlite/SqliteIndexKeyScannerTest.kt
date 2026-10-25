@@ -58,4 +58,36 @@ class SqliteIndexKeyScannerTest : FunSpec({
         SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t") shouldBe null
         SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(a, )") shouldBe listOf("a")
     }
+
+    test("one enclosing parenthesis is removed — the exact inverse of the generator's wrap") {
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a)))") shouldBe listOf("lower(a)")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(lower(a))") shouldBe listOf("lower(a)")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(((lower(a))))") shouldBe listOf("(lower(a))")
+    }
+
+    test("a parenthesis that does not enclose the whole key stays") {
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((a) + (b))") shouldBe listOf("(a) + (b)")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(((a) + (b)))") shouldBe listOf("(a) + (b)")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((a + b) * 2)") shouldBe listOf("(a + b) * 2")
+    }
+
+    test("a parenthesis inside a string literal does not count") {
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(('(' || a))") shouldBe listOf("'(' || a")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(')' || (a))") shouldBe listOf("')' || (a)")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(((a) || ')'))") shouldBe listOf("(a) || ')'")
+    }
+
+    test("modifiers go first, then the parenthesis") {
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t(a, (b + 1) DESC)") shouldBe listOf("a", "b + 1")
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((lower(a)) COLLATE NOCASE ASC)") shouldBe listOf("lower(a)")
+    }
+
+    test("a hand-written parenthesised column equals the column") {
+        SqliteIndexKeyScanner.keysOf("CREATE INDEX ix ON t((a))") shouldBe listOf("a")
+    }
+
+    test("every key of a list is unwrapped on its own") {
+        SqliteIndexKeyScanner.keysOf("CREATE UNIQUE INDEX ix ON t((lower(a)), b, (upper(c))) WHERE b > 0") shouldBe
+            listOf("lower(a)", "b", "upper(c)")
+    }
 })
