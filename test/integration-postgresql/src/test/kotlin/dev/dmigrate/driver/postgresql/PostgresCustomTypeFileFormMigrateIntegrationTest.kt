@@ -332,6 +332,14 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         }
     }
 
+    test("Grenze: ab zehn unbenannten CHECKs ordnet die C-Kollation d_check1, d_check10, d_check2") {
+        val checks = (1..11).joinToString(" ") { "CHECK (VALUE <> $it)" }
+        domainTable("CREATE DOMAIN d AS integer $checks")
+        // Servernamen: d_check (1), d_check1 (2) ... d_check10 (11); C-Reihenfolge: d_check, d_check1, d_check10, d_check2 ...
+        val order = listOf(1, 2, 11) + (3..10)
+        read().customTypes.getValue("d").check shouldBe order.joinToString(" AND ") { "(VALUE <> $it)" }
+    }
+
     test("Domain mit mehreren CHECKs: die Aenderung eines der CHECKs blockiert weiter") {
         domainTable("CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)")
         val db = read()

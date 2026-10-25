@@ -51,12 +51,13 @@ Basistyp-Namen `bt.typname`? Nicht annehmen, messen).
   formulieren. Verweis: `sqlite-enum-domain-check-reverse.md` (in-progress) betrifft denselben Wertelisten-Check.
 * Filter `contype = 'c'` erhalten (NOT NULL, `contype = 'n'`, nicht als CHECK einmischen).
 
-Fingerabdruck: nur der Reader-Ausgang ändert sich (bei Domains mit mehreren CHECKs); die Projektion der Datei nicht. Ob das einen
-Tag-Bump trägt, ist in P1 zu entscheiden (`RefTypeVocabularyTest`, `MigrationFingerprintTest`, `IndexPredicateCanonicalisationTest` nageln `schema-fingerprint-v21` fest) (Präzedenz: ADR 0061 hob für die Reader-Normalform an; hier ändert sich der Hash nur
-für den Verlustfall). **Koordination:** die drei PostgreSQL-Domain-Pläne (dieser, `postgres-domain-laenge-array.md`,
-`domain-default-not-null-modell.md`) und `sqlite-ausdrucks-index-textform.md` konkurrieren um den nächsten Tag und die nächste
-ADR-Nummer (heute `schema-fingerprint-v21`, ADR bis 0063). Wer zuerst aktiviert, nimmt den nächsten freien; Domain-Pläne dürfen sich
-**einen** Bump teilen, wenn sie zusammen ausgeliefert werden. Bezug: [Plan #52](postgres-domain-autorenform-gegen-katalog.md), ADR 0061.
+Fingerabdruck: die Projektion der Datei ändert sich nicht, der **Reader-Ausgang** schon — für Live-Datenbanken mit mehreren
+Domain-CHECKs und für Domains mit einem `NOT VALID`-Constraint (vorher stand das Suffix im Ausdruck). Damit ändert sich der Hash
+des gelesenen Schemas. Die Entscheidung: dieser Plan vergibt **keinen eigenen Tag**; die Änderung wird beim Zusammenführen in den Tag
+von #58 (`schema-fingerprint-v23`, ADR 0065) eingefaltet. **Folge:** vor dieser Änderung erzeugte Rollback- und Plan-Artefakte, die
+eine solche Domain enthalten, lehnt der Rollback ab (Exit 8, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`); sie sind neu zu erzeugen.
+Bezug: [Plan #52](postgres-domain-autorenform-gegen-katalog.md). ADR 0061 bleibt unverändert; die dort genannte Grenze „Reader behält
+den letzten CHECK" ist mit #57 aufgehoben.
 
 ## Phasen
 
@@ -66,7 +67,7 @@ ADR-Nummer (heute `schema-fingerprint-v21`, ADR bis 0063). Wer zuerst aktiviert,
 * **P1 Entscheidung:** Aggregationsform, `NOT VALID`, Domain über Domain, Tag/ADR.
 * **P2 Umsetzung:** Reader-Unit-Test (Zeilen-Stub mit mehreren CHECKs), Integrationstest (zweiter Lauf `operationsTotal` 0,
   Rückweg, echte Änderung eines der CHECKs bleibt `AlterCustomType`).
-* **P2 Matrix:** den Cross-Dialect-Matrix-Test (`test/cross-dialect-matrix`, Fixtures je Fall mit Soll-Ergebnis) um eine Domain mit zwei und drei CHECKs (Klammerform) erweitern; zweiter Lauf `operationsTotal` 0 erweitern; Fälle zuerst als Fixture, rot ohne die Änderung, grün mit ihr.
+* **P2 Matrix:** entfällt, siehe Ergebnisse (Datei-Modus ohne Reader, Begründung unter „Cross-Dialect-Matrix").
 * **P3 Doku:** Handbuch §3.21 (die Grenze „mehrere `CHECK`-Constraints" streichen/nachführen, nur Ist-Zustand), `CHANGELOG.md`;
   `spec/ddl-generation-rules.md` §6.3 (Reader-Regel).
 
@@ -100,9 +101,12 @@ Gemessen nur auf PG 18 (das einzige Image in `TestImages.POSTGRESQL`); ältere V
 * **Wertelisten-Kopplung (`RefTypeVocabulary`):** der `AND`-Verbund zählt bewusst als **keine Werteliste**. `EnumCheckProjection.valuesOf`
   bleibt unverändert (es lehnt `AND` schon heute ab); die Gegenseite einer Datei mit `AND`-CHECK liest ebenfalls `null`, beide Seiten
   stimmen überein. Eine Hexagon-Änderung entfällt. Festgenagelt in `RefTypeVocabularyTest`.
-* **Tag/ADR:** kein `schema-fingerprint`-Bump, kein ADR. Weder Projektion noch Hash-Funktion ändern sich; nur der Reader-Ausgang einer
-  Domain mit mehreren CHECKs (vorher ein Verlustfall). `RefTypeVocabularyTest`, `MigrationFingerprintTest` und
-  `IndexPredicateCanonicalisationTest` bleiben auf `schema-fingerprint-v21`.
+* **Tag/ADR:** kein eigener Tag, kein ADR 0066. Weder Projektion noch Hash-Funktion ändern sich, wohl aber der Reader-Ausgang einer Domain
+  mit mehreren CHECKs und einer `NOT VALID`-Domain; beide sind fingerabdruck-betroffen. Der Eigner faltet die Änderung beim Merge in
+  `schema-fingerprint-v23` (ADR 0065, #58) ein; Konsequenz siehe „Fingerabdruck" oben (Artefakte neu erzeugen). Die Tests dieses
+  Branches stehen bis dahin auf `schema-fingerprint-v21`.
+* **Grenze der Reihenfolge:** ab zehn unbenannten CHECKs ordnet die C-Kollation `d_check1, d_check10, d_check2, …`; die Reihenfolge
+  weicht dann von der Schreibfolge ab. Im Integrationstest mit elf unbenannten CHECKs festgehalten.
 * **Cross-Dialect-Matrix:** der Punkt im Plan entfällt. Die Matrix läuft im Datei-Modus (Datei gegen Datei, keine Reader) und kann einen
   Reader-Verlust nicht sehen; ein Fixture mit zwei CHECKs auf beiden Seiten wäre ohne die Änderung nicht rot. Die Abdeckung liegt im
   Integrationstest gegen PostgreSQL.

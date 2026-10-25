@@ -2640,7 +2640,12 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   fasst sie nach Constraint-Name geordnet zu einem Ausdruck zusammen, jedes
   Prädikat in Klammern: `(VALUE > 0) AND (VALUE < 10)`. Schreiben Sie den
   `check` in der Datei in genau dieser Form, gilt die Domain als unverändert;
-  die Namen der Constraints führt das Schema nicht. Ein `NOT VALID`-Constraint
+  die Namen der Constraints führt das Schema nicht. Bei mehr als neun
+  unbenannten `CHECK`s folgt die Reihenfolge der Namen (`d_check1`, `d_check10`,
+  `d_check2`), nicht der Schreibfolge. Haben Sie Rollback- oder Plan-Artefakte
+  mit einer solchen Domain (mehrere `CHECK`s oder `NOT VALID`) mit einer
+  älteren Version erzeugt, lehnt `schema rollback` sie mit Exit 8
+  (`ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`) ab; erzeugen Sie sie neu. Ein `NOT VALID`-Constraint
   zählt mit seinem Prädikat, die Meldung `R407` weist ihn aus. Ein
   Wertelisten-`CHECK` (`VALUE IN (…)`) neben einem weiteren `CHECK` gilt nicht
   als Werteliste.
