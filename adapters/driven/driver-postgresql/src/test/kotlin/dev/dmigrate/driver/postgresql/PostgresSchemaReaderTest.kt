@@ -2,6 +2,8 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadOptions
+import dev.dmigrate.driver.SchemaReadResult
+import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.metadata.JdbcOperations
@@ -384,6 +386,62 @@ class PostgresSchemaReaderTest : FunSpec({
         // Genauigkeit und Skala fuellt der Katalog auch fuer einen ganzzahligen Basistyp; sie gehoeren nicht ins Modell (#52).
         domain.precision.shouldBeNull()
         domain.scale.shouldBeNull()
+    }
+
+    fun domainRow(name: String, conname: String?, clause: String?) = mapOf(
+        "typname" to name, "base_type" to "int4", "numeric_precision" to 32, "numeric_scale" to 0,
+        "domain_default" to null, "conname" to conname, "check_clause" to clause,
+    )
+
+    fun readDomains(vararg rows: Map<String, Any?>): SchemaReadResult {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns rows.toList()
+        every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        return reader.read(pool, opts)
+    }
+
+    test("domain with 0, 1 and n checks: rows are grouped by type, n checks are ANDed in row order (#57)") {
+        val result = readDomains(
+            domainRow("none", null, null),
+            domainRow("one", "one_check", "CHECK ((VALUE > 0))"),
+            domainRow("two", "c1", "CHECK ((VALUE > 0))"),
+            domainRow("two", "c2", "CHECK ((VALUE < 10))"),
+            domainRow("three", "a", "CHECK ((VALUE >= (1)::numeric))"),
+            domainRow("three", "b", "CHECK ((VALUE <> 5))"),
+            domainRow("three", "c", "CHECK ((VALUE < 100))"),
+        )
+
+        val types = result.schema.customTypes
+        types.keys.toList() shouldBe listOf("none", "one", "two", "three")
+        types.getValue("none").check.shouldBeNull()
+        types.getValue("one").check shouldBe "VALUE > 0"
+        types.getValue("two").check shouldBe "(VALUE > 0) AND (VALUE < 10)"
+        types.getValue("three").check shouldBe "(VALUE >= 1) AND (VALUE <> 5) AND (VALUE < 100)"
+        types.getValue("two").baseType shouldBe "integer"
+        result.notes.filter { it.code == "R407" }.shouldBeEmpty()
+    }
+
+    test("domain check NOT VALID keeps the predicate, drops the suffix and reports R407 (#57)") {
+        val result = readDomains(
+            domainRow("d", "c1", "CHECK ((VALUE > 0))"),
+            domainRow("d", "c2", "CHECK ((VALUE < 10)) NOT VALID"),
+            domainRow("e", "only", "CHECK ((VALUE > 0)) NOT VALID"),
+        )
+
+        result.schema.customTypes.getValue("d").check shouldBe "(VALUE > 0) AND (VALUE < 10)"
+        result.schema.customTypes.getValue("e").check shouldBe "VALUE > 0"
+        val notes = result.notes.filter { it.code == "R407" }
+        notes.map { it.objectName } shouldBe listOf("d", "e")
+        notes[0].severity shouldBe SchemaReadSeverity.WARNING
+        notes[0].message.contains("c2") shouldBe true
+        notes[0].message.contains("c1") shouldBe false
+    }
+
+    test("normalizeDomainCheck strips NOT VALID, but not inside a literal (#57)") {
+        normalizeDomainCheck("CHECK ((VALUE > 0)) NOT VALID") shouldBe "VALUE > 0"
+        normalizeDomainCheck("CHECK ((VALUE <> 'x NOT VALID'::text))") shouldBe "VALUE <> 'x NOT VALID'"
     }
 
     test("domain over decimal keeps precision and scale (#52)") {
