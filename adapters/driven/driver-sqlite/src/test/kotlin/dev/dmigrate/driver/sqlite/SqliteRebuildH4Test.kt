@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.core.diff.migration.DiffObjectRef
+import dev.dmigrate.core.diff.migration.DiffObjectType
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.ColumnDefinition
@@ -43,9 +45,10 @@ class SqliteRebuildH4Test : FunSpec({
     fun planFor(
         target: TableDefinition,
         catalog: SqliteCatalogSnapshot = SqliteCatalogSnapshot.EMPTY,
+        bucket: List<DiffOperation> = emptyBucket,
     ): SqliteRebuildPlan = SqliteRebuildPlanner.planRebuild(
         table = "u",
-        bucket = emptyBucket,
+        bucket = bucket,
         source = source,
         target = target,
         bucketRisk = OperationRisk.SAFE,
@@ -107,7 +110,14 @@ class SqliteRebuildH4Test : FunSpec({
                 "id" to ColumnDefinition(NeutralType.Text(), required = true)
                 ),
         )
-        val plan = planFor(target)
+        // Der Vergleich meldet die Typaenderung (`AlterColumnType`); erst dann entscheidet die Matrix.
+        val reported = DiffOperation.AlterColumnType(
+            id = "alter-id",
+            objectRef = DiffObjectRef(DiffObjectType.COLUMN, listOf("u", "id")),
+            before = NeutralType.Integer,
+            after = NeutralType.Text(),
+        )
+        val plan = planFor(target, bucket = listOf(reported))
         val check = plan.preflight.single { it.kind == SqliteRebuildPreflightKind.ADDED_COLUMNS_FILLABLE }
         check.outcome shouldBe SqliteRebuildPreflightOutcome.FAIL
         check.message.contains("cast-matrix") shouldBe true
