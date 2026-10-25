@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.9.1** (stabil, [veröffentlicht 2026-10-25](https://github.com/pt9912/d-migrate/releases/tag/v1.9.1)).
+**1.10.0** (stabil, [veröffentlicht 2026-10-25](https://github.com/pt9912/d-migrate/releases/tag/v1.10.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,9 +175,23 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.9.1** (2026-10-25) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Es behebt zwei Blocker
-  von `schema migrate` aus Konsumentenläufen.** Auf SQLite scheitert ein
+- **Aktuelles Stable** · **1.10.0** (2026-10-25) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **`schema migrate` meldet
+  keine Objekte mehr als geändert, die Datei und Datenbank gleich führen.** Auf
+  SQLite bleibt ein eindeutiger Index ein Index (er erscheint nicht mehr als
+  Constraint, der gelöscht und neu angelegt wird), ein Zahlen- oder
+  `boolean`-Default ist keine Änderung, wenn nur die Darstellung abweicht, und
+  ein Tabellenneubau blockiert nicht mehr an einer Spalte, die SQLite gröber
+  ablegt als die Datei (`text(n)`, `uuid`, `boolean`, `decimal`, …). Auf
+  PostgreSQL plant eine Domain, die Datei und Datenbank gleich führen, kein
+  `AlterCustomType` mehr: der Reader gibt ihren `CHECK` in der Schreibweise eines
+  Autors zurück, der Basistyp zählt in Neutralform, und `schema reverse` schreibt
+  keine `precision`/`scale` mehr an eine `integer`-Domain. `data seed` hält eine
+  Spalte eindeutig, die nur über einen einspaltigen Constraint oder Index
+  eindeutig ist, und der SQLite-Reader meldet einen nicht auflösbaren Index
+  (`R206`). Rollback-Artefakte einer früheren Version sind neu zu erzeugen
+  (ADR 0061–0063). 1.9.1 (2026-10-25) behob **zwei Blocker von `schema migrate`
+  aus Konsumentenläufen.** Auf SQLite scheitert ein
   Tabellen-Neubau nicht mehr, wenn eine Sicht an der Tabelle hängt: der Neubau
   löscht und legt jede Sicht neu an, deren Text die Tabelle nennt (auch über
   andere Sichten), mit oder ohne deklarierte `dependencies`; eine Sicht, deren

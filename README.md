@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.9.1**
-(stable, [released 2026-10-25](https://github.com/pt9912/d-migrate/releases/tag/v1.9.1)).
+d-migrate is a working production tool at version **1.10.0**
+(stable, [released 2026-10-25](https://github.com/pt9912/d-migrate/releases/tag/v1.10.0)).
 
 The current capabilities:
 
@@ -161,9 +161,21 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.9.1** (2026-10-25) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **It fixes two `schema
-  migrate` blockers found in consumer runs.** On SQLite, a table rebuild no
+- **Current stable** · **1.10.0** (2026-10-25) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **`schema migrate` no longer
+  reports objects as changed that file and database hold alike.** On SQLite, a
+  unique index stays an index (it no longer shows up as a constraint to drop and
+  re-create), a numeric or `boolean` default is not a change when only its
+  representation differs, and a table rebuild is no longer blocked by a column
+  SQLite stores in a coarser type than the file (`text(n)`, `uuid`, `boolean`,
+  `decimal`, …). On PostgreSQL, a domain that file and database hold alike no
+  longer plans `AlterCustomType`: the reader returns its `CHECK` the way an
+  author writes it, the base type counts in its neutral form, and `schema reverse`
+  no longer writes `precision`/`scale` on an `integer` domain. `data seed` keeps a
+  column unique that is unique only through a single-column constraint or index,
+  and the SQLite reader names an index it cannot resolve (`R206`). Rollback
+  artefacts made by an earlier version must be created again (ADR 0061–0063).
+  1.9.1 (2026-10-25) fixed **two `schema migrate` blockers found in consumer runs.** On SQLite, a table rebuild no
   longer fails when a view depends on the table: the rebuild drops and
   recreates every view whose text names the table (also through other views),
   with or without declared `dependencies`, and a view whose `AS` is followed by

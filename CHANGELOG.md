@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-10-25
+
 ### Fixed
 
 - **Der SQLite-Reader meldet einen Index, dessen Ausdrucksschlüssel sich nicht auflösen lässt, als Notiz `R206`**
