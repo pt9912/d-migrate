@@ -14,7 +14,7 @@ import dev.dmigrate.core.model.CustomTypeDefinition
  *   Klammer des Typs ([precision], [scale]). Der Katalog fuellt sie auch fuer `integer` (32/0),
  *   eine alte Reverse-Datei traegt sie dann noch.
  * * **Typen mit Laenge oder Genauigkeit** (`varchar`, `char`, `timestamp`, `timestamptz`, `time`,
- *   `bit`, `varbit`) tragen die Klammer in der Neutralform: `varchar(50)` ist ein anderer Typ als
+ *   `timetz`, `bit`, `varbit`) tragen die Klammer in der Neutralform: `varchar(50)` ist ein anderer Typ als
  *   `varchar(254)`. Ohne Klammer gilt der Standard des Typs: `varchar` ist unbegrenzt und damit
  *   `text`, `char` ist `char(1)`, `timestamp`/`time` sind `(6)`.
  * * **Array:** ein Suffix `[]` (auch `[][]`, `[3]`) bleibt als ein `[]` am Typnamen. Der Katalog
@@ -30,7 +30,7 @@ internal object CustomTypeBaseType {
 
     /** Typname -> Standard der Klammer, wenn der Typ keine nennt. */
     private val DEFAULT_PARAMETER = mapOf(
-        "char" to 1, "timestamp" to 6, "timestamptz" to 6, "time" to 6, "bit" to 1,
+        "char" to 1, "timestamp" to 6, "timestamptz" to 6, "time" to 6, "timetz" to 6, "bit" to 1,
     )
     private val PARAMETERISED = DEFAULT_PARAMETER.keys + setOf("varchar", "varbit")
 
@@ -50,6 +50,7 @@ internal object CustomTypeBaseType {
         "timestamp" to "timestamp", "timestamp without time zone" to "timestamp",
         "timestamptz" to "timestamptz", "timestamp with time zone" to "timestamptz",
         "time" to "time", "time without time zone" to "time",
+        "timetz" to "timetz", "time with time zone" to "timetz",
         "bit" to "bit", "bit varying" to "varbit", "varbit" to "varbit",
     )
 

@@ -26,6 +26,7 @@ class CustomTypeBaseTypeTest : FunSpec({
             "timestamp" to "timestamp(6)", "timestamp(3)" to "timestamp(3)",
             "timestamp(3) without time zone" to "timestamp(3)", "timestamp with time zone" to "timestamptz(6)",
             "timestamp(3) with time zone" to "timestamptz(3)", "time(3)" to "time(3)",
+            "timetz" to "timetz(6)", "time with time zone" to "timetz(6)", "time(3) with time zone" to "timetz(3)",
             "bit(5)" to "bit(5)", "bit varying(7)" to "varbit(7)", "bit varying" to "varbit",
         )
         for ((written, canonical) in expected) {
@@ -71,6 +72,8 @@ class CustomTypeBaseTypeTest : FunSpec({
         same("numeric(10,2)[]", "numeric(12,2)[]") shouldBe false
         same("timestamp(3)", "timestamp") shouldBe false
         same("bit(5)", "bit(6)") shouldBe false
+        same("timetz(3)", "timetz(6)") shouldBe false
+        same("timetz", "timetz(6)") shouldBe true
     }
 
     test("Typen ohne Laenge: eine einseitige Klammer bleibt unbekannt, nicht verschieden") {

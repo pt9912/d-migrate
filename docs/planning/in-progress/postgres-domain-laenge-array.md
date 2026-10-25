@@ -84,7 +84,7 @@ Mehrfach-CHECK (`postgres-domain-mehrfach-check.md`); `DEFAULT`/`NOT NULL`/Kolla
 * Jede gemessene Fehlerzeile hat einen Test, der ohne die Änderung an der erwarteten Stelle fehlschlägt; absichtlich falsche
   Zusicherung einmal rot gesehen.
 * Zweiter Lauf: `operationsTotal` = 0 (P0-Tabelle als nummerierter Abschnitt in dieser Plandatei).
-* Eine PG-Reverse-Datei mit Länge oder Array erzeugt gegen `schema generate` SQLite/MSSQL keinen neuen E053.
+* Eine PG-Reverse-Datei mit Länge oder Array erzeugt gegen `schema generate` SQLite/MSSQL keinen neuen E053 (MySQL: roh, siehe P1 Punkt 6).
 * Die Zusage „keine Verhaltensänderung in anderen Dialekten" ist das Ergebnis der P1-Entscheidung zum `sameParameters`-Umfang.
 * Eine echte Änderung (Länge, Array-Typ, `char` ↔ `varchar`) blockiert weiter (Exit 8, `AlterCustomType`).
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=`,
@@ -159,8 +159,10 @@ Befunde aus der Messung:
 5. **Array:** ein `[]` am Typnamen; `[][]`/`[3]` fallen auf `[]`, weil der Katalog Dimensionen nicht unterscheidet (Grenze, im
    Handbuch).
 6. **E053/`DomainTypes` (Reader-Seite):** `varchar(50)`, `char(5)`, `varchar`, `timestamp(3)`, `timestamptz(3)`, `time(3)`
-   lösen über `TYPE_WITH_PARAMS` in einen neutralen Typ auf — kein neuer E053 gegen SQLite/MSSQL. Ein Array-Basistyp bleibt E053
-   (vorher `_int4`, ebenfalls ohne Gegenstück); `DomainTypes` bekommt keinen Array-Zweig, weil das neutrale Modell keinen
+   lösen über `TYPE_WITH_PARAMS` in einen neutralen Typ auf — kein neuer E053 gegen SQLite/MSSQL. Ein Array-Basistyp bleibt auf SQLite/MSSQL E053
+   (vorher `_int4`, ebenfalls ohne Gegenstück); Oracle: jede Domain CLOB mit E053; **MySQL gibt `base_type` roh aus**
+   (`MysqlColumnConstraintHelper.columnDomain`, kein `DomainTypes`): Array, `timestamptz(3)`, `timetz`, `varbit(7)` ergeben dort
+   ungültiges DDL ohne Notiz (vorher `_int4`/`timestamptz` ebenso) — offene Grenze, nicht Teil dieses Slices; `DomainTypes` bekommt keinen Array-Zweig, weil das neutrale Modell keinen
    Array-Typ kennt. Pinning: `DomainTypesTest` und `DomainBaseTypeCrossDialectTest` (Matrix-Modul, PG-Reverse-Fixture gegen
    MySQL/SQLite/MSSQL/Oracle).
 7. **Fingerabdruck:** `schema-fingerprint-v23` (`v22` gehört dem Slice zu #55). `base=` trägt Länge und `[]`; ADR 0065

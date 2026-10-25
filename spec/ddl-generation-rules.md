@@ -1286,8 +1286,9 @@ varying` sind ein Typ, `varchar` ohne Länge ist unbegrenzt und damit `text`, `c
 `integer[]` sind gleich. Für einen Typ ohne Längenbegriff (`integer(11)`) zählt eine Klammer nur,
 wenn beide Seiten sie nennen.
 
-Ein Array-Basistyp hat in MySQL, SQLite, MSSQL und Oracle kein neutrales Gegenstück und wird als
-E053 ausgewiesen.
+Ein Array-Basistyp hat in MySQL, SQLite, MSSQL und Oracle kein neutrales Gegenstück und wird in
+jedem dieser Dialekte als E053 ausgewiesen, nie roh durchgereicht; dasselbe gilt für einen
+Basistyp ohne Gegenstück (`timestamptz(3)`, `timetz`, `varbit(7)`) in MySQL.
 
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
 Bei SQLite steht der CHECK **unbenannt** (`"n" INTEGER NOT NULL CHECK ("n" >= 0)`),

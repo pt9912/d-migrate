@@ -196,8 +196,8 @@ object MigrationFingerprint {
      * v19: **der Basistyp einer Domain** (Issue #52). Eine Datei schreibt `bigint`,
      * `numeric` oder `varchar(50)`, der PostgreSQL-Reader liefert `biginteger`,
      * `decimal`, `text`; der Abdruck traegt jetzt die Neutralform
-     * ([dev.dmigrate.core.diff.CustomTypeBaseType]: Typname ohne Klammer, `precision`/`scale`
-     * nur bei `decimal`), damit der Post-Compare eines Migrationslaufs nicht an der
+     * ([dev.dmigrate.core.diff.CustomTypeBaseType]: Typname, `precision`/`scale`
+     * nur bei `decimal`; seit v23 mit Laenge und `[]`, siehe dort), damit der Post-Compare eines Migrationslaufs nicht an der
      * Schreibweise driftet. Ausserdem liefert der PostgreSQL-Reader `precision`/`scale` nur
      * noch fuer `decimal` und den `CHECK` in Autorenform. Eine Domain traegt damit auf
      * **jedem** Dialekt einen anderen Abdruck (auch eine SQLite-Domain mit Basistyp `INTEGER`

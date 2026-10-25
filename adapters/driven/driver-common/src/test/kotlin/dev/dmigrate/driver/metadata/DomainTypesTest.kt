@@ -52,8 +52,8 @@ class DomainTypesTest : FunSpec({
         DomainTypes.resolveBaseType("time(3)", null, null) shouldBe NeutralType.Time
     }
 
-    test("ein Array-Basistyp hat kein neutrales Gegenstueck, wie zuvor `_int4` (#58)") {
-        for (array in listOf("integer[]", "varchar(50)[]", "decimal(10,2)[]", "_int4")) {
+    test("Array, timetz, bit und varbit haben kein neutrales Gegenstueck, wie zuvor (#58)") {
+        for (array in listOf("timetz", "timetz(3)", "bit(5)", "varbit(7)", "integer[]", "varchar(50)[]", "decimal(10,2)[]", "_int4")) {
             DomainTypes.resolveBaseType(array, null, null) shouldBe null
         }
     }

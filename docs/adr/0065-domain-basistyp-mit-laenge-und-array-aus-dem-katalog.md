@@ -83,9 +83,16 @@ las, und die Array-Domain. Gemessen (PostgreSQL 18, 26 Domains):
   trifft damit den Basistyp der Datenbank.
 - Andere Dialekte: kein Reader außer dem PostgreSQL-Reader liefert Domains. `schema generate` löst den
   Basistyp wie bisher über `DomainTypes` auf; jede Länge, die der Reader schreibt, ergibt einen
-  neutralen Typ, ein Array-Basistyp bleibt E053 (vorher `_int4`, ebenfalls ohne Gegenstück). Verändert
-  hat sich nur `schema compare` zwischen zwei Dateien: `varchar` gegen `varchar(50)` ist dort jetzt
-  eine Änderung.
+  neutralen Typ, ein Array-Basistyp bleibt auf SQLite und MSSQL E053 (vorher `_int4`, ebenfalls ohne
+  Gegenstück); Oracle schreibt jede Domain als CLOB mit E053. **MySQL löst den Basistyp nicht auf**,
+  sondern gibt `base_type` roh in die Spalte aus: `varchar(50)`, `char(5)`, `timestamp(3)` sind dort gültig
+  (vorher `text`), ein Array, `timestamptz(3)`, `timetz` und `varbit(7)` ergeben ungültiges DDL ohne
+  Notiz — wie zuvor mit `_int4`/`timestamptz`. Das ist eine dokumentierte Grenze, kein Teil dieser
+  Entscheidung. Verändert hat sich sonst nur `schema compare` zwischen zwei Dateien: `varchar` gegen
+  `varchar(50)` ist dort jetzt eine Änderung.
+- `v23` deckt auch die Reader-Änderungen am `CHECK` einer Domain ab, die der Slice zu #57 liefert
+  (Aggregation mehrerer `CHECK`-Constraints, Prädikat eines `NOT VALID`-Constraints): der Reader-Ausgang
+  einer Domain ändert sich dort ebenfalls, ein weiterer Tag-Bump entfällt.
 - Ein Rollback- oder Plan-Artefakt vor `v23` ist neu zu erzeugen.
 - Weiter nicht erkannt: mehrdimensionale Arrays (`integer[][]` gegen `integer[]`), `DEFAULT`/`NOT NULL`
   einer Domain, mehrere `CHECK`-Constraints.

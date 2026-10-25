@@ -19,7 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `varchar(n)`-Domain `text` führt, gilt als geändert; `schema reverse` neu ziehen.
   - Der Vergleich der Basistypen gilt für alle Dialekte: `varchar(50)` gegen `varchar` (unbegrenzt) ist
     eine Änderung, `char` ist `char(1)`. Ein Array-Basistyp hat auf MySQL, SQLite, MSSQL und Oracle kein
-    Gegenstück (E053, wie zuvor).
+    Gegenstück: SQLite und MSSQL weisen ihn als E053 aus, Oracle schreibt jede Domain als CLOB mit E053, MySQL
+    gibt `base_type` roh aus (für ein Array, `timestamptz(3)`, `timetz`, `varbit(7)` ungültiges DDL, wie zuvor).
   - Der Fingerabdruck steht auf `schema-fingerprint-v23`; ein Rollback-Artefakt einer früheren Version
     ist neu zu erzeugen.
 
