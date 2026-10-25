@@ -86,4 +86,76 @@ class SqliteSchemaReaderUniqueIndexTest : FunSpec({
             t.indices.single().unique shouldBe true
         }
     }
+
+    test("a UNIQUE index with a WHERE predicate stays an index and keeps the predicate") {
+        withDb(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT, b TEXT)",
+            "CREATE UNIQUE INDEX ix_t ON t (a) WHERE b IS NOT NULL",
+        ) { pool ->
+            val t = reader.read(pool).schema.tables["t"]!!
+            t.columns["a"]!!.unique shouldBe false
+            t.constraints.filter { it.type == ConstraintType.UNIQUE } shouldBe emptyList()
+            val index = t.indices.single()
+            index.name shouldBe "ix_t"
+            index.unique shouldBe true
+            index.where shouldBe "b IS NOT NULL"
+        }
+    }
+
+    test("two UNIQUE indexes on one table both stay indexes") {
+        withDb(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT, b TEXT)",
+            "CREATE UNIQUE INDEX ix_a ON t (a)",
+            "CREATE UNIQUE INDEX ix_ab ON t (a, b)",
+        ) { pool ->
+            val t = reader.read(pool).schema.tables["t"]!!
+            t.columns["a"]!!.unique shouldBe false
+            t.constraints.filter { it.type == ConstraintType.UNIQUE } shouldBe emptyList()
+            t.indices.associate { it.name to it.columns.map(IndexColumn::name) } shouldBe
+                mapOf("ix_a" to listOf("a"), "ix_ab" to listOf("a", "b"))
+            t.indices.all { it.unique } shouldBe true
+        }
+    }
+
+    // Gegenprobe: Ursprung `u` (Tabellen-UNIQUE) bleibt ein Constraint, auch neben dem Fix fuer Ursprung `c`.
+    test("a table-level UNIQUE (a, b) constraint stays a constraint and yields no index") {
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT, b TEXT, UNIQUE (a, b))") { pool ->
+            val t = reader.read(pool).schema.tables["t"]!!
+            t.indices shouldBe emptyList()
+            val unique = t.constraints.single { it.type == ConstraintType.UNIQUE }
+            unique.columns shouldBe listOf("a", "b")
+        }
+    }
+
+    test("a UNIQUE index on a WITHOUT ROWID table stays an index; the primary key is not an index") {
+        withDb(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT NOT NULL) WITHOUT ROWID",
+            "CREATE UNIQUE INDEX ix_t ON t (a)",
+        ) { pool ->
+            val t = reader.read(pool).schema.tables["t"]!!
+            t.columns["a"]!!.unique shouldBe false
+            t.constraints.filter { it.type == ConstraintType.UNIQUE } shouldBe emptyList()
+            t.indices.single() shouldBe IndexDefinition(
+                name = "ix_t",
+                columns = listOf(IndexColumn("a")),
+                unique = true,
+            )
+        }
+    }
+
+    // Die Eindeutigkeit des Ausdrucks-Index geht nicht mehr verloren; sein Text gegen die Datei ist die bekannte
+    // Grenze (Folge-Slice docs/planning/next/sqlite-ausdrucks-index-textform.md).
+    test("a UNIQUE expression index stays an index with unique = true and does not set column.unique") {
+        withDb(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT)",
+            "CREATE UNIQUE INDEX ix_t ON t (lower(a))",
+        ) { pool ->
+            val t = reader.read(pool).schema.tables["t"]!!
+            t.columns["a"]!!.unique shouldBe false
+            val index = t.indices.single()
+            index.name shouldBe "ix_t"
+            index.unique shouldBe true
+            index.columns.single().expression shouldBe "lower(a)"
+        }
+    }
 })

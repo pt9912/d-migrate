@@ -223,3 +223,11 @@ einen einspaltigen `UNIQUE`-Constraint oder einen einspaltigen eindeutigen Index
 mehrspaltige Schlüssel bleiben Nicht-Scope. (5) *Behoben:* ein nicht auflösbarer Ausdrucks-Index fällt nicht mehr still
 weg, der Reader meldet ihn als Notiz `R206` (`WARNING`).
 (6) `--execute` für die Bestandsdateien-Zeile endet mit Exit 8 (Review gemessen); Test dafür steht in der Nachbesserung.
+
+**Test-Nachtrag (Lücken aus dem Review, nur Tests).**
+* Ausdrucks-Index: Reader-Test (`unique = true`, kein `column.unique`) und CLI-Test, der die Grenze festhält (2 Operationen bei jedem Lauf, `--execute` Exit 0); der Reader liefert hier `lower(a)` ohne Klammern, der Text-Unterschied liegt also nicht im Reader (Folge-Slice `sqlite-ausdrucks-index-textform.md` zu prüfen).
+* `--execute` mit zusätzlicher Spalte für Fremdschlüsselspalte, `WITHOUT ROWID`, Spalte `unique` plus Index und Spalte `unique` ohne Index: Exit 0, zweiter Lauf 0 Operationen.
+* Bestandsdatei mit `--execute` und weiterer Änderung: Exit 8, `sqlite_master` vorher und nachher gleich.
+* `schema rollback` auch für den Ein-Spalten-Index und den Index auf der Primärschlüsselspalte.
+* Reader: Index mit `where`, zwei eindeutige Indizes, Gegenprobe Tabellen-`UNIQUE (a, b)` bleibt Constraint, `WITHOUT ROWID`.
+* Duplikat-Insert nach `--execute` wird abgelehnt (bestehender und neu angelegter Ein-Spalten-Index).
