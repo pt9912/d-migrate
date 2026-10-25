@@ -5,7 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DEFAULT_TASKS="-PintegrationTests test"
-IMAGE_TAG="d-migrate-integration-test:latest"
+# Ein Tag je Repo-Pfad: Worktrees, die gleichzeitig bauen, ueberschreiben sonst gegenseitig `:latest`, und das
+# `docker run` direkt nach dem Bauen startete das Image des anderen (fremder Code, gruen oder rot).
+# Ueberschreibbar mit DMIGRATE_INTEGRATION_IMAGE.
+IMAGE_TAG="${DMIGRATE_INTEGRATION_IMAGE:-d-migrate-integration-test:$(printf '%s' "${REPO_ROOT}" | sha1sum | cut -c1-12)}"
 
 usage() {
     cat <<'EOF'
