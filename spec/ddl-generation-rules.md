@@ -2183,6 +2183,18 @@ Für jedes Up-Statement wird ein inverses Down-Statement erzeugt:
 | `ALTER TABLE ADD CONSTRAINT "k"` | `ALTER TABLE DROP CONSTRAINT "k"` |
 | `ALTER TABLE ALTER COLUMN "c" TYPE t` | `ALTER TABLE ALTER COLUMN "c" TYPE <alter_typ>` |
 
+**Wertevorrat-CHECK einer Inline-Enum (PostgreSQL).** Ändert sich der Wertevorrat einer
+Inline-Enum-Spalte, löst der Up den alten CHECK unter seinem Katalognamen und legt den neuen
+unbenannt an. Der Down kehrt das um: er löst den vom Up angelegten CHECK
+(`ALTER TABLE … DROP CONSTRAINT`, ohne `IF EXISTS`) und legt den vom Up gelösten mit seinen alten
+Werten unter seinem alten Namen wieder an, in dieser Reihenfolge. Das gilt auch, wenn eine
+Textspalte erst einen Wertevorrat erhält (der Down löst nur) oder ihn verliert (der Down legt nur an).
+Den Namen des vom Up angelegten CHECKs kennt der Renderer nur, wo PostgreSQL ihn sicher vergibt:
+`<tabelle>_<spalte>_check`, wenn kein anderer Constraint der Ist-Seite so heißt und der Name ohne
+Kürzung in 63 Byte passt. Fehlt die Katalogseite (Datei gegen Datei), ist der Name belegt oder
+würde gekürzt, rendert der Down kein `DROP` mit erratenem Namen, sondern blockiert mit
+`ROLLBACK_NOT_POSSIBLE` (Diagnose `POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN`).
+
 **Oracle** setzt `IF EXISTS` nur, wenn die Version des Ziels bekannt ist und
 die Klausel traegt. Sie kam mit der 23er-Linie; davor bricht jedes `DROP` ab,
 sobald das Objekt fehlt. Der Lesepfad reicht die Version aus

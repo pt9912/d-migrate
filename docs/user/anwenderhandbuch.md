@@ -1662,6 +1662,23 @@ zurück.
 - Nicht jede Operation ist umkehrbar (z. B. das Ersetzen einer Routine, deren
   alter Inhalt unbekannt ist). In solchen Fällen meldet `--generate-rollback`
   das bereits beim Ausrollen, statt ein trügerisches Down-Skript zu erzeugen.
+- **Geänderte Werteliste einer Enum-Spalte auf PostgreSQL.** Ändert das Ausrollen
+  die Werteliste einer Enum-Spalte (`values`), nimmt der Rollback sie zurück: er löst
+  den neuen CHECK und legt den alten unter seinem alten Namen wieder an. Danach
+  lehnt die Datenbank einen Wert ab, den die alte Liste nicht kannte, und nimmt einen
+  Wert wieder an, den das Ausrollen entfernt hatte. Dasselbe gilt für eine Textspalte,
+  die eine Werteliste erhält (der CHECK entfällt) oder verliert (der CHECK kommt
+  zurück). Stehen Zeilen mit einem Wert in der Tabelle, den der alte CHECK nicht
+  kennt, bricht der Rollback ab und lässt die Datenbank unverändert; räumen Sie die
+  Zeilen vorher auf. Den Namen des beim Ausrollen angelegten CHECKs leitet d-migrate
+  nur dort ab, wo PostgreSQL ihn sicher vergibt (`<Tabelle>_<Spalte>_check`). Ist der
+  Name von einem anderen Constraint belegt, würde PostgreSQL ihn kürzen, oder gibt es
+  keine Datenbank als Quelle (Datei gegen Datei), meldet `--generate-rollback` den Down
+  als nicht möglich: `downBlocked: true`, Blocker `ROLLBACK_NOT_POSSIBLE`, Exit 8, und es
+  wird nichts ausgeführt. Ohne `--generate-rollback` läuft das Ausrollen wie sonst. Das
+  Feld `planFullyRollbackable` im Report meint dabei nur, dass die Anweisungen des
+  Ausrollens transaktional sind, nicht, dass der Down möglich ist; maßgeblich ist
+  `downBlocked`.
 
 ### 3.15 d-migrate als MCP-Server für KI-Agenten bereitstellen
 

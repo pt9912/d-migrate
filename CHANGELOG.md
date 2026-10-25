@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`schema rollback` auf PostgreSQL nimmt eine geänderte Werteliste einer Inline-Enum-Spalte zurück**
+  (Issue #61). Das Down-Skript enthielt nur `ALTER COLUMN … TYPE TEXT`; der erweiterte `CHECK` blieb
+  stehen, `INSERT` des neuen Werts gelang weiter, und der Rollback endete mit Exit 0. Jetzt löst das
+  Down den vom Ausrollen angelegten `CHECK` und legt den alten unter seinem Namen wieder an (bei
+  verkürzter Liste erlaubt er den entfernten Wert wieder; ebenso für eine Textspalte, die eine
+  Werteliste erhält oder verliert). Kann der Name des angelegten `CHECK` nicht sicher bestimmt werden
+  (anderer Constraint trägt den Standardnamen, der Name würde gekürzt, Datei gegen Datei), meldet
+  `--generate-rollback` den Down als nicht möglich (`downBlocked: true`, `ROLLBACK_NOT_POSSIBLE`,
+  Exit 8) und führt nichts aus. `planFullyRollbackable` bleibt „Anweisungen sind transaktional“, nicht
+  „Down ist möglich“. Der Up-Text und der Fingerabdruck ändern sich nicht.
+
 ## [1.10.0] - 2026-10-25
 
 ### Fixed
