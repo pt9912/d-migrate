@@ -38,7 +38,8 @@ zu messen** (nicht angenommen):
 | `integer[]`, `varchar[]`, `numeric[]` (Array; vorher `_int4`) | `INTEGER[]` | Syntaxfehler; kein Gegenstück → E053 |
 | `timestamptz`, `timestamptz(3)` | `timestamptz(3)` | unbekannter Typ. `resolveBaseType` kennt `timestamptz` (`DateTime(timezone = true)`), verwirft aber `(3)` (`DateTime` trägt keine Nachkommastellen); `MysqlTypeMapper.simpleToSql` gibt jedes `DateTime` pauschal als `DATETIME` aus. Option B macht aus `timestamptz(3)` also still `DATETIME` (K2-Verstoß: Zeitzone und Nachkommastellen fallen weg) — Regel dazu unter „Optionen“ |
 | `timetz`, `bit`, `varbit(n)`, `bpchar`, `money`, `interval`, `inet`, `cidr`, `macaddr` | roh | kein Gegenstück → E053 (`bit(n)` hat in MySQL einen Typ gleichen Namens — P0, ob die Bedeutung trägt) |
-| `uuid`, `jsonb`, `bytea`, `int4`, `int8`, `float8`, `bool` | roh | `uuid`/`jsonb`/`bytea`/`int4`/`int8`/`float8` sind **keine** MySQL-Typnamen, obwohl `resolveBaseType` sie kennt → Mapper statt Rohname |
+| `uuid`, `jsonb`, `bytea` | roh | keine MySQL-Typnamen, obwohl `resolveBaseType` sie kennt → Mapper statt Rohname (`uuid` → `CHAR(36)`, `jsonb` → `JSON`, `bytea` → `BLOB`) |
+| `int4`, `int8`, `float8`, `bool` | roh | voraussichtlich gültig (MySQL kennt `INT4`, `INT8`, `FLOAT8` als Synonyme, `BOOL` als `TINYINT(1)`); **nicht behauptet**, Stufe-2-Messung. Der Mapper schreibt in jedem Fall `INT`/`BIGINT`/`DOUBLE`/`TINYINT(1)` |
 | `numeric`/`decimal` **mit** `precision`/`scale` an der Domain | `numeric` | `precision` wird roh ignoriert: MySQL liest `DECIMAL(10,0)`, **still falsche Genauigkeit**; nach B `DECIMAL(p,s)` |
 | `numeric`/`decimal` **ohne** `precision` und ohne Klammer | `numeric` | roh `DECIMAL(10,0)`; `resolveBaseType` liefert `null` → nach B E053 + `TEXT` (Typwechsel Zahl → Text). P1: E053 oder `DECIMAL(10,0)` |
 | `character varying` ohne Länge | roh | MySQL verlangt eine Länge; `Text()` hat ein Gegenstück |
@@ -99,15 +100,15 @@ Notiz trägt oder als Grenze benannt wird, entscheidet P1 — nicht stillschweig
      `character varying`, `char`, `uuid`, `json`, `jsonb`, `xml`, `bytea`, `date`, `time`, `timestamp`, `timestamptz`) plus
      Arrays und die Typen ohne Gegenstück: heute erzeugtes DDL und Soll (B/C) festhalten.
   2. **Messung gegen echtes MySQL** (`test/integration-mysql`, `TestImages.MYSQL` = `mysql:9.7.2`) nur dort, wo die Annahme vom
-     Typnamen abhängt: `bit`/`bit(n)`, `numeric` mit/ohne `precision`, `bool`, `timestamptz(3)` — nimmt MySQL das DDL an, mit
+     Typnamen abhängt: `bit`/`bit(n)`, `numeric` mit/ohne `precision`, `bool`, `int4`, `int8`, `float8`, `timestamptz(3)` — nimmt MySQL das DDL an, mit
      welchem `information_schema.columns.column_type`?
   **Ablageort:** Abschnitt „P0-Ergebnis“ in diesem Plan, Tabelle *Basistyp · erzeugtes DDL · MySQL-Ergebnis (nur Stufe 2) · Soll*;
   P0 endet, wenn jede Zeile gefüllt ist.
   **Matrix (beantwortet):** `MatrixSweepRunner` und `MatrixSweepTest` enthalten keine JDBC-/Testcontainers-Aufrufe; der Sweep
   führt DDL nicht aus. Die Matrix kann für MySQL nur das erzeugte DDL und die E053-Notizen pinnen, **nicht** die
   MySQL-Akzeptanz — die gehört in den Integrationstest. Auf `main` gibt es kein Domain-Fixture; im Branch `issue-58-laenge-array`
-  kommt `DomainBaseTypeCrossDialectTest` mit `pg-reverse.yaml` dazu und nimmt MySQL für Arrays **aus**. Offen für P0: ob
-  `CarveOutRegistry` einen Carve-out führt, der MySQL-Domains deckt.
+  kommt `DomainBaseTypeCrossDialectTest` mit `pg-reverse.yaml` dazu und nimmt MySQL für Arrays **aus**. Carve-outs (beantwortet): `test/cross-dialect-matrix/src/test/resources/fixtures/carve-outs.yaml`
+  führt `dialect: mysql` nur bei CHECK und Materialized Views, keine Domain-Zeile; es gibt keinen Carve-out, der MySQL-Domains deckt.
 * **P1 Entscheidung.** Option (B/C), E053-Wortlaut, Behandlung `timestamptz`/`bit(n)`, Array-Erkennung (siehe #58).
   **Tag/ADR-Bedarf:** erwartet **kein** Tag-Bump (der Fingerabdruck projiziert Datei und Reader-Ausgang, nicht das MySQL-DDL;
   `MysqlNeutralTypeCanonicalizer`/Vergleichspfad prüft P0 mit: löst der MySQL-Vergleich eine Domain-Spalte schon über
@@ -121,13 +122,12 @@ Notiz trägt oder als Grenze benannt wird, entscheidet P1 — nicht stillschweig
   * Unit-Test `MysqlDdlGenerator` je Basistyp der P0-Matrix: Soll-DDL oder E053 mit Objektname; absichtlich falsche Zusicherung
     einmal rot gesehen.
   * Der `numeric`-Fall mit `precision`/`scale` an der Domain als eigener Test (Regression gegen die stille Genauigkeit), dazu der Fall ohne `precision` (P1-Entscheidung).
-  * **Detekt-Auflage:** `columnDomain` hat heute 3 Parameter, mit `notes`/`tableName`/`schema` 6 → `LongParameterList`, eine der `solid_rules` in `scripts/solid-suppression-gate.sh`. Kontext als Wertobjekt (z. B. Spaltenkontext aus Tabelle, Spalte, Notizen), kein `@Suppress`; `make solid-suppression-gate` vor dem Commit.
+  * **Detekt:** `config/detekt/detekt.yml` setzt `LongParameterList.functionThreshold: 8` mit `ignoreDefaultParameters: true`; mit `notes`/`tableName`/`schema` hätte `columnDomain` 6 Parameter und löst die Regel **nicht** aus. Ein Wertobjekt für den Spaltenkontext ist Designwahl bei Bedarf, damit die Grenze 8 nicht reißt. Grundregel bleibt: kein `@Suppress`; `make solid-suppression-gate` vor dem Commit.
   * W100 für Domain über `timestamptz` (geteilte Regel mit `generate`) als Test.
   * MySQL-Integrationstest: das erzeugte DDL für jeden Basistyp **ausführen**; E053-Typen enthalten die Ersatzspalte `TEXT` und
     werden angenommen; zweiter Lauf `operationsTotal` 0 (soweit der Reader die Domain-Spalte zurückliest, P0).
   * **Matrix:** Fixture mit Domain je Basistyp (Reverse-Form wie `pg-reverse.yaml`) gegen MySQL, Soll-Ergebnis je Zelle; zuerst
-    rot ohne die Änderung. Fällt #58 ins Rebase: die MySQL-Ausnahme im Array-Test streichen, der Fall wird E053 wie SQLite/MSSQL.
-  * Detekt: Zusatzparameter nicht über `LongParameterList` unterdrücken — Kontext als Wertobjekt (`CLAUDE.md`).
+    rot ohne die Änderung. (Rebase-Folge für #58: siehe „Reihenfolge“.)
 * **P3 Doku.** `docs/user/anwenderhandbuch.md` (die Domain-Stelle zu Dialekten/MySQL; nur Ist-Zustand, ohne Chronik: keine
   „bis Version x"-Sätze, die #58-Warnung „prüfen Sie das erzeugte MySQL-Skript" entfällt/wird zur E053-Beschreibung),
   `CHANGELOG.md`, `spec/ddl-generation-rules.md` §6.3 **nur**, falls P1 eine Abbildung (C) festlegt oder der Satz „Für
@@ -143,7 +143,7 @@ Abweichung zeigt, dann eigener Plan).
 
 ## Akzeptanz
 
-* P0-Tabelle vollständig: jede Zeile hat gemessene MySQL-Annahme (ja/nein) und tatsächlichen Typ.
+* P0-Tabelle vollständig: jede Zeile hat das erzeugte DDL und das Soll; die Zeilen der Stufe 2 (`bit`, `numeric`, `bool`, `int4`, `int8`, `float8`, `timestamptz(3)`) zusätzlich die gemessene MySQL-Annahme (ja/nein) und den tatsächlichen Typ.
 * Kein Basistyp der P0-Matrix erzeugt auf MySQL DDL, das MySQL ablehnt (Integrationstest führt es aus) oder mit anderer
   Bedeutung annimmt (`numeric` mit `precision`/`scale` ergibt `DECIMAL(p,s)`, nicht `DECIMAL(10,0)`; `numeric` ohne `precision` folgt der P1-Entscheidung: E053 + `TEXT` oder `DECIMAL(10,0)`, jeweils getestet; `timestamptz` trägt W100).
 * Jeder Basistyp ohne Gegenstück (`integer[]`, `timetz`, `varbit(n)`, `bpchar`, …) erzeugt genau eine E053-Notiz
