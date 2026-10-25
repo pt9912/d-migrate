@@ -2634,8 +2634,16 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   `= ANY (ARRAY[…])` daraus), ein Cast an `VALUE` (etwa bei einer
   `varchar`-Domain), `AND`/`OR` ohne die Klammern, die der Server setzt
   (`(VALUE > 0) AND (VALUE < 10)`), Rechnungen mit Cast und negative Zahlen.
-  Eine Array-Domain (`integer[]`) gilt ebenfalls als geändert. Hat eine Domain
-  mehrere `CHECK`-Constraints, sieht `schema migrate` nur den letzten.
+  Eine Array-Domain (`integer[]`) gilt ebenfalls als geändert.
+
+  Hat eine Domain mehrere `CHECK`-Constraints, liest `schema migrate` alle und
+  fasst sie nach Constraint-Name geordnet zu einem Ausdruck zusammen, jedes
+  Prädikat in Klammern: `(VALUE > 0) AND (VALUE < 10)`. Schreiben Sie den
+  `check` in der Datei in genau dieser Form, gilt die Domain als unverändert;
+  die Namen der Constraints führt das Schema nicht. Ein `NOT VALID`-Constraint
+  zählt mit seinem Prädikat, die Meldung `R407` weist ihn aus. Ein
+  Wertelisten-`CHECK` (`VALUE IN (…)`) neben einem weiteren `CHECK` gilt nicht
+  als Werteliste.
   Eine **echte** Änderung eines benannten Typs
   (andere Werte einer Enum, anderer `base_type` oder `check` einer Domain,
   anderer Typ oder weitere Felder eines Composite) plant `schema migrate` als

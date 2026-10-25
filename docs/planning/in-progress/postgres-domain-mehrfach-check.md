@@ -70,6 +70,43 @@ ADR-Nummer (heute `schema-fingerprint-v21`, ADR bis 0063). Wer zuerst aktiviert,
 * **P3 Doku:** Handbuch §3.21 (die Grenze „mehrere `CHECK`-Constraints" streichen/nachführen, nur Ist-Zustand), `CHANGELOG.md`;
   `spec/ddl-generation-rules.md` §6.3 (Reader-Regel).
 
+## Ergebnisse
+
+### P0 Messung (2026-10-25, PostgreSQL 18.6, `TestImages.POSTGRESQL`)
+
+Katalog (`pg_get_constraintdef`, `contype = 'c'`) und Reader-Folge, gemessen mit `psql` im Image und im Integrationstest
+(vor der Änderung 11 von 47 Fällen rot):
+
+| Fall | Katalog | Reader vorher |
+| ---- | ------- | ------------- |
+| zwei benannte (`c1`, `c2`) | zwei Zeilen, je `CHECK ((…))` | nur eine, Reihenfolge ungeordnet |
+| unbenannt | Servernamen `d_check`, `d_check1` (Schreibfolge) | nur einer |
+| benannt + unbenannt | `d_mix_check`, `zz` | nur einer |
+| `c10`, `c2`, `c1` | in `COLLATE "C"`: `c1`, `c10`, `c2` | nur einer |
+| `NOT VALID` | `CHECK ((VALUE > 0)) NOT VALID` | `((VALUE > 0)) NOT VALID` — Suffix im Ausdruck, ungültiges DDL |
+| `NOT NULL` + CHECK | PG 18: `…_not_null` mit `contype = 'n'`, vom Filter `'c'` ausgenommen | unverändert, nur der CHECK |
+| Domain über Domain mit eigenem CHECK | `d` hat `base_type = b` und nur den **eigenen** CHECK (`CHECK (((VALUE)::integer < 10))`); der innere steht an `b` | nicht verloren: der Reader liest `b` als eigene Domain, `d.baseType = b` |
+
+Gemessen nur auf PG 18 (das einzige Image in `TestImages.POSTGRESQL`); ältere Versionen sind nicht gemessen.
+
+### P1 Entscheidung
+
+* **Aggregation:** je Constraint eine Zeile (`ORDER BY t.typname, c.conname COLLATE "C"`), Normalisierung je Prädikat in Kotlin,
+  `n = 1` unverändert, ab `n = 2` `(a) AND (b)`. Der Reader gruppiert nach `typname`; eine Domain ohne CHECK liefert eine Zeile ohne
+  `check_clause`.
+* **`NOT VALID`:** strip-and-keep; Warnung `R407` (Domain und Constraint-Name), je ungültigem Constraint eine.
+* **Domain über Domain:** kein Reader-Verlust, keine Änderung. Der innere CHECK steht an der inneren Domain, der Basistyp-Name
+  verweist darauf. Der Cast an `VALUE` im äußeren CHECK bleibt die bekannte Grenze.
+* **Wertelisten-Kopplung (`RefTypeVocabulary`):** der `AND`-Verbund zählt bewusst als **keine Werteliste**. `EnumCheckProjection.valuesOf`
+  bleibt unverändert (es lehnt `AND` schon heute ab); die Gegenseite einer Datei mit `AND`-CHECK liest ebenfalls `null`, beide Seiten
+  stimmen überein. Eine Hexagon-Änderung entfällt. Festgenagelt in `RefTypeVocabularyTest`.
+* **Tag/ADR:** kein `schema-fingerprint`-Bump, kein ADR. Weder Projektion noch Hash-Funktion ändern sich; nur der Reader-Ausgang einer
+  Domain mit mehreren CHECKs (vorher ein Verlustfall). `RefTypeVocabularyTest`, `MigrationFingerprintTest` und
+  `IndexPredicateCanonicalisationTest` bleiben auf `schema-fingerprint-v21`.
+* **Cross-Dialect-Matrix:** der Punkt im Plan entfällt. Die Matrix läuft im Datei-Modus (Datei gegen Datei, keine Reader) und kann einen
+  Reader-Verlust nicht sehen; ein Fixture mit zwei CHECKs auf beiden Seiten wäre ohne die Änderung nicht rot. Die Abdeckung liegt im
+  Integrationstest gegen PostgreSQL.
+
 ## Nicht-Scope
 
 `AlterCustomType` auf PostgreSQL rendern; Länge/Array (`postgres-domain-laenge-array.md`); `DEFAULT`/`NOT NULL`/Kollation
