@@ -35,7 +35,7 @@ internal object SqliteCastPreflightSql {
     fun bindingsFor(diff: DiffResult): List<SqliteCastPreflightBinding> {
         val current = diff.currentSchema ?: return emptyList()
         val desired = diff.desiredSchema ?: return emptyList()
-        val classification = SqliteRebuildPlanner.classify(diff.operations)
+        val classification = SqliteRebuildPlanner.classify(diff.operations, schemas = current to desired)
         val sql = SqliteDiffSqlBuilders()
         val out = mutableListOf<SqliteCastPreflightBinding>()
         for ((table, bucket) in classification.rebuildBuckets) {

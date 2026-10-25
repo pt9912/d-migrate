@@ -235,5 +235,11 @@ class SqliteTypeMappingTest : FunSpec({
     test("extractViewQuery") {
         SqliteTypeMapping.extractViewQuery("CREATE VIEW v AS SELECT * FROM t") shouldBe "SELECT * FROM t"
         SqliteTypeMapping.extractViewQuery("CREATE VIEW v").shouldBeNull()
+        // Zeilenumbruch nach AS, Anfuehrungszeichen, Schema, Spaltenliste, AS im Namen und in der Abfrage.
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW \"v\" AS\nSELECT id FROM t") shouldBe "SELECT id FROM t"
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW main.[v] (a, b) AS SELECT 1, 2") shouldBe "SELECT 1, 2"
+        SqliteTypeMapping.extractViewQuery("create temp view if not exists v as select 1") shouldBe "select 1"
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW \"x AS y\" AS SELECT a AS b FROM t") shouldBe
+            "SELECT a AS b FROM t"
     }
 })

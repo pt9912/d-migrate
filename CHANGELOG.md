@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`schema migrate --execute` auf SQLite baut eine Tabelle mit abhaengiger Sicht
+  neu auf** (Issue #50). Bisher endete der Lauf mit Exit `8`
+  (`TRANSACTION_SCOPE_UNSUPPORTED`) oder, mit deklarierten `dependencies`, mit Exit `5`
+  (`no such table`). Der Neubau nimmt jetzt jede Sicht mit, die die Tabelle im Text nennt
+  — auch ueber andere Sichten und gleich ob `dependencies` gesetzt ist. Ausserdem las der
+  Reader eine Sicht, deren `AS` ein Zeilenumbruch folgt, ohne Abfrage; sie galt bei jedem
+  Lauf als geaendert.
+
 ## [1.9.0] - 2026-10-24
 
 ### Fixed

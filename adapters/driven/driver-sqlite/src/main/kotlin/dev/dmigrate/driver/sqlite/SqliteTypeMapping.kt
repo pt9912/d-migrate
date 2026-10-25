@@ -342,8 +342,19 @@ internal object SqliteTypeMapping {
             SPATIALITE_TRIGGER_BODY_MARKERS.containsMatchIn(triggerSql)
     }
 
-    fun extractViewQuery(createSql: String): String? {
-        val idx = createSql.indexOf(" AS ", ignoreCase = true)
-        return if (idx >= 0) createSql.substring(idx + 4).trim() else null
-    }
+    /**
+     * Kopf einer Sicht: `CREATE [TEMP] VIEW [IF NOT EXISTS] [schema.]name [(spalten)] AS`.
+     * Das `AS` trennt von der Abfrage, gleich ob Leerzeichen oder Zeilenumbruch folgt; ein
+     * `AS` im Namen (in Anfuehrungszeichen) oder in der Abfrage ist nicht gemeint.
+     */
+    private val VIEW_HEAD = Regex(
+        """^\s*CREATE\s+(?:TEMP(?:ORARY)?\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?""" +
+            """(?:(?:"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*]|[^\s."`\[(]+)\s*\.\s*)?""" +
+            """(?:"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*]|[^\s."`\[(]+)\s*""" +
+            """(?:\((?:[^()]|\([^()]*\))*\)\s*)?AS(?=\s)\s*""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    fun extractViewQuery(createSql: String): String? =
+        VIEW_HEAD.find(createSql)?.let { createSql.substring(it.range.last + 1).trim() }
 }

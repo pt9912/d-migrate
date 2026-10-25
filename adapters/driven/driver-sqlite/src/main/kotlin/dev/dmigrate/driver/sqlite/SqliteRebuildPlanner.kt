@@ -39,7 +39,11 @@ internal object SqliteRebuildPlanner {
      * Wertevorrat steht dort, und SQLite ersetzt ihn nur im Neubau. Die
      * Operation gehoert damit in den Eimer jeder dieser Tabellen.
      */
-    fun classify(ops: List<DiffOperation>, customTypeUsers: Map<String, Set<String>> = emptyMap()): Classification {
+    fun classify(
+        ops: List<DiffOperation>,
+        customTypeUsers: Map<String, Set<String>> = emptyMap(),
+        schemas: Pair<dev.dmigrate.core.model.SchemaDefinition?, dev.dmigrate.core.model.SchemaDefinition?>? = null,
+    ): Classification {
         val rebuildTables = ops.asSequence()
             .filter { isRebuildTrigger(it) }
             .mapNotNull { tableOf(it) }
@@ -47,6 +51,10 @@ internal object SqliteRebuildPlanner {
         if (rebuildTables.isEmpty()) {
             return Classification(rebuildBuckets = emptyMap(), simpleOps = ops)
         }
+        // Sichten je Neubau-Tabelle, abgeleitet aus dem Sichttext ([SqliteViewDependencies]).
+        val viewsByTable = schemas?.let { (current, desired) ->
+            SqliteViewDependencies.viewsByTable(rebuildTables, current, desired)
+        }.orEmpty()
         val buckets = LinkedHashMap<String, MutableList<DiffOperation>>()
         for (table in rebuildTables.sorted()) buckets[table] = mutableListOf()
         val simple = mutableListOf<DiffOperation>()
@@ -68,7 +76,7 @@ internal object SqliteRebuildPlanner {
             // lists. Letting the simpleOp run after the rebuild would
             // double-emit. The absorbing bucket is the alphabetically-
             // first matching rebuilt table the op references.
-            val absorbingBucket = absorbingRebuildTableFor(op, rebuildTables)
+            val absorbingBucket = absorbingRebuildTableFor(op, rebuildTables, viewsByTable)
             if (absorbingBucket != null) {
                 buckets.getValue(absorbingBucket) += op
             } else {
@@ -90,10 +98,23 @@ internal object SqliteRebuildPlanner {
      * as H.3a-Limitation; the planner could be lifted to multi-bucket
      * absorption in a follow-up if real schemas hit this.
      */
-    private fun absorbingRebuildTableFor(op: DiffOperation, rebuildTables: Set<String>): String? {
-        val referenced = viewOrTriggerTableRefs(op)
+    private fun absorbingRebuildTableFor(
+        op: DiffOperation,
+        rebuildTables: Set<String>,
+        viewsByTable: Map<String, Set<String>>,
+    ): String? {
+        val referenced = viewOrTriggerTableRefs(op) + derivedTableRefs(op, viewsByTable)
         if (referenced.isEmpty()) return null
         return (referenced intersect rebuildTables).minOrNull()
+    }
+
+    /** Neubau-Tabellen, an denen die Sicht der Operation laut Sichttext haengt (auch ueber andere Sichten). */
+    private fun derivedTableRefs(op: DiffOperation, viewsByTable: Map<String, Set<String>>): Set<String> {
+        val isViewOp = op is DiffOperation.CreateView || op is DiffOperation.DropView ||
+            op is DiffOperation.ReplaceView
+        if (!isViewOp) return emptySet()
+        val view = op.objectRef.path.lastOrNull() ?: return emptySet()
+        return viewsByTable.filterValues { view in it }.keys
     }
 
     private fun viewOrTriggerTableRefs(op: DiffOperation): Set<String> = when (op) {
@@ -359,8 +380,8 @@ internal object SqliteRebuildPlanner {
         replace(Regex("""__\d+$"""), "")
 
     /**
-     * Phase H.3a: views from [schema] whose `dependencies.tables`
-     * contains [table]. Returned in alphabetical order by view name
+     * Phase H.3a: views from [schema] that depend on [table], declared or
+     * derived from the view text ([SqliteViewDependencies]). Returned in alphabetical order by view name
      * for deterministic SQL emission. Returns empty when [schema] is
      * null (legacy callers that don't pass schemas).
      */
@@ -369,9 +390,10 @@ internal object SqliteRebuildPlanner {
         table: String,
     ): List<NamedViewDefinition> {
         if (schema == null) return emptyList()
+        val names = SqliteViewDependencies.viewNamesOf(schema, table)
         return schema.views.entries
             .asSequence()
-            .filter { (_, view) -> (view.dependencies?.tables ?: emptyList()).contains(table) }
+            .filter { (name, _) -> name in names }
             .map { (name, view) -> NamedViewDefinition(name, view) }
             .sortedBy { it.name }
             .toList()

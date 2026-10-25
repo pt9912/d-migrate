@@ -1,10 +1,9 @@
 # SQLite: Tabellen-Neubau mit abhängigen Sichten (Issue #50)
 
-> **Status:** Draft mit Scope (2026-10-24), nach einem Review. Aus dem Befund bei
+> **Status:** In Umsetzung (2026-10-25); Draft mit Scope vom 2026-10-24, nach einem Review. Aus dem Befund bei
 > #48 (Stand `7a492031a`): ein Neubau, an dem eine Sicht hängt, scheitert in
 > `schema migrate --execute`.
-> **Vorbedingung:** keine. **Aktivierung** (Move nach `../in-progress/`) beim
-> ersten Implementierungs-Commit.
+> **Vorbedingung:** keine. Aktiviert mit dem ersten Implementierungs-Commit.
 
 ## Ziel
 
@@ -170,3 +169,24 @@ welche Sichten ein Neubau mitnimmt, und das gegebenenfalls nachziehen.
 - `make docker-test`, `make docker-check` (betroffene Module, einmal ohne `MODULES=`),
   `make integration` (setzt `-PintegrationTests` selbst), `make solid-suppression-gate`,
   `make docs-check` grün.
+
+## Nachtrag P0/P1/P2 (2026-10-25)
+
+**Messung P0.1 — warum ein `ReplaceView` fuer eine unveraenderte Sicht.** Der Leser
+lieferte `query = null`: `SqliteTypeMapping.extractViewQuery` suchte `" AS "` mit
+Leerzeichen, die erzeugte Sicht (`schema generate`) hat aber einen Zeilenumbruch nach `AS`.
+Damit stand jede so angelegte Sicht im Ist-Schema ohne Abfrage — der Vergleich meldete sie
+als geaendert, und die Tabellenbezug-Ableitung aus dem Text hatte nichts zu lesen. Der Fix
+ist eine Kopf-Erkennung (`CREATE [TEMP] VIEW [IF NOT EXISTS] [schema.]name [(spalten)] AS`);
+sie liest Zeilenumbruch, Anfuehrungszeichen, Schema-Praefix und Spaltenliste.
+
+**Entscheidung P1: Richtung A'**, ohne ADR (Reader-Vertrag und Modell bleiben).
+`SqliteViewDependencies` leitet die Sichten einer Tabelle aus `dependencies` **und** dem
+Sichttext ab (`SqliteIdentifierTokenScanner`; Literale und Kommentare zaehlen nicht),
+transitiv ueber Sichten. Es wirkt an drei Stellen: Drop-Liste (Ist), Create-Liste (Soll) und
+die Eimer-Zuordnung in `classify` (Union beider Schemas). Eine Sicht ueber zwei neu gebaute
+Tabellen steht in beiden Eimern: jeder loescht sie vor `DROP TABLE` und legt sie danach neu an.
+
+**Nicht geaendert:** Eine *deklarierte* Tabellenabhaengigkeit ohne Spaltenangaben blockiert
+eine Spaltenaenderung weiter mit `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS` (Plan §6.3); der
+Test deklariert deshalb `columns`. Triggerrumpf-Bezuege bleiben Nicht-Scope.
