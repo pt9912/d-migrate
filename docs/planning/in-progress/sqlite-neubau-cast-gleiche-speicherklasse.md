@@ -219,3 +219,11 @@ wird gecastet, unveränderter Basistyp wird kopiert. (2) *Folge-Slices:*
 [`sqlite-domain-spalte-basistyp-vergleich.md`](../next/sqlite-domain-spalte-basistyp-vergleich.md) (eine Domain über
 `boolean`/`decimal`/`uuid` plant bei jedem Lauf `AlterColumnType`). (3) Nicht per CLI getestet: Rename plus Neubau
 (`RENAME_DEPENDENCY_UNPROJECTABLE` in diesem Messaufbau).
+
+**Test-Nachtrag (Lücken aus dem Review, nur Tests).**
+* Domain per CLI: Domain über `varchar` nach Neubau Exit 0 mit erhaltenen Daten; Basistypwechsel `text` → `integer` blockiert (Datei zu Datei und gegen Datenbank mit `'abc'`, Exit 8); Domain über `boolean` als bekannte Grenze festgehalten (Exit 8).
+* **Gefundener Fehler (nicht behoben):** eine Domain mit Länge (`varchar(32)`) blockiert gegen eine Datenbank mit `SQLITE_CAST_NOT_WHITELISTED` ("target length is shorter than source length"), weil der Reader `Text()` liest und die aufgelöste Domain `Text(32)` trägt; als bekannter Fehler im Test festgehalten.
+* Plan-Only-Test geschärft (Neubau-Skript mit `DROP TABLE`/`INSERT INTO`, ohne `CAST`); Gegenproben `text(32)` ↔ `text(64)` Datei zu Datei, mit und ohne Neubau.
+* Fremddatenbank `VARCHAR(64)` → `text(32)` mit 50 Zeichen: Wert bleibt vollständig.
+* Typen als einzeln benannte Tests; Unit-Test um `float single`, `date`, `time`, `datetime` mit Zeitzone, `json`, `xml`, `email`, `array`, `fulltext` ergänzt.
+* Rollback-Test: Up-Schritt per `migrate --execute --generate-rollback`, Daten schon nach dem Up-Schritt geprüft.

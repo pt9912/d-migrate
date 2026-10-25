@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
+import dev.dmigrate.core.model.FloatPrecision
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -35,6 +36,15 @@ class SqliteRebuildFoldedColumnsTest : FunSpec({
         Folded("uu", NeutralType.Text(), NeutralType.Uuid),
         Folded("bo", NeutralType.Integer, NeutralType.BooleanType),
         Folded("de", NeutralType.Float(), NeutralType.Decimal(10, 2)),
+        Folded("fs", NeutralType.Float(), NeutralType.Float(FloatPrecision.SINGLE)),
+        Folded("da", NeutralType.Text(), NeutralType.Date),
+        Folded("ti", NeutralType.Text(), NeutralType.Time),
+        Folded("dz", NeutralType.Text(), NeutralType.DateTime(timezone = true)),
+        Folded("js", NeutralType.Text(), NeutralType.Json),
+        Folded("xm", NeutralType.Text(), NeutralType.Xml),
+        Folded("em", NeutralType.Text(), NeutralType.Email),
+        Folded("ar", NeutralType.Text(), NeutralType.Array("text")),
+        Folded("ft", NeutralType.Text(), NeutralType.FullText),
     )
 
     fun table(vararg columns: Pair<String, NeutralType>) = TableDefinition(

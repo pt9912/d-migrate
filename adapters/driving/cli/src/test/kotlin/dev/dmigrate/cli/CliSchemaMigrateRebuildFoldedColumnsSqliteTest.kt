@@ -109,36 +109,65 @@ class CliSchemaMigrateRebuildFoldedColumnsSqliteTest : FunSpec({
 
     fun report(dir: Path, name: String): String = Files.readString(dir.resolve("$name.json"))
 
-    test("Neubau aus anderem Grund (flag wird Pflicht) laeuft mit jeder gefalteten Spalte durch und behaelt die Daten") {
-        val dir = Files.createTempDirectory("cli-folded-rebuild")
-        val before = write(dir, "a.yaml", yaml(false, folded))
-        val after = write(dir, "b.yaml", yaml(true, folded))
-        val db = databaseFromFile(dir, before)
-        exec(
-            db,
-            "INSERT INTO t (id, flag, c_text, c_bool, c_dec, c_uuid) " +
-                "VALUES (1, 7, 'abc', 1, 2.5, '8d1f0c9e-0000-4000-8000-000000000001')",
-        )
+    // Je Typ ein eigener Test, damit ein Ausfall dem Typ zuzuordnen ist: SQL-Literal und erwarteter Text je Spalte.
+    val sample = mapOf(
+        "c_text" to ("'abc'" to "abc"),
+        "c_char" to ("'abc'" to "abc"),
+        "c_date" to ("'2026-01-02'" to "2026-01-02"),
+        "c_time" to ("'10:11:12'" to "10:11:12"),
+        "c_dt" to ("'2026-01-02 10:11:12'" to "2026-01-02 10:11:12"),
+        "c_dttz" to ("'2026-01-02T10:11:12+01:00'" to "2026-01-02T10:11:12+01:00"),
+        "c_uuid" to ("'8d1f0c9e-0000-4000-8000-000000000001'" to "8d1f0c9e-0000-4000-8000-000000000001"),
+        "c_json" to ("'{\"a\":1}'" to "{\"a\":1}"),
+        "c_xml" to ("'<a/>'" to "<a/>"),
+        "c_email" to ("'a@b.example'" to "a@b.example"),
+        "c_array" to ("'[\"x\"]'" to "[\"x\"]"),
+        "c_bool" to ("1" to "1"),
+        "c_dec" to ("2.5" to "2.5"),
+        "c_fts" to ("'hello world'" to "hello world"),
+        "c_single" to ("1.5" to "1.5"),
+    )
 
-        migrate(dir, after, db, "up", "--execute") shouldBe 0
-
-        report(dir, "up") shouldNotContain "SQLITE_CAST_NOT_WHITELISTED"
-        scalar(db, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'flag' AND \"notnull\" = 1") shouldBe "1"
-        scalar(db, "SELECT c_text || '|' || c_bool || '|' || c_dec || '|' || c_uuid FROM t") shouldBe
-            "abc|1|2.5|8d1f0c9e-0000-4000-8000-000000000001"
-        migrate(dir, after, db, "again", "--execute") shouldBe 0
-        report(dir, "again") shouldContain "\"operationsTotal\":0"
+    test("jede gefaltete Spalte hat einen Beispielwert") {
+        sample.keys shouldBe folded.keys
     }
 
-    test("Plan-Only desselben Neubaus endet ohne Blocker") {
+    for ((name, type) in folded) {
+        test("Neubau aus anderem Grund (flag wird Pflicht) mit gefalteter Spalte $name ($type) behaelt die Daten") {
+            val dir = Files.createTempDirectory("cli-folded-rebuild-$name")
+            val column = mapOf(name to type)
+            val before = write(dir, "a.yaml", yaml(false, column))
+            val after = write(dir, "b.yaml", yaml(true, column))
+            val db = databaseFromFile(dir, before)
+            val (literal, expected) = sample.getValue(name)
+            exec(db, "INSERT INTO t (id, flag, $name) VALUES (1, 7, $literal)")
+
+            migrate(dir, after, db, "up", "--execute") shouldBe 0
+
+            report(dir, "up") shouldNotContain "SQLITE_CAST_NOT_WHITELISTED"
+            scalar(db, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'flag' AND \"notnull\" = 1") shouldBe "1"
+            scalar(db, "SELECT CAST($name AS TEXT) FROM t") shouldBe expected
+            scalar(db, "SELECT flag FROM t") shouldBe "7"
+            migrate(dir, after, db, "again", "--execute") shouldBe 0
+            report(dir, "again") shouldContain "\"operationsTotal\":0"
+        }
+    }
+
+    test("Plan-Only desselben Neubaus plant den Neubau, kopiert ohne CAST und endet ohne Blocker") {
         val dir = Files.createTempDirectory("cli-folded-rebuild-plan")
         val before = write(dir, "a.yaml", yaml(false, folded))
         val after = write(dir, "b.yaml", yaml(true, folded))
         val db = databaseFromFile(dir, before)
+        val up = dir.resolve("up.sql")
 
-        migrate(dir, after, db, "plan", "--output", dir.resolve("up.sql").toString()) shouldBe 0
+        migrate(dir, after, db, "plan", "--output", up.toString()) shouldBe 0
 
         report(dir, "plan") shouldNotContain "SQLITE_CAST_NOT_WHITELISTED"
+        report(dir, "plan") shouldNotContain "\"operationsTotal\":0"
+        val script = Files.readString(up)
+        script shouldContain "DROP TABLE"
+        script shouldContain "INSERT INTO"
+        script shouldNotContain "CAST("
     }
 
     test("Neubau gegen eine fremd angelegte Datenbank (VARCHAR, CHAR, DATE, BOOLEAN, DECIMAL) blockiert nicht") {
@@ -222,11 +251,14 @@ class CliSchemaMigrateRebuildFoldedColumnsSqliteTest : FunSpec({
         val up = dir.resolve("up.sql")
         val down = dir.resolve("down.sql")
 
+        // Der Up-Schritt laeuft ueber die CLI (`--execute`), nicht ueber rohes JDBC, damit der echte Ausfuehrungsweg
+        // (Transaktionsgrenzen, PRAGMA foreign_keys) den Zustand erzeugt, den der Rollback zuruecknimmt.
         migrate(
-            dir, after, db, "plan",
-            "--generate-rollback", "--output", up.toString(), "--rollback-output", down.toString(),
+            dir, after, db, "up",
+            "--execute", "--generate-rollback", "--output", up.toString(), "--rollback-output", down.toString(),
         ) shouldBe 0
-        exec(db, *sqlStatements(up).toTypedArray())
+        scalar(db, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'flag' AND \"notnull\" = 1") shouldBe "1"
+        scalar(db, "SELECT c_text FROM t") shouldBe "abc"
         run(
             "schema", "rollback", "--source", down.toString(), "--target", "db:sqlite://$db",
             "--execute", "--allow-destructive",
