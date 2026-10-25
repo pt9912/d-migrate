@@ -1,11 +1,11 @@
 # SQLite: der Neubau blockiert an einer Spalte, deren Speicherklasse gleich bleibt (Issue #54, Ursache 2)
 
-> **Status:** Draft mit Scope (2026-10-25), nach Review-Runde 3. Aus Issue #54 abgetrennt
+> **Status:** In Umsetzung (2026-10-25; P0 bis P3 im Nachtrag unten), vorher Draft mit Scope nach Review-Runde 3. Aus Issue #54 abgetrennt
 > (`sqlite-default-vergleich.md` behandelt Ursache 1). Ein Tabellenneubau auf SQLite blockiert mit
 > `MANUAL_ACTION_REQUIRED` / `SQLITE_CAST_NOT_WHITELISTED` (Exit 8), sobald die Tabelle eine Spalte trägt, die
 > SQLite enger ablegt, als die Datei sie schreibt — auch wenn die Spalte unverändert bleibt. Ursache 2 ist die
 > dringendere: sie blockiert jeden Neubau einer Tabelle mit einer betroffenen Spalte, unabhängig vom `default`. **Vorbedingung:** keine.
-> **Aktivierung** (Move nach `../in-progress/`) beim ersten Implementierungs-Commit.
+> **Aktiviert** mit dem ersten Implementierungs-Commit (Move nach `../in-progress/`).
 
 ## Ziel
 
@@ -99,7 +99,7 @@ Nicht-Ziel: echte Typwechsel (`integer` → `text`), `Date` → `DateTime` (scho
 
 ## Nicht-Scope
 
-* Defaults ([`sqlite-default-vergleich.md`](sqlite-default-vergleich.md)), andere Dialekte, echte Typwechsel; der
+* Defaults ([`sqlite-default-vergleich.md`](../next/sqlite-default-vergleich.md)), andere Dialekte, echte Typwechsel; der
   Cast-Preflight (`SqliteCastPreflightSql` filtert auf `AlterColumnType`, ist nicht betroffen).
 
 ## Akzeptanz
@@ -116,3 +116,97 @@ Nicht-Ziel: echte Typwechsel (`integer` → `text`), `Date` → `DateTime` (scho
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=`,
   `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`, `make solid-suppression-gate`,
   `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD`.
+
+## Nachtrag P0/P1/P2 (2026-10-25)
+
+### P0 Messung
+
+SQLite-CLI-Test (`schema migrate`, Plan-Only, Datenbank aus `schema generate` der „vorher“-Datei, danach
+`flag` von optional auf Pflicht = `AlterColumnNullability`, das den Neubau auslöst; eine Tabelle mit allen
+Spalten, dazu je eine Tabelle mit **einer** Spalte). Stand **vor** dem Fix:
+
+| Fall | Gelesen → Soll | Exit | `castBlocked` |
+| --- | --- | --- | --- |
+| `text` `max_length: 32` | `Text()` → `Text(32)` | 8 | ja |
+| `char` `length: 10` | `Text()` → `Char(10)` | 8 | ja |
+| `date`, `time`, `datetime`, `datetime` mit Zeitzone | `Text()` → `Date`/`Time`/`DateTime` | 8 | ja (je Spalte) |
+| `uuid`, `json`, `xml`, `email`, `array`, `fulltext` | `Text()` → Typ | 8 | ja (je Spalte) |
+| `boolean` | `Integer` → `BooleanType` | 8 | ja |
+| `decimal(10,2)` | `Float` → `Decimal` | 8 | ja |
+| `float` mit `single` | `Float(DOUBLE)` → `Float(SINGLE)` | 8 | ja |
+| `float` (double), `smallint`, `biginteger`, `binary` | gleich gelesen | 0 | nein |
+| `enum` (Regressionsprobe) | durch `onlyVocabularyDiffers` ausgenommen | 0 | nein |
+| Domain über `varchar` (Text) | `Text()` → `Text()` | 0 | nein |
+| Domain über `boolean` / `decimal` / `uuid` | `Integer`/`Float`/`Text` → Domain | 8 | ja, **und** `AlterColumnType` im Plan |
+| alle Spalten zusammen | | 8 | 18 Einträge |
+| Fremddatenbank gleich (`VARCHAR(64)`, `CHAR(10)`, `DATE`, `BOOLEAN`, `DECIMAL(10,2)`, `DATETIME`) + Neubau | `Text(64)`, `Char(10)`, … gelesen, gleich geschrieben | 0 | nein |
+| Fremddatenbank `VARCHAR(64)` → `text(32)` + Neubau | `Text(64)` → `Text(32)` | 8 | ja |
+| Fremddatenbank `VARCHAR(64)` → `text(32)` ohne anderen Grund | | 0 | (kein Neubau) |
+| Gegenprobe `integer` → `text` allein | `Integer` → `Text()` | 8 | ja |
+| `integer` → `text` neben allen gefalteten Spalten | | 8 | 19 (die echte **und** die 18 gefalteten) |
+| `text(64)` → `text(32)` Datei → Datei ohne anderen Grund | | 0 | (der Vergleich meldet nichts, kein Neubau) |
+| `text(64)` → `text(32)` Datei → Datei + Neubau | `Text()` → `Text(32)` | 8 | ja |
+| `text(32)` → `text(64)` Datei → Datei + Neubau | `Text()` → `Text(64)` | 8 | ja |
+| Umbenennung (`--rename-column`) plus gefaltete Spalte | | 8 | nur die gefaltete (`keep`); die umbenannte steht als hinzugefügt, nicht als Cast |
+
+Der **Ursprungsbefund bestätigt sich**: jede Spalte, deren `toSql`-Ergebnis zurückgelesen einen anderen Typ
+ergibt, blockiert den Neubau. Dazu zwei Befunde, die der Plan nicht kannte:
+
+* `float` mit `single` blockiert ebenfalls (`Float(DOUBLE)` gelesen).
+* Eine Domain über `boolean`, `decimal` oder `uuid` plant **bei jedem Lauf** ein `AlterColumnType` (der
+  Vergleich hält `Integer` aus der Datenbank gegen `Enum(refType)` der Datei für verschieden, auch ohne
+  jede Änderung; zweiter Lauf ohne Änderung: weiter `operationsTotal` > 0). Das ist ein eigener Befund des
+  ziel-bewussten Vergleichs, kein Planerfehler; er bleibt außerhalb dieses Plans (siehe „Offen“).
+
+Rename plus gefaltete Spalte: `--rename-column` führt im Messaufbau zusätzlich zu
+`RENAME_DEPENDENCY_UNPROJECTABLE` (Exit 8) auch ohne Neubau; die Umbenennung selbst erreicht den Planer nur als
+hinzugefügte Spalte (`source.columns[name]` trifft nicht). Verhalten dort ist durch (b) unverändert und per
+Unit-Test festgehalten.
+
+### P1 Entscheidung: (b)
+
+**(b)** — der Neubau behandelt eine Spalte nur dann als Typänderung, wenn der Eimer ein `AlterColumnType` für
+sie trägt. Gründe gegen (d):
+
+* (d) faltet `canon(source) == canon(target)` im Planer und träfe dadurch auch den **strikten** Vergleich
+  (`schema compare`, Fallback im Runner), der `Text(null)` → `Text(32)` ausdrücklich als `AlterColumnType`
+  meldet. Dort wäre die Verengung dann still erlaubt. (b) folgt dem Vergleich in beiden Modi: wo er die
+  Verengung meldet, gilt die Matrix weiter; wo er sie faltet, fragt der Planer nicht ein zweites Mal.
+* (b) braucht keine zweite Projektion im Planer und keinen Zugriff auf `SqliteNeutralTypeCanonicalizer`.
+* Der Entwurfsentscheid von `onlyVocabularyDiffers` („Integer- und Textbreiten sind eine Aussage für den
+  Ziel-Dialekt“) bleibt für gemeldete Änderungen erhalten; er gilt nicht mehr für Spalten, die der Vergleich
+  nie als geändert gesehen hat. `onlyVocabularyDiffers` bleibt als Rückfall für `enum`-Paare, die der Vergleich
+  sehr wohl meldet (Wertevorrat).
+
+**`text(64)` → `text(32)` Datei → Datei im Migrate-Pfad:** lässt der Neubau durch (der ziel-bewusste Vergleich
+meldet sie nicht als `AlterColumnType`). Vorher hing das Ergebnis davon ab, ob ein anderer Grund einen Neubau
+auslöste (Zufall); jetzt ist es konsistent mit dem Fall ohne Neubau (Exit 0, ohne Operation). Gegen eine
+Fremddatenbank (`VARCHAR(64)` → `text(32)`) gilt dasselbe. Die Verengung bleibt dort sichtbar, wo der strikte
+Vergleich sie meldet.
+
+Kein Reader-Ausgang, keine Projektion und kein Fingerabdruck ändern sich: **kein Tag, kein ADR.** Die Spec
+(`spec/ddl-generation-rules.md`) beschreibt die Cast-Matrix nicht; die Whitelist selbst bleibt unverändert, nur
+ihr Aufrufkreis ändert sich.
+
+### P2 Umsetzung
+
+* `SqliteRebuildPlanner.computeColumnMapping` kennt jetzt die Spalten mit `AlterColumnType` im Eimer
+  (`typeChangedColumns`); die übrigen werden kopiert (`typeChanged = false`).
+* Neue Tests: `SqliteRebuildFoldedColumnsTest` (Unit: sechs gefaltete Paare ohne und mit `AlterColumnType`,
+  gemischter Eimer, zulässige Typänderung mit `CAST`, Umbenennung) und
+  `CliSchemaMigrateRebuildFoldedColumnsSqliteTest` (CLI: Neubau `--execute` Exit 0 mit allen gefalteten
+  Spalten, Daten erhalten, zweiter Lauf `operationsTotal` 0; Plan-Only; Fremddatenbank gleich und verengt;
+  `integer` → `text` blockiert und nennt nur `x`; `text(64)` → `text(32)`; Rollback und Ausgangszustand).
+* Angepasst: `SqliteRebuildH4Test` („ADDED_COLUMNS_FILLABLE flips to FAIL when cast-matrix blocks“) trägt
+  jetzt das `AlterColumnType` im Eimer, das der Vergleich meldete. `SqliteRebuildRendererTest` und
+  `SqliteRebuildPlanTest` bauen den Plan ohne `planRebuild` bzw. mit gemeldeten Änderungen und blieben grün.
+* **Rot ohne den Fix:** sieben Unit-Tests (sechs gefaltete Paare ohne `AlterColumnType` und der gemischte
+  Eimer) und alle sechs CLI-Tests schlugen ohne die Änderung am Planer fehl (Exit 8,
+  `SQLITE_CAST_NOT_WHITELISTED`); mit dem Fix grün. Sabotage-Check: eine absichtlich falsche Zusicherung in je
+  einer Spec (Unit und CLI) lief rot und wurde wieder entfernt.
+
+### Offen
+
+* Domain-Spalte über `boolean`/`decimal`/`uuid`: der ziel-bewusste Vergleich meldet bei jedem Lauf
+  `AlterColumnType` (Datenbank liest `Integer`, Datei `Enum(refType)`); der Neubau blockiert dort weiter.
+  Eigener Plan, Berührung des Vergleichs und möglicherweise des Fingerabdrucks.

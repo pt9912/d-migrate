@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`schema migrate` auf SQLite blockiert den Tabellenneubau nicht mehr an einer unveränderten
+  Spalte** (Issue #54, Ursache 2). Ein Neubau aus anderem Grund (`AddConstraint`,
+  `AlterColumnNullability`, …) endete mit Exit `8` und `SQLITE_CAST_NOT_WHITELISTED`, sobald die
+  Tabelle eine Spalte vom Typ `text(n)`, `char`, `date`, `time`, `datetime`, `uuid`, `json`, `xml`,
+  `email`, `array`, `fulltext`, `boolean`, `decimal` oder `float` mit `single` trug: SQLite legt sie
+  als `TEXT`, `INTEGER` oder `REAL` ab und der Reader liest sie so zurück. Der Neubau rechnet den
+  Typvergleich nicht mehr ein zweites Mal, sondern übernimmt die Entscheidung des Vergleichs: nur
+  eine Spalte mit `AlterColumnType` im Plan läuft durch die Cast-Matrix. Grenzen: `integer` →
+  `text` blockiert weiter. `text(64)` → `text(32)` plant `schema migrate` nicht als Typänderung
+  (der ziel-bewusste Vergleich faltet die Länge); der Neubau blockiert sie jetzt ebenfalls nicht
+  mehr, auch gegen eine fremd angelegte Datenbank (`VARCHAR(64)`) — vorher hing das Ergebnis davon
+  ab, ob ein anderer Grund den Neubau auslöste. Wo der strikte Vergleich die Verengung meldet
+  (`AlterColumnType`), blockiert der Neubau wie zuvor. Eine Domain-Spalte über `boolean`, `decimal` oder `uuid` plant weiter `AlterColumnType` und
+  blockiert (eigener Befund, nicht Teil dieser Änderung).
+
 - **`schema migrate` auf PostgreSQL blockiert nicht mehr bei einer unveränderten Domain**
   (Issue #52). Schrieb die Datei eine Domain anders als der Katalog, planten Datei und
   Datenbank trotz gleichem Inhalt `AlterCustomType` und der Lauf endete mit Exit `8`.
