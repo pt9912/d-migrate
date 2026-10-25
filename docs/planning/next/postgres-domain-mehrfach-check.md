@@ -22,31 +22,41 @@ mit beiden gilt als geändert, eine mit dem ersten wird übersehen.
 
 Weitere Reader-Verluste an Domain-`CHECK`s, in P0 zu messen: `NOT VALID` (`pg_get_constraintdef` hängt ` NOT VALID` an;
 `normalizeDomainCheck` behält es, die äußere Klammer wird dann nicht mehr entfernt → ungültiges DDL `CHECK (… NOT VALID)`),
-**Domain über Domain** mit eigenem CHECK (der innere geht verloren, `bt.typname` nennt nur den Namen).
+**Domain über Domain** mit eigenem CHECK (offene P0-Frage: geht der innere CHECK verloren, oder trägt der Reader ihn über den
+Basistyp-Namen `bt.typname`? Nicht annehmen, messen).
 
 ## Richtung (nach P0 zu entscheiden)
 
-* Der Reader aggregiert die Prädikate (`string_agg` nach `conname`, `COLLATE "C"` für stabile Reihenfolge) und führt sie mit
-  `AND`, **jedes in Klammern**, ein einzelnes CHECK bleibt unverändert (`n = 1` nicht klammern). Semantik: Domain-CHECKs
+* Der Reader liest die CHECKs **je Constraint** (eine Zeile pro `pg_constraint`, nicht `string_agg` im SQL), normalisiert **jedes**
+  Prädikat in Kotlin mit `normalizeDomainCheck` (Cast-/Klammerentfernung arbeitet auf einem einzelnen Prädikat; ein verketteter
+  String bräche sie) und fügt sie danach mit `AND`, **jedes in Klammern**, zusammen; ein einzelnes CHECK bleibt unverändert
+  (`n = 1` nicht klammern). Reihenfolge: `ORDER BY conname COLLATE "C"` (stabil) oder `oid` — in P1 entscheiden (Kriterium:
+  Reihenfolge der Autorendatei vs. Katalog; beides ist für `a AND b` semantisch gleich, aber nicht textgleich). Semantik: Domain-CHECKs
   verwerfen nur bei `false`, `a AND b` ist äquivalent; Constraint-Namen gehen verloren (das Modell kennt eine `check`-Zeichenkette).
 * **Vergleich mit der Autorenform:** der zusammengesetzte Ausdruck `(VALUE > 0) AND (VALUE < 10)` gegen `VALUE > 0 AND
   VALUE < 10` ist die Grenze „`AND` ohne Serverklammern" aus ADR 0061 Entscheidung 2 — dieser Plan beseitigt den Reader-Verlust,
   nicht diese Grenze. Das Ziel der Akzeptanz ist entsprechend die Klammerform.
 * **Round-Trip:** `schema generate` schreibt **einen** `CHECK`; zwei benannte Constraints werden beim Zurückschreiben zu einem
   (zu messen: Drift gegen eine Datenbank, die zwei benannte trägt).
-* `NOT VALID` → Notiz im Reader (Constraint nicht in `check` übernehmen oder kennzeichnen); Domain über Domain → die inneren
-  CHECKs auflösen oder als Grenze benennen (P1).
+* `NOT VALID` → Suffix abtrennen, das Prädikat **behalten** (strip-and-keep; ein `NOT VALID`-Constraint prüft Neues weiter) und eine
+  `SchemaReadNote` melden; Domain über Domain → die inneren CHECKs auflösen oder als Grenze benennen (P1).
+* **Kopplung `RefTypeVocabulary`:** der Wertelisten-Check (`CHECK (VALUE IN (…))`) wird dort aus dem `check`-String als Wertevorrat
+  erkannt; ein `AND`-Verbund aus mehreren CHECKs darf diese Erkennung nicht verändern. Kopplungstest: Domain mit Wertelisten-CHECK
+  plus zweitem CHECK.
 * Filter `contype = 'c'` erhalten (NOT NULL, `contype = 'n'`, nicht als CHECK einmischen).
 
 Fingerabdruck: nur der Reader-Ausgang ändert sich (bei Domains mit mehreren CHECKs); die Projektion der Datei nicht. Ob das einen
 Tag-Bump trägt, ist in P1 zu entscheiden (Präzedenz: ADR 0061 hob für die Reader-Normalform an; hier ändert sich der Hash nur
-für den Verlustfall). Nächste freie ADR-Nummer, falls nötig: nach 0063.
+für den Verlustfall). **Koordination:** die drei PostgreSQL-Domain-Pläne (dieser, `postgres-domain-laenge-array.md`,
+`domain-default-not-null-modell.md`) und `sqlite-ausdrucks-index-textform.md` konkurrieren um den nächsten Tag und die nächste
+ADR-Nummer (heute `schema-fingerprint-v21`, ADR bis 0063). Wer zuerst aktiviert, nimmt den nächsten freien; Domain-Pläne dürfen sich
+**einen** Bump teilen, wenn sie zusammen ausgeliefert werden. Bezug: [Plan #52](../in-progress/postgres-domain-autorenform-gegen-katalog.md), ADR 0061.
 
 ## Phasen
 
 * **P0 Messung** (Integrationstest gegen PostgreSQL, Muster `PostgresCustomTypeFileFormMigrateIntegrationTest`): zwei CHECKs
   (benannt/unbenannt, unsortierte Namen, `c10` vor `c2`), drei CHECKs, `NOT VALID`, Domain über Domain mit eigenem CHECK,
-  Domain mit `NOT NULL` + CHECK (PG-Versionen des Testimages angeben). Je Fall Reader-Ausgabe und Diff gegen die Autorenform.
+  Domain mit `NOT NULL` + CHECK (PG-Version aus `TestImages.POSTGRESQL` angeben). Je Fall Reader-Ausgabe und Diff gegen die Autorenform.
 * **P1 Entscheidung:** Aggregationsform, `NOT VALID`, Domain über Domain, Tag/ADR.
 * **P2 Umsetzung:** Reader-Unit-Test (Zeilen-Stub mit mehreren CHECKs), Integrationstest (zweiter Lauf `operationsTotal` 0,
   Rückweg, echte Änderung eines der CHECKs bleibt `AlterCustomType`).

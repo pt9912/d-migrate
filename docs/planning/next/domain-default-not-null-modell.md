@@ -2,7 +2,7 @@
 
 > **Status:** Draft mit Scope (2026-10-26). Abgetrennt aus dem früheren Sammelplan. Reine Modell- und Spec-Frage:
 > `CustomTypeDefinition` kennt weder `DEFAULT` noch `NOT NULL` noch eine Kollation einer Domain; eine Änderung daran ist im Diff
-> unsichtbar. **Vorbedingung:** Entscheidung, ob das Modell erweitert wird (P1). **Aktivierung** (Move nach `../in-progress/`)
+> unsichtbar. Der Plan ist eine **Entscheidungs-/Messvorlage** (P0 misst, P1 entscheidet), noch keine Umsetzung. **Vorbedingung:** Entscheidung, ob das Modell erweitert wird (P1). **Aktivierung** (Move nach `../in-progress/`)
 > beim ersten Implementierungs-Commit; dann GitHub-Issue anlegen und hier verlinken.
 
 ## Ziel
@@ -16,7 +16,10 @@ getragen werden — und den Vertrag dafür festzuschreiben.
   `kind`, `values`, `fields`, `baseType`, `precision`, `scale`, `check`, `description`. Der PostgreSQL-Reader selektiert
   `domain_default` ([`PostgresTypeMetadataQueries`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresTypeMetadataQueries.kt)),
   verwendet es aber nirgends. `NOT NULL` (`pg_type.typnotnull`) und die Kollation (`typcollation` abweichend vom Basistyp)
-  liest er nicht.
+  liest er nicht. `domain_default` kommt als Katalogtext (Literal, ggf. mit Cast `'x'::text`) und bräuchte eine Normalisierung wie
+  `normalizeDomainCheck`, bevor es mit einer Autorenform vergleichbar ist.
+* **`AlterCustomType` ist auf PostgreSQL UNSUPPORTED** (blockiert Exit 8, `DIALECT_UNSUPPORTED_OPERATION`); es gibt keinen
+  `ALTER DOMAIN`-Renderer. Auch bei A bliebe eine Änderung blockierend, solange der Renderer fehlt.
 * Folge: `ALTER DOMAIN … SET DEFAULT/SET NOT NULL` ist für `schema migrate` unsichtbar; `schema generate` einer gelesenen Domain
   verliert beides.
 
@@ -25,13 +28,21 @@ getragen werden — und den Vertrag dafür festzuschreiben.
 * **A — Modell erweitern:** `default`/`not_null`/`collation` an `CustomTypeDefinition`. Vertragsänderung quer durch
   **`spec/schema-reference.md` (zuerst)**, `spec/schema.json`, Datei-Parser/-Writer, Vergleich, Fingerabdruck
   (`CanonicalPayload`, `MigrationFingerprint`), alle Dialekte mit Domains (PostgreSQL nativ; MSSQL/MySQL/SQLite rendern Basistyp
-  + CHECK inline — dort ist `NOT NULL`/`DEFAULT` an der Spalte eine andere Sache), Renderer, Reverse. Neuer Fingerabdruck-Tag und ADR.
+  + CHECK inline — dort ist `NOT NULL`/`DEFAULT` an der Spalte eine andere Sache), Renderer, Reverse. Neuer Fingerabdruck-Tag (nächster freier, heute `v22`) und ADR (nächste freie, heute 0064) —
+  koordiniert mit `postgres-domain-mehrfach-check.md` und `postgres-domain-laenge-array.md` (ein gemeinsamer Bump möglich).
+  Vollständige Dateiliste: `spec/schema-reference.md` (zuerst) → `spec/schema.json` → Modell/Parser/Writer → Vergleich → Abdruck →
+  Renderer/Reverse **inkl. Oracle** und aller Dialekte mit Domains → Code → Handbuch (Reihenfolge Spec → Code → Handbuch).
+* **A+ — Modell erweitern und `ALTER DOMAIN … SET DEFAULT/SET NOT NULL` rendern** (hebt die Blockade).
+* **A-PG — nur PostgreSQL:** Felder am Modell, Auswertung nur im PostgreSQL-Reader/-Vergleich; die anderen Dialekte ignorieren sie.
+* **Read-only:** der Reader liest `DEFAULT`/`NOT NULL`/Kollation, der Vergleich meldet sie nur (Notiz/Warnung), blockiert nicht.
 * **B — Bewusste Grenze:** das Modell bleibt; Handbuch und Spec nennen, dass `DEFAULT`/`NOT NULL`/Kollation einer Domain nicht
   verglichen werden. Kein Code. Reicht, wenn kein Anwender es braucht.
+* **B+ — Grenze mit Hinweis:** wie B, aber der Reader meldet eine `SchemaReadNote`, wenn die Domain `DEFAULT`/`NOT NULL`/Kollation
+  trägt, damit die Grenze nicht still bleibt.
 
 ## Phasen
 
-P0 Messung (PostgreSQL: Domain mit `DEFAULT`, `NOT NULL`, Kollation; was liest der Reader, was rendert `schema generate`, Verhalten
+P0 Messung (die Entscheidung hängt an ihr; PostgreSQL: Domain mit `DEFAULT`, `NOT NULL`, Kollation; was liest der Reader, was rendert `schema generate`, Verhalten
 von `schema migrate` bei einer Änderung daran; Anwenderbedarf: gibt es ein Issue?), P1 Entscheidung A oder B (Aufwand in
 Dateien/Dialekten schätzen; ADR), P2 Umsetzung nach P1, P3 Doku (Spec zuerst).
 

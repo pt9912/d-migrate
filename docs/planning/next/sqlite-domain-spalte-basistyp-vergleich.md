@@ -1,50 +1,85 @@
 # SQLite: eine Domain-Spalte über boolean, decimal oder uuid gilt bei jedem Lauf als geändert (Folge von #54)
 
 > **Status:** Draft mit Scope (2026-10-26). Befund aus der Umsetzung von
-> `sqlite-neubau-cast-gleiche-speicherklasse.md` (#54): Domain-Spalten über `boolean`, `decimal` oder `uuid`
+> [`sqlite-neubau-cast-gleiche-speicherklasse.md`](../in-progress/sqlite-neubau-cast-gleiche-speicherklasse.md) (#54): Domain-Spalten über `boolean`, `decimal` oder `uuid`
 > planen bei **jedem** `schema migrate` ein `AlterColumnType` und blockieren damit (über die Cast-Matrix) den
-> Neubau, auch ohne jede Änderung. Domain über `varchar`/`integer` ist nicht betroffen.
+> Neubau, auch ohne jede Änderung. Gemessen ist nur `varchar` (nicht betroffen) gegen `boolean`/`decimal`/`uuid`
+> (betroffen); nach dem Code ist **jeder** Basistyp betroffen, dessen Reverse-Form nicht `Text()` ist (P0 misst die Matrix).
 > **Vorbedingung:** keine. **Aktivierung** (Move nach `../in-progress/`) beim ersten Implementierungs-Commit.
 > Noch kein GitHub-Issue; beim Aktivieren anlegen und hier verlinken.
 
 ## Ziel
 
-Eine Domain-Spalte, die Datei und SQLite-Datenbank gleich ausdrücken, erzeugt keine Operation — auch nicht über
-`boolean`, `decimal` oder `uuid`.
+Eine Domain-Spalte, die Datei und SQLite-Datenbank gleich ausdrücken, erzeugt keine Operation — gleich über welchen Basistyp.
 
-## Problem (gemessen in #54, P0)
+## Problem (gemessen in #54, P0; Ursache aus dem Code)
 
 Die Datei trägt `Enum(refType = <domain>)`; die Datenbank enthält die Domain nicht als Typ-Objekt, der Reader liest die
-Spalte als `Integer` (`boolean` → `INTEGER`), `Float` (`decimal` → `REAL`) oder `Text` (`uuid` → `TEXT`). Der
-ziel-bewusste Vergleich (`TargetProjection.type`, `SqliteNeutralTypeCanonicalizer`) projiziert die Datei-Spalte nicht auf
-den Basistyp der Domain und sieht deshalb `Integer` gegen `Enum(refType)` als Typunterschied. Bei `varchar`/`integer` fällt
-der Unterschied durch die Projektion weg.
+Spalte als `Integer` (`boolean`), `Float` (`decimal`) oder `Text` (`uuid`).
+
+**Ursache:** der **Fingerabdruck ist schon domain-bewusst**, der **strukturelle Vergleich nicht**.
+[`SqliteNeutralTypeCanonicalizer`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteNeutralTypeCanonicalizer.kt)
+hat eine Überladung `canonicalize(type, customTypes)`, die `Enum(refType)` über `SqliteRefTypeColumns.baseType` auf den
+Basistyp auflöst; der Abdruck-Pfad nutzt sie (`registrySchemaAwareCanonicalizer`, `TypeCanonicalizerWiring`). Der Vergleich
+(`TableComparator.compareColumn`) bekommt dagegen die kontextfreie Projektion (`typeCanonicalizerFor`, KDoc: „Nur der
+Fingerprint-Pfad nutzt das"); `Enum(refType)` wird kontextfrei zu `Text()` und steht gegen `Integer`/`Float`.
+
+**Warum `varchar` unbetroffen ist:** nur zufällig — kontextfrei ergibt `Enum` `Text()`, und die Datenbank liest `Text()`. Dieselbe
+Rechnung trifft jede Domain über `integer`, `smallint`, `biginteger`, `float`, `date`, `time`, `datetime`, `json`, `binary` u. a.,
+soweit der Reader nicht `Text()` liest. „Domain über `integer` ist nicht betroffen" ist **nicht gemessen** (die #54-Tabelle hat
+nur `varchar` und `boolean`/`decimal`/`uuid`).
 
 ### Zu prüfen (P0)
 
-* Wo die Projektion einer Domain-Spalte fehlt: `SqliteNeutralTypeCanonicalizer`/`TargetProjection` kennen die Custom Types
-  des Schemas nicht; `RefTypeVocabulary.resolve` löst nur Enums auf (ADR 0060).
-* Welche Basistypen betroffen sind (je `NeutralType`, dessen `toSql` nicht auf sich selbst zurückliest).
-* Verhalten für `file:`-Ziele (Datei gegen Datei).
+Abgeschlossene Matrix: eine Zeile je Basistyp aus
+[`DomainTypes.resolveBaseTypeName`](../../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/DomainTypes.kt)
+mit Spalten *Reverse-Form · Soll · Operationen im Plan-Only · Exit mit `--execute`*. P0 endet, wenn alle Zeilen gefüllt sind.
+Zusätzlich: Gegenproben **Enum-`ref_type`** (kontextfrei `Text()`, soll unbetroffen bleiben), **Domain mit Wertelisten-CHECK**
+(`RefTypeVocabulary.resolve` löst sie zu `Enum(values, refType)` auf, der Wertevorrat-Vergleich greift vor `canon`; der Plan
+kannte nur Enums), **Domain mit Länge** (`varchar(32)`: Reader liest `Text()`, Domain trägt `Text(32)` — eigener Befund aus der
+#54-Plandatei, hier Abgrenzung), `file:`-Ziel (Datei gegen Datei).
 
 ## Richtung (nach P0 zu entscheiden)
 
-* **A — Vergleich:** die Projektion löst eine Domain-Spalte auf ihren Basistyp auf (analog `RefTypeVocabulary`), nur SQLite;
-  der Abdruck faltet unter derselben Projektion → Fingerabdruck-Tag (nächster freier) und ADR (nächste freie Nummer),
-  Anknüpfung ADR 0060.
+* **A — Vergleich löst die Domain auf.** Muster existiert: `TargetProjection.resolvesRefTypeVocabulary` und
+  `TableComparator.resolvedAgainst` lösen nur dort auf, wo die Gegenseite die Spalte **nicht** auch als `ref_type` führt
+  (sonst entstünde ein zweites `ColumnDiff` und Operations-IDs änderten sich). **Präzedenzregel:** Datei gegen Datei bleibt
+  unaufgelöst; ein Basistypwechsel erzeugt weiter genau ein `AlterCustomType` ohne zusätzliches `AlterColumnType`
+  (Abstimmung mit `SqliteRebuildPlanner.domainColumnsWithStorageChange`).
+  Umsetzungsort (P1, Kriterium: keine zweite Verdrahtung in `SchemaMigrateRunner`/`SchemaRollbackRunner`/`PartitionOverlayHint`,
+  kontextfreier Vertrag des `TargetProjection.type` bleibt):
+  (a) `TableComparator` löst vor `canon` gegen den `CustomTypeContext` auf, den es ohnehin hat, mit Dialekt-Schalter nach dem
+  Muster `resolvesRefTypeVocabulary` (SQLite-spezifisch; PostgreSQL kennt den Typ) — **bevorzugt**;
+  (b) schema-bewusster Canonicalizer in `TargetProjection` — bricht den kontextfreien Vertrag.
 * **B — Reader:** nicht tragfähig (die Datenbank trägt die Domain nicht).
+* **Fingerabdruck:** der Abdruck faltet die Domain schon; erwartet **kein** Tag-Bump. P0-Kriterium: Hash vorher/nachher für
+  denselben Eingang gleich. Ein ADR nur, wenn der Vergleich Domains neu auflöst (Präzedenz ADR 0060 Wertevorrat; Grenze ADR 0026
+  „struktureller Vergleich kontextfrei"); dann neuer ADR (nächste freie Nummer, accepted-ADRs bleiben unberührt) und Klärung, ob
+  er 0060/0026 ergänzt.
+
+## Folgen für den Neubau-CAST-Plan (#54)
+
+Entfällt das `AlterColumnType`, kopiert `computeColumnMapping` die Spalte (Speicherklasse gleich) statt sie durch die Cast-Matrix
+zu schicken; `castBlocked` bleibt leer. Pro Basistyp (`decimal`: `Float` gegen `Decimal`, `uuid`) hängt das an `toSql` — messen,
+nicht annehmen. In
+[`sqlite-neubau-cast-gleiche-speicherklasse.md`](../in-progress/sqlite-neubau-cast-gleiche-speicherklasse.md) kippen danach die
+Tabellenzeile zu „boolean/decimal/uuid", die Abgrenzung („bleibt außerhalb dieses Plans") und der Test „Domain über boolean als
+bekannte Grenze (Exit 8)" — letzterer wird hier zur Akzeptanz.
 
 Nicht-Ziel: der Neubau-CAST selbst (erledigt in #54 Ursache 2).
 
 ## Phasen
 
-P0 Messung (SQLite-CLI-Test, je Basistyp), P1 Entscheidung (ADR-/Tag-Bedarf), P2 Umsetzung mit Tests (Plan-Only 0
-Operationen, `--execute`, zweiter Lauf, Rückweg, echte Änderung des Basistyps bleibt), P3 Doku.
+P0 Messung (SQLite-CLI-Test, Matrix oben), P1 Entscheidung (Ort, Präzedenzregel, ADR-Bedarf), P2 Umsetzung mit Tests (Plan-Only 0
+Operationen, `--execute`, zweiter Lauf, Rückweg, echte Änderung des Basistyps bleibt genau ein `AlterCustomType`), P3 Doku
+(Handbuch nur Ist-Zustand; Grenze streichen, `CHANGELOG.md`).
 
 ## Akzeptanz
 
 * Jede gemessene Fehlerzeile hat einen Test, der ohne die Änderung an der erwarteten Stelle fehlschlägt; absichtlich falsche
   Zusicherung einmal rot gesehen.
-* `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=`,
-  `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`, `make solid-suppression-gate`, `make docs-check`,
-  `make doc-immutable RANGE=origin/main..HEAD`.
+* Zweiter Lauf: `operationsTotal` = 0; Rückweg: Exit 0; Datei gegen Datei mit Basistypwechsel: genau ein `AlterCustomType`,
+  kein `AlterColumnType`; Fingerabdruck vorher/nachher unverändert; Test „Domain über boolean" aus #54 von Exit 8 auf 0.
+* `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=` (geteilte Signatur im
+  Hexagon, `CLAUDE.md`), `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`, `make solid-suppression-gate`,
+  `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD`.

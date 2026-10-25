@@ -33,17 +33,28 @@ das nicht rendert); eine unveränderte Domain blockiert nicht.
   (`int4[]` = `integer[]`). **`sameParameters` wird strenger:** heute gilt „fehlende Klammer = unbekannt, nicht verschieden"
   (ADR 0061 Entscheidung 4, Begründung „der Katalog nennt sie nicht"); liefert der Reader die Länge, ist `varchar(50)` gegen
   `text`/`varchar` ohne Länge ein Unterschied — alte Reverse-Dateien (`text`) und Autorendateien ohne Länge gälten als geändert.
-  Das ist eine Vertragsänderung, kein Nachtrag.
+  Das ist eine Vertragsänderung, kein Nachtrag. **Dialekt-Umfang offen (P1):** `sameParameters` und `CustomTypeBaseType` gelten für
+  alle Dialekte (`SchemaComparator.sameBaseType`, `CanonicalPayload.customType`, `MigrationFingerprint.appendCustomTypes`); die
+  Verschärfung nur für Reader zu fassen, die die Länge liefern, oder allgemein — entscheiden und die anderen Dialekte (MSSQL/MySQL/
+  SQLite/Oracle-Domains) auf Regression prüfen.
+* **Zielformen von `format_type`:** `character varying(50)`, `character(5)`, `numeric(10,2)`, `timestamp(3) without time zone`,
+  `bit(n)`, `integer[]`, `character varying(50)[]` → je eine neutrale Zielform festlegen (P0-Tabelle: Reader-Ausgabe → Neutralform
+  → `toSql`); die Abbildung trägt die Domain-Funktion, nicht `mapParamType`.
+* **Regression `DomainTypes`/E053:** `DomainTypes.resolveBaseTypeName` und die Prüfung, die Domain-Basistypen kennt (E053), dürfen
+  durch Länge/Array-Suffix nicht neue Fehler erzeugen; P0 prüft Datei-`base_type: varchar(50)` und `integer[]` gegen beide.
+* **Bestandsdateien:** alte Reverse-Dateien (`text`) gelten nach der Verschärfung als geändert → mögliche Exit-8-Blockade ohne
+  Änderung des Anwenders; Übergangsregel (Hinweis/Notiz) in P1, im Handbuch als Ist-Zustand.
 * **Fingerabdruck:** `CanonicalPayload`/`MigrationFingerprint` tragen `base=` nur als Typname ohne Klammer; trägt der Abdruck
-  die Länge, ändert sich das Layout → neuer Tag (nächster freier) und ADR.
-* **ADR:** ein **neuer** ADR (nächste freie Nummer, nach 0063), der ADR 0061 Entscheidung 3/4 ergänzt; ein Nachtrag im
-  akzeptierten ADR ist wegen `doc-immutable` nicht möglich.
+  die Länge, ändert sich das Layout → neuer Tag (zum Aktivierungszeitpunkt der nächste freie, heute `v22`; koordiniert mit
+  `postgres-domain-mehrfach-check.md`, `domain-default-not-null-modell.md`, `sqlite-ausdrucks-index-textform.md`).
+* **ADR:** ein **neuer** ADR (zum Aktivierungszeitpunkt die nächste freie Nummer, heute 0064), der ADR 0061 Entscheidung 3/4
+  ergänzt; ein Nachtrag im akzeptierten ADR ist wegen `doc-immutable` nicht möglich. Bezug: [Plan #52](../in-progress/postgres-domain-autorenform-gegen-katalog.md).
 
 ## Phasen
 
 * **P0 Messung** (Integrationstest gegen PostgreSQL): `varchar(n)`, `char(n)`, `text`; `integer[]`, `text[]`, `integer[][]`,
   `numeric(10,2)[]`, `varchar(n)[]`; Domain in einem anderen Schema als `public` (Reader filtert ein Schema); `timestamp(3)`,
-  `bit(n)`; rechtearme Rolle (Quelle `information_schema` liefert NULL?). Je Fall Reader-Ausgabe, Diff gegen die Autorenform,
+  `bit(n)`; `character varying(50)[]`; Datei mit `varchar(50)` gegen Datenbank mit `varchar(254)`; rechtearme Rolle (Quelle `information_schema` liefert NULL?). Je Fall Reader-Ausgabe, Diff gegen die Autorenform,
   Verhalten von `schema generate` für die gelesene Domain (Round-Trip). P0 endet, wenn die Tabelle voll ist.
 * **P1 Entscheidung:** Quelle, `sameParameters`-Regel, Neutralform, Tag/ADR, Übergang für Bestandsdateien (`text` statt
   `varchar(n)` aus früheren Reverse-Läufen).
