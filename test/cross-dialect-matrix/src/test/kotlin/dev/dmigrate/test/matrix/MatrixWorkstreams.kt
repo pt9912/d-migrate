@@ -38,10 +38,11 @@ internal object MatrixWorkstreams {
         "D.3",  // Materialized Views: positive PG, BLOCKER MySQL/SQLite (MV not supported by dialect)
         "E.2",  // Trigger migration: positive add trigger (MySQL); PG/SQLite need per-dialect bodies (carved)
         "H.1",  // Domain-Spalte (#56): current = Reverse-Form, desired = Domain; SQLite plant kein AlterColumnType
+        "expression-index",  // Ausdrucks-Index: positive add index (PG/MySQL/SQLite/Oracle); MSSQL carved (E057)
     )
 
     /**
-     * The full plan-doc workstream catalogue (22 entries). Order
+     * The full plan-doc workstream catalogue plus the slice-internal entries. Order
      * matches the plan-doc table of contents.
      */
     val ALL: List<String> = listOf(
@@ -59,6 +60,9 @@ internal object MatrixWorkstreams {
         // Domain-Spalte gegen ihre Reverse-Form (Issue #56); ausserhalb des
         // §4-§10-Katalogs, wie F.4-renderer-blocker-bridge.
         "H.1",
+        // Ausdrucks-Index (Issue #55): ein Dialekt-neutrales Fixture mit allen Faellen der
+        // P0-Fallmenge, geprueft im Sweep (Rendern) und im Rundlauf gegen SQLite.
+        "expression-index",
     )
 
     /** Workstreams that are NOT pinned in this slice — must be covered by carve-outs. */

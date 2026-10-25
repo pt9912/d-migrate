@@ -1,6 +1,6 @@
 # SQLite: eine Domain-Spalte über boolean, decimal oder uuid gilt bei jedem Lauf als geändert (Folge von #54)
 
-> **Status:** In Umsetzung (2026-10-25), vorher Draft mit Scope. Befund aus der Umsetzung von
+> **Status:** Umgesetzt, im Review (2026-10-25); P0 bis P3 und die Gates stehen in den Nachträgen unten. Befund aus der Umsetzung von
 > [`sqlite-neubau-cast-gleiche-speicherklasse.md`](sqlite-neubau-cast-gleiche-speicherklasse.md) (#54): Domain-Spalten über `boolean`, `decimal` oder `uuid`
 > planen bei **jedem** `schema migrate` ein `AlterColumnType` und blockieren damit (über die Cast-Matrix) den
 > Neubau, auch ohne jede Änderung. Gemessen ist nur `varchar` (nicht betroffen) gegen `boolean`/`decimal`/`uuid`
@@ -153,7 +153,7 @@ löst `Enum(refType)` über `SqliteRefTypeColumns.baseType` auf) — nur für ei
   Vergleich übernimmt dieselbe Projektion für denselben Dialekt) noch den Wertevorrat (ADR 0060). Sie ist die Angleichung des
   Vergleichs an den Abdruck, kein neuer Vertrag. (ADR 0064/0066 bleiben unberührt.)
 * **Kein Tag-Bump:** `MigrationFingerprint`, `CanonicalPayload` und `DiffPlanner` sind unberührt (`git diff` zeigt keine Zeile
-  dort); die Abdruck-Projektion ist dieselbe wie zuvor. `schema-fingerprint-v21` bleibt.
+  dort); die Abdruck-Projektion ist dieselbe wie zuvor. Der Abdruck ändert sich durch diese Änderung nicht.
 * **Der Neubau-CAST (#54):** entfällt das `AlterColumnType`, kopiert `computeColumnMapping` die Spalte; gemessen für alle
   Zeilen oben (Neubau Exit 0, Daten erhalten, `castBlocked` leer).
 
@@ -181,5 +181,5 @@ unbemerkt (`Enum(refType)` kontextfrei `Text()` = `Text()`); sie gilt jetzt als 
   kein Typ-Objekt, `CreateCustomType` (rendert nichts, `SQLITE_CUSTOM_TYPE_AT_COLUMN`) steht bei **jedem** Lauf im Plan, auch
   für `varchar`, das nie betroffen war. Gemessen wird deshalb: im Plan nur `CreateCustomType` (kein `AlterColumnType`, kein
   Neubau). Die Matrix prüft nur Exit-Codes.
-* **Review-Nachtrag (Runde 1):** `SqliteDomainFingerprintTest` pinnt den Abdruck einer Domain-Spalte (boolean, decimal(10,2)) über den schema-bewussten Kanonisierer auf feste Hashes; gemessen mit dem Produktionscode von `main` (Änderung zurückgesetzt) und mit der Änderung — gleich. Matrix `H.1` über alle Dialekte gemessen: SQLite, SQL Server, Oracle Exit 0 (gepinnt), PostgreSQL und MySQL Exit 8 (`DIALECT_UNSUPPORTED_OPERATION`, Carve-out). Der Sweep-Umbau (Treiber laden, ziel-bewusster Vergleich) lief über das ganze Modul grün; `MatrixSweepTest` räumt die Registry danach.
+* **Review-Nachtrag (Runde 1/2):** `SqliteDomainFingerprintWiringTest` (`hexagon/application`) bildet den Abdruck über die echte Verdrahtung (`registrySchemaAwareCanonicalizer` und die `capability*`-Projektionen wie in `SchemaMigrateRunner.endpointFingerprints`) und sagt Gleichheit aus: Domain über `boolean`/`decimal`/`integer` = Spalte mit direktem Basistyp; ein Basistypwechsel ändert den Abdruck. Feste Hashes pinnt er bewusst nicht (sie enthalten die Algorithmus-Version). Zuvor war ein fester Hash einmal mit dem Produktionscode von `main` und einmal mit der Änderung gemessen und gleich. Matrix `H.1` über alle Dialekte: siehe „Gates“.
 * Doku: `docs/user/anwenderhandbuch.md` (SQLite-Hinweis zu Enum/Domain), `CHANGELOG.md` (Unreleased).

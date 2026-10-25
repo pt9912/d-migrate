@@ -21,6 +21,8 @@ dependencies {
     testImplementation(project(":adapters:driven:driver-oracle"))
     testImplementation(project(":adapters:driven:formats"))
 
+    // Rundlauf des Ausdrucks-Index gegen eine In-Memory-SQLite (ExpressionIndexRoundTripTest).
+    testImplementation("org.xerial:sqlite-jdbc:${rootProject.properties["sqliteJdbcVersion"]}")
     testImplementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
 }
 

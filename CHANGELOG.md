@@ -22,7 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Ein Basistypwechsel zweier Dateien bleibt genau ein `AlterCustomType`, ohne `AlterColumnType`.
   - Eine Domain über `integer` gegen eine Textspalte der Datenbank gilt jetzt als Typänderung
     (vorher blieb sie unbemerkt).
-  - Der Fingerabdruck bleibt `schema-fingerprint-v21`.
+  - Der Abdruck ändert sich durch diese Änderung nicht.
+
+- **`schema migrate` auf SQLite plant keinen `DROP INDEX` + `CREATE INDEX` mehr für einen unveränderten
+  Ausdrucks-Index** (Issue #55, Folge von #53). Der Generator klammert jeden Ausdrucks-Schlüssel
+  (`ON t ((lower(a)))`); der SQLite-Reader gab ihn mit dieser Klammer zurück (`(lower(a))`), die Datei trägt
+  `lower(a)`. Jetzt gilt:
+  - Der Reader entfernt genau **eine** Klammer, die den ganzen Schlüssel umschließt; Klammern im Ausdruck
+    (`(a) || (b)`, `(a + b) * 2`) und in Zeichenketten bleiben. `schema reverse` schreibt den Ausdruck ohne die
+    äußere Klammer; der Rundlauf `reverse → generate → reverse` ist stabil.
+  - Kommentare (`--`, `/* */`) im Katalogtext eines Ausdrucks entfallen beim Zurücklesen; ein Kommentar im
+    `expression`-Text der Datei bleibt ein Unterschied.
+  - Eine Änderung des Ausdrucks (`lower(a)` → `upper(a)`) bleibt `DropIndex` + `AddIndex`.
+  - Der Fingerabdruck steht auf `schema-fingerprint-v22`; ein Rollback-Artefakt einer früheren Version ist neu zu
+    erzeugen. Betroffen sind nur Schemas mit SQLite-Ausdrucks-Index.
+  - Eine Datei aus einem früheren `schema reverse` mit `(lower(a))` gilt gegen die Datenbank als geändert, bis
+    `schema reverse` neu gezogen oder die Klammer entfernt ist.
 
 ## [1.10.0] - 2026-10-25
 

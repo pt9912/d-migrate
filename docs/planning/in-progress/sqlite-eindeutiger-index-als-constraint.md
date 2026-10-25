@@ -225,7 +225,7 @@ weg, der Reader meldet ihn als Notiz `R206` (`WARNING`).
 (6) `--execute` für die Bestandsdateien-Zeile endet mit Exit 8 (Review gemessen); Test dafür steht in der Nachbesserung.
 
 **Test-Nachtrag (Lücken aus dem Review, nur Tests).**
-* Ausdrucks-Index: Reader-Test (`unique = true`, kein `column.unique`) und CLI-Test, der die Grenze festhält (2 Operationen bei jedem Lauf, `--execute` Exit 0); der Reader liefert hier `lower(a)` ohne Klammern, der Text-Unterschied liegt also nicht im Reader (Folge-Slice `sqlite-ausdrucks-index-textform.md` zu prüfen).
+* Ausdrucks-Index: Reader-Test (`unique = true`, kein `column.unique`) und CLI-Test, der die Grenze festhält (2 Operationen bei jedem Lauf, `--execute` Exit 0); der Reader lieferte hier für die Generator-Form `(lower(a))` statt `lower(a)`; die Annahme „Text-Unterschied liegt nicht im Reader“ ist durch den Folge-Slice `sqlite-ausdrucks-index-textform.md` (ADR 0064) korrigiert.
 * `--execute` mit zusätzlicher Spalte für Fremdschlüsselspalte, `WITHOUT ROWID`, Spalte `unique` plus Index und Spalte `unique` ohne Index: Exit 0, zweiter Lauf 0 Operationen.
 * Bestandsdatei mit `--execute` und weiterer Änderung: Exit 8, `sqlite_master` vorher und nachher gleich.
 * `schema rollback` auch für den Ein-Spalten-Index und den Index auf der Primärschlüsselspalte.

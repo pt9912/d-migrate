@@ -222,24 +222,33 @@ class CliSchemaMigrateUniqueIndexGapsSqliteTest : FunSpec({
         hasColumnD(db) shouldBe "0"
     }
 
-    // ── Ausdrucks-Index: bekannte Grenze festhalten ──
+    // Bekannte Grenze (Issue #60): der Neubau allein ist `--execute`-seitig nicht ausfuehrbar, obwohl der Plan
+    // (`--plan-only`) Exit 0 liefert. Wird #60 umgesetzt, kippt dieser Test auf Exit 0.
+    test("Bestandsdatei (unique an der Spalte) gegen eindeutigen Index: --execute ohne weitere Aenderung endet mit Exit 8") {
+        val dir = Files.createTempDirectory("cli-unique-index-gap-legacy-alone")
+        val db = databaseFrom(dir, yaml(uniqueIndex("[a]")))
+        val before = catalog(db)
 
-    // Bekannte Grenze, Folge-Slice docs/planning/next/sqlite-ausdrucks-index-textform.md: der Katalog liefert den
-    // Ausdruck als `(lower(a))`, die Datei schreibt `lower(a)`; der Vergleich sieht einen Unterschied. Faellt dieser
-    // Test, weil die Operationen verschwinden, ist der Folge-Slice umgesetzt: die Erwartung auf 0 aendern.
-    test("eindeutiger Ausdrucks-Index: Text (lower(a)) gegen lower(a) plant bei jedem Lauf DropIndex und AddIndex") {
+        val (code, report) = execute(dir, yaml(colUnique = true), db, "up")
+
+        code shouldBe 8
+        report shouldContain "TRANSACTION_SCOPE_UNSUPPORTED"
+        catalog(db) shouldBe before
+    }
+
+    // ── Ausdrucks-Index ──
+
+    // Der Generator klammert den Ausdruck (`((lower(a)))`), der Reader gibt `lower(a)` zurueck (Issue #55,
+    // `CliSchemaMigrateExpressionIndexSqliteTest`): keine Operation, und die Eindeutigkeit wird weiter erzwungen.
+    test("eindeutiger Ausdrucks-Index: Text (lower(a)) gegen lower(a) plant keine Operation") {
         val dir = Files.createTempDirectory("cli-unique-index-gap-expression")
         val text = yaml(uniqueIndex("[{ expression: \"lower(a)\" }]"))
         val db = databaseFrom(dir, text)
         scalar(db, "SELECT sql FROM sqlite_master WHERE name = 'ix_t'") shouldContain "(lower(a))"
 
-        val (ops, script) = plan(dir, text, db, "plan")
-        ops shouldBe 2
-        script shouldContain "DROP INDEX"
-        script shouldContain "CREATE UNIQUE INDEX"
-
+        plan(dir, text, db, "plan").first shouldBe 0
         execute(dir, text, db, "up").first shouldBe 0
-        plan(dir, text, db, "again").first shouldBe 2
+        plan(dir, text, db, "again").first shouldBe 0
         rejects(db, "INSERT INTO t (id, a, b, c) VALUES (2, 'X', 'y', 'z')") shouldBe true
     }
 

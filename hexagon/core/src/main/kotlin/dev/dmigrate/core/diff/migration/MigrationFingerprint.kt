@@ -219,8 +219,14 @@ object MigrationFingerprint {
      * Post-Compare meldete trotzdem Drift. Ein Schema mit Zahlen-`default` mit nachlaufender Null
      * oder Exponent und jedes Schema mit `boolean`-Default auf SQLite hasht anders; alle anderen
      * hashen bis auf den Algorithmus-Tag wie zuvor.
+     *
+     * v22: **ein Ausdrucks-Index auf SQLite** (Issue #55). Der SQLite-Reader entfernt die eine
+     * Klammer, die der Generator um jeden Ausdrucks-Schluessel setzt (`((lower(a)))` →
+     * `lower(a)`); `expr:` in [CanonicalPayload] und `IndexColumn.toString()` tragen damit eine
+     * andere Schreibweise fuer jede SQLite-Datenbank mit Ausdrucks-Index. Alle anderen Schemas
+     * hashen bis auf den Algorithmus-Tag wie zuvor.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v21"
+    const val ALGORITHM: String = "schema-fingerprint-v22"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
