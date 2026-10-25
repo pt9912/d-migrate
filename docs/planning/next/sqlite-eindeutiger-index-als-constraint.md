@@ -40,7 +40,7 @@ derselbe Mischumfang wie in #50).
 
 * **Eine Spalte:** [`SqliteSchemaReader`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSchemaReader.kt)
   faltet jeden eindeutigen Index ohne Prädikat über
-  [`SchemaReaderUtils.singleColumnUniqueFromIndices`](../../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/SchemaReaderUtils.kt)
+  [`SchemaReaderUtils.singleColumnUniqueFromIndices`](../../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/metadata/SchemaReaderUtils.kt)
   auf `column.unique` (Zeilen um 255–256) und wirft ihn aus `indices` (Filter um 366–370). Der Vergleich
   sieht links `column.unique`, rechts nicht → `DropConstraint` mit dem synthetischen Namen `_unique_j`
   (`TableComparator.syntheticUniqueConstraint`); der Index der Datei fehlt links → `AddIndex`.
