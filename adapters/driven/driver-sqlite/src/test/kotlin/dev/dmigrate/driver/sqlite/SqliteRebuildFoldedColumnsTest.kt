@@ -5,10 +5,14 @@ import dev.dmigrate.core.diff.migration.DiffObjectType
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.CustomTypeDefinition
+import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 
 /**
@@ -110,5 +114,52 @@ class SqliteRebuildFoldedColumnsTest : FunSpec({
         mapping.castNotWhitelisted.shouldBeEmpty()
         mapping.addedColumns.map { it.targetColumn } shouldBe listOf("new_t")
         mapping.droppedColumnNames shouldBe listOf("old_t")
+    }
+
+    // ── Domain-Spalten (Review zu #54): der Vergleich meldet den Basistypwechsel nur als AlterCustomType ──
+
+    fun domainSchema(base: String) = SchemaDefinition(
+        name = "S", version = "1",
+        customTypes = mapOf("pos" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = base)),
+    )
+
+    fun domainTable() = table("n" to NeutralType.Enum(refType = "pos"))
+
+    fun planDomain(sourceBase: String, targetBase: String) = SqliteRebuildPlanner.planRebuild(
+        table = "t",
+        bucket = emptyList(),
+        source = domainTable(),
+        target = domainTable(),
+        bucketRisk = OperationRisk.SAFE,
+        sql = sql,
+        sourceSchema = domainSchema(sourceBase),
+        targetSchema = domainSchema(targetBase),
+    ).mapping
+
+    test("Domain: ein Basistypwechsel text -> integer ohne AlterColumnType blockiert weiter an der Cast-Matrix") {
+        val mapping = planDomain("text", "integer")
+        mapping.castNotWhitelisted shouldHaveSize 1
+        mapping.castNotWhitelisted.single().column shouldBe "n"
+    }
+
+    test("Domain: integer -> biginteger ist erlaubt und wird gecastet, nicht blockiert") {
+        val mapping = planDomain("integer", "biginteger")
+        mapping.castNotWhitelisted.shouldBeEmpty()
+    }
+
+    test("Domain: unveraenderter Basistyp wird kopiert") {
+        val mapping = planDomain("integer", "integer")
+        mapping.castNotWhitelisted.shouldBeEmpty()
+        mapping.preservedColumns.single().typeChanged shouldBe false
+    }
+
+    test("Umbenennung neben einer gefalteten Spalte: die gefaltete wird kopiert, nicht blockiert") {
+        val mapping = plan(
+            table("old_n" to NeutralType.Integer, "t32" to NeutralType.Text()),
+            table("new_n" to NeutralType.Integer, "t32" to NeutralType.Text(32)),
+            bucket = emptyList(),
+        ).mapping
+        mapping.castNotWhitelisted.shouldBeEmpty()
+        mapping.preservedColumns.map { it.sourceColumn } shouldBe listOf("t32")
     }
 })

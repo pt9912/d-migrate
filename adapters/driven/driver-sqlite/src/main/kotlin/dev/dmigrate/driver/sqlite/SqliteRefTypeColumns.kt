@@ -65,4 +65,17 @@ internal object SqliteRefTypeColumns {
     ): dev.dmigrate.core.model.TableDefinition = table.copy(
         columns = table.columns.mapValues { (name, col) -> resolve(name, col, customTypes) { it }.column },
     )
+
+    /**
+     * Die Spalten, die auf eine DOMAIN zeigen. Ein Wechsel ihres Basistyps meldet der Vergleich nicht als
+     * `AlterColumnType` (die Spalte bleibt `ref_type`), sondern als `AlterCustomType` am Typ; der Neubau muss
+     * ihn deshalb selbst an den aufgeloesten Basistypen pruefen (Issue #54, Review).
+     */
+    fun domainColumns(
+        table: dev.dmigrate.core.model.TableDefinition,
+        customTypes: Map<String, CustomTypeDefinition>,
+    ): Set<String> = table.columns.filter { (_, col) ->
+        val refType = (col.type as? NeutralType.Enum)?.refType
+        refType != null && customTypes[refType]?.kind == CustomTypeKind.DOMAIN
+    }.keys
 }

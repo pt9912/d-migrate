@@ -216,14 +216,23 @@ internal object SqliteRebuildPlanner {
         targetSchema: SchemaDefinition? = null,
     ): SqliteRebuildPlan {
         // Eine Domain-Spalte steht in der Spaltenabbildung mit ihrem Basistyp: aendert
-        // sich der Basistyp, ist das eine Umwandlung (CAST), keine gleiche Spalte.
+        // sich der Basistyp, ist das eine Umwandlung (CAST), keine gleiche Spalte
+        // (der Vergleich meldet sie nicht; siehe `typeChangeReported` unten).
         // Die neue Tabelle selbst schreibt `ref_type` an der Spalte
         // ([SqliteRefTypeColumns]); dafuer bleiben die Tabellen unaufgeloest.
+        val sourceTypes = sourceSchema?.customTypes.orEmpty()
+        val targetTypes = targetSchema?.customTypes.orEmpty()
         val mapping = computeColumnMapping(
-            SqliteRefTypeColumns.withDomainBaseTypes(source, sourceSchema?.customTypes.orEmpty()),
-            SqliteRefTypeColumns.withDomainBaseTypes(target, targetSchema?.customTypes.orEmpty()),
+            SqliteRefTypeColumns.withDomainBaseTypes(source, sourceTypes),
+            SqliteRefTypeColumns.withDomainBaseTypes(target, targetTypes),
             sql,
-            typeChangeReported = typeChangedColumns(bucket),
+            // Eine Domain-Spalte bleibt auf beiden Seiten `ref_type`: ihren Basistypwechsel meldet der Vergleich
+            // nicht als `AlterColumnType`, sondern als `AlterCustomType` am Typ. Sie zaehlt hier immer als zu
+            // pruefen (aufgeloester Basistyp gegen die Cast-Matrix), sonst fiele der Wechsel `text` -> `integer`
+            // ohne CAST und ohne Blocker durch.
+            typeChangeReported = typeChangedColumns(bucket) +
+                SqliteRefTypeColumns.domainColumns(source, sourceTypes) +
+                SqliteRefTypeColumns.domainColumns(target, targetTypes),
         )
         val resolvedTempName = resolveTempTableName(table, bucket, catalog)
         return SqliteRebuildPlan(
