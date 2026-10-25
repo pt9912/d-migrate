@@ -1,7 +1,7 @@
 # SQLite: eine Domain-Spalte über boolean, decimal oder uuid gilt bei jedem Lauf als geändert (Folge von #54)
 
-> **Status:** Draft mit Scope (2026-10-25). Befund aus der Umsetzung von
-> [`sqlite-neubau-cast-gleiche-speicherklasse.md`](../in-progress/sqlite-neubau-cast-gleiche-speicherklasse.md) (#54): Domain-Spalten über `boolean`, `decimal` oder `uuid`
+> **Status:** In Umsetzung (2026-10-25), vorher Draft mit Scope. Befund aus der Umsetzung von
+> [`sqlite-neubau-cast-gleiche-speicherklasse.md`](sqlite-neubau-cast-gleiche-speicherklasse.md) (#54): Domain-Spalten über `boolean`, `decimal` oder `uuid`
 > planen bei **jedem** `schema migrate` ein `AlterColumnType` und blockieren damit (über die Cast-Matrix) den
 > Neubau, auch ohne jede Änderung. Gemessen ist nur `varchar` (nicht betroffen) gegen `boolean`/`decimal`/`uuid`
 > (betroffen); nach dem Code ist **jeder** Basistyp betroffen, dessen Reverse-Form nicht `Text()` ist (P0 misst die Matrix).
@@ -62,7 +62,7 @@ kannte nur Enums), **Domain mit Länge** (`varchar(32)`: Reader liest `Text()`, 
 Entfällt das `AlterColumnType`, kopiert `computeColumnMapping` die Spalte (Speicherklasse gleich) statt sie durch die Cast-Matrix
 zu schicken; `castBlocked` bleibt leer. Pro Basistyp (`decimal`: `Float` gegen `Decimal`, `uuid`) hängt das an `toSql` — messen,
 nicht annehmen. In
-[`sqlite-neubau-cast-gleiche-speicherklasse.md`](../in-progress/sqlite-neubau-cast-gleiche-speicherklasse.md) kippen danach die
+[`sqlite-neubau-cast-gleiche-speicherklasse.md`](sqlite-neubau-cast-gleiche-speicherklasse.md) kippen danach die
 Tabellenzeile zu „boolean/decimal/uuid", die Abgrenzung („bleibt außerhalb dieses Plans") und der Test „Domain über boolean als
 bekannte Grenze (Exit 8)" — letzterer wird hier zur Akzeptanz.
 

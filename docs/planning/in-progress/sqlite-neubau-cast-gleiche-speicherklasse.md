@@ -216,7 +216,7 @@ ihr Aufrufkreis ändert sich.
 `CAST` und ohne Blocker durch. `planRebuild` zählt Domain-Spalten (`SqliteRefTypeColumns.domainColumns`) jetzt immer als
 zu prüfen (aufgelöster Basistyp gegen die Cast-Matrix); Unit-Tests: `text` → `integer` blockiert, `integer` → `biginteger`
 wird gecastet, unveränderter Basistyp wird kopiert. (2) *Folge-Slices:*
-[`sqlite-domain-spalte-basistyp-vergleich.md`](../next/sqlite-domain-spalte-basistyp-vergleich.md) (eine Domain über
+[`sqlite-domain-spalte-basistyp-vergleich.md`](sqlite-domain-spalte-basistyp-vergleich.md) (eine Domain über
 `boolean`/`decimal`/`uuid` plant bei jedem Lauf `AlterColumnType`). (3) Nicht per CLI getestet: Rename plus Neubau
 (`RENAME_DEPENDENCY_UNPROJECTABLE` in diesem Messaufbau).
 
