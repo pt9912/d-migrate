@@ -90,7 +90,7 @@ pinnen den Ist-Zustand. Mit dem Fix müssen sie **umgeschrieben** werden (Exit 0
   **einseitige, paarweise** Variante (nur wo Datei-`unique` und Datenbank-Index dieselben Spalten meinen) widerspräche Entscheidung 3,
   bräuchte einen Folge-ADR (ADR 0062 bleibt `accepted`; `doc-immutable`) und meldete `schema compare` „gleich", obwohl
   `schema generate` aus der Datei einen anderen Objekttyp erzeugt. **Tag:** die Faltung ändert, was Projektion/Vergleich aus Datei
-  und Datenbank machen; der Abdruck (`MigrationFingerprint`, `indices = table.indices.map(canonicalizeIndex)`, Zeile 350/411) hängt am
+  und Datenbank machen; der Abdruck (`MigrationFingerprint`, `indices = table.indices.map(canonicalizeIndex)`, Zeile 350/355) hängt am
   Schema nach Reader und Projektion — wird die Faltung im Reader/Projektion umgesetzt, ändert sich der Hash und der Tag steigt; wird
   sie nur im Vergleich umgesetzt, nicht. P1 entscheidet den Ort und belegt es gegen `MigrationFingerprint`.
 * **(c) Nur Handbuch.** §3.17 nennt den Fall ehrlich: Exit 8 auch allein; Auswege (Datei mit `schema reverse` neu ziehen oder die
@@ -132,7 +132,7 @@ einschließlich Indexname und Eindeutigkeit. (4) Aufwand und Tag-Folge.
   Außerdem: sieht die Matrix (`test/cross-dialect-matrix`) das Paar „Datei-`unique` / Datenbank-Index"? Vermutung nein.
 * **P1 Entscheidung:** Richtung gegen die Kriterien. **ADR-/Tag-Bedarf:** aktueller Tag `schema-fingerprint-v21`
   (`MigrationFingerprint` Zeile 223; ADR 0062 nennt `v20`, danach stieg er mit dem Default-Vergleich). (a1) ändert nur Planer und
-  Renderer; der Abdruck wird aus dem Schema nach Reader und Projektion gebildet (Zeilen 350/411; Zeile 275 ist nur `algorithm=`), nicht aus dem Plan —
+  Renderer; der Abdruck wird aus dem Schema nach Reader und Projektion gebildet (Zeilen 350/355; Zeile 275 ist nur `algorithm=`), nicht aus dem Plan —
   **vermutlich kein Tag-Bump**, in P1 gegen `MigrationFingerprint` und `MigrationFingerprintTest` zu bestätigen. (b) siehe dort. ADR
   nur bei (b) oder wenn (a1) eine Regel festlegt, die ADR 0062 berührt. Nummern: **zum Aktivierungszeitpunkt der nächste freie**;
   nicht vorab, die heute absehbaren sind für #55/#58/#59 vergeben.
