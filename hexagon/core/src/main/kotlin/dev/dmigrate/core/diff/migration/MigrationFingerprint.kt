@@ -220,10 +220,10 @@ object MigrationFingerprint {
      * oder Exponent und jedes Schema mit `boolean`-Default auf SQLite hasht anders; alle anderen
      * hashen bis auf den Algorithmus-Tag wie zuvor.
      *
-     * v23: **der Basistyp einer Domain mit Laenge oder Array** (Issue #58; `v22` gehoert dem Slice
-     * zu #55). [dev.dmigrate.core.diff.CustomTypeBaseType.canonical] trennt `char`/`varchar` von
-     * `text`, traegt die Laenge von `varchar(n)`, `char(n)`, `timestamp(n)`, `time(n)`, `bit(n)` in
-     * der Klammer (`varchar` ohne Laenge ist `text`, `char` ist `char(1)`) und haengt bei einem
+     * v23: **der Basistyp einer Domain mit Laenge oder Array** (Issue #58; `v22` ist fuer den Slice
+     * zu #55 vorgesehen). [dev.dmigrate.core.diff.CustomTypeBaseType.canonical] trennt `char`/`varchar` von
+     * `text`, traegt die Laenge von `varchar(n)`, `char(n)`, `timestamp(n)`, `timestamptz(n)`,
+     * `time(n)`, `timetz(n)`, `bit(n)`, `varbit(n)` in der Klammer (`varchar` ohne Laenge ist `text`, `char` ist `char(1)`) und haengt bei einem
      * Array `[]` an. `base=` einer Domain mit solchem Basistyp hasht damit anders; Schemas ohne
      * Domain und Domains ueber `integer`, `text` oder `decimal` hashen bis auf den Algorithmus-Tag
      * wie zuvor.

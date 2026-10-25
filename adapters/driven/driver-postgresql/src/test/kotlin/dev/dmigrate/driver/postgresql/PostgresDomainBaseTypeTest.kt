@@ -39,6 +39,10 @@ class PostgresDomainBaseTypeTest : FunSpec({
         }
     }
 
+    test("bpchar ohne Laenge bleibt ein eigener Typ und hat in anderen Dialekten kein Gegenstueck (E053)") {
+        PostgresDomainBaseType.map("bpchar").baseType shouldBe "bpchar"
+    }
+
     test("numeric(p,s) ohne Array traegt Genauigkeit und Skala in den Feldern") {
         PostgresDomainBaseType.map("numeric(10,2)") shouldBe PostgresDomainBaseType.Mapped("decimal", 10, 2)
         PostgresDomainBaseType.map("numeric(10,0)") shouldBe PostgresDomainBaseType.Mapped("decimal", 10, 0)

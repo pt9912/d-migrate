@@ -2643,7 +2643,8 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   Hat eine Domain mehrere `CHECK`-Constraints, sieht `schema migrate` nur den
   letzten. Eine `schema reverse`-Datei, die für eine `varchar(n)`-, `char(n)`-
   oder Array-Domain nur `text` führt, gilt als geändert und blockiert mit
-  Exit 8; ziehen Sie `schema reverse` neu. Ein Array-Basistyp hat auf
+  Exit 8; ziehen Sie `schema reverse` neu. Gegen SQLite und MSSQL erzeugt
+  `schema generate` aus `timestamp(3)`/`time(3)` einen Typ ohne Genauigkeit. Ein Array-Basistyp hat auf
   MySQL, SQLite, MSSQL und Oracle kein Gegenstück. SQLite und MSSQL weisen ihn
   in `schema generate` als **E053** aus, Oracle schreibt jede Domain als `CLOB`
   mit E053. MySQL gibt `base_type` unverändert in die Spalte aus; für ein Array

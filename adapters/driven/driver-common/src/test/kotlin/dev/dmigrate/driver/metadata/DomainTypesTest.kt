@@ -53,7 +53,10 @@ class DomainTypesTest : FunSpec({
     }
 
     test("Array, timetz, bit und varbit haben kein neutrales Gegenstueck, wie zuvor (#58)") {
-        for (array in listOf("timetz", "timetz(3)", "bit(5)", "varbit(7)", "integer[]", "varchar(50)[]", "decimal(10,2)[]", "_int4")) {
+        for (array in listOf(
+            "bpchar", "timetz", "timetz(3)", "bit(5)", "varbit(7)", "integer[]",
+            "varchar(50)[]", "decimal(10,2)[]", "_int4",
+        )) {
             DomainTypes.resolveBaseType(array, null, null) shouldBe null
         }
     }

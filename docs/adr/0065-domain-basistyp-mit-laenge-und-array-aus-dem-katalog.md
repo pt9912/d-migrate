@@ -11,7 +11,7 @@ informed: hexagon/core (CustomTypeBaseType, SchemaComparator, CanonicalPayload, 
 > **Status: accepted (2026-10-25).** Der PostgreSQL-Reader liest den Basistyp einer Domain aus
 > `pg_catalog` (`format_type`) und gibt ihn mit Länge und Array zurück (`varchar(50)`, `char(5)`,
 > `integer[]`). Die Neutralform des Basistyps trägt die Länge bei `varchar`, `char`, `timestamp`,
-> `time`, `bit` und ein `[]` bei einem Array. Das ergänzt
+> `timestamptz`, `time`, `timetz`, `bit`, `varbit` und ein `[]` bei einem Array. Das ergänzt
 > [ADR 0061](0061-domain-in-autorenform-reader-normalform-und-neutralform-des-basistyps.md)
 > (Entscheidung 3 und 4); der Algorithmus-Tag steigt auf `v23`.
 
@@ -55,7 +55,8 @@ las, und die Array-Domain. Gemessen (PostgreSQL 18, 26 Domains):
    mit Array wird es `decimal(p,s)[]`, die Felder bleiben leer.
 3. **Neutralform** (`CustomTypeBaseType.canonical`): Typen mit Länge tragen sie in der Klammer.
    Ohne Klammer gilt der Standard des Typs: `varchar` ist unbegrenzt und damit `text`, `char` ist
-   `char(1)`, `timestamp`/`time`/`timestamptz` sind `(6)`, `bit` ist `bit(1)`. `char` und `varchar`
+   `char(1)`, `timestamp`/`timestamptz`/`time`/`timetz` sind `(6)`, `bit` ist `bit(1)`, `varbit` ohne Länge
+   bleibt `varbit`. `char` und `varchar`
    sind verschiedene Typen. Ein Suffix `[]` (auch `[][]`, `[3]`) wird zu einem `[]` am Typnamen; der
    Katalog unterscheidet Dimensionen nicht.
 4. **`sameParameters` gilt für alle Dialekte und wird nicht nach Reader gefasst.** Für Typen mit
@@ -64,8 +65,8 @@ las, und die Array-Domain. Gemessen (PostgreSQL 18, 26 Domains):
    wenn beide Seiten die Klammer nennen. Welche Dialekte betroffen sind, ist gemessen (siehe
    Konsequenzen); `SchemaComparator.sameBaseType`, `CanonicalPayload.customType` und
    `MigrationFingerprint.appendCustomTypes` nutzen dieselbe Funktion.
-5. **Fingerabdruck-Bump.** `ALGORITHM` steigt von `schema-fingerprint-v21` auf `v23` (`v22` gehört
-   dem Slice zu #55). `base=` einer Domain trägt jetzt Länge und `[]`. Schemas ohne Domain und
+5. **Fingerabdruck-Bump.** `ALGORITHM` steigt von `schema-fingerprint-v21` auf `v23` (`v22` ist für den
+   Slice zu #55 vorgesehen, ADR 0064 ebenso; die Auslieferung führt die Tags der Slices in dieser Reihenfolge zusammen). `base=` einer Domain trägt jetzt Länge und `[]`. Schemas ohne Domain und
    Domains über `integer`, `text`, `decimal` hashen bis auf den Tag wie zuvor.
 6. **Bestandsdateien.** Eine `schema reverse`-Datei aus einer früheren Version führt `text` für eine
    `varchar(50)`-Domain. Das ist nicht derselbe Typ; `schema migrate` plant `AlterCustomType` und
@@ -90,9 +91,10 @@ las, und die Array-Domain. Gemessen (PostgreSQL 18, 26 Domains):
   Notiz — wie zuvor mit `_int4`/`timestamptz`. Das ist eine dokumentierte Grenze, kein Teil dieser
   Entscheidung. Verändert hat sich sonst nur `schema compare` zwischen zwei Dateien: `varchar` gegen
   `varchar(50)` ist dort jetzt eine Änderung.
-- `v23` deckt auch die Reader-Änderungen am `CHECK` einer Domain ab, die der Slice zu #57 liefert
-  (Aggregation mehrerer `CHECK`-Constraints, Prädikat eines `NOT VALID`-Constraints): der Reader-Ausgang
-  einer Domain ändert sich dort ebenfalls, ein weiterer Tag-Bump entfällt.
+- Vorgesehen ist, dass `v23` auch die Reader-Änderungen am `CHECK` einer Domain trägt, die der Slice zu #57
+  liefert (Aggregation mehrerer `CHECK`-Constraints, Prädikat eines `NOT VALID`-Constraints): der
+  Reader-Ausgang einer Domain ändert sich dort ebenfalls, und die Auslieferung fasst beides unter `v23` und
+  diesem ADR zusammen, statt einen weiteren Tag zu vergeben.
 - Ein Rollback- oder Plan-Artefakt vor `v23` ist neu zu erzeugen.
 - Weiter nicht erkannt: mehrdimensionale Arrays (`integer[][]` gegen `integer[]`), `DEFAULT`/`NOT NULL`
   einer Domain, mehrere `CHECK`-Constraints.

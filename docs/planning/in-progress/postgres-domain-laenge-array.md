@@ -1,8 +1,7 @@
 # PostgreSQL: der Reader verliert bei einer Domain die Länge und den Array-Basistyp (Folge von #52)
 
-> **Status:** In Arbeit (aktiviert 2026-10-25; Draft mit Scope 2026-10-25). Abgetrennt aus dem früheren Sammelplan; ändert die Neutralform des Basistyps und den
-> `schema reverse`-Vertrag (ADR 0061 Entscheidung 3 und 4). **Vorbedingung:** keine. **Aktivierung** (Move nach
-> `../in-progress/`) beim ersten Implementierungs-Commit. GitHub-Issue: [#58](https://github.com/pt9912/d-migrate/issues/58).
+> **Status:** In Arbeit (aktiviert 2026-10-25). Abgetrennt aus dem früheren Sammelplan; ändert die Neutralform des Basistyps und den
+> `schema reverse`-Vertrag (ADR 0061 Entscheidung 3 und 4). **Vorbedingung:** keine. Umgesetzt mit `schema-fingerprint-v23` und ADR 0065 (siehe „Nachtrag P0/P1“). GitHub-Issue: [#58](https://github.com/pt9912/d-migrate/issues/58).
 
 ## Ziel
 
@@ -21,7 +20,7 @@ das nicht rendert); eine unveränderte Domain blockiert nicht.
 3. Die Quelle `information_schema.domains` ist rechteabhängig (NULL, wenn die Rolle die Domain nicht besitzt/keine Rechte hat);
    weitere Modifikatoren (`timestamp(n)`, `bit(n)`, `time(n)`) gehen ebenfalls verloren.
 
-## Richtung (nach P0 zu entscheiden)
+## Richtung (entschieden in P1, siehe „Nachtrag P0/P1“)
 
 * **Quelle `format_type(t.typbasetype, t.typtypmod)`** aus `pg_catalog` statt `information_schema`: liefert
   `character varying(50)`, `character(5)`, `integer[]`, `numeric(10,2)`, `timestamp(3) without time zone`; der Composite-Zweig
@@ -55,9 +54,9 @@ das nicht rendert); eine unveränderte Domain blockiert nicht.
   Änderung des Anwenders; Übergangsregel (Hinweis/Notiz) in P1, im Handbuch als Ist-Zustand.
 * **Fingerabdruck:** `CanonicalPayload`/`MigrationFingerprint` tragen `base=` nur als Typname ohne Klammer; `base=` nutzt `CustomTypeBaseType.canonical`
   (`CanonicalPayload`, `MigrationFingerprint`); die Trennung `char`/`varchar` und das Abtrennen von `[]` ändern diesen Wert schon, auch
-  ohne Länge im Abdruck → **Tag-Bump zwingend**, neuer Tag (zum Aktivierungszeitpunkt der nächste freie, heute `v22`; koordiniert mit
+  ohne Länge im Abdruck → **Tag-Bump zwingend**, neuer Tag (entschieden: `v23`; `v22` ist für #55 vorgesehen; koordiniert mit
   `postgres-domain-mehrfach-check.md`, `domain-default-not-null-modell.md`, `sqlite-ausdrucks-index-textform.md`).
-* **ADR:** ein **neuer** ADR (zum Aktivierungszeitpunkt die nächste freie Nummer, heute 0064), der ADR 0061 Entscheidung 3/4
+* **ADR:** ein **neuer** ADR (entschieden: 0065; 0064 ist für #55 vergeben), der ADR 0061 Entscheidung 3/4
   ergänzt; ein Nachtrag im akzeptierten ADR ist wegen `doc-immutable` nicht möglich. Bezug: [Plan #52](postgres-domain-autorenform-gegen-katalog.md).
 
 ## Phasen
@@ -77,7 +76,7 @@ das nicht rendert); eine unveränderte Domain blockiert nicht.
 ## Nicht-Scope
 
 Mehrfach-CHECK (`postgres-domain-mehrfach-check.md`); `DEFAULT`/`NOT NULL`/Kollation (`domain-default-not-null-modell.md`);
-`AlterCustomType` rendern. Andere Dialekte: keine Verhaltensänderung, per Regressionstest belegt (`sameParameters` gilt für alle).
+`AlterCustomType` rendern. Andere Dialekte: keine Verhaltensänderung bei `schema generate`/`schema migrate`, per Regressionstest belegt; geändert ist `schema compare` zweier Dateien (`varchar` gegen `varchar(50)`, `sameParameters` gilt für alle). Bekannte Grenzen: MySQL gibt `base_type` roh aus ([#62](https://github.com/pt9912/d-migrate/issues/62)); die Genauigkeit von `timestamp(3)`/`time(3)` geht beim Generieren für andere Dialekte verloren (`DomainTypes` kennt sie nicht).
 
 ## Akzeptanz
 
@@ -85,7 +84,7 @@ Mehrfach-CHECK (`postgres-domain-mehrfach-check.md`); `DEFAULT`/`NOT NULL`/Kolla
   Zusicherung einmal rot gesehen.
 * Zweiter Lauf: `operationsTotal` = 0 (P0-Tabelle als nummerierter Abschnitt in dieser Plandatei).
 * Eine PG-Reverse-Datei mit Länge oder Array erzeugt gegen `schema generate` SQLite/MSSQL keinen neuen E053 (MySQL: roh, siehe P1 Punkt 6).
-* Die Zusage „keine Verhaltensänderung in anderen Dialekten" ist das Ergebnis der P1-Entscheidung zum `sameParameters`-Umfang.
+* Die Zusage „keine Verhaltensänderung in anderen Dialekten" gilt für `schema generate`/`schema migrate`, nicht für `schema compare` zweier Dateien (P1-Entscheidung zum `sameParameters`-Umfang). Bekannte Grenze, nicht Teil dieses Slices: MySQL-Rohausgabe von `base_type` ([#62](https://github.com/pt9912/d-migrate/issues/62)).
 * Eine echte Änderung (Länge, Array-Typ, `char` ↔ `varchar`) blockiert weiter (Exit 8, `AlterCustomType`).
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=`,
   `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"` (ganzes Modul, Detekt eingeschlossen),
@@ -162,11 +161,13 @@ Befunde aus der Messung:
    lösen über `TYPE_WITH_PARAMS` in einen neutralen Typ auf — kein neuer E053 gegen SQLite/MSSQL. Ein Array-Basistyp bleibt auf SQLite/MSSQL E053
    (vorher `_int4`, ebenfalls ohne Gegenstück); Oracle: jede Domain CLOB mit E053; **MySQL gibt `base_type` roh aus**
    (`MysqlColumnConstraintHelper.columnDomain`, kein `DomainTypes`): Array, `timestamptz(3)`, `timetz`, `varbit(7)` ergeben dort
-   ungültiges DDL ohne Notiz (vorher `_int4`/`timestamptz` ebenso) — offene Grenze, nicht Teil dieses Slices; `DomainTypes` bekommt keinen Array-Zweig, weil das neutrale Modell keinen
+   ungültiges DDL ohne Notiz (vorher `_int4`/`timestamptz` ebenso) — offene Grenze, nicht Teil dieses Slices ([#62](https://github.com/pt9912/d-migrate/issues/62)); `DomainTypes` bekommt keinen Array-Zweig, weil das neutrale Modell keinen
    Array-Typ kennt. Pinning: `DomainTypesTest` und `DomainBaseTypeCrossDialectTest` (Matrix-Modul, PG-Reverse-Fixture gegen
    MySQL/SQLite/MSSQL/Oracle).
 7. **Fingerabdruck:** `schema-fingerprint-v23` (`v22` gehört dem Slice zu #55). `base=` trägt Länge und `[]`; ADR 0065
    ergänzt ADR 0061 Entscheidung 3 und 4.
+7a. **Grenze Genauigkeit:** `DomainTypes.resolveBaseType` löst `timestamp(3)`/`time(3)` zu `DateTime()`/`Time` ohne Genauigkeit auf; `schema generate` für SQLite/MSSQL verliert sie still (neu, weil die Reader-Ausgabe sie jetzt trägt). Bewusst nicht Teil dieses Slices.
+7b. **`bpchar` ohne Länge:** der Reader liefert es nicht (`format_type` nennt `character(n)`); in einer Datei bleibt `bpchar` ein eigener, unbekannter Typ, `DomainTypes` löst ihn nicht auf (E053).
 8. **Bestandsdateien:** keine stille Übergangsregel. Eine Reverse-Datei mit `text` für eine `varchar(50)`-Domain ist ein echter
    Unterschied; eine Regel „`text` passt zu `varchar(n)`“ verdeckte `varchar(50)` → `text` bei einer echten Änderung. Der
    Exit-8-Bericht nennt `AlterCustomType` an der Domain; Abhilfe `schema reverse` neu ziehen, im Handbuch und CHANGELOG.
