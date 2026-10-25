@@ -1,6 +1,6 @@
 # SQLite: ein gleicher Default gilt als geändert (Issue #54, Ursache 1)
 
-> **Status:** Draft mit Scope (2026-10-25), nach Review-Runde 2. Aus Issue #54: `schema migrate` gegen
+> **Status:** Draft mit Scope (2026-10-25), nach Review-Runde 3. Aus Issue #54: `schema migrate` gegen
 > SQLite plant für eine unveränderte `integer`-/`boolean`-/`decimal`-Spalte mit `default` ein
 > `AlterColumnDefault`. Das Issue hat zwei unabhängige Ursachen; sie sind auf zwei Pläne geteilt: dieser (Defaults)
 > und `sqlite-neubau-cast-gleiche-speicherklasse.md` (der Neubau blockiert an einer Spalte, deren Speicherklasse
@@ -25,12 +25,12 @@ Schema):
 | `boolean, default: false` / `default: true` | `AlterColumnDefault` | **8** (`SQLITE_CAST_NOT_WHITELISTED`) |
 | `decimal(10,2), default: 0` | `AlterColumnDefault` | **8** (`SQLITE_CAST_NOT_WHITELISTED`) |
 | `text, default: "x"`, `float, default: 1.5` | keine | 0 |
-| `integer, default: 0` **und** `text, max_length: 32` | `AlterColumnDefault` | **8** |
 
 Der Exit 8 der Zeilen `boolean`/`decimal`/`text(32)` stammt nicht aus dem Default, sondern aus dem Neubau, den
-`AlterColumnDefault` auslöst (Ursache 2, eigener Plan). Auf PostgreSQL meldet der Reporter keine
-`AlterColumnDefault` — **das ist ungemessen** und widerspricht dem Mechanismus unten (die Reader von PostgreSQL
-und MySQL parsen mit `toLong()`/`toDouble()` ebenso); die erste P0-Zeile klärt es.
+`AlterColumnDefault` auslöst (Ursache 2, eigener Plan). Der Reporter meldet für PostgreSQL keine `AlterColumnDefault` — **ungemessen**, und es widerspricht dem
+Mechanismus unten: die Reader von PostgreSQL und MySQL parsen mit `toLong()`/`toDouble()` ebenso, der
+Datei-Parser liefert `Int`, und keine Stelle gleicht Zahlentypen an (`TableComparator` vergleicht per `==`). Die erste
+P0-Zeile klärt es; der Plan hat dafür eine Weiche (Richtung).
 
 ### Ursache (am Code bestätigt, in P0 mit der Messung zu belegen)
 
@@ -58,9 +58,17 @@ und MySQL parsen mit `toLong()`/`toDouble()` ebenso); die erste P0-Zeile klärt 
   `SchemaMigrateComparators`, `MigrationFingerprint`/`FingerprintValueProjection.defaultValue` (der Abdruck
   faltet unter derselben Projektion, sonst „Drift“ ohne Operation), `CanonicalPayload`. B ändert den
   **Abdruck-Vertrag**, nicht den Reverse-Vertrag.
-* **Reichweite:** liegt die Zahlentyp-Angleichung im Datei-Parser oder im Comparator, trifft sie alle Dialekte.
-  Ein Regressionstest für mindestens einen weiteren Dialekt oder das Argument, dass dort `Int`/`Long` nicht
-  auseinanderlaufen, gehört in die Akzeptanz.
+* **Weiche nach der ersten P0-Zeile.** Zeigen PostgreSQL und MySQL dasselbe `AlterColumnDefault`, ist die Reichweite
+  dialektübergreifend: der Fix liegt im Vergleich oder im Datei-Parser (B bzw. Parser-Angleichung) für **alle**
+  Dialekte, und die Akzeptanz erhält deren Integrationsmodule (`:test:integration-postgresql:test`,
+  `:test:integration-mysql:test`). Zeigen sie es nicht, erklärt etwas anderes den Unterschied; die Ursache ist neu zu
+  fassen, bevor A oder B gewählt werden.
+* **Auswahlregel Zahlentyp:** B (Vergleich/Parser), wenn P0 mehr als SQLite betroffen zeigt oder `Int`↔`Double`
+  vorkommt; A (Reader) nur, wenn ausschließlich der SQLite-Reader das Artefakt erzeugt. **Festlegung für B:**
+  Zahlenliterale gelten als gleich, wenn sie numerisch gleich sind (`Int(1)` = `Long(1)` = `Double(1.0)`), verglichen
+  über `BigDecimal.compareTo`; `NumberLiteral` selbst bleibt unverändert (data class).
+* **Reichweite der Angleichung:** liegt sie im Datei-Parser oder im Comparator, trifft sie alle Dialekte; Regressionstest
+  mit den Integrationsmodulen von PostgreSQL und MySQL (siehe Weiche).
 
 Nicht-Ziel: `AlterColumnDefault` ohne Neubau (SQLite kann `ALTER COLUMN` nicht); echte Typwechsel; der
 Neubau-CAST (Schwesterplan).
@@ -76,23 +84,21 @@ Neubau-CAST (Schwesterplan).
   `true`/`false`/`1`/`0`, `integer` mit `true`), Funktion (`current_timestamp` ↔ `datetime('now')`), String,
   kein Default, `default: null`. Je Zeile Reader-Ausgabe (`PRAGMA table_info`, `DefaultValue`) und Operationen.
   Echte Änderung: `0` → `5`, Default entfernt, Default hinzugefügt. P0 endet, wenn die Tabelle voll ist.
-* **P1 Entscheidung:** je Ursache A/B bzw. (a)–(c); Randbedingung H1 (`0`/`1` nur über B); die Frage des
-  Entwurfsentscheids `onlyVocabularyDiffers`; **Fingerabdruck-Tag:** B ändert die Projektion, A den
+* **P1 Entscheidung:** A oder B nach der Auswahlregel; `0`/`1` ↔ Wahrheitswert nur über B; **Fingerabdruck-Tag:** B ändert die Projektion, A den
   Reader-Ausgang *und* den Abdruck (`0` → `0.0`); die Nummer vergibt der zuerst gemergte der Schwesterpläne
-  (`v20`), der nächste nimmt `v21`, jeder führt seinen Absatz am `ALGORITHM`. **Ein ADR ist Pflicht**, wenn
-  Reader-Ausgang oder Abdruck sich ändern (Nummer `0062`, dann `0063`, oder ein gemeinsamer ADR) (wie bei #52/ADR 0061); Bezüge: ADR 0061 (Präzedenz), ADR 0057; akzeptierte ADRs bleiben im
+  (`v20`), der nächste nimmt `v21`, jeder führt seinen Absatz am `ALGORITHM`. **Ein ADR ist Pflicht**, sobald Reader-Ausgang oder Abdruck sich ändern (wie bei #52/ADR 0061); Nummer `0062`, dann `0063`, oder ein
+  gemeinsamer ADR; Bezüge: ADR 0061 (Präzedenz), ADR 0057; akzeptierte ADRs bleiben im
   Kern unverändert (`doc-immutable`; beim Move nach `in-progress/` den `consulted:`-Pfad nicht nachziehen).
 * **P2 Umsetzung** nach P1; die Spec-Regel ändert sich **mit** dem Code: `spec/ddl-generation-rules.md` (SQLite:
   `boolean` → `INTEGER` mit Default `1`/`0`, im Abschnitt zu den SQLite-Typen; Defaults). Tests: Unit, SQLite-CLI
   (Plan-Only 0 Operationen, `--execute` mit additiver Änderung Exit 0, zweiter Lauf 0, Rückweg), echte
-  Defaultänderung bleibt `AlterColumnDefault` (auch „Default entfernt“/„hinzugefügt“), ein echter Typwechsel
-  bleibt auf der Whitelist/dem Blocker.
+  Defaultänderung bleibt `AlterColumnDefault` (auch „Default entfernt“/„hinzugefügt“), 
 * **P3 Doku:** Handbuch (nur Ist-Zustand), `CHANGELOG.md`.
 
 ## Nicht-Scope
 
-* Andere Dialekte (PostgreSQL meldet keine `AlterColumnDefault`); die Zahlentyp-Angleichung darf sie aber nicht
-  verändern (Regressionstest).
+* Andere Dialekte, **soweit P0 sie nicht als betroffen zeigt** (Weiche); die Zahlentyp-Angleichung darf ihr Verhalten
+  sonst nicht verändern (Regressionstest).
 * Der Neubau-CAST (`sqlite-neubau-cast-gleiche-speicherklasse.md`) und der `SQLITE_CAST_NOT_WHITELISTED`-Blocker.
 
 ## Akzeptanz
@@ -102,7 +108,8 @@ Neubau-CAST (Schwesterplan).
   absichtlich falscher Zusicherung rot gesehen.
 * Jede unveränderte Zeile: `operationsTotal` 0, `--execute` Exit 0, zweiter Lauf 0. Eine echte Defaultänderung
   bleibt eine Operation.
-* Regressionstest für mindestens einen weiteren Dialekt (Zahlentyp-Angleichung).
+* Regressionstest für PostgreSQL und MySQL (Integrationsmodule), wenn die Angleichung dialektübergreifend wirkt.
+* Die Messtabelle steht als Abschnitt „Nachtrag P0“ in diesem Plan (wie bei #51/#52).
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne
   `MODULES=`, `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`,
   `make solid-suppression-gate`, `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD`.

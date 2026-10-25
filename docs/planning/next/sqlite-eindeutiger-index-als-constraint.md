@@ -1,6 +1,6 @@
 # SQLite: ein eindeutiger Index gilt gegen die Datenbank als geändert (Issue #53)
 
-> **Status:** Draft mit Scope (2026-10-25), nach Review-Runde 2. Aus Issue #53: `schema migrate`
+> **Status:** Draft mit Scope (2026-10-25), nach Review-Runde 3. Aus Issue #53: `schema migrate`
 > gegen SQLite plant für einen unveränderten eindeutigen Index `DropConstraint` + `AddIndex`;
 > `--execute` blockiert mit `TRANSACTION_SCOPE_UNSUPPORTED` (Exit 8). Gleiche Fehlerklasse wie
 > #51/#52 (ein Objekt, das beide Seiten gleich meinen, gilt als geändert), anderer Ort.
@@ -108,7 +108,7 @@ Constraint (laufen heute).
   Index auf einer Tabelle, die im selben Lauf neu gebaut wird (kein doppelter Eindeutigkeitsschutz). Dazu
   `PRAGMA index_list` (Ursprung `c`/`u`/`pk`). P0 endet, wenn jede Zeile eine feste Zusicherung hat; neue
   Fälle gehen in einen Folgeplan.
-* **P1 Entscheidung:** A, B oder C nach der Messung; die Liste der umzuschreibenden Reader-Tests/Goldens;
+* **P1 Entscheidung:** A, B, C oder D nach der Messung; die Liste der umzuschreibenden Reader-Tests/Goldens;
   die Aussage zu Bestandsdateien; **Fingerabdruck-Tag:** der Reader-Ausgang ändert sich bei A und C (Bump
   praktisch sicher), B ändert die Projektion (Bump); die Nummer vergibt der zuerst gemergte der Schwesterpläne
   #53/#54 (`v20`), der andere nimmt `v21`; jeder führt seinen Absatz am `ALGORITHM`. **Ein ADR ist Pflicht**
@@ -120,7 +120,7 @@ Constraint (laufen heute).
   [ADR 0026](../../adr/0026-fingerprint-kanonisierung-post-compare.md) (Abdruck/Post-Compare); akzeptierte
   ADRs bleiben im Kern unverändert (`doc-immutable`).
 * **P2 Umsetzung** nach P1. Die Spec-Regel ändert sich **mit** dem Code, nicht danach: `spec/ddl-generation-rules.md`
-  §5.1 (Zeilen um 1090: „eindeutiger Ausdrucks-Index bleibt Index mit `unique`“) für SQLite um den Wortlaut der
+  §5.1a „Ausdrucks-Schlüssel“ (Zeilen 1085–1095: „eindeutiger Ausdrucks-Index bleibt Index mit `unique`“) für SQLite um den Wortlaut der
   neuen Regel ergänzen (z. B. „nur Ursprung `u` wird Constraint“), `spec/schema-reference.md` (Zeilen um 69 und
   198: `unique` an der Spalte gegen `unique` am Index). Tests: Reader, Comparator, Fingerabdruck; SQLite-CLI
   (`operationsTotal` 0 für jede unveränderte Zeile, `--execute` mit additiver Änderung Exit 0, zweiter Lauf 0,
@@ -146,7 +146,7 @@ Constraint (laufen heute).
   gesehen.
 * Jede unveränderte Zeile: `operationsTotal` 0, `--execute` Exit 0, zweiter Lauf 0, `schema rollback` ohne
   Drift. Eine echte Änderung eines eindeutigen Index bleibt eine Operation.
-* Ein Ausdrucks-Index bleibt ein Index (Ist-Zustand der Spec, §5.1); „Unique an einer Indexspalte
+* Ein Ausdrucks-Index bleibt ein Index (Ist-Zustand der Spec, §5.1a); „Unique an einer Indexspalte
   entfernen“ ist in der Datenbank (`sqlite_master`) geprüft, nicht nur als Operation.
 * Die bewusst umgeschriebenen Reader-Tests/Goldens sind in P1 aufgelistet und im Commit begründet.
 * Bei geänderten gemeinsamen Hilfsfunktionen: Regressionstest für mindestens einen weiteren Dialekt.
