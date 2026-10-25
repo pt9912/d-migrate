@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`schema migrate --execute` auf SQLite blockiert nicht mehr bei einem unveränderten
+  eindeutigen Index** (Issue #53). Datei und Datenbank mit demselben `CREATE UNIQUE INDEX`
+  planten `DropConstraint` + `AddIndex` (Tabellenneubau); kam eine weitere additive Änderung
+  dazu, endete `--execute` mit Exit `8` (`TRANSACTION_SCOPE_UNSUPPORTED`), ein neu
+  angelegter eindeutiger Index mit Exit `5` (`POST_EXECUTE_DRIFT`). Jetzt gilt:
+  - Der SQLite-Reader liest einen `CREATE UNIQUE INDEX` als Index mit `unique: true` und
+    behält Spalten, Richtung und Prädikat; nur ein `UNIQUE`-Constraint wird `unique` an der
+    Spalte bzw. Constraint. Das gilt auch für `schema reverse`: ein eindeutiger Index steht
+    jetzt unter `indices`, nicht mehr als `unique: true` an der Spalte (oder gar nicht, wenn
+    er eine Primärschlüsselspalte oder einen Ausdruck betraf).
+  - Grenze: ein `UNIQUE`-Constraint gegen einen eindeutigen Index (und umgekehrt) ist in
+    SQLite ein Wechsel des Objekts und gilt als Änderung. Eine Datei aus einem früheren
+    `schema reverse` mit `unique: true` an einer Spalte, deren Datenbank einen
+    `CREATE UNIQUE INDEX` führt, plant deshalb einen Neubau; `schema reverse` neu ziehen
+    oder die Spalte als Index schreiben.
+  - Der Fingerabdruck steht auf `schema-fingerprint-v20`; ein Rollback-Artefakt einer früheren
+    Version ist neu zu erzeugen.
+
 - **`schema migrate` auf PostgreSQL blockiert nicht mehr bei einer unveränderten Domain**
   (Issue #52). Schrieb die Datei eine Domain anders als der Katalog, planten Datei und
   Datenbank trotz gleichem Inhalt `AlterCustomType` und der Lauf endete mit Exit `8`.

@@ -66,7 +66,7 @@ columns:
     type: <typ>                # Pflicht: einer der 18 neutralen Typen
     ordinal: 1                 # physische Spaltenposition (1-basiert); optional
     required: true             # NOT NULL (Default: false)
-    unique: true               # UNIQUE-Constraint (Default: false)
+    unique: true               # UNIQUE-Constraint (Default: false); kein Index — der steht unter `indices` mit `unique: true`
     default: <wert>            # Default-Wert (Literal, Zahl, Boolean oder Funktion)
 
     # Typ-spezifische Attribute (siehe Typsystem-Tabelle oben)
@@ -195,7 +195,7 @@ tables:
           - name: col2
             direction: desc   # Optional: asc | desc
         type: btree            # btree | hash | gin | gist | brin | spgist | spatial | fulltext | bitmap
-        unique: false          # Default: false
+        unique: false          # Default: false; eindeutiger Index, kein UNIQUE-Constraint (SQLite liest ihn als Index zurueck)
         where: "col2 IS NOT NULL" # Optionales Partial-Index-Praedikat (Raw-SQL)
 
     # Constraints (optional)

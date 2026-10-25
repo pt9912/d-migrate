@@ -2149,6 +2149,18 @@ sie als normale View erzeugt (Warnung **W103**).
   neu gebaut werden — legen Sie die Tabelle in einem eigenen Lauf an. Deklarieren Sie
   `dependencies.tables` an einer Sicht, verlangt eine Spaltenänderung weiterhin auch
   `dependencies.columns` (sonst blockiert `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS`).
+- **SQLite, eindeutiger Index:** Ein `CREATE UNIQUE INDEX` liest `schema reverse` als
+  **Index** mit `unique: true` zurück, nicht als `unique` an der Spalte; nur ein
+  `UNIQUE`-Constraint (`UNIQUE` an der Spalte oder in der Tabelle) wird `unique` bzw.
+  Constraint. Ein eindeutiger Index, den Datei und Datenbank gleich beschreiben, erzeugt
+  deshalb keine Operation mehr, und `schema migrate --execute` führt eine additive
+  Änderung daneben aus (früher: Exit `8`, `TRANSACTION_SCOPE_UNSUPPORTED`). Index und
+  Constraint sind in SQLite verschiedene Objekte; ein Wechsel ist ein Tabellenneubau und
+  gilt als Änderung. **Bestandsdateien:** hat Ihre Datei aus einem früheren
+  `schema reverse` `unique: true` an einer Spalte, deren Datenbank dafür einen
+  `CREATE UNIQUE INDEX` führt, plant `schema migrate` jetzt einen Neubau (Constraint
+  anlegen, Index löschen). Ziehen Sie die Datei dann mit `schema reverse` neu oder
+  schreiben Sie die Spalte als `indices: [{ unique: true }]`.
 - Vollständige View-Felder (inkl. `columns`, `dependencies`): [Anhang F.11](#f11-views).
 
 ### 3.18 Trigger, Procedures und Functions mitnehmen
@@ -3959,7 +3971,7 @@ Spalten-Fremdschlüssel über `references`:
 | `columns` | Liste aus Spaltennamen **oder** `{ name, direction: asc\|desc, prefix_length: n }` |
 | `type` | `btree` (Default), `hash`, `gin`, `gist`, `brin`, `spgist`, `spatial`, `fulltext`, `bitmap` |
 | `columns[].expression` | SQL-Ausdruck statt eines Spaltennamens; schließt `name` aus, `prefix_length` gilt nicht |
-| `unique` | `true` für Unique-Index |
+| `unique` | `true` für Unique-Index (kein `UNIQUE`-Constraint; SQLite liest ihn als Index zurück) |
 | `where` | Prädikat für Partial-Index (Raw-SQL) |
 | `include_columns` | Nicht-Schlüsselspalten eines abdeckenden Index (`INCLUDE`) |
 | `clustered` | `true`, wenn dieser Index die Ablage der Tabelle bildet |

@@ -1169,6 +1169,18 @@ CREATE FULLTEXT INDEX ON [docs] ([body]) KEY INDEX [pk_docs] ON [ftc_docs];
 CREATE UNIQUE INDEX "idx_customers_email" ON "customers" ("email");
 ```
 
+**Zurücklesen (SQLite).** Ein `CREATE UNIQUE INDEX` bleibt beim Reverse ein
+**Index** mit `unique: true` — Spalten, Richtung und Prädikat bleiben erhalten.
+Nur ein `UNIQUE`-Constraint (`PRAGMA index_list`, Ursprung `u`) wird zu
+`unique` an der Spalte (eine Spalte) bzw. zu einem Constraint (mehrere
+Spalten). Index und Constraint sind in SQLite verschiedene Objekte: es gibt kein
+`ALTER TABLE … ADD/DROP CONSTRAINT`, ein Wechsel ist ein Tabellenneubau. Der
+Vergleich setzt sie deshalb nicht gleich — ein `UNIQUE`-Constraint in der Datei
+gegen einen eindeutigen Index in der Datenbank (und umgekehrt) ist eine Änderung.
+Die Reader der anderen Dialekte sind davon nicht berührt; sie lesen weiter einen
+eindeutigen Index ohne Prädikat und ohne Ausdruck als `unique` an der Spalte
+bzw. als Constraint.
+
 ### 5.4 Partial-Index
 
 ```sql
