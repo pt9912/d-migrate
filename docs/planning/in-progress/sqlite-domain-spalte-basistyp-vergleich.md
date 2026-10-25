@@ -85,3 +85,47 @@ Operationen, `--execute`, zweiter Lauf, Rückweg, echte Änderung des Basistyps 
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=` (geteilte Signatur im
   Hexagon, `CLAUDE.md`), `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`, `make solid-suppression-gate`,
   `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD`.
+
+## Nachtrag P0: Messung (2026-10-25)
+
+Messung per SQLite-CLI-Test (`schema generate` → Datenbank → `schema migrate` gegen `db:sqlite://`), eine Domain `d` über den
+Basistyp, Spalte `n: enum, ref_type: d`, Tabelle `t(id, flag, n)`. *Plan-Only* = Lauf ohne Änderung an der Datei; *Neubau* =
+dieselbe Datei mit `flag` auf `required: true` (Neubau aus anderem Grund), `--execute`; *Zweiter Lauf* = derselbe Befehl erneut.
+„Reverse-Form" ist der deklarierte Typ aus `schema generate` (`SqliteTypeMapper.toSql`), gelesen durch `SqliteTypeMapping.mapColumn`.
+`CreateCustomType` steht bei **jedem** Lauf im Plan (die Datenbank führt kein Typ-Objekt, `SQLITE_CUSTOM_TYPE_AT_COLUMN`,
+rendert nichts): `operationsTotal` ist deshalb mit Domain nie 0, sondern 1 — die Messgröße ist die Abwesenheit von
+`AlterColumnType`.
+
+| Basistyp der Domain | Deklariert | Reverse-Form | Plan-Only Operationen | Plan-Only Exit | Neubau `--execute` Exit | Zweiter Lauf |
+| --- | --- | --- | --- | --- | --- | --- |
+| `integer` | `INTEGER` | `Integer` | `CreateCustomType`, **`AlterColumnType`** | 0 | 0 | wieder `AlterColumnType` |
+| `biginteger` | `INTEGER` | `Integer` | wie `integer` | 0 | 0 | wie oben |
+| `smallint` | `INTEGER` | `Integer` | wie `integer` | 0 | 0 | wie oben |
+| `boolean` | `INTEGER` | `Integer` | `CreateCustomType`, **`AlterColumnType`** | **8** (`SQLITE_CAST_NOT_WHITELISTED`) | **8** | 8 |
+| `real` (`float`, einfache Genauigkeit) | `REAL` | `Float()` | `CreateCustomType`, **`AlterColumnType`** | **8** | **8** | 8 |
+| `float` | `REAL` | `Float()` | `CreateCustomType`, **`AlterColumnType`** | 0 | 0 | wieder `AlterColumnType` |
+| `decimal` mit `precision`/`scale` | `REAL` | `Float()` | `CreateCustomType`, **`AlterColumnType`** | **8** | **8** | 8 |
+| `decimal` ohne `precision` | `TEXT` (Basistyp nicht auflösbar, die Spalte bleibt Enum) | `Text()` | `CreateCustomType` | 0 | 0 | 1 Operation |
+| `text`, `varchar(32)`, `char(5)` | `TEXT` | `Text()` | `CreateCustomType` | 0 | 0 | 1 Operation |
+| `uuid`, `json`, `xml` | `TEXT` | `Text()` | `CreateCustomType` | 0 | 0 | 1 Operation |
+| `date`, `time`, `datetime`, `timestamptz` | `TEXT` | `Text()` | `CreateCustomType` | 0 | 0 | 1 Operation |
+| `binary` | `BLOB` | `Binary` | `CreateCustomType`, **`AlterColumnType`** | 0 | 0 | wieder `AlterColumnType` |
+| Gegenprobe: Enum mit `ref_type` | `TEXT` + CHECK | `Text()` | `CreateCustomType` | 0 | 0 | 1 Operation |
+| Gegenprobe: Domain mit Wertelisten-CHECK (`text`) | `TEXT` + CHECK | `Text()` | `CreateCustomType` | 0 | 0 | 1 Operation |
+| Gegenprobe: Domain über `integer` mit CHECK | `INTEGER` + CHECK | `Integer` | `CreateCustomType`, **`AlterColumnType`** | 0 | 0 | wieder `AlterColumnType` |
+
+Befunde, die den Plan korrigieren:
+
+* **Betroffen ist jeder Basistyp mit nicht-`Text`-Reverse-Form** (`integer`, `biginteger`, `smallint`, `boolean`, `real`, `float`,
+  `decimal` mit Präzision, `binary`), wie aus dem Code vermutet — nicht nur `boolean`/`decimal`/`uuid`.
+* **`uuid` ist nicht betroffen** (Reverse-Form `Text()`, wie `varchar`); die Angabe aus #54 war falsch. Dasselbe gilt für `json`,
+  `xml`, `date`, `time`, `datetime`, `timestamptz`, `char`.
+* **Die Domain über `integer`, `biginteger`, `smallint`, `float`, `binary` ist ebenfalls betroffen, blockiert aber nicht**
+  (Exit 0): Die Cast-Matrix lässt `Integer`→`Integer` durch. Der Schaden ist dort ein **Neubau der Tabelle bei jedem Lauf**
+  (`AlterColumnType` → Rebuild), ohne dass sich etwas geändert hat. Blockiert wird nur, wo die Matrix die Umwandlung nicht
+  kennt: `boolean`, `real`, `decimal` mit Präzision.
+* **`decimal` ohne `precision`** liefert hier weder E053 noch einen Fehler: der Generator rendert `TEXT`, die Spalte bleibt
+  `Enum` (`SqliteRefTypeColumns.baseType` ergibt `null`). Das ist vorhanden, nicht Gegenstand dieses Slices.
+* **Fingerabdruck:** `MigrationFingerprint` löst die Domain über `registrySchemaAwareCanonicalizer` schon auf den Basistyp auf;
+  der Slice ändert nur den Vergleich (`TableComparator`), nicht den Abdruck-Pfad — der Hash für denselben Eingang bleibt
+  gleich, kein Tag-Bump.
