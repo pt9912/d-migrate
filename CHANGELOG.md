@@ -86,6 +86,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Version ist neu zu erzeugen. `schema reverse` schreibt keine `precision`/`scale` mehr an eine
     Domain über `integer`, `bigint`, `smallint` oder einen Gleitkommatyp.
 
+## [1.9.1] - 2026-10-25
+
+### Fixed
+
 - **`schema migrate` auf PostgreSQL blockiert nicht mehr bei einem unveränderten benannten
   Typ** (Issue #51). Eine Datei mit `custom_types` und eine PostgreSQL-Datenbank, die aus
   ihr entstanden ist, planten für eine rein additive Änderung zusätzlich `AlterCustomType` und
