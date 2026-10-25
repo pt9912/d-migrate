@@ -1098,6 +1098,22 @@ Schlüsselposition fehlt, ist kein kürzerer Index, sondern ein anderer:
 Lässt sich eine Ausdrucksposition nicht auflösen, fällt der **ganze** Index
 aus dem gelesenen Schema, statt verkürzt darin zu stehen.
 
+**Klammer des Generators.** Der Generator klammert jeden Ausdrucks-Schlüssel
+(`renderKey`, Abschnitt oben), weil PostgreSQL und MySQL es verlangen; der
+SQLite-Reader nimmt genau **eine** Klammer wieder ab, wenn sie den ganzen
+Schlüssel umschließt (der Schlüssel innerhalb der Listenklammer, `(lower(a))` → `lower(a)`, nach dem Abtragen von
+`COLLATE`/`ASC`/`DESC`). Klammern im Ausdruck (`(a) || (b)`, `(a + b) * 2`)
+und in Zeichenketten (`'(' || a`) bleiben stehen; `((x))` verliert nur die
+äußere Schicht. Ein Ausdruck verliert beim Zurücklesen seine Kommentare
+(`--` und `/* */`; Kommentarzeichen in Zeichenketten und gequoteten
+Bezeichnern bleiben), ein Kommentar im `expression`-Text der Datei bleibt dagegen ein
+Unterschied. Ein `COLLATE` innerhalb der Klammer bleibt im Text. Die Datei steht damit ohne Klammer (`lower(a)`), ein Rundlauf
+`reverse → generate → reverse` fügt keine Schicht hinzu, und ein von Hand
+angelegtes `ON t(lower(a))` und `ON t((lower(a)))` lesen gleich. Ein nachgestelltes `COLLATE`
+gehört nicht zum Modell und entfällt beim Zurücklesen.
+Ein `--`-Kommentar im `expression`-Text verschluckt die schließende Klammer des
+Generators; Kommentare gehören nicht in den Ausdruck.
+
 Ein Ausdrucks-Schlüssel zählt **nicht** als Spalte: Typ-Nachschläge
 (Geometrie, LOB) und die Volltext-Quellspalten sehen ihn nicht. Ein
 **eindeutiger** Ausdrucks-Index wird beim Zurücklesen auch nicht zu einer
