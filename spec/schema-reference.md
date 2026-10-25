@@ -272,6 +272,9 @@ custom_types:
     precision: 10
     scale: 2
     check: "VALUE >= 0"
+    default: 0                 # Optional — Standardwert der Domain (wie `default` einer Spalte)
+    not_null: true             # Optional — Domain verbietet NULL (Standard: false)
+    collation: "C"             # Optional — Kollation, die vom Basistyp abweicht
 ```
 
 `base_type` darf Länge und Array tragen: `varchar(50)`, `char(5)`, `timestamp(3)`, `integer[]`,
@@ -279,6 +282,23 @@ custom_types:
 (`varchar(50)` gegen `varchar`, das unbegrenzt ist); `char` ohne Länge ist `char(1)`. `precision`/`scale`
 gelten nur bei `decimal`. Ein Array-Basistyp ist nur auf PostgreSQL abbildbar. Regeln und Grenzen:
 `ddl-generation-rules.md` §6.3.
+
+`default`, `not_null` und `collation` gelten nur für `kind: domain` und nur auf **PostgreSQL**:
+dort rendert `schema generate` sie in `CREATE DOMAIN` (`COLLATE`, `DEFAULT`, `NOT NULL`,
+`CHECK`), liest der Reverse sie aus dem Katalog und vergleicht `schema migrate` sie. MySQL, SQLite,
+SQL Server und Oracle haben keine Domain — sie rendern Basistyp und `check` an der Spalte
+und ignorieren die drei Felder (`NOT NULL` und `DEFAULT` steuert dort die Spalte selbst).
+
+* `default` hat dieselben Formen wie `default` einer Spalte (Skalar, `{ function: … }`,
+  `{ sequence_nextval: … }`).
+* `not_null` gehört der Domain, nicht der Spalte: eine Spalte vom Typ der Domain trägt
+  `required` nur, wenn die Spalte selbst `NOT NULL` ist.
+* `collation` ist der Name der Kollation, als **ein** Bezeichner: `C`, `en_US.utf8` und `de_DE.UTF-8`
+  sind je ein Name (der Punkt gehört dazu); Anführungszeichen sind optional (`C` und `"C"` sind
+  dieselbe). Eine Kollation außerhalb von `pg_catalog` schreiben Sie Schema-qualifiziert und
+  **gequotet**: `"app"."ci"`. Die Groß-/Kleinschreibung zählt. Ein bloßes `app.ci` ist der
+  eine Name `app.ci`, keine Qualifizierung. `COLLATE "default"` gleich der Kollation des
+  Basistyps ist von einer fehlenden Kollation nicht zu unterscheiden.
 
 ---
 

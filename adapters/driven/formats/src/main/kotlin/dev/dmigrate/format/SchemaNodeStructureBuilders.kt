@@ -24,6 +24,9 @@ internal fun buildCustomTypes(
         if (definition.scale != null) typeNode.put("scale", definition.scale)
         if (definition.check != null) typeNode.put("check", definition.check)
         if (definition.description != null) typeNode.put("description", definition.description)
+        definition.default?.let { buildDefault(typeNode, it) }
+        if (definition.notNull) typeNode.put("not_null", true)
+        definition.collation?.let { typeNode.put("collation", it) }
         node.set<ObjectNode>(name, typeNode)
     }
     return node

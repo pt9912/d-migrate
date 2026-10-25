@@ -1284,7 +1284,23 @@ Für MySQL/SQLite/MSSQL: Kein nativer Support. Verhalten abhängig von konfiguri
 ```sql
 -- PostgreSQL
 CREATE DOMAIN "positive_amount" AS DECIMAL(10,2) CHECK (VALUE >= 0);
+
+-- mit default, not_null und collation (nur PostgreSQL)
+CREATE DOMAIN "code" AS TEXT COLLATE "C" DEFAULT 'x' NOT NULL CHECK (length(VALUE) > 0);
 ```
+
+`default`, `not_null` und `collation` einer Domain rendert **nur PostgreSQL**, in der Reihenfolge
+`COLLATE`, `DEFAULT`, `NOT NULL`, `CHECK`. Der Reader liest sie aus dem Katalog: `NOT NULL` aus
+`pg_type.typnotnull`, die Kollation nur, wenn sie von der des Basistyps abweicht (ein Name aus
+`pg_catalog` nackt als ein Bezeichner, `en_US.utf8`; jeder andere gequotet und qualifiziert,
+`"app"."ci"`; der Renderer quotet einen nackten Namen als einen Bezeichner und reicht eine
+gequotete Qualifizierung durch), den
+Standardwert wie den einer Spalte (`'x'::text` wird `x`). Die `NOT NULL`-Eigenschaft einer Domain
+gehört der Domain: eine Spalte vom Typ der Domain gilt als `required` nur, wenn die Spalte selbst
+`NOT NULL` trägt. Ändert sich einer der drei Werte, plant `schema migrate` eine
+`AlterCustomType`-Operation, die auf PostgreSQL blockiert (`DIALECT_UNSUPPORTED_OPERATION`, Exit 8):
+ein `ALTER DOMAIN` rendert der Diff-Renderer nicht. MySQL, SQLite, SQL Server und Oracle ignorieren die
+drei Felder; der Basistyp und der `CHECK` ändern sich dort nicht.
 
 Der PostgreSQL-Reader gibt den `CHECK` einer Domain in der Schreibweise eines Autors zurück
 (ohne die überflüssigen äußeren Klammern und ohne den Cast an Zahl- und Textliteralen, den der

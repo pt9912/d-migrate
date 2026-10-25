@@ -229,6 +229,6 @@ Nicht-`decimal` (alte Reverse-Dateien); Tests: `knownLimits` prüfen `AlterCusto
 (`double precision`, `bpchar`, Domain über Domain, `OR`, Array-Domain), Rückweg für Domains.
 **Folge-Slices:** Mehrfach-CHECK in [`postgres-domain-mehrfach-check.md`](postgres-domain-mehrfach-check.md),
 `varchar`-Länge und Array-Domain in [`postgres-domain-laenge-array.md`](postgres-domain-laenge-array.md),
-`DEFAULT`/`NOT NULL`/Kollation in [`domain-default-not-null-modell.md`](../next/domain-default-not-null-modell.md).
+`DEFAULT`/`NOT NULL`/Kollation in [`domain-default-not-null-modell.md`](domain-default-not-null-modell.md).
 Der `schema reverse`-Test (Ausgabe ohne `precision: 32`, `YamlSchemaWriterTest`) und der Parser-Roundtrip
 mit `decimal` (`SchemaNodeParserTest`) sind ergänzt.

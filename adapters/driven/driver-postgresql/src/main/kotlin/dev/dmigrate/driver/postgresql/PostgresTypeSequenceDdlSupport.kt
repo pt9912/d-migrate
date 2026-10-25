@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.core.diff.DomainTraits
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.NeutralType
@@ -42,6 +43,13 @@ internal class PostgresTypeSequenceDdlSupport(
                 val sqlType = domainBaseTypeSql(baseType, typeDef.precision, typeDef.scale)
                 val sql = buildString {
                     append("CREATE DOMAIN ${quoteQualified(name)} AS $sqlType")
+                    // Reihenfolge der Grammatik: COLLATE, DEFAULT, dann die Constraints (Issue #59).
+                    DomainTraits.collation(typeDef)?.let { append(" COLLATE ${quoteCollation(it)}") }
+                    typeDef.default?.let {
+                        val type = neutralBaseType(baseType, typeDef) ?: NeutralType.Text()
+                        append(" DEFAULT ${typeMapper.toDefaultSql(it, type)}")
+                    }
+                    if (typeDef.notNull) append(" NOT NULL")
                     if (typeDef.check != null) {
                         append(" CHECK (${typeDef.check})")
                     }
@@ -51,6 +59,16 @@ internal class PostgresTypeSequenceDdlSupport(
             }
         }
     }
+
+    private fun neutralBaseType(baseType: String, typeDef: CustomTypeDefinition): NeutralType? =
+        resolveNeutralBaseType(baseType, typeDef.precision, typeDef.scale)
+
+    /**
+     * Ein nackter Name (`C`, `en_US.utf8`) ist ein Bezeichner und wird als einer gequotet; eine
+     * bereits gequotete Qualifizierung (`"app"."ci"`) geht unveraendert durch.
+     */
+    private fun quoteCollation(name: String): String =
+        if (name.startsWith("\"")) name else quoteIdentifier(name)
 
     /**
      * Rendert den Domain-Basistyp über denselben Typ-Mapper wie Spalten/Composite-Felder,

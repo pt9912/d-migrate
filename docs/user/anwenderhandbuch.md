@@ -2640,7 +2640,19 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
     der Katalog nicht von `integer[]`.
   - Der Reader bringt den `check` auf die Schreibweise zurück, die Sie ihm geben
     (`VALUE >= 0` statt `((VALUE >= (0)::numeric))`).
-  - `DEFAULT` und `NOT NULL` einer Domain vergleicht `schema migrate` nicht.
+  - `default`, `not_null` und `collation` einer Domain (`DEFAULT`, `NOT NULL`,
+    abweichende Kollation) liest `schema reverse` aus dem Katalog, `schema generate`
+    schreibt sie in `CREATE DOMAIN`, und `schema migrate` vergleicht sie. Der Standardwert
+    zählt wie der einer Spalte (`5` und `5.0` sind gleich); die Kollation ohne
+    Anführungszeichen, `C` und `"C"` sind dieselbe; ein Punkt gehört zum Namen
+    (`en_US.utf8`), eine Kollation außerhalb von `pg_catalog` steht qualifiziert und
+    gequotet (`"app"."ci"`). Eine Kollation `default`, die der des Basistyps gleicht,
+    ist von einer fehlenden Kollation nicht zu unterscheiden. Ändert sich einer der drei Werte,
+    blockiert der Plan wie jede Domain-Änderung mit Exit 8 — ändern Sie die Domain per
+    `ALTER DOMAIN` von Hand (eine Kollation kennt `ALTER DOMAIN` nicht: legen Sie die Domain neu an). Das `NOT NULL` gehört der Domain: eine Spalte vom Typ der
+    Domain erscheint in `schema reverse` nur mit `required: true`, wenn die Spalte selbst
+    `NOT NULL` trägt. Auf MySQL, SQLite, SQL Server und Oracle, die keine Domain
+    kennen, haben die drei Felder keine Wirkung.
 
   **Grenzen:** was der Server darüber hinaus umschreibt, bleibt in Katalogform
   und gilt als geändert und blockiert: `BETWEEN`, `IN (…)` (der Server macht

@@ -119,3 +119,4 @@ argumentiert werden.
 | 0063 | [Ein gleicher Spalten-`default` ist keine Änderung — Zahlen numerisch, `boolean` auf `integer` gefaltet, `schema-fingerprint-v21`](0063-default-vergleich-zahlen-numerisch-boolean-auf-integer.md) | accepted |
 | 0064 | [Der SQLite-Reader entfernt die umschließende Klammer eines Ausdrucks-Index-Schlüssels — `schema-fingerprint-v22`](0064-sqlite-ausdrucks-index-reader-entfernt-umschliessende-klammer.md) | accepted |
 | 0065 | [Der Basistyp einer Domain trägt Länge und Array aus dem Katalog — Neutralform mit Klammer und `[]`, `schema-fingerprint-v23`](0065-domain-basistyp-mit-laenge-und-array-aus-dem-katalog.md) | accepted |
+| 0066 | [`DEFAULT`, `NOT NULL` und Kollation einer Domain im Modell — nur PostgreSQL wertet aus, `schema-fingerprint-v24`](0066-domain-default-not-null-kollation-im-modell.md) | accepted |

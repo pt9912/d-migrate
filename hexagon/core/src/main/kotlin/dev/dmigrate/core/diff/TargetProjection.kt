@@ -116,4 +116,13 @@ data class TargetProjection(
      * und ein zweites `ColumnDiff` aenderte Operations-IDs.
      */
     val resolvesRefTypeVocabulary: Boolean = false,
+    /**
+     * Ob das Ziel `DEFAULT`, `NOT NULL` und Kollation einer **Domain** fuehrt (Issue #59). Nur
+     * PostgreSQL hat eine Domain; MySQL, SQLite, SQL Server und Oracle rendern Basistyp und
+     * `CHECK` an der Spalte und lassen die drei Felder weg -- ihr Unterschied waere eine
+     * Aenderung, die kein Renderer ausdrueckt (auf SQLite ein Tabellen-Neubau ohne Wirkung).
+     *
+     * Der strikte Vergleich (`null` als Bundle, `schema compare`) zeigt sie immer.
+     */
+    val comparesDomainTraits: Boolean = true,
 )

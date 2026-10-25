@@ -3,6 +3,7 @@ package dev.dmigrate.core.diff
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
+import dev.dmigrate.core.model.DefaultValue
 
 data class NamedCustomType(val name: String, val definition: CustomTypeDefinition)
 
@@ -16,8 +17,11 @@ data class CustomTypeDiff(
     val check: ValueChange<String?>? = null,
     val description: ValueChange<String?>? = null,
     val fields: ValueChange<Map<String, ColumnDefinition>?>? = null,
+    val default: ValueChange<DefaultValue?>? = null,
+    val notNull: ValueChange<Boolean>? = null,
+    val collation: ValueChange<String?>? = null,
 ) {
     fun hasChanges(): Boolean = kind != null || values != null || baseType != null ||
         precision != null || scale != null || check != null || description != null ||
-        fields != null
+        fields != null || default != null || notNull != null || collation != null
 }
