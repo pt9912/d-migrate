@@ -52,13 +52,23 @@ class DomainBaseTypeCrossDialectTest : FunSpec({
         val e053 = result.notes.filter { it.code == "E053" }.map { it.objectName.orEmpty() }
         val sql = result.statements.joinToString("\n") { it.sql }
 
-        test("${dialect.name.lowercase()}: ein Basistyp mit Laenge ergibt keinen E053") {
-            for (name in withLength) {
-                withClue("$name in $e053\n$sql") { e053.none { it.endsWith("c_$name") } shouldBe true }
+        if (dialect == DatabaseDialect.ORACLE) {
+            // Oracle schreibt jede Domain als CLOB und weist sie als E053 aus -- unabhaengig vom Basistyp,
+            // auch fuer `text`. Die Laenge aendert daran nichts.
+            test("oracle: der Basistyp aendert die Ausweisung der Domain nicht") {
+                for (name in withLength + arrays) {
+                    withClue("$name in $e053\n$sql") { e053.any { it.endsWith("c_$name") } shouldBe true }
+                }
+            }
+        } else {
+            test("${dialect.name.lowercase()}: ein Basistyp mit Laenge ergibt keinen E053") {
+                for (name in withLength) {
+                    withClue("$name in $e053\n$sql") { e053.none { it.endsWith("c_$name") } shouldBe true }
+                }
             }
         }
 
-        // MySQL und Oracle haben keinen Domain-Pfad, der den Basistyp aufloest (Oracle: CLOB, MySQL: Text).
+        // MySQL reicht den Basistyp roh durch (kein E053, auch fuer ein Array); Oracle schreibt jede Domain als CLOB.
         if (dialect == DatabaseDialect.SQLITE || dialect == DatabaseDialect.MSSQL) {
             test("${dialect.name.lowercase()}: ein Array-Basistyp bleibt E053, wie zuvor `_int4`") {
                 for (name in arrays) {
