@@ -3,6 +3,7 @@ package dev.dmigrate.core.diff.migration
 import dev.dmigrate.core.diff.ColumnDefaultProjection
 import dev.dmigrate.core.diff.ConstraintDiffContract
 import dev.dmigrate.core.diff.CustomTypeBaseType
+import dev.dmigrate.core.diff.DomainTraits
 import dev.dmigrate.core.diff.EffectivePrimaryKey
 import dev.dmigrate.core.diff.EnumCheckProjection
 import dev.dmigrate.core.diff.RefTypeVocabulary
@@ -196,8 +197,8 @@ object MigrationFingerprint {
      * v19: **der Basistyp einer Domain** (Issue #52). Eine Datei schreibt `bigint`,
      * `numeric` oder `varchar(50)`, der PostgreSQL-Reader liefert `biginteger`,
      * `decimal`, `text`; der Abdruck traegt jetzt die Neutralform
-     * ([dev.dmigrate.core.diff.CustomTypeBaseType]: Typname ohne Klammer, `precision`/`scale`
-     * nur bei `decimal`), damit der Post-Compare eines Migrationslaufs nicht an der
+     * ([dev.dmigrate.core.diff.CustomTypeBaseType]: Typname, `precision`/`scale`
+     * nur bei `decimal`; seit v23 mit Laenge und `[]`, siehe dort), damit der Post-Compare eines Migrationslaufs nicht an der
      * Schreibweise driftet. Ausserdem liefert der PostgreSQL-Reader `precision`/`scale` nur
      * noch fuer `decimal` und den `CHECK` in Autorenform. Eine Domain traegt damit auf
      * **jedem** Dialekt einen anderen Abdruck (auch eine SQLite-Domain mit Basistyp `INTEGER`
@@ -225,8 +226,22 @@ object MigrationFingerprint {
      * `lower(a)`); `expr:` in [CanonicalPayload] und `IndexColumn.toString()` tragen damit eine
      * andere Schreibweise fuer jede SQLite-Datenbank mit Ausdrucks-Index. Alle anderen Schemas
      * hashen bis auf den Algorithmus-Tag wie zuvor.
+     *
+     * v23: **der Basistyp einer Domain mit Laenge oder Array** (Issue #58). [dev.dmigrate.core.diff.CustomTypeBaseType.canonical] trennt `char`/`varchar` von
+     * `text`, traegt die Laenge von `varchar(n)`, `char(n)`, `timestamp(n)`, `timestamptz(n)`,
+     * `time(n)`, `timetz(n)`, `bit(n)`, `varbit(n)` in der Klammer (`varchar` ohne Laenge ist `text`, `char` ist `char(1)`) und haengt bei einem
+     * Array `[]` an. `base=` einer Domain mit solchem Basistyp hasht damit anders; Schemas ohne
+     * Domain und Domains ueber `integer`, `text` oder `decimal` hashen bis auf den Algorithmus-Tag
+     * wie zuvor.
+     *
+     * v24: **`default`, `not_null` und Kollation einer Domain** (Issue #59). Sie stehen im Abdruck
+     * nur, wenn gesetzt ([DomainTraits]); ein Typ ohne sie hasht wie zuvor. Der PostgreSQL-Reader
+     * liest sie jetzt und bildet `required` einer Spalte aus `attnotnull` -- die Domain-`NOT NULL`
+     * rechnet er nicht mehr in die Spalte ein --, damit ein Schema mit Domain-`NOT NULL` anders
+     * hasht. Andere Dialekte hashen benannte Typen nicht (`projectsCustomTypes`) und sehen von den
+     * Feldern nichts.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v22"
+    const val ALGORITHM: String = "schema-fingerprint-v24"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -321,8 +336,19 @@ object MigrationFingerprint {
                 .append(SEP).append("precision=").append(CustomTypeBaseType.precision(def) ?: "")
                 .append(SEP).append("scale=").append(CustomTypeBaseType.scale(def) ?: "")
                 .append(SEP).append("check=").append(def.check ?: "")
-                .append('\n')
+            appendDomainTraits(sb, def)
+            sb.append('\n')
         }
+    }
+
+    /**
+     * v24: `default`, `not_null` und Kollation einer Domain (Issue #59). Nur wenn gesetzt, damit
+     * ein Typ ohne sie wie zuvor hasht.
+     */
+    private fun appendDomainTraits(sb: StringBuilder, def: CustomTypeDefinition) {
+        if (def.default != null) sb.append(SEP).append("default=").append(defaultValue(def.default))
+        if (def.notNull) sb.append(SEP).append("not_null=true")
+        DomainTraits.collation(def)?.let { sb.append(SEP).append("collation=").append(it) }
     }
 
     // ── Tables ──────────────────────────────────────────────────────

@@ -1,48 +1,39 @@
 package dev.dmigrate.core.diff.migration
 
-import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.SchemaDefinition
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 
-/** Der Basistyp einer Domain im Abdruck (Issue #52); eigene Datei, die Nachbarn sind gross genug. */
+/** Laenge und Array stehen im Basistyp der Domain im Abdruck (Issue #58, `schema-fingerprint-v23`). */
 class MigrationFingerprintDomainBaseTypeTest : FunSpec({
 
-    // Custom Types gehen nur mit projectsCustomTypes in den Abdruck.
-    fun fp(s: SchemaDefinition) = MigrationFingerprint.compute(s, projectsCustomTypes = true)
+    fun base(type: String) = MigrationFingerprint.project(
+        SchemaDefinition(
+            name = "App", version = "1",
+            customTypes = mapOf("d" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = type)),
+        ),
+    )
 
-    fun schema() = SchemaDefinition(name = "S", version = "1")
-
-    fun withDomain(base: String, precision: Int? = null, scale: Int? = null, fields: Map<String, ColumnDefinition>? = null) =
-        schema().copy(
-            customTypes = mapOf(
-                "d" to CustomTypeDefinition(
-                    kind = CustomTypeKind.DOMAIN, baseType = base, precision = precision, scale = scale,
-                    check = "VALUE > 0", fields = fields,
-                ),
-            ),
-        )
-
-    test("der Basistyp einer Domain geht in Neutralform in den Abdruck (#52)") {
-        // Datei und Reader schreiben denselben Basistyp verschieden; der Post-Compare darf daran nicht driften.
-        fp(withDomain("bigint")) shouldBe fp(withDomain("biginteger"))
-        fp(withDomain("numeric", 10, 2)) shouldBe
-            fp(withDomain("decimal", 10, 2))
-        fp(withDomain("varchar(50)")) shouldBe fp(withDomain("text"))
-        // Ein anderer Typ, andere Genauigkeit und Felder (leer gegen fehlend) bleiben unterscheidbar bzw. gleich.
-        fp(withDomain("integer")) shouldNotBe fp(withDomain("bigint"))
-        fp(withDomain("decimal", 10, 2)) shouldNotBe
-            fp(withDomain("decimal", 12, 2))
-        fp(withDomain("integer", fields = emptyMap())) shouldBe
-            fp(withDomain("integer"))
+    test("die Laenge steht im Abdruck, Synonyme gleichen sich an") {
+        base("varchar(50)") shouldContain "base=varchar(50)"
+        base("character varying(50)") shouldBe base("varchar(50)")
+        base("varchar(50)") shouldNotBe base("varchar(254)")
+        base("char(5)") shouldNotBe base("varchar(5)")
     }
 
-    test("precision und scale gehen nur bei decimal in den Abdruck, die Klammer des Typs zaehlt dort mit (#52)") {
-        fp(withDomain("integer", 32, 0)) shouldBe fp(withDomain("integer"))
-        fp(withDomain("numeric(10,2)")) shouldBe fp(withDomain("decimal", 10, 2))
-        fp(withDomain("numeric(10,2)")) shouldNotBe fp(withDomain("numeric(12,2)"))
+    test("ein Array traegt [], die Dimension zaehlt nicht") {
+        base("integer[]") shouldContain "base=integer[]"
+        base("integer[]") shouldNotBe base("integer")
+        base("integer[]") shouldBe base("int4[][]")
+    }
+
+    test("ohne Laenge und Array bleibt die Neutralform von zuvor") {
+        base("bigint") shouldContain "base=biginteger"
+        base("varchar") shouldContain "base=text"
+        base("numeric(10,2)") shouldContain "base=decimal"
     }
 })

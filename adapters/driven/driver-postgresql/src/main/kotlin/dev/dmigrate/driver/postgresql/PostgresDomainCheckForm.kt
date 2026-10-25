@@ -30,6 +30,31 @@ internal object PostgresDomainCheckForm {
 
     private val ARITHMETIC = setOf('/', '%', '^')
 
+    private const val NOT_VALID = " NOT VALID"
+
+    /**
+     * Ob `pg_get_constraintdef` den Constraint als `NOT VALID` ausweist. Das Suffix steht am Ende der
+     * Definition; ein Literal endet auf ein Hochkomma und kann es nicht vortaeuschen.
+     */
+    fun isNotValid(raw: String): Boolean = raw.trimEnd().endsWith(NOT_VALID, ignoreCase = true)
+
+    /** Die Definition ohne das `NOT VALID`-Suffix; das Praedikat bleibt (der Constraint prueft Neues weiter). */
+    fun withoutNotValid(raw: String): String {
+        val trimmed = raw.trimEnd()
+        return if (isNotValid(trimmed)) trimmed.dropLast(NOT_VALID.length) else trimmed
+    }
+
+    /**
+     * Verbindet die Praedikate mehrerer CHECKs einer Domain: ein einzelnes bleibt unveraendert, ab zwei steht
+     * jedes in Klammern und `AND` verbindet sie. Eine Domain verwirft nur bei `false`, `a AND b` ist also
+     * aequivalent zu zwei Constraints.
+     */
+    fun conjunction(predicates: List<String>): String? = when (predicates.size) {
+        0 -> null
+        1 -> predicates.single()
+        else -> predicates.joinToString(" AND ") { "($it)" }
+    }
+
     fun predicate(raw: String): String {
         var s = stripLiteralCasts(raw).trim()
         while (s.startsWith("(") && outerParenSpansWhole(s)) {

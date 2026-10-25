@@ -2,6 +2,8 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadOptions
+import dev.dmigrate.driver.SchemaReadResult
+import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.metadata.JdbcOperations
@@ -386,11 +388,67 @@ class PostgresSchemaReaderTest : FunSpec({
         domain.scale.shouldBeNull()
     }
 
+    fun domainRow(name: String, conname: String?, clause: String?) = mapOf(
+        "typname" to name, "base_type" to "int4", "numeric_precision" to 32, "numeric_scale" to 0,
+        "domain_default" to null, "conname" to conname, "check_clause" to clause,
+    )
+
+    fun readDomains(vararg rows: Map<String, Any?>): SchemaReadResult {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns rows.toList()
+        every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        return reader.read(pool, opts)
+    }
+
+    test("domain with 0, 1 and n checks: rows are grouped by type, n checks are ANDed in row order (#57)") {
+        val result = readDomains(
+            domainRow("none", null, null),
+            domainRow("one", "one_check", "CHECK ((VALUE > 0))"),
+            domainRow("two", "c1", "CHECK ((VALUE > 0))"),
+            domainRow("two", "c2", "CHECK ((VALUE < 10))"),
+            domainRow("three", "a", "CHECK ((VALUE >= (1)::numeric))"),
+            domainRow("three", "b", "CHECK ((VALUE <> 5))"),
+            domainRow("three", "c", "CHECK ((VALUE < 100))"),
+        )
+
+        val types = result.schema.customTypes
+        types.keys.toList() shouldBe listOf("none", "one", "two", "three")
+        types.getValue("none").check.shouldBeNull()
+        types.getValue("one").check shouldBe "VALUE > 0"
+        types.getValue("two").check shouldBe "(VALUE > 0) AND (VALUE < 10)"
+        types.getValue("three").check shouldBe "(VALUE >= 1) AND (VALUE <> 5) AND (VALUE < 100)"
+        types.getValue("two").baseType shouldBe "integer"
+        result.notes.filter { it.code == "R407" }.shouldBeEmpty()
+    }
+
+    test("domain check NOT VALID keeps the predicate, drops the suffix and reports R407 (#57)") {
+        val result = readDomains(
+            domainRow("d", "c1", "CHECK ((VALUE > 0))"),
+            domainRow("d", "c2", "CHECK ((VALUE < 10)) NOT VALID"),
+            domainRow("e", "only", "CHECK ((VALUE > 0)) NOT VALID"),
+        )
+
+        result.schema.customTypes.getValue("d").check shouldBe "(VALUE > 0) AND (VALUE < 10)"
+        result.schema.customTypes.getValue("e").check shouldBe "VALUE > 0"
+        val notes = result.notes.filter { it.code == "R407" }
+        notes.map { it.objectName } shouldBe listOf("d", "e")
+        notes[0].severity shouldBe SchemaReadSeverity.WARNING
+        notes[0].message.contains("c2") shouldBe true
+        notes[0].message.contains("c1") shouldBe false
+    }
+
+    test("normalizeDomainCheck strips NOT VALID, but not inside a literal (#57)") {
+        normalizeDomainCheck("CHECK ((VALUE > 0)) NOT VALID") shouldBe "VALUE > 0"
+        normalizeDomainCheck("CHECK ((VALUE <> 'x NOT VALID'::text))") shouldBe "VALUE <> 'x NOT VALID'"
+    }
+
     test("domain over decimal keeps precision and scale (#52)") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
-            mapOf("typname" to "amount", "base_type" to "numeric", "numeric_precision" to 10,
-                "numeric_scale" to 2, "domain_default" to null, "check_clause" to "CHECK ((VALUE >= (0)::numeric))"),
+            mapOf("typname" to "amount", "base_type" to "numeric", "base_schema" to "pg_catalog",
+                "base_type_sql" to "numeric(10,2)", "check_clause" to "CHECK ((VALUE >= (0)::numeric))"),
         )
         every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
 
@@ -459,12 +517,12 @@ class PostgresSchemaReaderTest : FunSpec({
     test("domain precision and scale are read for decimal only (#52)") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
-            mapOf("typname" to "a", "base_type" to "int8", "numeric_precision" to 64, "numeric_scale" to 0,
-                "domain_default" to null, "check_clause" to null),
-            mapOf("typname" to "b", "base_type" to "float4", "numeric_precision" to 24, "numeric_scale" to null,
-                "domain_default" to null, "check_clause" to null),
-            mapOf("typname" to "c", "base_type" to "int2", "numeric_precision" to 16, "numeric_scale" to 0,
-                "domain_default" to null, "check_clause" to null),
+            mapOf("typname" to "a", "base_type" to "int8", "base_schema" to "pg_catalog",
+                "base_type_sql" to "bigint", "check_clause" to null),
+            mapOf("typname" to "b", "base_type" to "float4", "base_schema" to "pg_catalog",
+                "base_type_sql" to "real", "check_clause" to null),
+            mapOf("typname" to "c", "base_type" to "int2", "base_schema" to "pg_catalog",
+                "base_type_sql" to "smallint", "check_clause" to null),
         )
         every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
         val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
@@ -475,6 +533,32 @@ class PostgresSchemaReaderTest : FunSpec({
             types[name]!!.precision.shouldBeNull()
             types[name]!!.scale.shouldBeNull()
         }
+    }
+
+    test("domain base type keeps length and array from format_type (#58)") {
+        stubEmptyDefaults()
+        fun row(name: String, sql: String, typname: String = "x") = mapOf(
+            "typname" to name, "base_type" to typname, "base_schema" to "pg_catalog",
+            "base_type_sql" to sql, "check_clause" to null,
+        )
+        every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
+            row("v", "character varying(50)"), row("c", "character(5)"), row("ia", "integer[]"),
+            row("va", "character varying(50)[]"), row("na", "numeric(10,2)[]"),
+            row("ts", "timestamp(3) without time zone"),
+            // Basistyp ausserhalb von pg_catalog: der Typname bleibt unqualifiziert.
+            mapOf("typname" to "dd", "base_type" to "v", "base_schema" to "public",
+                "base_type_sql" to "public.v", "check_clause" to null),
+        )
+        every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val types = reader.read(pool, opts).schema.customTypes
+
+        types.mapValues { it.value.baseType } shouldBe mapOf(
+            "v" to "varchar(50)", "c" to "char(5)", "ia" to "integer[]", "va" to "varchar(50)[]",
+            "na" to "decimal(10,2)[]", "ts" to "timestamp(3)", "dd" to "v",
+        )
+        types["na"]!!.precision.shouldBeNull()
     }
 
     test("normalizeDomainCheck keeps predicate with multiple paren groups intact (I-06)") {

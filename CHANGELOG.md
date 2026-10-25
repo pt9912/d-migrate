@@ -23,6 +23,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     erzeugen. Betroffen sind nur Schemas mit SQLite-Ausdrucks-Index.
   - Eine Datei aus einem früheren `schema reverse` mit `(lower(a))` gilt gegen die Datenbank als geändert, bis
     `schema reverse` neu gezogen oder die Klammer entfernt ist.
+- **`schema migrate` gegen PostgreSQL erkennt die Länge und den Array-Basistyp einer Domain** (Issue #58,
+  Folge von #52). Der Reader las den Basistyp aus `information_schema`: `varchar(50)` und `char(5)` wurden
+  `text`, `integer[]` wurde `_int4`, `timestamp(3)` verlor die Genauigkeit. Jetzt liest er ihn aus
+  `pg_catalog` (`format_type`) und gibt `varchar(50)`, `char(5)`, `timestamp(3)`, `integer[]` zurück;
+  eine unveränderte Domain blockiert nicht, eine geänderte Länge, ein anderer Array-Typ oder `char` ↔
+  `varchar` blockiert weiter (Exit 8, `AlterCustomType`).
+  - `schema reverse` schreibt diese Basistypen jetzt in `base_type`. Eine Reverse-Datei, die für eine
+    `varchar(n)`-Domain `text` führt, gilt als geändert; `schema reverse` neu ziehen.
+  - Der Vergleich der Basistypen gilt für alle Dialekte: `varchar(50)` gegen `varchar` (unbegrenzt) ist
+    eine Änderung, `char` ist `char(1)`. Ein Array-Basistyp hat auf MySQL, SQLite, MSSQL und Oracle kein
+    Gegenstück: SQLite und MSSQL weisen ihn als E053 aus, Oracle schreibt jede Domain als CLOB mit E053, MySQL
+    gibt `base_type` roh aus (für ein Array, `timestamptz(3)`, `timetz`, `varbit(7)` ungültiges DDL, wie zuvor).
+  - Der Fingerabdruck steht auf `schema-fingerprint-v23`; ein Rollback-Artefakt einer früheren Version
+    ist neu zu erzeugen.
+- **Der PostgreSQL-Reader liest alle `CHECK`-Constraints einer Domain** (Folge von #52, Issue #57). Bisher gewann
+  der zuletzt gelesene: `CREATE DOMAIN d AS integer CONSTRAINT c1 CHECK (VALUE > 0) CONSTRAINT c2 CHECK (VALUE < 10)`
+  lieferte nur `VALUE < 10`, und `schema migrate` sah eine Datei mit beiden `CHECK`s als geändert. Der `check` ist jetzt
+  `(VALUE > 0) AND (VALUE < 10)`, geordnet nach Constraint-Name; ein einzelner `CHECK` bleibt unverändert. Ein
+  `NOT VALID`-Constraint behält sein Prädikat (bisher stand `NOT VALID` im Ausdruck und ergab ungültiges DDL) und
+  meldet `R407`. Folgen: eine Domain mit `IN`-Werteliste plus weiterem `CHECK` gilt nicht mehr als Werteliste.
+
+### Changed
+
+- **`DEFAULT`, `NOT NULL` und Kollation einer Domain stehen im Modell** (Issue #59). Eine Domain
+  trägt `default`, `not_null` und `collation` (Datei, `spec/schema-reference.md`); nur PostgreSQL
+  wertet sie aus. `schema reverse` liest sie aus dem Katalog, `schema generate` schreibt sie in
+  `CREATE DOMAIN`, und `schema migrate` vergleicht sie. MySQL, SQLite, SQL Server und Oracle
+  ignorieren die Felder.
+  - Behoben: eine Spalte vom Typ einer `NOT NULL`-Domain kam mit `required: true` zurück; ein
+    `ALTER DOMAIN … DROP NOT NULL` plante dadurch ein irreführendes
+    `ALTER TABLE … SET NOT NULL`. Das `NOT NULL` gehört jetzt der Domain, `required` der Spalte
+    nur ihr eigenes.
+  - Eine Änderung an einem der drei Felder blockiert gegen PostgreSQL mit Exit `8`
+    (`DIALECT_UNSUPPORTED_OPERATION`): ein `ALTER DOMAIN`-Renderer fehlt weiterhin.
+  - Der Fingerabdruck steht auf `schema-fingerprint-v24`; ein Rollback-Artefakt einer früheren
+    Version ist neu zu erzeugen.
 
 ## [1.10.0] - 2026-10-25
 

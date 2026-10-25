@@ -1286,12 +1286,52 @@ Für MySQL/SQLite/MSSQL: Kein nativer Support. Verhalten abhängig von konfiguri
 ```sql
 -- PostgreSQL
 CREATE DOMAIN "positive_amount" AS DECIMAL(10,2) CHECK (VALUE >= 0);
+
+-- mit default, not_null und collation (nur PostgreSQL)
+CREATE DOMAIN "code" AS TEXT COLLATE "C" DEFAULT 'x' NOT NULL CHECK (length(VALUE) > 0);
 ```
+
+`default`, `not_null` und `collation` einer Domain rendert **nur PostgreSQL**, in der Reihenfolge
+`COLLATE`, `DEFAULT`, `NOT NULL`, `CHECK`. Der Reader liest sie aus dem Katalog: `NOT NULL` aus
+`pg_type.typnotnull`, die Kollation nur, wenn sie von der des Basistyps abweicht (ein Name aus
+`pg_catalog` nackt als ein Bezeichner, `en_US.utf8`; jeder andere gequotet und qualifiziert,
+`"app"."ci"`; der Renderer quotet einen nackten Namen als einen Bezeichner und reicht eine
+gequotete Qualifizierung durch), den
+Standardwert wie den einer Spalte (`'x'::text` wird `x`). Die `NOT NULL`-Eigenschaft einer Domain
+gehört der Domain: eine Spalte vom Typ der Domain gilt als `required` nur, wenn die Spalte selbst
+`NOT NULL` trägt. Ändert sich einer der drei Werte, plant `schema migrate` eine
+`AlterCustomType`-Operation, die auf PostgreSQL blockiert (`DIALECT_UNSUPPORTED_OPERATION`, Exit 8):
+ein `ALTER DOMAIN` rendert der Diff-Renderer nicht. MySQL, SQLite, SQL Server und Oracle ignorieren die
+drei Felder; der Basistyp und der `CHECK` ändern sich dort nicht.
 
 Der PostgreSQL-Reader gibt den `CHECK` einer Domain in der Schreibweise eines Autors zurück
 (ohne die überflüssigen äußeren Klammern und ohne den Cast an Zahl- und Textliteralen, den der
 Server setzt) und `precision`/`scale` nur für `decimal`; ein Ausdruck, den der Server umschreibt
 (`BETWEEN`, `IN`, ein Cast an `VALUE`), bleibt in Katalogform.
+
+Der PostgreSQL-Reader liest den Basistyp einer Domain aus dem Katalog (`format_type`) und gibt ihn
+mit Länge und Array zurück: `varchar(50)`, `char(5)`, `timestamp(3)`, `integer[]`,
+`varchar(50)[]`, `decimal(10,2)[]`. `numeric(p,s)` ohne Array steht als `decimal` mit `precision`
+und `scale`. Der Vergleich zweier Basistypen nimmt dieselbe Neutralform: `varchar`/`character
+varying` sind ein Typ, `varchar` ohne Länge ist unbegrenzt und damit `text`, `char` ohne Länge ist
+`char(1)`, `timestamp`/`time` ohne Klammer sind `(6)`; `char(n)` und `varchar(n)` sind verschieden,
+`varchar(50)` und `varchar(254)` ebenso. Ein Array trägt `[]` am Typnamen (`int4[]` und
+`integer[]` sind derselbe Typ); der Katalog unterscheidet Dimensionen nicht, `integer[][]` und
+`integer[]` sind gleich. Für einen Typ ohne Längenbegriff (`integer(11)`) zählt eine Klammer nur,
+wenn beide Seiten sie nennen.
+
+Ein Array-Basistyp hat in MySQL, SQLite, MSSQL und Oracle kein neutrales Gegenstück und wird in
+jedem dieser Dialekte als E053 ausgewiesen, nie roh durchgereicht; dasselbe gilt für einen
+Basistyp ohne Gegenstück (`timestamptz(3)`, `timetz`, `varbit(7)`) in MySQL.
+
+Hat eine Domain mehrere `CHECK`-Constraints, liest der Reader **alle**: jeden einzeln auf die
+Schreibweise eines Autors gebracht, nach Constraint-Name in C-Kollation geordnet (`c10` vor `c2`)
+und mit `AND` verbunden, jedes Prädikat in Klammern (`(VALUE > 0) AND (VALUE < 10)`); ein einzelner
+`CHECK` bleibt unverändert. Die Namen der Constraints trägt das Modell nicht. Bei mehr als zehn unbenannten `CHECK`s ordnet die C-Kollation
+`d_check1`, `d_check10`, `d_check2`, die Reihenfolge weicht dann von der Schreibfolge ab. Ein Wertelisten-`CHECK`
+im `AND`-Verbund gilt nicht als Werteliste. Ein `NOT VALID`-Constraint behält sein Prädikat
+(er prüft Neues weiter), das Suffix entfällt, die Note `R407` meldet ihn. Der `CHECK` einer Domain
+über einer Domain bleibt an seiner Domain; die innere trägt ihren eigenen.
 
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
 Bei SQLite steht der CHECK **unbenannt** (`"n" INTEGER NOT NULL CHECK ("n" >= 0)`),

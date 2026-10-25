@@ -20,25 +20,41 @@ internal object PostgresTypeMetadataQueries {
             .mapValues { (_, value) -> value.map { it["enumlabel"] as String } }
     }
 
+    /**
+     * Eine Zeile je `CHECK`-Constraint einer Domain (`contype = 'c'`; ein Domain-`NOT NULL`, ab PostgreSQL 18
+     * `contype = 'n'`, ist kein CHECK), eine Zeile ohne `conname`/`check_clause` fuer eine Domain ohne CHECK.
+     * Sortiert nach Typ und Constraint-Name in C-Kollation, damit die Reihenfolge des verbundenen Ausdrucks
+     * nicht von der Datenbankkollation abhaengt.
+     */
     fun listDomainTypes(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT t.typname,
                    bt.typname AS base_type,
-                   information_schema.domains.numeric_precision,
-                   information_schema.domains.numeric_scale,
-                   information_schema.domains.domain_default,
+                   bn.nspname AS base_schema,
+                   -- Laenge, Genauigkeit und Array stehen nur hier, und ohne Recht an der Domain
+                   -- (anders als in den Sichten des SQL-Standards) auch fuer jede Rolle.
+                   pg_catalog.format_type(t.typbasetype, t.typtypmod) AS base_type_sql,
+                   c.conname,
+                   pg_catalog.pg_get_expr(t.typdefaultbin, 0) AS domain_default,
+                   t.typnotnull AS not_null,
+                   -- Die Kollation nur, wenn sie von der des Basistyps abweicht (Issue #59):
+                   -- ohne eigenes COLLATE erbt die Domain `typcollation` des Basistyps.
+                   (SELECT CASE WHEN cn.nspname = 'pg_catalog' THEN co.collname
+                                -- immer gequotet (quote_ident quotet nur bei Bedarf): `app.ci` waere sonst ein Name
+                                ELSE '"' || replace(cn.nspname, '"', '""') || '"."' || replace(co.collname, '"', '""') || '"' END
+                      FROM pg_collation co
+                      JOIN pg_namespace cn ON cn.oid = co.collnamespace
+                     WHERE co.oid = t.typcollation AND t.typcollation <> bt.typcollation) AS collation_name,
                    pg_catalog.pg_get_constraintdef(c.oid) AS check_clause
             FROM pg_type t
             JOIN pg_namespace n ON n.oid = t.typnamespace
             JOIN pg_type bt ON bt.oid = t.typbasetype
-            LEFT JOIN information_schema.domains
-              ON information_schema.domains.domain_schema = n.nspname
-              AND information_schema.domains.domain_name = t.typname
+            JOIN pg_namespace bn ON bn.oid = bt.typnamespace
             LEFT JOIN pg_constraint c ON c.contypid = t.oid AND c.contype = 'c'
             WHERE t.typtype = 'd' AND n.nspname = ?
               AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.deptype = 'e' AND d.objid = t.oid)
-            ORDER BY t.typname
+            ORDER BY t.typname, c.conname COLLATE "C"
             """.trimIndent(), schemaName,
         )
     }
