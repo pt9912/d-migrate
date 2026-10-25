@@ -2587,7 +2587,11 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   Typ-Objekt. Eine Enum steht als `TEXT` + `CHECK` an der Spalte, eine Domain
   als ihr Basistyp + `CHECK` (`VALUE` wird durch die Spalte ersetzt). Der
   `CHECK` ist unbenannt. `CreateCustomType` und `DropCustomType` erzeugen
-  deshalb keine Anweisung; der Lauf ist nicht blockiert. Ändern Sie die
+  deshalb keine Anweisung; der Lauf ist nicht blockiert. Eine Domain-Spalte, die
+  Datei und Datenbank gleich ausdrücken, plant keine Typänderung
+  (`AlterColumnType`) und löst keinen Tabellenneubau aus — gleich, über welchen
+  Basistyp die Domain geht (`integer`, `boolean`, `decimal`, `float`, `binary`,
+  `text`, …). Ändern Sie die
   Werte einer Enum oder `base_type`/`check` einer Domain und planen Sie gegen
   ein `file:`-Ziel des bisherigen Schemas, baut `schema migrate` jede Tabelle
   mit einer `ref_type`-Spalte neu auf (neuer `CHECK`, Daten bleiben

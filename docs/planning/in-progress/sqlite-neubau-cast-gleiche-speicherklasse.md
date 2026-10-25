@@ -207,9 +207,11 @@ ihr Aufrufkreis ändert sich.
 
 ### Offen
 
-* Domain-Spalte über `boolean`/`decimal`/`uuid`: der ziel-bewusste Vergleich meldet bei jedem Lauf
-  `AlterColumnType` (Datenbank liest `Integer`, Datei `Enum(refType)`); der Neubau blockiert dort weiter.
-  Eigener Plan, Berührung des Vergleichs und möglicherweise des Fingerabdrucks.
+* ~~Domain-Spalte über `boolean`/`decimal`/`uuid`: der ziel-bewusste Vergleich meldet bei jedem Lauf
+  `AlterColumnType`; der Neubau blockiert dort weiter.~~ **Erledigt in Issue #56**
+  ([`sqlite-domain-spalte-basistyp-vergleich.md`](sqlite-domain-spalte-basistyp-vergleich.md)): der Vergleich projiziert die
+  Domain-Spalte über ihren Basistyp, der Fingerabdruck blieb unberührt. `uuid` war nie betroffen (Reverse-Form `Text()`);
+  betroffen waren `integer`, `biginteger`, `smallint`, `boolean`, `real`, `float`, `decimal` mit Präzision und `binary`.
 
 **Review-Nachtrag.** (1) *Regression behoben:* eine Domain-Spalte bleibt auf beiden Seiten `ref_type`; ihren Basistypwechsel
 (`text` → `integer`) meldet der Vergleich als `AlterCustomType`, nicht als `AlterColumnType`. Ohne Gegenmaßnahme fiel er ohne
@@ -221,7 +223,7 @@ wird gecastet, unveränderter Basistyp wird kopiert. (2) *Folge-Slices:*
 (`RENAME_DEPENDENCY_UNPROJECTABLE` in diesem Messaufbau).
 
 **Test-Nachtrag (Lücken aus dem Review, nur Tests).**
-* Domain per CLI: Domain über `varchar` nach Neubau Exit 0 mit erhaltenen Daten; Basistypwechsel `text` → `integer` blockiert (Datei zu Datei und gegen Datenbank mit `'abc'`, Exit 8); Domain über `boolean` als bekannte Grenze festgehalten (Exit 8).
+* Domain per CLI: Domain über `varchar` nach Neubau Exit 0 mit erhaltenen Daten; Basistypwechsel `text` → `integer` blockiert (Datei zu Datei und gegen Datenbank mit `'abc'`, Exit 8); Domain über `boolean` als bekannte Grenze festgehalten (Exit 8); mit #56 erwartet der Test Exit 0, erhaltene Daten und keinen `AlterColumnType` im Folgelauf (`Domain ueber boolean: der Neubau aus anderem Grund laeuft durch, die Daten bleiben`).
 * **Gefundener Fehler (nicht behoben):** eine Domain mit Länge (`varchar(32)`) blockiert gegen eine Datenbank mit `SQLITE_CAST_NOT_WHITELISTED` ("target length is shorter than source length"), weil der Reader `Text()` liest und die aufgelöste Domain `Text(32)` trägt; als bekannter Fehler im Test festgehalten.
 * Plan-Only-Test geschärft (Neubau-Skript mit `DROP TABLE`/`INSERT INTO`, ohne `CAST`); Gegenproben `text(32)` ↔ `text(64)` Datei zu Datei, mit und ohne Neubau.
 * Fremddatenbank `VARCHAR(64)` → `text(32)` mit 50 Zeichen: Wert bleibt vollständig.

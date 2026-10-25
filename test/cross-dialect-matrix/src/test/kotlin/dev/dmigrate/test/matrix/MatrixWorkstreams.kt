@@ -37,6 +37,7 @@ internal object MatrixWorkstreams {
         "F.5",  // CHECK/EXCLUDE diff: positive add CHECK (PG/SQLite); MySQL needs server-version (carved)
         "D.3",  // Materialized Views: positive PG, BLOCKER MySQL/SQLite (MV not supported by dialect)
         "E.2",  // Trigger migration: positive add trigger (MySQL); PG/SQLite need per-dialect bodies (carved)
+        "H.1",  // Domain-Spalte (#56): current = Reverse-Form, desired = Domain; SQLite plant kein AlterColumnType
     )
 
     /**
@@ -55,6 +56,9 @@ internal object MatrixWorkstreams {
         // outside the §4-§10 catalogue. Included so the carve-out
         // registry stays exhaustive.
         "F.4-renderer-blocker-bridge",
+        // Domain-Spalte gegen ihre Reverse-Form (Issue #56); ausserhalb des
+        // §4-§10-Katalogs, wie F.4-renderer-blocker-bridge.
+        "H.1",
     )
 
     /** Workstreams that are NOT pinned in this slice — must be covered by carve-outs. */

@@ -558,3 +558,54 @@ carve_outs:
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresTriggerDdlHelperTest.kt
       - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteTriggerDdlHelperTest.kt
+
+  # H.1 Domain-Spalte (Issue #56) — nur POSITIVE ist gepinnt: current traegt die Reverse-Form des Basistyps, desired
+  # die Domain. Der Sweep prueft Exit-Codes; die Operationen und der zweite Lauf stehen im CLI-Test gegen die Datenbank.
+  - workstream: H.1
+    dialect: "*"
+    kind: blocker
+    permanent: true
+    reason: "Eine Domain-Spalte gegen ihre Reverse-Form hat keinen Blocker-Pfad; ein Blocker entstuende nur ueber die Cast-Matrix, und genau die ist der Befund (rot ohne die Aenderung) der POSITIVE-Zelle."
+    planRef: docs/planning/in-progress/sqlite-domain-spalte-basistyp-vergleich.md
+    ownerTests:
+      - adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateDomainColumnSqliteTest.kt
+  - workstream: H.1
+    dialect: "*"
+    kind: report
+    permanent: true
+    reason: "Die Report-Form (Operationsarten, zweiter Lauf) wird im CLI-Test gegen eine echte SQLite-Datenbank geprueft; der Sweep hat keine Datenbank."
+    planRef: docs/planning/in-progress/sqlite-domain-spalte-basistyp-vergleich.md
+    ownerTests:
+      - adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateDomainColumnSqliteTest.kt
+  - workstream: H.1
+    dialect: "*"
+    kind: rollback
+    permanent: true
+    reason: "Der Rueckweg (Datei zurueck auf die Reverse-Form) wird im CLI-Test mit --execute geprueft."
+    planRef: docs/planning/in-progress/sqlite-domain-spalte-basistyp-vergleich.md
+    ownerTests:
+      - adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateDomainColumnSqliteTest.kt
+  - workstream: H.1
+    dialect: "*"
+    kind: file-mode
+    permanent: true
+    reason: "Datei gegen Datei (kein Reverse, Domain auf beiden Seiten) wird im CLI-Test geprueft."
+    planRef: docs/planning/in-progress/sqlite-domain-spalte-basistyp-vergleich.md
+    ownerTests:
+      - adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateDomainColumnSqliteTest.kt
+  - workstream: H.1
+    dialect: postgresql
+    kind: positive
+    permanent: true
+    reason: "Der Befund ist SQLite-spezifisch: nur dort liegt die Domain als Basistyp an der Spalte, und nur der SQLite-Reverse liest sie so. PostgreSQL plant gegen die Reverse-Form von current Typ-Operationen, die der Diff-Renderer als DIALECT_UNSUPPORTED_OPERATION blockt (Exit 8) -- unabhaengig von der Aenderung."
+    planRef: docs/planning/in-progress/sqlite-domain-spalte-basistyp-vergleich.md
+    ownerTests:
+      - adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateDomainColumnSqliteTest.kt
+  - workstream: H.1
+    dialect: mysql
+    kind: positive
+    permanent: true
+    reason: "Wie PostgreSQL: MySQL kennt keine Domain, der Diff-Renderer blockt die Typ-Operationen (DIALECT_UNSUPPORTED_OPERATION, Exit 8). Der Befund gilt nur fuer SQLite."
+    planRef: docs/planning/in-progress/sqlite-domain-spalte-basistyp-vergleich.md
+    ownerTests:
+      - adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateDomainColumnSqliteTest.kt

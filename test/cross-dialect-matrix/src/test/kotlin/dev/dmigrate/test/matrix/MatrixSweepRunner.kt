@@ -6,6 +6,7 @@ import dev.dmigrate.cli.commands.SchemaMigrateRunner
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.mssql.MssqlDiffDdlGenerator
 import dev.dmigrate.driver.mysql.MysqlDiffDdlGenerator
@@ -43,6 +44,12 @@ import java.nio.file.Path
 internal class MatrixSweepRunner {
 
     private val validator = SchemaValidator()
+
+    init {
+        // Die CLI laedt die Treiber beim Start. Ohne sie projiziert der Runner Typen ueber die Identitaet
+        // (`registryTypeCanonicalizer`), und der Sweep prueft einen Vergleich, den es in der CLI nicht gibt.
+        DatabaseDriverRegistry.loadAll()
+    }
     /**
      * Sichtbar fuer den Test, der sie gegen [MatrixCell.ALL_DIALECTS]
      * pinnt. Ohne diesen Pin waere die Zuordnung frei erfindbar: der Sweep
@@ -115,6 +122,11 @@ internal class MatrixSweepRunner {
                 )
             },
             comparator = { a, b -> SchemaComparator().compare(a, b) },
+            // Wie die CLI-Verdrahtung (SchemaMigrateComparators.targetAware): ohne ihn plante der Sweep nur mit dem
+            // strikten Vergleich, und eine Aenderung an der Zielprojektion bliebe fuer ihn unsichtbar.
+            targetAwareComparator = { a, b, projection, authorship, serverForm ->
+                SchemaComparator(projection, authorship, serverForm).compare(a, b)
+            },
             rendererFor = rendererFor,
             // POSITIVE / BLOCKER / REPORT / FILE_MODE never inspect the
             // emitted artefacts; ROLLBACK captures the rollback artefact

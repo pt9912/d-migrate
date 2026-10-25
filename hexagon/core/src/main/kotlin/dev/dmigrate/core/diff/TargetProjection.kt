@@ -1,6 +1,7 @@
 package dev.dmigrate.core.diff
 
 import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.PartitionConfig
@@ -116,4 +117,18 @@ data class TargetProjection(
      * und ein zweites `ColumnDiff` aenderte Operations-IDs.
      */
     val resolvesRefTypeVocabulary: Boolean = false,
+    /**
+     * Die Typ-Projektion mit den Custom Types der Seite, oder `null`, wo der Dialekt die Domain nicht auf den
+     * Basistyp auflaesst (SQLite tut es: die Datenbank fuehrt kein Typ-Objekt, der Reverse liest den Basistyp).
+     *
+     * Dann projiziert der Vergleich eine **Domain-Spalte** ueber ihren Basistyp statt ueber das kontextfreie
+     * `Enum(refType)` (`Text`): sonst stuende `Enum(refType)` gegen `Integer`/`Float`/`Binary` des Reverse, und der
+     * Planer plante bei jedem Lauf ein `AlterColumnType` an einer Spalte, die sich nicht geaendert hat
+     * ([DomainColumnTypes]).
+     *
+     * Wie [resolvesRefTypeVocabulary] nur dort, wo die Gegenseite die Spalte nicht auch als `ref_type` fuehrt: ein
+     * Basistypwechsel zweier Dateien bleibt genau ein `AlterCustomType`, ohne zusaetzliches `AlterColumnType`.
+     * Der kontextfreie Vertrag von [type] bleibt unberuehrt.
+     */
+    val typeWithCustomTypes: ((NeutralType, Map<String, CustomTypeDefinition>) -> NeutralType)? = null,
 )

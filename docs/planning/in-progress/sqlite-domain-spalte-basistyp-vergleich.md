@@ -129,3 +129,56 @@ Befunde, die den Plan korrigieren:
 * **Fingerabdruck:** `MigrationFingerprint` löst die Domain über `registrySchemaAwareCanonicalizer` schon auf den Basistyp auf;
   der Slice ändert nur den Vergleich (`TableComparator`), nicht den Abdruck-Pfad — der Hash für denselben Eingang bleibt
   gleich, kein Tag-Bump.
+
+## Nachtrag P1: Entscheidung (2026-10-25)
+
+**Richtung A, Umsetzungsort (a) in leicht abgewandelter Form.** Der Vergleich (`TableComparator`) löst die Domain-Spalte vor
+`canon` über ihren Basistyp auf, nach dem Muster `resolvesRefTypeVocabulary`. Abweichung vom Plan: `TableComparator` kann den
+Basistyp nicht selbst bestimmen (`DomainTypes`/`SqliteRefTypeColumns` liegen in den Treibern, nicht im Hexagon `core`), und
+`resolvedAgainst`/`RefTypeVocabulary.resolve` liefern nur den Wertevorrat, nicht den Basistyp. Darum trägt `TargetProjection` ein
+neues Feld `typeWithCustomTypes: ((NeutralType, Map<String, CustomTypeDefinition>) -> NeutralType)?`, und der Runner setzt es
+aus der **vorhandenen** Überladung `NeutralTypeCanonicalizer.canonicalize(type, customTypes)` (`SqliteNeutralTypeCanonicalizer`
+löst `Enum(refType)` über `SqliteRefTypeColumns.baseType` auf) — nur für einen Dialekt mit `resolvesRefTypeVocabulary`
+(heute SQLite). Das Feld ist ein Schalter des **ziel-bewussten** Vergleichs; `TargetProjection.type` bleibt kontextfrei.
+
+* **Keine zweite Verdrahtung:** `TargetProjection` wird an genau einer Stelle gebaut (`SchemaMigrateRunner.computePlanAndOverlay`);
+  `SchemaRollbackRunner` und `PartitionOverlayHint` bauen keinen Vergleich, sondern Abdrücke, und bleiben unverändert.
+* **Präzedenzregel** (`DomainColumnTypes`): aufgelöst wird nur eine Seite, deren Spalte `Enum(refType)` auf eine DOMAIN ist
+  **und** deren Gegenseite die Spalte nicht auch als `ref_type` führt. Datei gegen Datei bleibt unaufgelöst; ein Basistypwechsel
+  ist genau ein `AlterCustomType`, ohne `AlterColumnType` (gemessen, Test).
+* **Wertevorrat:** `RefTypeVocabulary.resolve` bleibt unverändert (liefert den Vorrat einer Wertelisten-Domain); der
+  Wertevorrats-Vergleich steht weiter vor `canon`. Die aufgelöste Domain-Spalte läuft danach über die Überladung — für
+  Wertelisten-Domains ergibt das `Text()`, wie gemessen.
+* **Kein ADR:** die Auflösung ändert weder die Grenze von ADR 0026 (der Fingerabdruck-Pfad kannte die Auflösung schon, der
+  Vergleich übernimmt dieselbe Projektion für denselben Dialekt) noch den Wertevorrat (ADR 0060). Sie ist die Angleichung des
+  Vergleichs an den Abdruck, kein neuer Vertrag. (ADR 0064/0066 bleiben unberührt.)
+* **Kein Tag-Bump:** `MigrationFingerprint`, `CanonicalPayload` und `DiffPlanner` sind unberührt (`git diff` zeigt keine Zeile
+  dort); die Abdruck-Projektion ist dieselbe wie zuvor. `schema-fingerprint-v21` bleibt.
+* **Der Neubau-CAST (#54):** entfällt das `AlterColumnType`, kopiert `computeColumnMapping` die Spalte; gemessen für alle
+  Zeilen oben (Neubau Exit 0, Daten erhalten, `castBlocked` leer).
+
+**Nebenbefund, ausdrücklich gewollt:** eine Domain über `integer` gegen eine **Textspalte** der Datenbank blieb bisher
+unbemerkt (`Enum(refType)` kontextfrei `Text()` = `Text()`); sie gilt jetzt als Typänderung (Test).
+
+## Nachtrag P2/P3: Umsetzung (2026-10-25)
+
+* Code: `TargetProjection.typeWithCustomTypes`, `DomainColumnTypes` (neu, `hexagon/core`), `TableComparator` (Domain-Typen je
+  Seite neben dem Wertevorrat), `registryDomainAwareCanonicalizer` (`TypeCanonicalizerWiring`), Setzen im Runner.
+* Tests: `DomainColumnTypesTest` (Unit); `CliSchemaMigrateDomainColumnSqliteTest` (eine Zeile je P0-Basistyp und Gegenprobe:
+  Plan-Only nur `CreateCustomType`, Neubau `--execute` Exit 0 mit erhaltener Zeile, zweiter Lauf, Rückweg; Datei gegen Datei
+  ohne Änderung und mit Basistypwechsel = genau ein `AlterCustomType`; echter Unterschied bleibt `AlterColumnType`);
+  `CliSchemaMigrateRebuildFoldedGapsSqliteTest` (der #54-Test „Domain über boolean“ erwartet jetzt Exit 0). Ohne die Zeile im
+  Runner sind elf der Tests rot (gemessen: `integer`, `biginteger`, `smallint`, `boolean`, `real`, `float`, `decimal(10,2)`,
+  `binary`, Domain über `integer` mit CHECK, der „echte Unterschied“-Test und der #54-Test).
+* Matrix: neuer Workstream `H.1` (`test/cross-dialect-matrix`, `fixtures/H.1/positive`): `current` trägt die Reverse-Form
+  (`integer`, `float`, `text`, `binary`), `desired` die Domains über alle Basistypen der P0-Matrix (ohne `decimal` ohne
+  `precision`, das keinen Vergleich auslöst) plus Enum und Wertelisten-Domain, dazu `flag` auf `required: true` als
+  Neubaugrund. SQLite-Zelle Exit 0; ohne die Änderung Exit 8 (gemessen, `SQLITE_CAST_NOT_WHITELISTED`). PostgreSQL/MySQL sind
+  carve-out (`DIALECT_UNSUPPORTED_OPERATION`, Befund gilt nur für SQLite). Der Sweep hatte weder einen ziel-bewussten
+  Vergleich noch geladene Treiber (Typ-Projektion = Identität): beides ist jetzt verdrahtet wie in der CLI; die übrigen Zellen
+  blieben grün.
+* **Abweichung von der Akzeptanz:** „zweiter Lauf `operationsTotal` = 0“ gilt gegen eine Datenbank nicht. Die Datenbank führt
+  kein Typ-Objekt, `CreateCustomType` (rendert nichts, `SQLITE_CUSTOM_TYPE_AT_COLUMN`) steht bei **jedem** Lauf im Plan, auch
+  für `varchar`, das nie betroffen war. Gemessen wird deshalb: im Plan nur `CreateCustomType` (kein `AlterColumnType`, kein
+  Neubau). Die Matrix prüft nur Exit-Codes.
+* Doku: `docs/user/anwenderhandbuch.md` (SQLite-Hinweis zu Enum/Domain), `CHANGELOG.md` (Unreleased).
