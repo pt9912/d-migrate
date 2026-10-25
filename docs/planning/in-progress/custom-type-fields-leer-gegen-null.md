@@ -134,20 +134,28 @@ Nicht-Ziel: `AlterCustomType` für PostgreSQL rendern (`ALTER TYPE … ADD VALUE
 
 ## Nachtrag P0/P1/P2 (2026-10-25)
 
-**P0 (Messung, `PostgresCustomTypeFileFormMigrateIntegrationTest`, Soll = gelesene Datenbank mit
-den Typen in Datei-Form):** vor dem Fix `AlterCustomType` (Exit 8) bei Enum mit zwei Werten, Enum
-mit drei Werten (Reihenfolge `c, a, b`), Composite ohne `ordinal`, Domain mit `CHECK` und Typ mit
-`description`; die echte Wertänderung blockiert wie erwartet. **Nicht Ursache** (nach dem Fix grün,
-also kein weiterer Befund): Enum-Reihenfolge, Domain-`baseType`/`check` (Katalogform gegen
-Autorenform stimmen für `integer`/`VALUE > 0`).
+**P0 (Messung, `PostgresCustomTypeFileFormMigrateIntegrationTest`):** Das Soll ist die gelesene
+Datenbank mit den Typen in Datei-Form (`fileForm`: `fields` leer, kein `ordinal`, optional
+`description`) — nicht der Datei-Parser selbst (das Integrationsmodul kennt ihn nicht); die Form
+stimmt mit `parseCustomTypes` überein. Vor dem Fix `AlterCustomType` (Exit 8) bei Enum mit zwei
+und mit drei Werten, Composite ohne `ordinal` und Typ mit `description` (Domain: wegen `fields`).
+**Gemessen in Autorenform (Domain, `base_type: integer`, `check: "VALUE > 0"`): nicht gleich.** Der
+Reader liefert `precision=32`, `scale=0` und `check=(VALUE > 0)` (`normalizeDomainCheck` entfernt
+`CHECK` und nur die äußeren Klammern des Katalogtexts `CHECK ((VALUE > 0))`). Das ist eine
+**zweite Ursache** (Domain-Normalisierung), nicht Teil von #51: Folge-Issue. Nicht gemessen:
+Enum-Reihenfolge in Autorenform (der Reader liefert `enumsortorder`, die Datei die Schreibreihenfolge).
 
-**P1:** `SchemaComparator.compareCustomType`: `fields` ohne Unterschied zwischen fehlend und leer
-und ohne `ordinal` (`sameFields`); die `description` eines Typs zählt nur im strikten Vergleich
-(`schema compare`), nicht gegen ein Ziel — kein Reader liefert sie zurück. Die gemeldete
-Änderung trägt die unveränderten Felder. Core-Tests (`SchemaComparatorCustomTypeFormTest`) rot ohne
-den Fix: drei von sechs.
+**P1:** `SchemaComparator.compareCustomType`: `sameFields` — fehlend gleich leer, Vergleich des
+Feldtyps (der Reader füllt an Composite-Feldern nur `type` und `ordinal`, `required`/`unique`/
+`default` kann die Datenbank nie zurückmelden), die Position zählt nur, wenn beide Seiten eine
+tragen (vertauschte Felder sind eine Änderung). Die `description` eines Typs zählt nur im strikten
+Vergleich (`schema compare`): gegen **jedes** Ziel (auch ein `file:`-Ziel) wird sie nicht
+verglichen, kein Reader liefert sie, keine Operation rendert sie. Die gemeldete Änderung trägt die
+unveränderten Felder. Core-Tests rot ohne den Fix: „fehlend gleich leer“, „Position“, „Beschreibung“
+(die übrigen sind Regressionsabsicherung).
 
-**P2:** Integrationstest grün: additive Spalte Exit 0 und ohne `AlterCustomType`, zweiter Lauf
-`operationsTotal=0`, Rückweg über `schema rollback`, echte Änderung blockiert weiter. **Offen:**
-Domain mit `precision`/`scale` oder komplexerem `CHECK` ist nicht gemessen; ein `file:`-Ziel ist
-nicht neu getestet (Datei gegen Datei ist leer gegen leer, ADR 0060 unberührt).
+**P2:** Integrationstest grün: additive Spalte Exit 0 ohne `AlterCustomType`, zweiter Lauf
+`operationsTotal=1→0`, Rückweg über `schema rollback` (Spalte weg, Typ vorhanden), Composite mit
+`required`/`unique` am Feld, echte Änderung von Enum, Domain und
+Composite blockiert weiter (Exit 8, `DIALECT_UNSUPPORTED_OPERATION`). **Offen (Folge-Issue):** Domain in Autorenform
+(`precision`/`scale`, Klammern im `CHECK`); `ALTER DOMAIN`/`ADD VALUE`-Rendern (Nicht-Scope).

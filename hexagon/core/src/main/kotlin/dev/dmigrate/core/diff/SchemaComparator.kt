@@ -148,18 +148,30 @@ class SchemaComparator(
     // --- Detail comparisons per object type ---
 
     /**
-     * Fehlend und leer sind dieselben Felder (der Datei-Parser liefert eine leere Map, ein
-     * Reader `null`), und die Position eines Feldes zaehlt nicht: sie ist nach
-     * [ColumnDefinition.ordinal] bewusst nicht Teil des Vergleichs, ein Reader setzt sie, eine
-     * handgeschriebene Datei nicht.
+     * Die Felder eines Typs, wie ein Reader und eine Datei sie verschieden schreiben:
+     *
+     * * Fehlend und leer sind dieselben Felder (der Datei-Parser liefert eine leere Map, ein
+     *   Reader `null`).
+     * * Verglichen wird der Feldtyp. Der Reader (PostgreSQL) fuellt an einem Composite-Feld nur
+     *   `type` und `ordinal`; `required`, `default` oder eine Beschreibung kann eine Datei
+     *   schreiben, die Datenbank aber nie zurueckmelden — eine Operation, die sie aendern
+     *   koennte, gibt es nicht.
+     * * Die Position zaehlt, wenn **beide** Seiten eine tragen (vertauschte Felder sind eine
+     *   Aenderung); fehlt sie einer Seite, ist sie unbekannt, nicht verschieden
+     *   ([ColumnDefinition.ordinal] ist bewusst nicht Teil des Vergleichs).
      */
     private fun sameFields(
         left: Map<String, ColumnDefinition>?,
         right: Map<String, ColumnDefinition>?,
-    ): Boolean = withoutOrdinal(left) == withoutOrdinal(right)
-
-    private fun withoutOrdinal(fields: Map<String, ColumnDefinition>?): Map<String, ColumnDefinition> =
-        fields.orEmpty().mapValues { (_, column) -> column.copy(ordinal = null) }
+    ): Boolean {
+        val l = left.orEmpty()
+        val r = right.orEmpty()
+        return l.keys == r.keys && l.all { (name, field) ->
+            val other = r.getValue(name)
+            field.type == other.type &&
+                (field.ordinal == null || other.ordinal == null || field.ordinal == other.ordinal)
+        }
+    }
 
     private fun compareCustomType(
         name: String,

@@ -117,7 +117,7 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
             o.report.contains("operationsTotal=1") shouldBe true
         }
         // Ein zweiter Lauf ist ohne Operationen.
-        val again = migrate(withExtraColumn(read()).let { want })
+        val again = migrate(want)
         withClue("${again.errors} ${again.report.take(900)}") {
             again.exit shouldBe 0
             again.report.contains("operationsTotal=0") shouldBe true
@@ -166,6 +166,21 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         migratesOnlyTheColumn(typedTo(db, db.customTypes.mapValues { (_, t) -> fileForm(t) }))
     }
 
+    test("Composite-Feld mit required und unique in der Datei") {
+        sql(
+            "CREATE TYPE pt AS (x integer, y integer)",
+            "CREATE TABLE t (id integer NOT NULL, p pt, PRIMARY KEY (id))",
+            pool = pool,
+        )
+        val db = read()
+        val decorated = db.customTypes.mapValues { (_, t) ->
+            fileForm(t).let { f ->
+                f.copy(fields = f.fields!!.mapValues { (_, col) -> col.copy(required = true, unique = true) })
+            }
+        }
+        migratesOnlyTheColumn(typedTo(db, decorated))
+    }
+
     test("Typ mit description in der Datei") {
         sql(
             "CREATE TYPE ee AS ENUM ('a', 'b')",
@@ -188,6 +203,7 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
             val down = tmp.resolve("down.sql")
             val up = migrate(typedTo(db, db.customTypes.mapValues { (_, t) -> fileForm(t) }), rollbackOutput = down)
             withClue("${up.errors} ${up.report.take(900)}") { up.exit shouldBe 0 }
+            read().tables.getValue("t").columns.keys shouldBe setOf("id", "e", "extra")
 
             val exit = SchemaRollbackRunner(
                 dbLoader = { _, _ -> ResolvedSchemaOperand("live-pg", read(), ValidationResult(), dialect = DatabaseDialect.POSTGRESQL) },
@@ -198,6 +214,7 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
             )
             exit shouldBe 0
             read().tables.getValue("t").columns.keys shouldBe db.tables.getValue("t").columns.keys
+            read().customTypes.keys shouldBe setOf("ee")
         } finally {
             tmp.toFile().deleteRecursively()
         }
@@ -215,7 +232,30 @@ class PostgresCustomTypeFileFormMigrateIntegrationTest : FunSpec({
         withClue("${o.errors} ${o.report.take(900)}") {
             o.exit shouldBe 8
             o.report.contains("kind=AlterCustomType") shouldBe true
+            o.report.contains("DIALECT_UNSUPPORTED_OPERATION") shouldBe true
         }
+    }
+
+    test("eine echte Aenderung einer Domain oder eines Composite blockiert weiter") {
+        sql(
+            "CREATE DOMAIN pos AS integer CHECK (VALUE > 0)",
+            "CREATE TYPE pt AS (x integer, y integer)",
+            "CREATE TABLE t (id integer NOT NULL, n pos, p pt, PRIMARY KEY (id))",
+            pool = pool,
+        )
+        val db = read()
+        val domainChanged = db.customTypes.mapValues { (name, t) ->
+            if (name == "pos") fileForm(t).copy(check = "VALUE > 5") else fileForm(t)
+        }
+        migrate(typedTo(db, domainChanged)).exit shouldBe 8
+        val compositeChanged = db.customTypes.mapValues { (name, t) ->
+            if (name == "pt") {
+                fileForm(t).let { f -> f.copy(fields = f.fields!! + ("z" to ColumnDefinition(NeutralType.Integer))) }
+            } else {
+                fileForm(t)
+            }
+        }
+        migrate(typedTo(db, compositeChanged)).exit shouldBe 8
     }
 })
 

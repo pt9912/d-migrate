@@ -2582,13 +2582,19 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   auf SQLite blockiert; `schema generate` überspringt ihn mit **E054**.
 - **`schema migrate` mit benannten Typen auf PostgreSQL:** Ein Typ, den Datei
   und Datenbank gleich führen, ist kein Hindernis — auch wenn die Datei ihn
-  anders schreibt als der Katalog (leere `fields`, kein `ordinal`, eine
-  `description`, die PostgreSQL nicht speichert). Eine **echte** Änderung eines
-  benannten Typs (andere Werte einer Enum, anderer `base_type` oder `check`
-  einer Domain, andere Felder eines Composite) plant `schema migrate` als
+  anders schreibt als der Katalog (leere `fields`, kein `ordinal`, `required`
+  oder `unique` an einem Composite-Feld, eine `description` am Typ). Beim
+  Vergleich gegen ein Ziel zählt die `description` eines Typs nicht, denn
+  keine Datenbank speichert sie. Eine **Domain**, deren `check` oder Basistyp die
+  Datei anders schreibt als der Katalog (der liefert `CHECK ((VALUE > 0))` als
+  `(VALUE > 0)` und für `integer` die Genauigkeit 32), gilt weiter als geändert und
+  blockiert wie eine echte Änderung. Eine **echte** Änderung eines benannten Typs
+  (andere Werte einer Enum, anderer `base_type` oder `check` einer Domain,
+  anderer Typ oder weitere Felder eines Composite) plant `schema migrate` als
   `AlterCustomType`; PostgreSQL rendert sie noch nicht, der Plan blockiert mit
-  Exit 8 (`DIALECT_UNSUPPORTED_OPERATION`). Ändern Sie so einen Typ von Hand
-  (`ALTER TYPE … ADD VALUE`) und lassen Sie `schema migrate` danach den Rest
+  Exit 8 (`DIALECT_UNSUPPORTED_OPERATION`). Ändern Sie so einen Typ mit
+  passendem DDL von Hand (für eine Enum `ALTER TYPE … ADD VALUE`, für eine
+  Domain `ALTER DOMAIN`) und lassen Sie `schema migrate` danach den Rest
   angleichen.
 
 ### 3.22 Testdaten erzeugen (Seed)

@@ -50,6 +50,27 @@ class SchemaComparatorCustomTypeFormTest : FunSpec({
             .customTypesChanged shouldHaveSize 1
     }
 
+    test("vertauschte Positionen sind eine Aenderung, fehlende nicht") {
+        fun swapped(a: Int, b: Int) = composite(ordinals = false).copy(
+            fields = linkedMapOf(
+                "x" to ColumnDefinition(NeutralType.Integer, ordinal = a),
+                "y" to ColumnDefinition(NeutralType.Integer, ordinal = b),
+            ),
+        )
+        SchemaComparator().compare(schema(swapped(1, 2)), schema(swapped(2, 1))).customTypesChanged shouldHaveSize 1
+        SchemaComparator().compare(schema(swapped(1, 2)), schema(swapped(1, 2))).customTypesChanged.shouldBeEmpty()
+    }
+
+    test("required und unique an einem Composite-Feld zaehlen nicht, ein Feld mehr schon") {
+        val plain = composite(ordinals = true)
+        val decorated = plain.copy(
+            fields = plain.fields!!.mapValues { (_, f) -> f.copy(required = true, unique = true, ordinal = null) },
+        )
+        SchemaComparator().compare(schema(plain), schema(decorated)).customTypesChanged.shouldBeEmpty()
+        val extra = decorated.copy(fields = decorated.fields!! + ("z" to ColumnDefinition(NeutralType.Integer)))
+        SchemaComparator().compare(schema(plain), schema(extra)).customTypesChanged shouldHaveSize 1
+    }
+
     test("die gemeldete Aenderung traegt die unveraenderten Felder (mit ordinal)") {
         val diff = SchemaComparator().compare(schema(composite(true)), schema(composite(false, NeutralType.BigInteger)))
         diff.customTypesChanged.single().fields?.before?.get("x")?.ordinal shouldBe 1
@@ -67,5 +88,7 @@ class SchemaComparatorCustomTypeFormTest : FunSpec({
         SchemaComparator().compare(schema(enumRead), schema(described)).customTypesChanged shouldHaveSize 1
         SchemaComparator(TargetProjection(type = { it })).compare(schema(enumRead), schema(described))
             .customTypesChanged.shouldBeEmpty()
+        // Eine Beschreibung speichert kein Reader: der Vergleich gegen ein Ziel (auch ein file:-Ziel)
+        // meldet sie nicht.
     }
 })
