@@ -1,6 +1,6 @@
 # SQLite: `--execute` blockiert für `unique: true` gegen einen eindeutigen Index, auch allein (Folge von #53, Issue #60)
 
-> **Status:** Draft mit Scope (2026-10-25), Ursache am Code belegt, Messung offen. Folge der Entscheidung A aus ADR 0062
+> **Status:** In Umsetzung (2026-10-25), vorher Draft mit Scope, Ursache am Code belegt. Folge der Entscheidung A aus ADR 0062
 > (`sqlite-eindeutiger-index-als-constraint.md`, #53): eine Bestandsdatei mit `unique: true` an einer Spalte gegen eine Datenbank
 > mit `CREATE UNIQUE INDEX` plant `AddConstraint` + `DropIndex`; `--plan-only` endet mit Exit 0, `--execute` mit Exit 8
 > (`TRANSACTION_SCOPE_UNSUPPORTED`) — **auch ohne weitere Änderung**. **Vorbedingung:** keine; die Wahl zwischen den Richtungen
