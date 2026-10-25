@@ -1,8 +1,7 @@
 # PostgreSQL: der Reader verliert bei einer Domain alle CHECKs bis auf den letzten (Folge von #52)
 
-> **Status:** Draft mit Scope (2026-10-25). Abgetrennt aus dem früheren Sammelplan zu Domain-Länge/-Array (dort in drei Pläne
-> geteilt). Kleiner Reader-Fehler ohne Vertragsänderung. **Vorbedingung:** keine. **Aktivierung** (Move nach
-> `../in-progress/`) beim ersten Implementierungs-Commit. GitHub-Issue: [#57](https://github.com/pt9912/d-migrate/issues/57).
+> **Status:** In Progress (2026-10-25). Abgetrennt aus dem früheren Sammelplan zu Domain-Länge/-Array (dort in drei Pläne
+> geteilt). Kleiner Reader-Fehler ohne Vertragsänderung. **Vorbedingung:** keine. Aktiviert (Move nach `in-progress/`) mit dem ersten Implementierungs-Commit. GitHub-Issue: [#57](https://github.com/pt9912/d-migrate/issues/57).
 > Bezug: ADR 0061 („Weiter nicht erkannt": mehrere CHECKs).
 
 ## Ziel
@@ -57,7 +56,7 @@ Tag-Bump trägt, ist in P1 zu entscheiden (`RefTypeVocabularyTest`, `MigrationFi
 für den Verlustfall). **Koordination:** die drei PostgreSQL-Domain-Pläne (dieser, `postgres-domain-laenge-array.md`,
 `domain-default-not-null-modell.md`) und `sqlite-ausdrucks-index-textform.md` konkurrieren um den nächsten Tag und die nächste
 ADR-Nummer (heute `schema-fingerprint-v21`, ADR bis 0063). Wer zuerst aktiviert, nimmt den nächsten freien; Domain-Pläne dürfen sich
-**einen** Bump teilen, wenn sie zusammen ausgeliefert werden. Bezug: [Plan #52](../in-progress/postgres-domain-autorenform-gegen-katalog.md), ADR 0061.
+**einen** Bump teilen, wenn sie zusammen ausgeliefert werden. Bezug: [Plan #52](postgres-domain-autorenform-gegen-katalog.md), ADR 0061.
 
 ## Phasen
 
