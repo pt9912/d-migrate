@@ -23,6 +23,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     erzeugen. Betroffen sind nur Schemas mit SQLite-Ausdrucks-Index.
   - Eine Datei aus einem früheren `schema reverse` mit `(lower(a))` gilt gegen die Datenbank als geändert, bis
     `schema reverse` neu gezogen oder die Klammer entfernt ist.
+- **`schema migrate` gegen PostgreSQL erkennt die Länge und den Array-Basistyp einer Domain** (Issue #58,
+  Folge von #52). Der Reader las den Basistyp aus `information_schema`: `varchar(50)` und `char(5)` wurden
+  `text`, `integer[]` wurde `_int4`, `timestamp(3)` verlor die Genauigkeit. Jetzt liest er ihn aus
+  `pg_catalog` (`format_type`) und gibt `varchar(50)`, `char(5)`, `timestamp(3)`, `integer[]` zurück;
+  eine unveränderte Domain blockiert nicht, eine geänderte Länge, ein anderer Array-Typ oder `char` ↔
+  `varchar` blockiert weiter (Exit 8, `AlterCustomType`).
+  - `schema reverse` schreibt diese Basistypen jetzt in `base_type`. Eine Reverse-Datei, die für eine
+    `varchar(n)`-Domain `text` führt, gilt als geändert; `schema reverse` neu ziehen.
+  - Der Vergleich der Basistypen gilt für alle Dialekte: `varchar(50)` gegen `varchar` (unbegrenzt) ist
+    eine Änderung, `char` ist `char(1)`. Ein Array-Basistyp hat auf MySQL, SQLite, MSSQL und Oracle kein
+    Gegenstück: SQLite und MSSQL weisen ihn als E053 aus, Oracle schreibt jede Domain als CLOB mit E053, MySQL
+    gibt `base_type` roh aus (für ein Array, `timestamptz(3)`, `timetz`, `varbit(7)` ungültiges DDL, wie zuvor).
+  - Der Fingerabdruck steht auf `schema-fingerprint-v23`; ein Rollback-Artefakt einer früheren Version
+    ist neu zu erzeugen.
 
 ## [1.10.0] - 2026-10-25
 

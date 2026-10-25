@@ -304,15 +304,14 @@ internal fun readPostgresCustomTypes(
 
     for (row in PostgresMetadataQueries.listDomainTypes(session, schema)) {
         val name = row["typname"] as String
-        val baseType = row["base_type"] as? String ?: "text"
-        val neutralBase = PostgresTypeMapping.mapParamType(baseType)
+        val base = domainBaseType(row)
         result[name] = CustomTypeDefinition(
             kind = CustomTypeKind.DOMAIN,
-            baseType = neutralBase,
-            // Der Katalog fuellt Genauigkeit und Skala auch fuer `integer` (32/0) und die Gleitkommatypen;
-            // eine Datei schreibt sie nur fuer `decimal` (Issue #52).
-            precision = (row["numeric_precision"] as? Number)?.toInt()?.takeIf { neutralBase == "decimal" },
-            scale = (row["numeric_scale"] as? Number)?.toInt()?.takeIf { neutralBase == "decimal" },
+            baseType = base.baseType,
+            // Genauigkeit und Skala nennt `format_type` nur fuer `numeric(p,s)`; eine Datei schreibt sie
+            // nur fuer `decimal` (Issue #52).
+            precision = base.precision,
+            scale = base.scale,
             check = normalizeDomainCheck(row["check_clause"] as? String),
         )
     }
@@ -339,6 +338,17 @@ internal fun readPostgresCustomTypes(
     }
 
     return result
+}
+
+/**
+ * Der Basistyp einer Domain. Ein Typ aus `pg_catalog` kommt aus `format_type` mit Länge und Array
+ * ([PostgresDomainBaseType]); eine Domain über einem Typ außerhalb (andere Domain, Erweiterungstyp)
+ * behält den unqualifizierten Typnamen, denn `format_type` qualifiziert ihn je nach `search_path`.
+ */
+private fun domainBaseType(row: Map<String, Any?>): PostgresDomainBaseType.Mapped {
+    val formatted = row["base_type_sql"] as? String
+    if (formatted != null && row["base_schema"] == "pg_catalog") return PostgresDomainBaseType.map(formatted)
+    return PostgresDomainBaseType.Mapped(PostgresTypeMapping.mapParamType(row["base_type"] as? String ?: "text"))
 }
 
 /**

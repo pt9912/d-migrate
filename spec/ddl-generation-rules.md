@@ -1291,6 +1291,21 @@ Der PostgreSQL-Reader gibt den `CHECK` einer Domain in der Schreibweise eines Au
 Server setzt) und `precision`/`scale` nur für `decimal`; ein Ausdruck, den der Server umschreibt
 (`BETWEEN`, `IN`, ein Cast an `VALUE`), bleibt in Katalogform.
 
+Der PostgreSQL-Reader liest den Basistyp einer Domain aus dem Katalog (`format_type`) und gibt ihn
+mit Länge und Array zurück: `varchar(50)`, `char(5)`, `timestamp(3)`, `integer[]`,
+`varchar(50)[]`, `decimal(10,2)[]`. `numeric(p,s)` ohne Array steht als `decimal` mit `precision`
+und `scale`. Der Vergleich zweier Basistypen nimmt dieselbe Neutralform: `varchar`/`character
+varying` sind ein Typ, `varchar` ohne Länge ist unbegrenzt und damit `text`, `char` ohne Länge ist
+`char(1)`, `timestamp`/`time` ohne Klammer sind `(6)`; `char(n)` und `varchar(n)` sind verschieden,
+`varchar(50)` und `varchar(254)` ebenso. Ein Array trägt `[]` am Typnamen (`int4[]` und
+`integer[]` sind derselbe Typ); der Katalog unterscheidet Dimensionen nicht, `integer[][]` und
+`integer[]` sind gleich. Für einen Typ ohne Längenbegriff (`integer(11)`) zählt eine Klammer nur,
+wenn beide Seiten sie nennen.
+
+Ein Array-Basistyp hat in MySQL, SQLite, MSSQL und Oracle kein neutrales Gegenstück und wird in
+jedem dieser Dialekte als E053 ausgewiesen, nie roh durchgereicht; dasselbe gilt für einen
+Basistyp ohne Gegenstück (`timestamptz(3)`, `timetz`, `varbit(7)`) in MySQL.
+
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
 Bei SQLite steht der CHECK **unbenannt** (`"n" INTEGER NOT NULL CHECK ("n" >= 0)`),
 ebenso der CHECK einer Enum mit `ref_type`, in `schema generate` wie in

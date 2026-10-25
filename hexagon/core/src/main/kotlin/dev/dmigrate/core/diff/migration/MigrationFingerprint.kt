@@ -196,8 +196,8 @@ object MigrationFingerprint {
      * v19: **der Basistyp einer Domain** (Issue #52). Eine Datei schreibt `bigint`,
      * `numeric` oder `varchar(50)`, der PostgreSQL-Reader liefert `biginteger`,
      * `decimal`, `text`; der Abdruck traegt jetzt die Neutralform
-     * ([dev.dmigrate.core.diff.CustomTypeBaseType]: Typname ohne Klammer, `precision`/`scale`
-     * nur bei `decimal`), damit der Post-Compare eines Migrationslaufs nicht an der
+     * ([dev.dmigrate.core.diff.CustomTypeBaseType]: Typname, `precision`/`scale`
+     * nur bei `decimal`; seit v23 mit Laenge und `[]`, siehe dort), damit der Post-Compare eines Migrationslaufs nicht an der
      * Schreibweise driftet. Ausserdem liefert der PostgreSQL-Reader `precision`/`scale` nur
      * noch fuer `decimal` und den `CHECK` in Autorenform. Eine Domain traegt damit auf
      * **jedem** Dialekt einen anderen Abdruck (auch eine SQLite-Domain mit Basistyp `INTEGER`
@@ -225,8 +225,15 @@ object MigrationFingerprint {
      * `lower(a)`); `expr:` in [CanonicalPayload] und `IndexColumn.toString()` tragen damit eine
      * andere Schreibweise fuer jede SQLite-Datenbank mit Ausdrucks-Index. Alle anderen Schemas
      * hashen bis auf den Algorithmus-Tag wie zuvor.
+     *
+     * v23: **der Basistyp einer Domain mit Laenge oder Array** (Issue #58). [dev.dmigrate.core.diff.CustomTypeBaseType.canonical] trennt `char`/`varchar` von
+     * `text`, traegt die Laenge von `varchar(n)`, `char(n)`, `timestamp(n)`, `timestamptz(n)`,
+     * `time(n)`, `timetz(n)`, `bit(n)`, `varbit(n)` in der Klammer (`varchar` ohne Laenge ist `text`, `char` ist `char(1)`) und haengt bei einem
+     * Array `[]` an. `base=` einer Domain mit solchem Basistyp hasht damit anders; Schemas ohne
+     * Domain und Domains ueber `integer`, `text` oder `decimal` hashen bis auf den Algorithmus-Tag
+     * wie zuvor.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v22"
+    const val ALGORITHM: String = "schema-fingerprint-v23"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP

@@ -274,6 +274,12 @@ custom_types:
     check: "VALUE >= 0"
 ```
 
+`base_type` darf Länge und Array tragen: `varchar(50)`, `char(5)`, `timestamp(3)`, `integer[]`,
+`varchar(50)[]`. Ein Basistyp mit Länge ist ein anderer Typ als derselbe ohne Länge
+(`varchar(50)` gegen `varchar`, das unbegrenzt ist); `char` ohne Länge ist `char(1)`. `precision`/`scale`
+gelten nur bei `decimal`. Ein Array-Basistyp ist nur auf PostgreSQL abbildbar. Regeln und Grenzen:
+`ddl-generation-rules.md` §6.3.
+
 ---
 
 ## Procedures und Functions

@@ -324,12 +324,20 @@ class PostgresMetadataQueriesTest : FunSpec({
 
     test("listDomainTypes returns raw maps") {
         every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
-            mapOf("typname" to "email", "base_type" to "varchar", "numeric_precision" to null,
-                "numeric_scale" to null, "domain_default" to null, "check_clause" to null),
+            mapOf("typname" to "email", "base_type" to "varchar", "base_schema" to "pg_catalog",
+                "base_type_sql" to "character varying(50)", "check_clause" to null),
         )
         val result = PostgresMetadataQueries.listDomainTypes(jdbc, "public")
         result shouldHaveSize 1
         result[0]["typname"] shouldBe "email"
+    }
+
+    test("listDomainTypes reads the base type from pg_catalog, not from information_schema (#58)") {
+        val sql = slot<String>()
+        every { jdbc.queryList(capture(sql), any()) } returns emptyList()
+        PostgresMetadataQueries.listDomainTypes(jdbc, "public")
+        sql.captured.contains("pg_catalog.format_type(t.typbasetype, t.typtypmod)") shouldBe true
+        sql.captured.contains("information_schema") shouldBe false
     }
 
     // ── listCompositeTypes ─────────────────────────
