@@ -74,6 +74,8 @@ P0 Messung (SQLite-CLI-Test, Matrix oben), P1 Entscheidung (Ort, Präzedenzregel
 Operationen, `--execute`, zweiter Lauf, Rückweg, echte Änderung des Basistyps bleibt genau ein `AlterCustomType`), P3 Doku
 (Handbuch nur Ist-Zustand; Grenze streichen, `CHANGELOG.md`).
 
+**P2 Matrix:** den Cross-Dialect-Matrix-Test (`test/cross-dialect-matrix`) um eine Domain-Spalte je Basistyp der P0-Matrix erweitern (zweiter Lauf `operationsTotal` 0); Fälle zuerst als Fixture, rot ohne die Änderung.
+
 ## Akzeptanz
 
 * Jede gemessene Fehlerzeile hat einen Test, der ohne die Änderung an der erwarteten Stelle fehlschlägt; absichtlich falsche

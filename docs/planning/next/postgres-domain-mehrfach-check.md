@@ -67,6 +67,7 @@ ADR-Nummer (heute `schema-fingerprint-v21`, ADR bis 0063). Wer zuerst aktiviert,
 * **P1 Entscheidung:** Aggregationsform, `NOT VALID`, Domain über Domain, Tag/ADR.
 * **P2 Umsetzung:** Reader-Unit-Test (Zeilen-Stub mit mehreren CHECKs), Integrationstest (zweiter Lauf `operationsTotal` 0,
   Rückweg, echte Änderung eines der CHECKs bleibt `AlterCustomType`).
+* **P2 Matrix:** den Cross-Dialect-Matrix-Test (`test/cross-dialect-matrix`, Fixtures je Fall mit Soll-Ergebnis) um eine Domain mit zwei und drei CHECKs (Klammerform) erweitern; zweiter Lauf `operationsTotal` 0 erweitern; Fälle zuerst als Fixture, rot ohne die Änderung, grün mit ihr.
 * **P3 Doku:** Handbuch §3.21 (die Grenze „mehrere `CHECK`-Constraints" streichen/nachführen, nur Ist-Zustand), `CHANGELOG.md`;
   `spec/ddl-generation-rules.md` §6.3 (Reader-Regel).
 

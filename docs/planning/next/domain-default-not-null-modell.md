@@ -45,6 +45,8 @@ P0 Messung (die Entscheidung hängt an ihr; PostgreSQL: Domain mit `DEFAULT`, `N
 von `schema migrate` bei einer Änderung daran; Anwenderbedarf: gibt es ein Issue? Kein Bedarf → B oder B+ ohne weitere Messung), P1 Wahl unter A/A+/A-PG/Read-only/B/B+ (Aufwand in
 Dateien/Dialekten schätzen; ADR), P2 Umsetzung nach P1, P3 Doku (Spec zuerst).
 
+Bei A/A+/A-PG gehört in P2 auch eine Erweiterung des Cross-Dialect-Matrix-Tests (`test/cross-dialect-matrix`) um Domains mit `DEFAULT`/`NOT NULL`/Kollation (Fixture zuerst, rot ohne die Änderung).
+
 ## Akzeptanz
 
 * P1 ist entschieden und im Plan begründet; der P0-Messbefund steht im Plan (Tabelle: Fall · Reader-Ausgabe · `schema generate` · `schema migrate`). Bei B+: Test, dass die `SchemaReadNote` erscheint. Bei A+: Renderer-Test für `ALTER DOMAIN`. Bei Read-only/A-PG: Test, dass andere Dialekte unberührt bleiben. Bei B: Handbuch und Spec benennen die Grenze. Bei A: jede Dimension (Parser, Vergleich,

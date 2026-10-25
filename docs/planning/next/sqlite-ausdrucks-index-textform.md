@@ -78,6 +78,7 @@ Handbuch, kein eigener Folge-Plan); Ausdrucks-Indizes auf anderen Dialekten.
   Generator-Form `((…))`). Die vorhandenen Fixtures mit `expression:` (`F.5/positive/desired.yaml`, `e-commerce.yaml`, `full-featured.yaml`) sind CHECK-Ausdrücke,
   keine Index-Schlüssel und hier belanglos; braucht es eine Matrix-/Format-Fixture, wird eine neue mit Index-`expression` angelegt.
   SQLite-CLI-Tests: Datei und Modul in P0 benennen (`test/integration-sqlite`).
+* **P2 Matrix:** den Cross-Dialect-Matrix-Test (`test/cross-dialect-matrix`, Fixtures je Fall mit Soll-Ergebnis) um die Fälle der P0-Fallmenge erweitern (Fehler- und Kontrollzeilen, Rundlauf `reverse → generate → reverse` stabil). Neue Fixture mit Index-`expression` anlegen — die vorhandenen `expression:`-Fixtures sind CHECK-Ausdrücke erweitern; Fälle zuerst als Fixture, rot ohne die Änderung, grün mit ihr.
 * **P3 Doku:** Handbuch (Grenze „Ausdrucks-Index" streichen: `docs/user/anwenderhandbuch.md` um Zeile 2164; nur Ist-Zustand),
   neuer `CHANGELOG.md`-Eintrag unter der laufenden Entwicklung (kein Rückgriff auf 1.10.0; im Handbuch keine Chronik); Handbuch-Hinweis zu `COLLATE`; `spec/ddl-generation-rules.md` §5.1a um die Reader-Regel „entfernt eine umschließende
   Klammer" ergänzen (Zielbild, wie bei ADR 0061; ohne ADR-Verweis); `spec/schema-reference.md`: bewusst nicht (dort steht nichts zu Reader-Texten von Index-Ausdrücken); P1 bestätigt.

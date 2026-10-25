@@ -70,6 +70,7 @@ das nicht rendert); eine unveränderte Domain blockiert nicht.
   `varchar(n)` aus früheren Reverse-Läufen).
 * **P2 Umsetzung:** Unit-Tests (Reader, `CustomTypeBaseType`, Abdruck), Integrationstest (zweiter Lauf `operationsTotal` 0,
   Rückweg, echte Änderung der Länge/des Array-Typs blockiert), Test „alte Reverse-Datei gegen neuen Reader".
+* **P2 Matrix:** den Cross-Dialect-Matrix-Test (`test/cross-dialect-matrix`, Fixtures je Fall mit Soll-Ergebnis) um eine Domain mit Länge und Array erweitern, inkl. PG-Reverse-Datei gegen SQLite/MSSQL (kein neuer E053) erweitern; Fälle zuerst als Fixture, rot ohne die Änderung, grün mit ihr.
 * **P3 Doku:** Handbuch §3.21 (Grenzen „Länge" und „Array-Domain" nachführen, nur Ist-Zustand), `CHANGELOG.md`,
   `spec/schema-reference.md` (Domain: Länge/Array im Vertrag) und `spec/ddl-generation-rules.md` §6.3 **mit** dem Code.
 
