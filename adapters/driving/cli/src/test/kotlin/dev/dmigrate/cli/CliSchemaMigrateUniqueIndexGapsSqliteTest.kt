@@ -222,6 +222,20 @@ class CliSchemaMigrateUniqueIndexGapsSqliteTest : FunSpec({
         hasColumnD(db) shouldBe "0"
     }
 
+    // Bekannte Grenze (Issue #60): der Neubau allein ist `--execute`-seitig nicht ausfuehrbar, obwohl der Plan
+    // (`--plan-only`) Exit 0 liefert. Wird #60 umgesetzt, kippt dieser Test auf Exit 0.
+    test("Bestandsdatei (unique an der Spalte) gegen eindeutigen Index: --execute ohne weitere Aenderung endet mit Exit 8") {
+        val dir = Files.createTempDirectory("cli-unique-index-gap-legacy-alone")
+        val db = databaseFrom(dir, yaml(uniqueIndex("[a]")))
+        val before = catalog(db)
+
+        val (code, report) = execute(dir, yaml(colUnique = true), db, "up")
+
+        code shouldBe 8
+        report shouldContain "TRANSACTION_SCOPE_UNSUPPORTED"
+        catalog(db) shouldBe before
+    }
+
     // ── Ausdrucks-Index: bekannte Grenze festhalten ──
 
     // Bekannte Grenze, Folge-Slice docs/planning/next/sqlite-ausdrucks-index-textform.md: der Katalog liefert den

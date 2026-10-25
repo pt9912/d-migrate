@@ -2158,7 +2158,8 @@ sie als normale View erzeugt (Warnung **W103**).
   ein Tabellenneubau und gilt als Änderung.
   - **Abweichende Schreibweise:** trägt Ihre Datei `unique: true` an einer Spalte, deren
     Datenbank dafür einen `CREATE UNIQUE INDEX` führt, zeigt `schema migrate --plan-only`
-    ohne Änderung im Schema einen Neubau (Constraint anlegen, Index löschen). Mit einer weiteren Änderung daneben endet `--execute` mit Exit `8`
+    ohne Änderung im Schema einen Neubau (Constraint anlegen, Index löschen). `--execute` endet
+    damit — auch ohne weitere Änderung daneben — mit Exit `8`
     (`TRANSACTION_SCOPE_UNSUPPORTED`); die Datenbank bleibt unverändert. Ziehen Sie die Datei
     mit `schema reverse` neu oder schreiben Sie die Spalte als `indices: [{ unique: true }]`.
   - **Grenze Ausdrucks-Index:** ein Index über einen Ausdruck (`lower(a)`) plant `schema migrate` bei jedem Lauf als
