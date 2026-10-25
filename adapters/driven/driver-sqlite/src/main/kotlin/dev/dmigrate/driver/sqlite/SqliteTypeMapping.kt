@@ -342,21 +342,6 @@ internal object SqliteTypeMapping {
             SPATIALITE_TRIGGER_BODY_MARKERS.containsMatchIn(triggerSql)
     }
 
-    /**
-     * Kopf einer Sicht: `CREATE [TEMP] VIEW [IF NOT EXISTS] [schema.]name [(spalten)] AS`.
-     * Das `AS` trennt von der Abfrage, gleich ob Leerzeichen, Zeilenumbruch, Kommentar
-     * oder `(` folgt; ein `AS` im Namen (in Anfuehrungszeichen) oder in der Abfrage ist
-     * nicht gemeint. Zwischen den Teilen duerfen Kommentare stehen.
-     */
-    private const val VIEW_WS = """(?:\s|--[^\n]*(?:\n|$)|/\*.*?\*/)"""
-    private val VIEW_HEAD = Regex(
-        """^$VIEW_WS*CREATE$VIEW_WS+(?:TEMP(?:ORARY)?$VIEW_WS+)?VIEW$VIEW_WS+(?:IF$VIEW_WS+NOT$VIEW_WS+EXISTS$VIEW_WS+)?""" +
-            """(?:(?:"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*]|[^\s."`\[(]+)$VIEW_WS*\.$VIEW_WS*)?""" +
-            """(?:"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*]|[^\s."`\[(]+)$VIEW_WS*""" +
-            """(?:\((?:[^()"]|"(?:[^"]|"")*"|\([^()]*\))*\)$VIEW_WS*)?AS(?=[\s(/-])""",
-        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
-    )
-
-    fun extractViewQuery(createSql: String): String? =
-        VIEW_HEAD.find(createSql)?.let { createSql.substring(it.range.last + 1).trim() }
+    /** Die Abfrage einer Sicht aus ihrem `CREATE VIEW`-Text, siehe [SqliteViewHead]. */
+    fun extractViewQuery(createSql: String): String? = SqliteViewHead.query(createSql)
 }

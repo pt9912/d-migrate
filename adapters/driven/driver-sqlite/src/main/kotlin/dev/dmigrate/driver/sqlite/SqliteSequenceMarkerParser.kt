@@ -188,6 +188,9 @@ internal object SqliteIdentifierTokenScanner {
         while (i < sql.length) {
             i = when {
                 sql[i] == '\'' -> skipStringLiteral(sql, i)
+                // Ein zitierter Bezeichner bleibt stehen, ein Apostroph darin eroeffnet kein Literal.
+                sql[i] == '"' || sql[i] == '`' -> copyQuoted(sql, i, out)
+                sql[i] == '[' -> copyBracketed(sql, i, out)
                 isLineCommentStart(sql, i) -> skipLineComment(sql, i)
                 isBlockCommentStart(sql, i) -> skipBlockComment(sql, i)
                 else -> {
@@ -204,6 +207,18 @@ internal object SqliteIdentifierTokenScanner {
 
     private fun isBlockCommentStart(sql: String, i: Int): Boolean =
         i + 1 < sql.length && sql[i] == '/' && sql[i + 1] == '*'
+
+    private fun copyQuoted(sql: String, start: Int, out: StringBuilder): Int {
+        val end = SqliteDdlScanning.skipQuoted(sql, start)
+        out.append(sql, start, end)
+        return end
+    }
+
+    private fun copyBracketed(sql: String, start: Int, out: StringBuilder): Int {
+        val end = SqliteDdlScanning.skipBracketIdentifier(sql, start)
+        out.append(sql, start, end)
+        return end
+    }
 
     private fun skipStringLiteral(sql: String, start: Int): Int {
         var j = start + 1

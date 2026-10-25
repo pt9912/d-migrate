@@ -1,5 +1,8 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.core.diff.migration.DiffObjectRef
+import dev.dmigrate.core.diff.migration.DiffObjectType
+import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
@@ -65,5 +68,47 @@ class SqliteRebuildViewDependentsTest : FunSpec({
         val p = plan(schema(false), schema(true))
         p.dependentTriggersToDrop.map { it.name } shouldBe listOf("trg")
         p.dependentTriggersToRecreate.map { it.name } shouldBe listOf("trg")
+    }
+
+    // classify(): Operationen an einer Sicht, die nur der Text an die Neubau-Tabelle bindet.
+    val rebuildOp = DiffOperation.AlterColumnNullability(
+        id = "alter-1",
+        objectRef = DiffObjectRef(DiffObjectType.COLUMN, listOf("t", "n")),
+        before = false,
+        after = true,
+    )
+    val viewRef = DiffObjectRef(DiffObjectType.VIEW, listOf("v_t"))
+    val triggerRef = DiffObjectRef(DiffObjectType.TRIGGER, listOf("v_t::trg"))
+    val noDeps = ViewDefinition(query = "SELECT id, n FROM t")
+    val withView = SchemaDefinition(
+        name = "S", version = "1", tables = mapOf("t" to table(false)),
+        views = mapOf("v_t" to noDeps, "v_other" to ViewDefinition(query = "SELECT 1")),
+    )
+
+    val viewAndTriggerOps = mapOf(
+        "ReplaceView" to DiffOperation.ReplaceView("op", viewRef, noDeps, noDeps.copy(query = "SELECT id FROM t")),
+        "DropView" to DiffOperation.DropView("op", viewRef, noDeps),
+        "CreateView" to DiffOperation.CreateView("op", viewRef, noDeps),
+        "CreateTrigger" to DiffOperation.CreateTrigger("op", triggerRef, insteadOf("v_t")),
+        "DropTrigger" to DiffOperation.DropTrigger("op", triggerRef, insteadOf("v_t")),
+        "ReplaceTrigger" to DiffOperation.ReplaceTrigger("op", triggerRef, insteadOf("v_t"), insteadOf("v_t")),
+    )
+    for ((name, op) in viewAndTriggerOps) {
+        test("classify(): $name an einer abgeleiteten Sicht faellt in den Eimer der Tabelle") {
+            val c = SqliteRebuildPlanner.classify(listOf(rebuildOp, op), current = withView, desired = withView)
+            c.rebuildBuckets.getValue("t").map { it.id } shouldBe listOf("alter-1", "op")
+            c.simpleOps shouldBe emptyList()
+        }
+        test("classify(): $name ohne Schemas bleibt eine einfache Operation (altes Verhalten)") {
+            val c = SqliteRebuildPlanner.classify(listOf(rebuildOp, op))
+            c.simpleOps.map { it.id } shouldBe listOf("op")
+        }
+    }
+
+    test("classify(): eine Sicht, die die Tabelle nicht nennt, bleibt eine einfache Operation") {
+        val other = DiffOperation.DropView("op", DiffObjectRef(DiffObjectType.VIEW, listOf("v_other")), withView.views.getValue("v_other"))
+        val c = SqliteRebuildPlanner.classify(listOf(rebuildOp, other), current = withView, desired = withView)
+        c.rebuildBuckets.getValue("t").map { it.id } shouldBe listOf("alter-1")
+        c.simpleOps.map { it.id } shouldBe listOf("op")
     }
 })

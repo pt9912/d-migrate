@@ -125,7 +125,10 @@ internal object SqliteRebuildPlanner {
             is DiffOperation.ReplaceTrigger -> listOf(op.before.table, op.after.table)
             else -> return emptySet()
         }
-        return viewsByTable.filterValues { views -> names.any { it in views } }.keys
+        return viewsByTable.filterValues { views ->
+            val lower = views.map { it.lowercase() }.toSet()
+            names.any { it.lowercase() in lower }
+        }.keys
     }
 
     private fun viewOrTriggerTableRefs(op: DiffOperation): Set<String> = when (op) {
@@ -433,10 +436,10 @@ internal object SqliteRebuildPlanner {
     ): List<NamedTriggerDefinition> {
         if (schema == null) return emptyList()
         // Auch ein `INSTEAD OF`-Trigger auf einer mitgenommenen Sicht: er stirbt mit ihr.
-        val owners = SqliteViewDependencies.viewNamesOf(schema, table) + table
+        val owners = (SqliteViewDependencies.viewNamesOf(schema, table) + table).map { it.lowercase() }.toSet()
         return schema.triggers.entries
             .asSequence()
-            .filter { (_, trigger) -> trigger.table in owners }
+            .filter { (_, trigger) -> trigger.table.lowercase() in owners }
             .map { (key, trigger) ->
                 // Parse only when the key looks canonical; tolerate
                 // hand-written file paths where the map-key already is

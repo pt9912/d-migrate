@@ -2138,9 +2138,9 @@ sie als normale View erzeugt (Warnung **W103**).
   blockiert, bis ein eigener Refresh-/Staleness-Vertrag existiert — sie werden
   dort nicht als normale View gerendert.
 - **SQLite:** baut `schema migrate` eine Tabelle neu auf (SQLite kann Nullbarkeit,
-  Typ oder Constraints nur so ändern), löscht und legt es jede Sicht neu an, die die
-  Tabelle im Abfragetext nennt — auch über andere Sichten, samt ihrer
-  `INSTEAD OF`-Trigger, und auch ohne `dependencies`. Der Text wird nach Bezeichnern
+  Typ oder Constraints nur so ändern), löscht und legt `schema migrate` jede Sicht neu an, die die
+  Tabelle im Abfragetext nennt — auch über andere Sichten, und auch ohne
+  `dependencies`. Der Text wird nach Bezeichnern
   durchsucht (Namen in Literalen und Kommentaren zählen nicht); im Zweifel wird eine
   Sicht eher einmal zu viel neu angelegt. Bezüge, die nur ein Trigger-Rumpf nennt,
   erkennt das nicht. Deklarieren Sie `dependencies.tables` an einer Sicht, verlangt

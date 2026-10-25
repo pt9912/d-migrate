@@ -23,18 +23,18 @@ internal object SqliteViewDependencies {
     fun viewNamesOf(schema: SchemaDefinition?, table: String): Set<String> {
         if (schema == null) return emptySet()
         val reached = linkedSetOf<String>()
-        val referenced = mutableSetOf(table)
+        val referenced = mutableSetOf(table.lowercase())
         var grew = true
         while (grew) {
             grew = false
             for ((name, view) in schema.views) {
                 if (name in reached) continue
                 val declared = view.dependencies?.let { it.tables + it.views }.orEmpty()
-                val hit = declared.any { it in referenced } ||
+                val hit = declared.any { it.lowercase() in referenced } ||
                     referenced.any { SqliteIdentifierTokenScanner.containsIdentifier(view.query.orEmpty(), it) }
                 if (hit) {
                     reached += name
-                    referenced += name
+                    referenced += name.lowercase()
                     grew = true
                 }
             }

@@ -199,3 +199,14 @@ auf einer mitgenommenen Sicht werden mit ihr geloescht und neu angelegt; ihre Op
 fallen in den Eimer der Tabelle. Der zweite Lauf wird auf `operationsTotal: 0` geprueft.
 Sabotage-Check: ohne Union-Drop und Trigger-Erweiterung werden fuenf Tests rot.
 Nicht getestet bleibt `SELECT *` (Abfragetext unveraendert, SQLite expandiert beim Anlegen neu).
+
+**Runde 2 (Befunde behoben):** der Kopf einer Sicht wird von Hand gelesen (`SqliteViewHead`) —
+die Regex konnte bei langen Spaltenlisten mit `StackOverflowError` abbrechen; zitierte
+Bezeichner mit Apostroph verschlucken im Bezeichner-Scan den Rest nicht mehr; Namensvergleiche
+sind ohne Beachtung der Schreibweise. `classify` ist fuer Sicht- und Trigger-Operationen
+einzeln getestet. **Grenzen:** eine Datei kann keinen Trigger auf einer Sicht deklarieren (der
+Validator kennt nur Tabellen), ein E2E dafuer entfaellt; die `INSTEAD OF`-Trigger der Datenbank
+werden planerseitig mitgenommen (Unit-Test). Ein neu angelegter Sicht ueber einer ebenfalls neuen
+Tabelle in einem spaeteren Eimer kann am `RENAME` scheitern (Randfall, nicht behandelt).
+Der Scan ist nicht schneller geworden (`viewNamesOf` je Tabelle und Aufruf, unkritisch bei
+ueblichen Schemagroessen).

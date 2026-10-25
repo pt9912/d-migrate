@@ -249,5 +249,11 @@ class SqliteTypeMappingTest : FunSpec({
         SqliteTypeMapping.extractViewQuery("CREATE VIEW v AS\t\r\nSELECT 1") shouldBe "SELECT 1"
         SqliteTypeMapping.extractViewQuery("CREATE VIEW \"v\" (\"a)\", b) AS SELECT 1, 2") shouldBe "SELECT 1, 2"
         SqliteTypeMapping.extractViewQuery("CREATE VIEW `v` AS SELECT 1") shouldBe "SELECT 1"
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW v/* AS */ AS SELECT 1") shouldBe "SELECT 1"
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW 'a b' AS SELECT 1") shouldBe "SELECT 1"
+        // Eine sehr lange Spaltenliste darf den Leser nicht ueberlaufen lassen.
+        val columns = (0 until 5000).joinToString(", ") { "col_$it" }
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW v ($columns) AS SELECT 1") shouldBe "SELECT 1"
+        SqliteTypeMapping.extractViewQuery("CREATE VIEW v (a, b") .shouldBeNull()
     }
 })

@@ -103,6 +103,16 @@ $joined$stacked""".trimIndent() + "\n"
             .map { it.trim() }
             .filter { it.isNotEmpty() }
 
+    /** Index der ersten Anweisung, die mit [prefix] beginnt; -1 wenn keine. */
+    fun indexOfStatement(statements: List<String>, prefix: String): Int =
+        statements.indexOfFirst { it.startsWith(prefix) }
+
+    fun inOrder(script: Path, vararg prefixes: String): Boolean {
+        val statements = sqlStatements(script)
+        val at = prefixes.map { indexOfStatement(statements, it) }
+        return at.all { it >= 0 } && at == at.sorted()
+    }
+
     fun scalar(db: Path, query: String): String =
         DriverManager.getConnection("jdbc:sqlite:$db").use { conn ->
             conn.createStatement().use { st -> st.executeQuery(query).use { rs -> rs.next(); rs.getString(1) } }
@@ -138,7 +148,6 @@ $joined$stacked""".trimIndent() + "\n"
 
             scalar(db, "SELECT count(*) FROM v_t") shouldBe "2"
             scalar(db, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'n' AND \"notnull\" = 0") shouldBe "1"
-            // Ein zweiter Lauf ist ohne Operationen.
             migrate(dir, after, db, "again") shouldBe 0
             // Ein zweiter Lauf ist ohne Operationen: die Sicht gilt nicht mehr als geaendert.
             Files.readString(dir.resolve("again.json")) shouldContain "\"operationsTotal\":0"
@@ -194,13 +203,10 @@ $joined$stacked""".trimIndent() + "\n"
             "--output", up.toString(), "--report", dir.resolve("plan.json").toString(),
         ) shouldBe 0
         Files.readString(dir.resolve("plan.json")) shouldNotContain "TRANSACTION_SCOPE_UNSUPPORTED"
-        val script = Files.readString(up)
-        script shouldContain "DROP VIEW IF EXISTS \"v_t\""
         // Die Sicht verschwindet vor `DROP TABLE` und kommt nach dem `RENAME` zurueck.
-        (script.indexOf("\nDROP VIEW IF EXISTS") < script.indexOf("\nDROP TABLE")) shouldBe true
-        (script.indexOf("\nCREATE VIEW \"v_t\"") > script.indexOf("\nALTER TABLE")) shouldBe true
+        inOrder(up, "DROP VIEW IF EXISTS \"v_t\"", "DROP TABLE", "ALTER TABLE", "CREATE VIEW \"v_t\"") shouldBe true
         // Eine Sicht, die die Tabelle nicht nennt, bleibt unberuehrt.
-        script shouldNotContain "v_x"
+        Files.readString(up) shouldNotContain "v_x"
     }
 
     test("schema rollback stellt Tabelle und Sicht wieder her") {
@@ -218,9 +224,7 @@ $joined$stacked""".trimIndent() + "\n"
         ) shouldBe 0
         exec(db, *sqlStatements(up).toTypedArray())
         // Auch die Down-Richtung nimmt die Sicht um den Neubau mit.
-        val downScript = Files.readString(down)
-        (downScript.indexOf("\nDROP VIEW IF EXISTS \"v_t\"") in 0 until downScript.indexOf("\nDROP TABLE")) shouldBe true
-        (downScript.indexOf("\nCREATE VIEW \"v_t\"") > downScript.indexOf("\nALTER TABLE")) shouldBe true
+        inOrder(down, "DROP VIEW IF EXISTS \"v_t\"", "DROP TABLE", "ALTER TABLE", "CREATE VIEW \"v_t\"") shouldBe true
 
         run(
             "schema", "rollback", "--source", down.toString(), "--target", "db:sqlite://$db",
@@ -229,5 +233,8 @@ $joined$stacked""".trimIndent() + "\n"
         scalar(db, "SELECT count(*) FROM v_t") shouldBe "2"
         scalar(db, "SELECT sql FROM sqlite_master WHERE name = 'v_t'") shouldContain "SELECT id, n FROM t"
         scalar(db, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'n' AND \"notnull\" = 1") shouldBe "1"
+        // Der Ausgangszustand stimmt auch fuer den Abdruck: derselbe Stand noch einmal ist nichts zu tun.
+        migrate(dir, before, db, "after-rollback") shouldBe 0
+        Files.readString(dir.resolve("after-rollback.json")) shouldContain "\"operationsTotal\":0"
     }
 })

@@ -72,6 +72,16 @@ class SqliteViewDependenciesTest : FunSpec({
         SqliteViewDependencies.viewNamesOf(s, "t") shouldBe setOf("base", "up", "self", "loopA", "loopB")
     }
 
+    test("ein Apostroph in einem zitierten Bezeichner verschluckt den Rest nicht") {
+        val s = schema("q" to view("SELECT \"it's\" AS x FROM t"), "b" to view("SELECT [a'b] FROM t"))
+        SqliteViewDependencies.viewNamesOf(s, "t") shouldBe setOf("q", "b")
+    }
+
+    test("Namen in dependencies und Text gelten ohne Beachtung der Gross-/Kleinschreibung") {
+        val s = schema("decl" to view(null, DependencyInfo(tables = listOf("ORDERS"))))
+        SqliteViewDependencies.viewNamesOf(s, "orders") shouldBe setOf("decl")
+    }
+
     test("viewsByTable ohne Schema ist leer") {
         SqliteViewDependencies.viewsByTable(setOf("t"), null, null) shouldBe emptyMap()
     }
