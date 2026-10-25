@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`schema migrate` auf PostgreSQL blockiert nicht mehr bei einem unveränderten benannten
+  Typ** (Issue #51). Eine Datei mit `custom_types` und eine PostgreSQL-Datenbank, die aus
+  ihr entstanden ist, planten für eine rein additive Änderung zusätzlich `AlterCustomType` und
+  endeten mit Exit `8`: der Vergleich hielt `fields` (leer in der Datei, fehlend im Reader)
+  und das `ordinal` der Composite-Felder für eine Änderung, ebenso eine `description`, die
+  PostgreSQL nicht speichert. Eine echte Änderung eines benannten Typs blockiert weiter
+  (`AlterCustomType` ist für PostgreSQL noch nicht gerendert).
 - **`schema migrate --execute` auf SQLite baut eine Tabelle mit abhaengiger Sicht
   neu auf** (Issue #50). Bisher endete der Lauf mit Exit `8`
   (`TRANSACTION_SCOPE_UNSUPPORTED`) oder, mit deklarierten `dependencies`, mit Exit `5`

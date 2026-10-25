@@ -6,7 +6,7 @@ import dev.dmigrate.core.model.*
 
 class SchemaComparator(
     /** Ziel-bewusster Vergleichsmodus (siehe [TargetProjection]); null = strikt. */
-    targetProjection: TargetProjection? = null,
+    private val targetProjection: TargetProjection? = null,
     /**
      * Die Herkunft der rohen SQL-Textfelder (siehe [RawTextAuthorship]);
      * `null` = keine, dann entscheidet wie bisher der Textvergleich.
@@ -147,6 +147,20 @@ class SchemaComparator(
 
     // --- Detail comparisons per object type ---
 
+    /**
+     * Fehlend und leer sind dieselben Felder (der Datei-Parser liefert eine leere Map, ein
+     * Reader `null`), und die Position eines Feldes zaehlt nicht: sie ist nach
+     * [ColumnDefinition.ordinal] bewusst nicht Teil des Vergleichs, ein Reader setzt sie, eine
+     * handgeschriebene Datei nicht.
+     */
+    private fun sameFields(
+        left: Map<String, ColumnDefinition>?,
+        right: Map<String, ColumnDefinition>?,
+    ): Boolean = withoutOrdinal(left) == withoutOrdinal(right)
+
+    private fun withoutOrdinal(fields: Map<String, ColumnDefinition>?): Map<String, ColumnDefinition> =
+        fields.orEmpty().mapValues { (_, column) -> column.copy(ordinal = null) }
+
     private fun compareCustomType(
         name: String,
         left: CustomTypeDefinition,
@@ -161,8 +175,11 @@ class SchemaComparator(
             precision = valueChangeOrNull(left.precision, right.precision),
             scale = valueChangeOrNull(left.scale, right.scale),
             check = valueChangeOrNull(left.check, right.check),
-            description = valueChangeOrNull(left.description, right.description),
-            fields = if (left.fields == right.fields) null
+            // Die Beschreibung eines Typs liefert kein Reader zurueck: gegen ein Ziel waere sie
+            // immer ein Unterschied, den keine Operation beheben kann.
+            description = if (targetProjection != null) null
+                else valueChangeOrNull(left.description, right.description),
+            fields = if (sameFields(left.fields, right.fields)) null
                 else ValueChange(left.fields, right.fields),
         )
         return if (diff.hasChanges()) diff else null

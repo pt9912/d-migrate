@@ -1,9 +1,8 @@
 # Custom Types: Datei-Form gegen Reader-Form im Vergleich (Issue #51)
 
-> **Status:** Draft mit Scope (2026-10-25), nach drei Reviews. Aus Issue #51:
+> **Status:** In Umsetzung (2026-10-25); Draft mit Scope nach drei Reviews. Aus Issue #51:
 > `schema migrate` gegen PostgreSQL plant `AlterCustomType` für einen unveränderten Typ
-> und blockiert. **Vorbedingung:** keine. **Aktivierung** (Move nach `../in-progress/`) beim
-> ersten Implementierungs-Commit.
+> und blockiert. **Vorbedingung:** keine. Aktiviert mit dem Implementierungs-Commit.
 
 ## Ziel
 
@@ -132,3 +131,23 @@ Nicht-Ziel: `AlterCustomType` für PostgreSQL rendern (`ALTER TYPE … ADD VALUE
   ohne `MODULES=` (die `test/integration-*`-Module bauen sonst nicht mit, Detekt eingeschlossen),
   `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"`,
   `make solid-suppression-gate`, `make docs-check`.
+
+## Nachtrag P0/P1/P2 (2026-10-25)
+
+**P0 (Messung, `PostgresCustomTypeFileFormMigrateIntegrationTest`, Soll = gelesene Datenbank mit
+den Typen in Datei-Form):** vor dem Fix `AlterCustomType` (Exit 8) bei Enum mit zwei Werten, Enum
+mit drei Werten (Reihenfolge `c, a, b`), Composite ohne `ordinal`, Domain mit `CHECK` und Typ mit
+`description`; die echte Wertänderung blockiert wie erwartet. **Nicht Ursache** (nach dem Fix grün,
+also kein weiterer Befund): Enum-Reihenfolge, Domain-`baseType`/`check` (Katalogform gegen
+Autorenform stimmen für `integer`/`VALUE > 0`).
+
+**P1:** `SchemaComparator.compareCustomType`: `fields` ohne Unterschied zwischen fehlend und leer
+und ohne `ordinal` (`sameFields`); die `description` eines Typs zählt nur im strikten Vergleich
+(`schema compare`), nicht gegen ein Ziel — kein Reader liefert sie zurück. Die gemeldete
+Änderung trägt die unveränderten Felder. Core-Tests (`SchemaComparatorCustomTypeFormTest`) rot ohne
+den Fix: drei von sechs.
+
+**P2:** Integrationstest grün: additive Spalte Exit 0 und ohne `AlterCustomType`, zweiter Lauf
+`operationsTotal=0`, Rückweg über `schema rollback`, echte Änderung blockiert weiter. **Offen:**
+Domain mit `precision`/`scale` oder komplexerem `CHECK` ist nicht gemessen; ein `file:`-Ziel ist
+nicht neu getestet (Datei gegen Datei ist leer gegen leer, ADR 0060 unberührt).
