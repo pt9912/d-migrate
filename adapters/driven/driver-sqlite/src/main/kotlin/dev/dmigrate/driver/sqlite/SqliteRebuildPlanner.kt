@@ -223,6 +223,7 @@ internal object SqliteRebuildPlanner {
             SqliteRefTypeColumns.withDomainBaseTypes(source, sourceSchema?.customTypes.orEmpty()),
             SqliteRefTypeColumns.withDomainBaseTypes(target, targetSchema?.customTypes.orEmpty()),
             sql,
+            typeChangeReported = typeChangedColumns(bucket),
         )
         val resolvedTempName = resolveTempTableName(table, bucket, catalog)
         return SqliteRebuildPlan(
@@ -467,7 +468,10 @@ internal object SqliteRebuildPlanner {
      * Bewusst eng auf Paare mit Enum-Beteiligung: SQLite legt auch alle
      * Integer- und alle Textbreiten gleich ab, und dort **ist** die Umwandlung
      * eine Aussage — sie zaehlt fuer den Ziel-Dialekt einer spaeteren
-     * Migration, auch wenn SQLite selbst sie nicht ausdrueckt.
+     * Migration, auch wenn SQLite selbst sie nicht ausdrueckt. Das gilt fuer
+     * eine Spalte, die der Vergleich als Typaenderung meldet (`AlterColumnType`);
+     * eine ungemeldete Spalte kopiert der Neubau ohnehin (siehe
+     * [typeChangedColumns]).
      */
     private fun onlyVocabularyDiffers(
         source: NeutralType,
@@ -478,10 +482,23 @@ internal object SqliteRebuildPlanner {
         return sql.toSql(source) == sql.toSql(target)
     }
 
+    /**
+     * Die Spalten, fuer die der Vergleich einen Typunterschied gemeldet hat
+     * (`AlterColumnType` im Eimer). Der Vergleich hat ueber den Typ schon
+     * entschieden — der strikte (`schema compare`) ohne, der ziel-bewusste
+     * (`schema migrate`) mit der Projektion des Dialekts; der Planer rechnet ihn
+     * nicht ein zweites Mal aus `source`/`target` (Issue #54).
+     */
+    private fun typeChangedColumns(bucket: List<DiffOperation>): Set<String> =
+        bucket.filterIsInstance<DiffOperation.AlterColumnType>()
+            .mapNotNull { it.objectRef.path.getOrNull(1) }
+            .toSet()
+
     private fun computeColumnMapping(
         source: TableDefinition,
         target: TableDefinition,
         sql: SqliteDiffSqlBuilders,
+        typeChangeReported: Set<String>,
     ): SqliteColumnMappingModel {
         val preserved = mutableListOf<ColumnCopyMapping>()
         val added = mutableListOf<AddedColumnFill>()
@@ -504,10 +521,15 @@ internal object SqliteRebuildPlanner {
                 // in derselben Spaltenform ablegt: dann wird nichts umgewandelt,
                 // und die Cast-Matrix hat nichts zu entscheiden. Ein `enum` und
                 // eine Textspalte sind hier dasselbe — was sie unterscheidet,
-                // ist der CHECK ueber dem Wertevorrat, nicht die Ablage.
+                // ist der CHECK ueber dem Wertevorrat, nicht die Ablage. Dasselbe
+                // gilt fuer eine Spalte, die der Vergleich nicht als Typaenderung
+                // gemeldet hat: SQLite liest `text(32)` als `text`, `boolean` als
+                // `integer` — der Unterschied im Planer ist der des Lesens, kein
+                // geaenderter Typ.
                 sourceCol != null &&
                     (
                         sourceCol.type == targetCol.type ||
+                            name !in typeChangeReported ||
                             onlyVocabularyDiffers(sourceCol.type, targetCol.type, sql)
                         ) ->
                     preserved += ColumnCopyMapping(
