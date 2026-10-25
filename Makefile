@@ -251,12 +251,16 @@ ci-build:
 # Version griffbereit liegt, ist eine Falle ohne Nutzen.
 RELEASE_ASSETS_DIR = adapters/driving/cli/build/release
 
+# Das Image wird ueber seine ID gestartet, nicht ueber den Tag (siehe docker-smoke): ein zweiter Worktree, der
+# gleichzeitig baut, ueberschriebe `$(RELEASE_ASSETS_IMAGE)` zwischen Bauen und `docker run`, und die Assets kaemen aus
+# dem falschen Stand. Der Tag wird weiterhin gesetzt. Ein Fehlschlag von `docker run` oder `tar` bricht ab (pipefail steht in `.SHELLFLAGS`).
 release-assets:
+	@iid="$$(mktemp)"; trap 'rm -f "$$iid"' EXIT; \
 	$(DOCKER) build --target release-assets \
 	  $(if $(strip $(RELEASE_VERSION)),--build-arg RELEASE_VERSION="$(RELEASE_VERSION)",) \
-	  -t $(RELEASE_ASSETS_IMAGE) .
-	rm -rf "$(RELEASE_ASSETS_DIR)"
-	$(DOCKER) run --rm $(RELEASE_ASSETS_IMAGE) | tar xf -
+	  --iidfile "$$iid" -t $(RELEASE_ASSETS_IMAGE) . || exit 1; \
+	rm -rf "$(RELEASE_ASSETS_DIR)"; \
+	$(DOCKER) run --rm "$$(cat "$$iid")" | tar xf -
 
 docker-resolve-deps:
 	$(DOCKER) build --target deps -t $(IMAGE):deps .
