@@ -98,10 +98,12 @@ class PostgresEnumRollbackIntegrationTest : FunSpec({
             var report = ""
             val exit = SchemaMigrateRunner(
                 fileLoader = { _ -> ResolvedSchemaOperand("desired", want, ValidationResult()) },
-                dbLoader = { _, _ -> ResolvedSchemaOperand(
-                    reference = "live-pg", schema = read(), validation = ValidationResult(),
-                    dialect = DatabaseDialect.POSTGRESQL,
-                ) },
+                dbLoader = { _, _ -> PostgresSchemaReader().read(pool).let { result ->
+                    ResolvedSchemaOperand(
+                        reference = "live-pg", schema = result.schema, validation = ValidationResult(),
+                        dialect = DatabaseDialect.POSTGRESQL, serverVersion = result.serverVersion,
+                    )
+                } },
                 comparator = { a, b -> SchemaComparator().compare(a, b) },
                 targetAwareComparator = { l, r, projection, authorship, serverForm ->
                     SchemaComparator(projection, authorship, serverForm).compare(l, r)
@@ -292,6 +294,57 @@ class PostgresEnumRollbackIntegrationTest : FunSpec({
         roundTrip(schemaOf(mapOf("e" to enumOf("b", "a"))))
 
         checks() shouldBe before
+    }
+
+    test("an unnamed CHECK takes a digit suffix when another table holds the default name") {
+        // Messung zur Namensregel: ein gleichnamiger CHECK einer anderen Tabelle im selben Schema.
+        exec(
+            "CREATE TABLE u (id integer NOT NULL, CONSTRAINT t_e_check CHECK (id > 0))",
+            table("e text NOT NULL"),
+            "ALTER TABLE t ADD CHECK (\"e\" IN ('a','b'))",
+        )
+        val names = pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { st ->
+                st.executeQuery(
+                    "SELECT rel.relname || '.' || con.conname FROM pg_constraint con " +
+                        "JOIN pg_class rel ON rel.oid = con.conrelid WHERE con.contype = 'c' ORDER BY 1",
+                ).use { rs -> generateSequence { if (rs.next()) rs.getString(1) else null }.toList() }
+            }
+        }
+        // PostgreSQL prueft den Namen schemaweit: der Standardname waere belegt, der neue CHECK bekommt eine Ziffer.
+        names shouldBe listOf("t.t_e_check1", "u.t_e_check")
+    }
+
+    test("a text column gaining a value list while another table holds the default name blocks the Down") {
+        // `taken` zaehlt schemaweit, wie PostgreSQL (Messung oben): ein `DROP` auf `t_e_check` traefe den
+        // falschen CHECK der anderen Tabelle nicht, der neue heisst `t_e_check1` — der Down blockiert deshalb.
+        exec(
+            "CREATE TABLE u (id integer NOT NULL, CONSTRAINT t_e_check CHECK (id > 0))",
+            table("e text NOT NULL"),
+        )
+        val before = checks()
+
+        val tmp = createTempDirectory("pg-enum-rollback-other-table")
+        try {
+            val out = migrate(schemaOf(mapOf("e" to enumOf("a", "b"))).let { want ->
+                want.copy(tables = want.tables + ("u" to TableDefinition(
+                    columns = linkedMapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+                    constraints = listOf(
+                        dev.dmigrate.core.model.ConstraintDefinition(
+                            name = "t_e_check", type = dev.dmigrate.core.model.ConstraintType.CHECK, expression = "id > 0",
+                        ),
+                    ),
+                )))
+            }, rollbackOutput = tmp.resolve("down.sql"))
+
+            withClue("${out.errors} ${out.report.take(1500)}") {
+                out.exit shouldBe 8
+                out.report.contains("POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN") shouldBe true
+            }
+            checks() shouldBe before
+        } finally {
+            tmp.toFile().deleteRecursively()
+        }
     }
 
     test("a name the rollback cannot determine blocks the migrate instead of leaving the CHECK widened") {

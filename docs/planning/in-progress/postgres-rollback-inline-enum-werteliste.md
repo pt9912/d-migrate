@@ -172,6 +172,10 @@ Ergebnis eines `INSERT`. `planFullyRollbackable` war in allen Läufen `true`, `d
   (Fälle 1, 2, 12), ist der Name derselbe — er wird durch das `DROP` frei. Hat der alte CHECK einen anderen Namen (Fall 7, 11),
   entsteht trotzdem `<tabelle>_<spalte>_check`. Der Ist-Name allein reicht also nicht (Kandidat 1 greift nur für den
   Standardnamen), der Standardname ist sicher, wenn ihn kein anderer Constraint trägt.
+* **Schemaweite Namensprüfung (gemessen):** Ein unbenannter `ADD CHECK` auf `t.e` neben einem `t_e_check` einer **anderen** Tabelle
+  `u` im selben Schema erhält den Namen `t_e_check1` (`t.t_e_check1`, `u.t_e_check`). PostgreSQL prüft den Standardnamen also
+  schemaweit, nicht je Tabelle; `taken` in `PostgresEnumCheckRollback.createdName` zählt deshalb die Constraints **aller** Tabellen der
+  Ist-Seite. Ein zu kleines `taken` führte zu `DROP` des falschen Namens. Der Integrationstest pinnt die Messung und den Blocker.
 * **Zusätzlich gefunden:** dieselbe Lücke in zwei Nachbarfällen (B: eine Textspalte erhält eine Werteliste → der Down löst den CHECK nicht;
   C: eine Spalte verliert die Werteliste → der Down legt den CHECK nicht wieder an). Dieselbe Ursache, derselbe Mechanismus.
 * **Verworfen/offen:** Fall 10 (zwei Wertelisten-CHECKs) scheitert schon im Up mit Exit 5; er gehört nicht in diesen Slice.
@@ -190,8 +194,11 @@ Ergebnis eines `INSERT`. `planFullyRollbackable` war in allen Läufen `true`, `d
   Sonst blockiert der Down mit `ROLLBACK_NOT_POSSIBLE` und der Diagnose `POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN`. Der alte CHECK
   wird mit seinem Ist-Namen und den Werten aus `currentSchema` wieder angelegt (`ADD CONSTRAINT "<alt>" CHECK (… IN (…))`), damit der
   Zustand vor dem Up auch bei benanntem CHECK (Fall 7) wiederkehrt.
-* **Datei gegen Datei** (Fall 5b): die Namen des Ziels sind unbekannt, der Up selbst löst dort nichts. Der Down blockiert, statt ein
-  `ADD` ohne `DROP` zu rendern. Das ändert Exit 0 → Exit 8 für `--generate-rollback` mit Wertelistenänderung im Datei-Modus; im
+* **Datei gegen Datei** (Fall 5b, B, C): die Namen des Ziels sind unbekannt, der Up selbst löst dort nichts. Der Down blockiert, statt ein
+  `ADD` ohne `DROP` zu rendern. Erkennungsmerkmal „Ist-Seite ist ein Katalog“: ein alter Wertevorrat-CHECK **mit Namen** in der Ist-Seite
+  (Beleg) oder `options.postgresContext.serverVersion != null` (der Leser reicht die Serverversion mit; die CLI-Verdrahtung
+  `SchemaMigrateWiring` setzt sie). Eine Textspalte ohne CHECK sieht in Datei und Katalog gleich aus; ohne dieses Merkmal bliebe Fall B
+  ein geratener Name. Ist die Version nicht lesbar, blockiert der Down (konservativ). Das ändert Exit 0 → Exit 8 für `--generate-rollback` mit Wertelistenänderung im Datei-Modus; im
   Bericht an den Eigner ausdrücklich genannt.
 * **`planFullyRollbackable`** bleibt unverändert (Transaktionalität des Up); das Handbuch benennt `downBlocked` als Down-Signal.
 * **Spec:** `ddl-generation-rules.md` §12 bekommt die Regel (Zielbild zuerst), dazu Handbuch §3.5 und `CHANGELOG`.
@@ -206,8 +213,18 @@ Ergebnis eines `INSERT`. `planFullyRollbackable` war in allen Läufen `true`, `d
   `PostgresDiffRenderContext.currentSchema` ist nicht mehr `private`. Der Up-Pfad bleibt unverändert.
 * Tests: `PostgresEnumCheckRollbackTest` (Renderer, Reihenfolge `DROP` → `ADD`, Blocker-Fälle), `PostgresEnumRollbackIntegrationTest`
   (PostgreSQL: Fälle 1, 2, 4, 7, B, C, 9, Blocker, Zeilen mit neuem Wert), `SqliteEnumRollbackIntegrationTest` (Gegenprobe). Rot ohne die
-  Änderung: acht der neun PostgreSQL-Integrationsspecs sowie die Renderer-Tests; Fall 9 und die SQLite-Gegenprobe sind grün-Gegenproben.
+  Änderung (gemessen vor Review-Runde 1: acht der neun PostgreSQL-Integrationsspecs und acht der neun Renderer-Tests); die Specs der Review-Runde (Katalog-Merkmal, Namenskollision) kamen danach hinzu; Fall 9 und die SQLite-Gegenprobe sind grün-Gegenproben.
+* Größenregeln: `make docker-check` (Detekt inkl. `ComplexCondition`, ein Treffer wurde durch eine Zwischenvariable behoben) und
+  `make solid-suppression-gate` sind grün, kein `@Suppress`.
 * Doku: Handbuch §3.5, `spec/ddl-generation-rules.md` §12, `CHANGELOG.md`.
+
+## Befund außerhalb des Slices: zwei Wertelisten-CHECKs an einer Spalte (Fall 10)
+
+Reproduktion (PostgreSQL 18): `CREATE TABLE t (id integer NOT NULL, e text NOT NULL CHECK ("e" IN ('a','b','c')),
+CONSTRAINT second CHECK ("e" IN ('a','b')), PRIMARY KEY (id))`; Datei mit `e: enum values [a, b, d]` (required).
+`schema migrate --execute --generate-rollback` plant `AlterColumnType` + 2× `DropConstraint` und endet mit **Exit 5**; die Datenbank bleibt
+unverändert (beide CHECKs stehen weiter), kein Rollback-Skript. Ursache nicht untersucht. Nicht Teil von #61; ob ein Issue entsteht,
+klärt der Eigner.
 
 ## Nicht-Scope
 

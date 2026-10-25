@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.postgresContext
 
 /**
  * Der Rueckweg einer Aenderung am Wertevorrat einer Inline-Enum-Spalte.
@@ -47,13 +48,17 @@ internal object PostgresEnumCheckRollback {
     ): Boolean {
         val createdByUp = EnumValueCheck.inlineValues(op.after)
         val droppedByUp = findState(ctx.currentSchema, table, column)
-        val inlineBefore = EnumValueCheck.inlineValues(op.before)
-        val restore = droppedByUp?.values ?: inlineBefore
+        val restore = droppedByUp?.values ?: EnumValueCheck.inlineValues(op.before)
         if (createdByUp == null && restore == null) return false
 
-        val fileForm = droppedByUp == null && inlineBefore != null
-        val dropName = createdByUp?.let { createdName(ctx.currentSchema, table, column, droppedByUp, fileForm) }
-        if (createdByUp != null && dropName == null) {
+        // Ohne Katalogseite kennt der Renderer die Namen des Ziels nicht (eine Datei fuehrt den
+        // Wertevorrat inline, ohne Namen; und der Up hat dort nichts loesen koennen). Ein alter CHECK
+        // mit Namen in der Ist-Seite ist der Beleg; sonst muss die Ist-Seite als Katalog gelesen sein:
+        // der Leser reicht dann die Serverversion mit.
+        val catalog = ctx.options.postgresContext?.serverVersion != null
+        val dropName = createdByUp?.let { createdName(ctx.currentSchema, table, column, droppedByUp) }
+        val nameUnknown = (droppedByUp == null && !catalog) || (createdByUp != null && dropName == null)
+        if (nameUnknown) {
             blockUnknownName(op, ctx, "$table.$column")
             return true
         }
@@ -88,12 +93,7 @@ internal object PostgresEnumCheckRollback {
         table: String,
         column: String,
         dropped: State?,
-        fileForm: Boolean,
     ): String? {
-        // Die Ist-Seite als Datei fuehrt den Wertevorrat inline und keinen Namen:
-        // der Up hat den alten CHECK dort nicht loesen koennen, und der Name
-        // des neuen haengt von dem ab, was in der echten Datenbank steht.
-        if (fileForm) return null
         val default = "${table}_${column}_check"
         if (default.toByteArray(Charsets.UTF_8).size > MAX_IDENTIFIER_BYTES) return null
         val taken = schema?.tables.orEmpty().values.flatMap { it.constraints }.map { it.name }

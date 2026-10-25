@@ -12,6 +12,8 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.DdlDialectContext
+import dev.dmigrate.driver.PostgresServerVersion
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
@@ -54,6 +56,9 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         ),
     )
 
+    /** Die Ist-Seite ist ein gelesener Katalog: der Leser reicht die Serverversion mit. */
+    val liveOptions = DdlGenerationOptions(dialectContext = DdlDialectContext.Postgres(serverVersion = PostgresServerVersion(18, 0)))
+
     fun enumOf(vararg v: String) = NeutralType.Enum(values = v.toList())
 
     fun typeChange(from: NeutralType, to: NeutralType, table: String = "t") = SchemaDiff(
@@ -69,7 +74,7 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         val file = schema(enumOf("a", "b", "c"))
         val r = gen.generateDown(
             planner.plan(live, file, typeChange(NeutralType.Text(), enumOf("a", "b", "c"))),
-            DdlGenerationOptions(),
+            liveOptions,
         )
         sqls(r) shouldBe listOf(
             "ALTER TABLE \"t\" DROP CONSTRAINT \"t_e_check\";",
@@ -83,7 +88,7 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         val file = schema(enumOf("a", "b"))
         val r = gen.generateDown(
             planner.plan(live, file, typeChange(NeutralType.Text(), enumOf("a", "b"))),
-            DdlGenerationOptions(),
+            liveOptions,
         )
         sqls(r) shouldBe listOf(
             "ALTER TABLE \"t\" DROP CONSTRAINT \"t_e_check\";",
@@ -96,7 +101,7 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         val file = schema(enumOf("a", "b", "c"))
         val r = gen.generateDown(
             planner.plan(live, file, typeChange(NeutralType.Text(), enumOf("a", "b", "c"))),
-            DdlGenerationOptions(),
+            liveOptions,
         )
         sqls(r) shouldBe listOf(
             "ALTER TABLE \"t\" DROP CONSTRAINT \"t_e_check\";",
@@ -109,7 +114,7 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         val file = schema(enumOf("a", "b"))
         val r = gen.generateDown(
             planner.plan(live, file, typeChange(NeutralType.Text(), enumOf("a", "b"))),
-            DdlGenerationOptions(),
+            liveOptions,
         )
         sqls(r) shouldBe listOf("ALTER TABLE \"t\" DROP CONSTRAINT \"t_e_check\";")
     }
@@ -119,7 +124,7 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         val file = schema(NeutralType.Text())
         val r = gen.generateDown(
             planner.plan(live, file, typeChange(NeutralType.Text(), NeutralType.Text())),
-            DdlGenerationOptions(),
+            liveOptions,
         )
         sqls(r) shouldBe listOf(
             "ALTER TABLE \"t\" ADD CONSTRAINT \"t_e_check\" CHECK (\"e\" IN ('a', 'b'));",
@@ -137,7 +142,7 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         val file = schema(enumOf("a", "b", "c"))
         val r = gen.generateDown(
             planner.plan(live, file, typeChange(NeutralType.Text(), enumOf("a", "b", "c"))),
-            DdlGenerationOptions(),
+            liveOptions,
         )
         r.isBlocked shouldBe true
         r.blockers.map { it.reason } shouldContain MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
@@ -151,7 +156,7 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         val file = schema(enumOf("a", "b", "c"), table = longTable)
         val r = gen.generateDown(
             planner.plan(live, file, typeChange(NeutralType.Text(), enumOf("a", "b", "c"), longTable)),
-            DdlGenerationOptions(),
+            liveOptions,
         )
         r.blockers.map { it.reason } shouldContain MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
     }
@@ -162,6 +167,26 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         val desired = schema(enumOf("a", "b", "c"))
         val r = gen.generateDown(
             planner.plan(current, desired, typeChange(enumOf("a", "b"), enumOf("a", "b", "c"))),
+            DdlGenerationOptions(),
+        )
+        r.isBlocked shouldBe true
+        r.blockers.map { it.reason } shouldContain MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
+    }
+
+    test("file-to-file, text column gains a value list: no catalog, the Down blocks instead of guessing the name") {
+        val r = gen.generateDown(
+            planner.plan(schema(NeutralType.Text()), schema(enumOf("a", "b")), typeChange(NeutralType.Text(), enumOf("a", "b"))),
+            DdlGenerationOptions(),
+        )
+        r.isBlocked shouldBe true
+        r.blockers.map { it.reason } shouldContain MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
+        r.diagnostics.map { it.code } shouldContain "POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN"
+        r.statements.size shouldBe 0
+    }
+
+    test("file-to-file, enum column loses its value list: no catalog, the Down blocks") {
+        val r = gen.generateDown(
+            planner.plan(schema(enumOf("a", "b")), schema(NeutralType.Text()), typeChange(enumOf("a", "b"), NeutralType.Text())),
             DdlGenerationOptions(),
         )
         r.isBlocked shouldBe true
