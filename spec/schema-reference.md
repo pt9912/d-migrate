@@ -272,7 +272,23 @@ custom_types:
     precision: 10
     scale: 2
     check: "VALUE >= 0"
+    default: 0                 # Optional — Standardwert der Domain (wie `default` einer Spalte)
+    not_null: true             # Optional — Domain verbietet NULL (Standard: false)
+    collation: "C"             # Optional — Kollation, die vom Basistyp abweicht
 ```
+
+`default`, `not_null` und `collation` gelten nur für `kind: domain` und nur auf **PostgreSQL**:
+dort rendert `schema generate` sie in `CREATE DOMAIN` (`COLLATE`, `DEFAULT`, `NOT NULL`,
+`CHECK`), liest der Reverse sie aus dem Katalog und vergleicht `schema migrate` sie. MySQL, SQLite,
+SQL Server und Oracle haben keine Domain — sie rendern Basistyp und `check` an der Spalte
+und ignorieren die drei Felder (`NOT NULL` und `DEFAULT` steuert dort die Spalte selbst).
+
+* `default` hat dieselben Formen wie `default` einer Spalte (Skalar, `{ function: … }`,
+  `{ sequence_nextval: … }`).
+* `not_null` gehört der Domain, nicht der Spalte: eine Spalte vom Typ der Domain trägt
+  `required` nur, wenn die Spalte selbst `NOT NULL` ist.
+* `collation` ist der Name der Kollation; Anführungszeichen sind optional (`C` und `"C"` sind
+  dieselbe). Die Groß-/Kleinschreibung zählt.
 
 ---
 

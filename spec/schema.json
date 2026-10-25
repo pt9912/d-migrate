@@ -472,6 +472,19 @@
         "check": {
           "type": "string",
           "description": "Nur bei kind: domain — CHECK-Expression"
+        },
+        "default": {
+          "$ref": "#/$defs/column/properties/default",
+          "description": "Nur bei kind: domain — Standardwert der Domain (nur PostgreSQL wertet ihn aus); dieselben Formen wie default einer Spalte"
+        },
+        "not_null": {
+          "type": "boolean",
+          "default": false,
+          "description": "Nur bei kind: domain — die Domain verbietet NULL (nur PostgreSQL wertet es aus)"
+        },
+        "collation": {
+          "type": "string",
+          "description": "Nur bei kind: domain — Kollation, die vom Basistyp abweicht (nur PostgreSQL wertet sie aus)"
         }
       }
     },
