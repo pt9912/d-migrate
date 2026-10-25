@@ -51,6 +51,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Eine Domain-Spalte über `boolean`, `decimal` oder `uuid` plant bei jedem Lauf `AlterColumnType`
     und blockiert weiter (eigener Befund, Folge-Slice).
 
+- **`schema migrate` plant keinen `AlterColumnDefault` mehr für einen gleichen `default`**
+  (Issue #54, Ursache 1). Ein Zahlen-`default` galt gegen die Datenbank als geändert, weil der
+  Datei-Parser `Int` liefert und jeder Reader `Long` bzw. `Double`: `integer`, `smallint`,
+  `decimal` und `float` mit `default: 0`/`5`/`1` planten auf **PostgreSQL, MySQL und SQLite**
+  bei jedem Lauf eine Änderung. Auf SQLite kam hinzu, dass `boolean` als `INTEGER` mit Default
+  `0`/`1` zurückkommt: `default: false` galt gegen `0` als geändert, und der Neubau dazu endete
+  bei `boolean` und `decimal` mit Exit `8` (`SQLITE_CAST_NOT_WHITELISTED`). Jetzt gilt:
+  - Zahlenliterale gelten als gleich, wenn sie numerisch gleich sind (`0` und `0L`, `2.0` und
+    `2`, `1e3` und `1000`) — für alle Dialekte und auch für `schema compare`.
+  - Auf SQLite faltet der Vergleich `false`/`true` an einer `boolean`-Spalte auf `0`/`1`.
+  - Ein anderer Wert, ein hinzugefügter und ein entfernter Default bleiben `AlterColumnDefault`.
+  - Der Fingerabdruck steht auf `schema-fingerprint-v21` (kanonische Zahlenschreibweise, auf
+    SQLite `0`/`1` für `boolean`); ein Rollback-Artefakt einer früheren Version ist neu zu erzeugen.
+  - Grenze: eine Ganzzahl über der Genauigkeit von `double` (`99999999999999999999`) liest
+    SQLite als Gleitkommazahl zurück und gilt weiter als verschieden. Ein PostgreSQL-`bigint`
+    mit negativem oder großem Default liest der PostgreSQL-Reader als Text zurück; das ist hier
+    nicht behandelt.
+
 - **`schema migrate` auf PostgreSQL blockiert nicht mehr bei einer unveränderten Domain**
   (Issue #52). Schrieb die Datei eine Domain anders als der Katalog, planten Datei und
   Datenbank trotz gleichem Inhalt `AlterCustomType` und der Lauf endete mit Exit `8`.

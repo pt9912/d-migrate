@@ -99,7 +99,7 @@ Nicht-Ziel: echte Typwechsel (`integer` → `text`), `Date` → `DateTime` (scho
 
 ## Nicht-Scope
 
-* Defaults ([`sqlite-default-vergleich.md`](../next/sqlite-default-vergleich.md)), andere Dialekte, echte Typwechsel; der
+* Defaults ([`sqlite-default-vergleich.md`](sqlite-default-vergleich.md)), andere Dialekte, echte Typwechsel; der
   Cast-Preflight (`SqliteCastPreflightSql` filtert auf `AlterColumnType`, ist nicht betroffen).
 
 ## Akzeptanz
