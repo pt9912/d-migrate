@@ -45,7 +45,7 @@ Enum-Beteiligung: SQLite legt auch alle Integer- und alle Textbreiten gleich ab,
 eine Aussage – sie zählt für den Ziel-Dialekt einer späteren Migration“. `onlyVocabularyDiffers` ist für Enum-Paare
 eine handgebaute Doppelung der Projektion. **Der Reader liefert für eine Fremddatenbank mehr Typinformation:**
 `VARCHAR(64)` liest er als `Text(maxLength=64)`, `CHAR(10)` als `Char(10)`, `BOOLEAN` als `BooleanType` —
-`text(64)` → `text(32)` ist dort eine echte Verengung. Die Faltung darf diese Fälle nicht übergehen.
+`text(64)` → `text(32)` ist dort eine echte Verengung. Die Faltung übergeht diese Fälle bewusst — P1 hat das für den Migrate-Pfad entschieden (Nachtrag).
 
 ## Richtung (nach P0 zu entscheiden)
 
@@ -210,3 +210,12 @@ ihr Aufrufkreis ändert sich.
 * Domain-Spalte über `boolean`/`decimal`/`uuid`: der ziel-bewusste Vergleich meldet bei jedem Lauf
   `AlterColumnType` (Datenbank liest `Integer`, Datei `Enum(refType)`); der Neubau blockiert dort weiter.
   Eigener Plan, Berührung des Vergleichs und möglicherweise des Fingerabdrucks.
+
+**Review-Nachtrag.** (1) *Regression behoben:* eine Domain-Spalte bleibt auf beiden Seiten `ref_type`; ihren Basistypwechsel
+(`text` → `integer`) meldet der Vergleich als `AlterCustomType`, nicht als `AlterColumnType`. Ohne Gegenmaßnahme fiel er ohne
+`CAST` und ohne Blocker durch. `planRebuild` zählt Domain-Spalten (`SqliteRefTypeColumns.domainColumns`) jetzt immer als
+zu prüfen (aufgelöster Basistyp gegen die Cast-Matrix); Unit-Tests: `text` → `integer` blockiert, `integer` → `biginteger`
+wird gecastet, unveränderter Basistyp wird kopiert. (2) *Folge-Slices:*
+[`sqlite-domain-spalte-basistyp-vergleich.md`](../next/sqlite-domain-spalte-basistyp-vergleich.md) (eine Domain über
+`boolean`/`decimal`/`uuid` plant bei jedem Lauf `AlterColumnType`). (3) Nicht per CLI getestet: Rename plus Neubau
+(`RENAME_DEPENDENCY_UNPROJECTABLE` in diesem Messaufbau).

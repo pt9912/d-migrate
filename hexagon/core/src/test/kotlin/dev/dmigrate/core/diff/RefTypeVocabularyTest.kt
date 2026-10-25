@@ -276,7 +276,7 @@ class RefTypeVocabularyTest : FunSpec({
                 soll("a", "b"), projections, projectsCustomTypes = false, resolvesRefTypeVocabulary = false,
             )
 
-            // Das Layout der Projektion ist das der Version davor; nur der Tag steht auf v19.
+            // Das Layout der Projektion ist das der Version davor; nur der Tag steht auf v20.
             // Die Felder einer Spalte trennt das ASCII-Unit-Separator-Zeichen (0x1F).
             val sep = "\u001F"
             projection shouldBe """

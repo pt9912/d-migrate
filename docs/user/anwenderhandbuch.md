@@ -2153,14 +2153,24 @@ sie als normale View erzeugt (Warnung **W103**).
   **Index** mit `unique: true` zurück, nicht als `unique` an der Spalte; nur ein
   `UNIQUE`-Constraint (`UNIQUE` an der Spalte oder in der Tabelle) wird `unique` bzw.
   Constraint. Ein eindeutiger Index, den Datei und Datenbank gleich beschreiben, erzeugt
-  deshalb keine Operation mehr, und `schema migrate --execute` führt eine additive
-  Änderung daneben aus (früher: Exit `8`, `TRANSACTION_SCOPE_UNSUPPORTED`). Index und
-  Constraint sind in SQLite verschiedene Objekte; ein Wechsel ist ein Tabellenneubau und
-  gilt als Änderung. **Bestandsdateien:** hat Ihre Datei aus einem früheren
-  `schema reverse` `unique: true` an einer Spalte, deren Datenbank dafür einen
-  `CREATE UNIQUE INDEX` führt, plant `schema migrate` jetzt einen Neubau (Constraint
-  anlegen, Index löschen). Ziehen Sie die Datei dann mit `schema reverse` neu oder
-  schreiben Sie die Spalte als `indices: [{ unique: true }]`.
+  deshalb keine Operation, und `schema migrate --execute` führt eine additive Änderung
+  daneben aus. Index und Constraint sind in SQLite verschiedene Objekte; ein Wechsel ist
+  ein Tabellenneubau und gilt als Änderung.
+  - **Bestandsdateien:** hat Ihre Datei aus einem früheren `schema reverse` `unique: true`
+    an einer Spalte, deren Datenbank dafür einen `CREATE UNIQUE INDEX` führt, zeigt
+    `schema migrate --plan-only` ohne Änderung im Schema einen Neubau (Constraint anlegen,
+    Index löschen). Mit einer weiteren Änderung daneben endet `--execute` mit Exit `8`
+    (`TRANSACTION_SCOPE_UNSUPPORTED`); die Datenbank bleibt unverändert. Ziehen Sie die Datei
+    mit `schema reverse` neu oder schreiben Sie die Spalte als `indices: [{ unique: true }]`.
+  - **Grenze Ausdrucks-Index:** der Katalog liefert den Ausdruck eines Index in Klammern
+    (`(lower(a))`), Ihre Datei vermutlich ohne (`lower(a)`); beides gilt als verschieden, und
+    `schema migrate` plant `DROP INDEX` + `CREATE INDEX`, obwohl nichts anders ist (ausführbar).
+- **SQLite, Tabellenneubau und Spaltentypen:** SQLite legt viele Typen in derselben Speicherklasse
+  ab (`text(n)`, `char`, `date`, `uuid`, `json`, … als `TEXT`, `boolean` als `INTEGER`, `decimal`
+  als `REAL`). `schema migrate` plant eine Verengung wie `text(64)` → `text(32)` deshalb nicht als
+  Typänderung, und ein Neubau, den ein anderer Grund auslöst, kopiert solche Spalten unverändert;
+  ein echter Typwechsel (`integer` → `text`) blockiert weiter. `schema compare` (strikt) meldet die
+  Verengung weiterhin.
 - Vollständige View-Felder (inkl. `columns`, `dependencies`): [Anhang F.11](#f11-views).
 
 ### 3.18 Trigger, Procedures und Functions mitnehmen

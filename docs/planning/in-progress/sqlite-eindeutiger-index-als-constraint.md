@@ -218,4 +218,7 @@ und 4 der neuen Reader-Tests; mit dem Fix grün. Spec: `spec/ddl-generation-rule
 **Offen / abgetrennt:** (1) Der Text eines Ausdrucks-Index (`(lower(a))` aus dem Katalog gegen `lower(a)` aus der
 Datei) gilt als Unterschied (`DROP INDEX` + `CREATE INDEX`, ausführbar); das betrifft den Ausdruck, nicht die
 Eindeutigkeit, und ist hier nicht behandelt. (2) Das Netz für Bestandsdateien ist nicht gebaut. (3) Die
-`COLLATE`-Angabe eines Index kennt das Modell nicht.
+`COLLATE`-Angabe eines Index kennt das Modell nicht. (4) Der Testdaten-Seeder (`TableRowSeeder`) prüft nur
+`column.unique`; ein aus SQLite gelesenes Schema trägt `unique` jetzt nur am Index (wie bei anderen Dialekten mit
+Prädikat/Ausdruck). (5) Ein nicht auflösbarer Ausdrucks-Index fällt im Reader weiter still weg (`keys.any { it == null }`).
+(6) `--execute` für die Bestandsdateien-Zeile endet mit Exit 8 (Review gemessen); Test dafür steht in der Nachbesserung.

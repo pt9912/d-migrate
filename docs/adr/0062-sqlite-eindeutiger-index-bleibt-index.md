@@ -71,7 +71,8 @@ umbauen (kein `ALTER TABLE ADD/DROP CONSTRAINT`), sie sind verschiedene Objekte.
 - **Bestandsdateien.** Eine Datei aus einem früheren `schema reverse` einer Datenbank mit
   `CREATE UNIQUE INDEX` trägt `unique: true` an der Spalte (bzw. einen Constraint). Derselbe Stand
   liest jetzt als Index; der Vergleich plant `AddConstraint` (Neubau) + `DropIndex`. Das ist ein
-  neues Exit-8-Risiko genau für diese Anwender und dokumentierte Grenze (Handbuch, CHANGELOG). Ein
+  neues Exit-8-Risiko genau für diese Anwender: mit einer weiteren Änderung daneben endet `--execute` mit Exit 8
+  (`TRANSACTION_SCOPE_UNSUPPORTED`, die Datenbank bleibt unverändert). Dokumentierte Grenze (Handbuch, CHANGELOG). Ein
   Netz (Vergleich, der `column.unique` gegen einen eindeutigen Index gleichsetzt) bräuchte die
   beidseitige Faltung, die oben verworfen ist; es ist kein Teil dieser Entscheidung.
 - Weiter offen: der Text eines Ausdrucks-Index (`PRAGMA`/`sqlite_master` führt `(lower(a))`, die

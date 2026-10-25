@@ -15,15 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dazu, endete `--execute` mit Exit `8` (`TRANSACTION_SCOPE_UNSUPPORTED`), ein neu
   angelegter eindeutiger Index mit Exit `5` (`POST_EXECUTE_DRIFT`). Jetzt gilt:
   - Der SQLite-Reader liest einen `CREATE UNIQUE INDEX` als Index mit `unique: true` und
-    behält Spalten, Richtung und Prädikat; nur ein `UNIQUE`-Constraint wird `unique` an der
-    Spalte bzw. Constraint. Das gilt auch für `schema reverse`: ein eindeutiger Index steht
+    behält Spalten, Richtung und Prädikat; nur ein `UNIQUE`-Constraint wird zu `unique` an der
+    Spalte bzw. zum Constraint. Das gilt auch für `schema reverse`: ein eindeutiger Index steht
     jetzt unter `indices`, nicht mehr als `unique: true` an der Spalte (oder gar nicht, wenn
     er eine Primärschlüsselspalte oder einen Ausdruck betraf).
   - Grenze: ein `UNIQUE`-Constraint gegen einen eindeutigen Index (und umgekehrt) ist in
     SQLite ein Wechsel des Objekts und gilt als Änderung. Eine Datei aus einem früheren
     `schema reverse` mit `unique: true` an einer Spalte, deren Datenbank einen
-    `CREATE UNIQUE INDEX` führt, plant deshalb einen Neubau; `schema reverse` neu ziehen
-    oder die Spalte als Index schreiben.
+    `CREATE UNIQUE INDEX` führt, plant deshalb einen Neubau; mit einer weiteren Änderung daneben
+    endet `--execute` mit Exit `8` (`TRANSACTION_SCOPE_UNSUPPORTED`, die Datenbank bleibt
+    unverändert). `schema reverse` neu ziehen oder die Spalte als Index schreiben.
+  - Grenze: der Text eines Ausdrucks-Index (`(lower(a))` aus dem Katalog, `lower(a)` in der Datei)
+    gilt als Unterschied und plant `DROP INDEX` + `CREATE INDEX` (ausführbar).
   - Der Fingerabdruck steht auf `schema-fingerprint-v20`; ein Rollback-Artefakt einer früheren
     Version ist neu zu erzeugen.
 - **`schema migrate` auf SQLite blockiert den Tabellenneubau nicht mehr an einer unveränderten
@@ -31,15 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AlterColumnNullability`, …) endete mit Exit `8` und `SQLITE_CAST_NOT_WHITELISTED`, sobald die
   Tabelle eine Spalte vom Typ `text(n)`, `char`, `date`, `time`, `datetime`, `uuid`, `json`, `xml`,
   `email`, `array`, `fulltext`, `boolean`, `decimal` oder `float` mit `single` trug: SQLite legt sie
-  als `TEXT`, `INTEGER` oder `REAL` ab und der Reader liest sie so zurück. Der Neubau rechnet den
-  Typvergleich nicht mehr ein zweites Mal, sondern übernimmt die Entscheidung des Vergleichs: nur
-  eine Spalte mit `AlterColumnType` im Plan läuft durch die Cast-Matrix. Grenzen: `integer` →
-  `text` blockiert weiter. `text(64)` → `text(32)` plant `schema migrate` nicht als Typänderung
-  (der ziel-bewusste Vergleich faltet die Länge); der Neubau blockiert sie jetzt ebenfalls nicht
-  mehr, auch gegen eine fremd angelegte Datenbank (`VARCHAR(64)`) — vorher hing das Ergebnis davon
-  ab, ob ein anderer Grund den Neubau auslöste. Wo der strikte Vergleich die Verengung meldet
-  (`AlterColumnType`), blockiert der Neubau wie zuvor. Eine Domain-Spalte über `boolean`, `decimal` oder `uuid` plant weiter `AlterColumnType` und
-  blockiert (eigener Befund, nicht Teil dieser Änderung).
+  als `TEXT`, `INTEGER` oder `REAL` ab und der Reader liest sie so zurück. Der Neubau übernimmt jetzt
+  die Entscheidung des Vergleichs: nur eine Spalte mit `AlterColumnType` im Plan (und eine
+  Domain-Spalte, deren Basistyp sich ändert) läuft durch die Cast-Matrix. Grenzen:
+  - `integer` → `text` blockiert weiter.
+  - `text(64)` → `text(32)` plant `schema migrate` nicht als Typänderung (der ziel-bewusste Vergleich
+    faltet die Länge); der Neubau blockiert sie jetzt ebenfalls nicht, auch gegen eine fremd angelegte
+    Datenbank (`VARCHAR(64)`). Wo der strikte Vergleich (`schema compare`) die Verengung meldet,
+    blockiert der Neubau wie zuvor.
+  - Eine Domain-Spalte über `boolean`, `decimal` oder `uuid` plant bei jedem Lauf `AlterColumnType`
+    und blockiert weiter (eigener Befund, Folge-Slice).
 
 - **`schema migrate` auf PostgreSQL blockiert nicht mehr bei einer unveränderten Domain**
   (Issue #52). Schrieb die Datei eine Domain anders als der Katalog, planten Datei und
