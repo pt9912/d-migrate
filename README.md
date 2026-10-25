@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.9.0**
-(stable, [released 2026-10-24](https://github.com/pt9912/d-migrate/releases/tag/v1.9.0)).
+d-migrate is a working production tool at version **1.9.1**
+(stable, [released 2026-10-25](https://github.com/pt9912/d-migrate/releases/tag/v1.9.1)).
 
 The current capabilities:
 
@@ -161,8 +161,17 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.9.0** (2026-10-24) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **SQLite now handles named
+- **Current stable** · **1.9.1** (2026-10-25) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **It fixes two `schema
+  migrate` blockers found in consumer runs.** On SQLite, a table rebuild no
+  longer fails when a view depends on the table: the rebuild drops and
+  recreates every view whose text names the table (also through other views),
+  with or without declared `dependencies`, and a view whose `AS` is followed by
+  a line break is no longer read as changed on every run (issue #50). On
+  PostgreSQL, a named type (`custom_types`) that file and database hold alike
+  no longer plans `AlterCustomType` and stops with exit 8 on a purely additive
+  change (issue #51). A real change to a named type still blocks on
+  PostgreSQL. 1.9.0 (2026-10-24) made **SQLite handle named
   types.** `schema migrate` against a real SQLite database no longer stops on
   `custom_types`: an enum with `ref_type` is a `TEXT` column with a CHECK, and
   a changed value list is detected and the table rebuilt (rows are kept; a

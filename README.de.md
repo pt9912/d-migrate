@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.9.0** (stabil, [veröffentlicht 2026-10-24](https://github.com/pt9912/d-migrate/releases/tag/v1.9.0)).
+**1.9.1** (stabil, [veröffentlicht 2026-10-25](https://github.com/pt9912/d-migrate/releases/tag/v1.9.1)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,9 +175,18 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.9.0** (2026-10-24) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **SQLite versteht jetzt
-  benannte Typen.** `schema migrate` gegen eine echte SQLite-Datenbank bleibt
+- **Aktuelles Stable** · **1.9.1** (2026-10-25) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Es behebt zwei Blocker
+  von `schema migrate` aus Konsumentenläufen.** Auf SQLite scheitert ein
+  Tabellen-Neubau nicht mehr, wenn eine Sicht an der Tabelle hängt: der Neubau
+  löscht und legt jede Sicht neu an, deren Text die Tabelle nennt (auch über
+  andere Sichten), mit oder ohne deklarierte `dependencies`; eine Sicht, deren
+  `AS` ein Zeilenumbruch folgt, gilt nicht mehr bei jedem Lauf als geändert
+  (Issue #50). Auf PostgreSQL plant ein benannter Typ (`custom_types`), den
+  Datei und Datenbank gleich führen, kein `AlterCustomType` mehr und endet
+  bei einer rein additiven Änderung nicht mehr mit Exit 8 (Issue #51). Eine
+  echte Änderung eines benannten Typs blockiert auf PostgreSQL weiter. 1.9.0
+  (2026-10-24) machte **SQLite für benannte Typen verständlich.** `schema migrate` gegen eine echte SQLite-Datenbank bleibt
   nicht mehr an `custom_types` hängen: eine Enum mit `ref_type` ist eine
   `TEXT`-Spalte mit CHECK, eine geänderte Werteliste wird erkannt und die
   Tabelle neu aufgebaut (die Zeilen bleiben; ein entfernter Wert, den Zeilen
