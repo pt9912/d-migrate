@@ -35,7 +35,7 @@ Der Befund war damit größer als gemeldet: auch eine Datei **mit** `without_row
   Datenbank-Seite (Up: `oldTable`, Down: `newTable`) kommt vom Reader. Folge: Datei `true` gegen Datenbank ohne
   bei einem Neubau aus anderem Anlass legt die Tabelle mit `WITHOUT ROWID` an (die Datei verlangt es), ein
   anschließendes DOWN behält es. **Kein Abdruck-Bump, kein ADR** (Planer/Renderer, nicht das Modell nach dem Reader).
-  *Nachtrag:* die Folge „ein anschließendes DOWN behält es" ist für Fall A (Datenbank Rowid, Datei `true`) in #67 korrigiert, siehe [`sqlite-rollback-without-rowid-vorher.md`](../next/sqlite-rollback-without-rowid-vorher.md).
+  *Nachtrag:* die Folge „ein anschließendes DOWN behält es" ist für Fall A (Datenbank Rowid, Datei `true`) in #67 korrigiert, siehe [`sqlite-without-rowid-umwandlung-produktfrage.md`](sqlite-without-rowid-umwandlung-produktfrage.md).
 * **P2 Umsetzung:** `SqliteTableDdlSupport` und `SqliteRebuildRenderer` schreiben `) WITHOUT ROWID;`; der
   FTS5-Check im Neubau nutzt dasselbe Merkmal. Tests: `CliSchemaMigrateWithoutRowidSqliteTest` (Bestandsdatei,
   Datei mit Merkmal, Rowid-Tabelle bleibt, Rundlauf `generate` → Datenbank → 0 Operationen, DOWN-Skript).

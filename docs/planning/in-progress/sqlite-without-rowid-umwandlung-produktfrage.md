@@ -1,11 +1,13 @@
 # SQLite: ein Neubau behält das Merkmal der Datenbank, Abweichung der Datei wird gewarnt (Produktentscheidung zu Issue #67)
 
 > **Status:** Entschieden (Eigner, 2026-10-26): **Option C plus Warnung `W164`**. In Umsetzung (2026-10-26).
-> **Vorbedingung:** keine. **Reihenfolge:** **Schritt 0** Spec-Prosa (vor dem Code), (1) dieser Slice (Struktur, Regel, Warnung, Tests, Ledger), (2) Rollback-Slice
-> [`sqlite-rollback-without-rowid-vorher.md`](../next/sqlite-rollback-without-rowid-vorher.md) (Test und Absicherung), (3) Handbuch (nach dem Code) und `CHANGELOG.md`.
-> Dieser Slice ist der **einzige**, der den Hinweg-Satz in Spec §3.5 und Handbuch §3.17 ändert; der Rollback-Slice ergänzt dort nur den Rückweg.
+> **Vorbedingung:** keine. **Reihenfolge:** **Schritt 0** Spec-Prosa (vor dem Code), (1) Struktur, Regel, Warnung, Tests, Ledger (P1–P4), Handbuch und `CHANGELOG.md` (P5) — **auf `main` geliefert**
+> (Commits `e0b3a8e5a`, `6f93b467f`, `01f24c921`); (2) **Rollback-Rest** (P6–P8: Messung, Rundläufe, Kopfwert-Doku). Der Rest war als eigener Slice geplant und ist **auf Eigner-Beschluss (E-R1, 2026-10-26)
+> in diesen Slice aufgegangen**; der frühere Slice `sqlite-rollback-without-rowid-vorher.md` ist gelöscht.
+> **Fix-Branch:** `fix-review-slice1-issue-67` (Code-Review zu den Commits oben: `generateDown`-Tests für C1/C2 = LOW-2, Doppelung `SqliteRebuildSides`/`SqliteRebuildPlan` = LOW-1) war beim Stand dieser Notiz
+> **noch nicht auf `main`**. **Vor Start von P6/P7 prüfen, ob gemergt**; P7 hängt davon ab.
 > **Aktivierung** (Move nach `../in-progress/`) beim ersten Implementierungs-Commit; beim Move die relativen `../in-progress/`-Links auf `./` umstellen, die Rückverweise im
-> Schwesterslice und den Nachtrag im #60-Slice (`sqlite-without-rowid-im-neubau.md`, `../next/` → `./`) nachziehen **und die Status-Spalte der README-Zeilen** (`next/` und `in-progress/`) mitziehen;
+> Verweise und den Nachtrag im #60-Slice (`sqlite-without-rowid-im-neubau.md`, `../next/` → `./`) nachziehen **und die Status-Spalte der README-Zeilen** (`next/` und `in-progress/`) mitziehen;
 > nur Planning-Dateien, kein ADR-`consulted:`. GitHub-Issue: [#67](https://github.com/pt9912/d-migrate/issues/67).
 > **Vorgabe für Spec und Handbuch:** nur der gültige Zustand, zeitlos; keine Chronik oder Forensik (keine Versionen, keine Herleitung, keine Erkennung alter Artefakte).
 > Version, Betroffene und Herleitung stehen nur im `CHANGELOG.md` und hier in `docs/planning/`.
@@ -40,6 +42,31 @@ Fall A hatte keinen Test — deshalb rutschte #67 durch.
 * **A — Umwandlung gewollt** (Doku einschränken): `unique: true` änderte stillschweigend die Tabellensemantik; „weder hinzu noch weg" bliebe gebrochen.
 * **B — Block bei Abweichung:** der Neubau selbst ist korrekt; ein Block (Exit 8) verhinderte eine richtige Migration ohne Gewinn.
 
+## Hintergrund zum Rückweg (Herleitung, nur Planning)
+
+* **Ursache A (Down, behoben mit P1):** `SqliteRebuildPlan.withoutRowid` war `oldTable… || newTable…`, richtungsblind. In Down ist `source = desired` (Datei, `true`), `target = current` (Datenbank vor dem Lauf, Rowid); das ODER schrieb
+  `WITHOUT ROWID`. `SqliteDiffDdlGenerator` kannte die Richtung, reichte sie nicht an `planRebuild` weiter; `SqliteDiffRenderContext.tableWithoutRowid` war ebenfalls richtungsblind.
+* **Ursache B (offen, nur dokumentiert, P8):** die Kopfwerte sind **keine Nachprüfung**. `rollbackComplete` ist `!input.partialRollback` (`RollbackArtefactBuilder`), beim Erzeugen gesetzt, und sagt nur, ob Operationen
+  ausgelassen wurden. `postUpVerified` setzt `migrate --execute` aus dem gelesenen Post-Up-Stand (`SchemaMigrateRollbackArtefactBuilder`). Der Fingerabdruck (`schema-fingerprint-v24`) projiziert `TableMetadata` nicht.
+  `schema rollback` prüft nach der Ausführung nichts, nur die Vorbedingung (`SchemaRollbackRunner.verifyTargetMatchesArtefact`, sonst `TARGET_STATE_MISMATCH`). Deshalb blieben die Kopfwerte grün.
+* **Warum das Merkmal aus der Datenbank kommt (Down):** Down stellt den Zustand **vor dem Lauf** her; der steht in der Datenbank, nicht in der Datei. Mit Option C gilt dasselbe für Up; Fall A verschwindet im Hinweg.
+  Die Down-Regel bleibt nötig für Artefakte früherer Versionen und als Absicherung.
+
+### Entscheidungen zum Rückweg (Eigner, 2026-10-26)
+
+1. **Nachprüfung: Option (c), nur dokumentieren** (P8). (a) **Fingerabdruck v25 zurückgestellt:** er bräuchte einen ADR, ließe alte Artefakte mit Exit 8 `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` scheitern und
+   birgt Driftrisiko bei C2. (b') **Generator-Meldung entfällt:** Down kann das Merkmal immer herstellen. (b'') **echte Post-Rollback-Prüfung im Runner:** eigener Slice, nur bei Bedarf.
+2. **Alte Artefakte: keine Laufzeitprüfung.** Das Vorher-Merkmal steckt weder im Artefakt noch im Fingerabdruck; ein Check wäre geraten und warnte korrekte Artefakte. Der Befund steht nur im `CHANGELOG.md`
+   (geliefert, P5), **nicht** in `docs/user/` und nicht im Troubleshooting-Leitfaden.
+3. **Neue Regel:** zeigt die P6-Messung **Drift des Merkmals in anderen Fällen** (nach Rollback weicht `WITHOUT ROWID` von vor dem Lauf ab), wird daraus ein **neuer eigener Slice** für die Nachprüfung
+   (Fingerabdruck v25 / ADR bzw. Post-Rollback-Prüfung). Der Rest in diesem Slice bleibt klein und wartet nicht darauf.
+
+## Grenze: FULLTEXT (unabhängig von #67)
+
+Fall A mit `FULLTEXT`-Index und `--execute` endet unabhängig von #67 mit Exit 8 (`TRANSACTION_SCOPE_UNSUPPORTED`). Eigener Slice:
+[`sqlite-neubau-mit-fulltext-index-execute.md`](../next/sqlite-neubau-mit-fulltext-index-execute.md). **Hier kein Rollback-Rundlauf für A-FT mit `--execute`** (ohne angewendeten Lauf nichts zurückzurollen); der Rückweg
+von A-FT gehört in den FULLTEXT-Slice.
+
 ## Arbeitspakete
 
 * **Schritt 0 Spec (vor dem Code, nur Zielbild, keine Links auf Pläne/ADRs — `.d-check.yml` matrix):**
@@ -61,6 +88,16 @@ Fall A hatte keinen Test — deshalb rutschte #67 durch.
 * **P5 Handbuch und CHANGELOG (nach dem Code):** Handbuch §3.17, zeitlos, ohne „bisher/neu/seit/ab jetzt": Neubau behält das Merkmal der Datenbank; abweichende Datei → `W164`. **Ein** `CHANGELOG.md`-Eintrag mit
   Befund **und** Fix: Version (1.11.0/1.11.1), Betroffene (Neubau bei Datei `true` + Rowid-Datenbank; Rollback-Artefakte daraus), Erkennung (`down.sql` mit `__dmg_rebuild`-Block `WITHOUT ROWID`, obwohl die Tabelle vorher
   Rowid war), Abhilfe (nicht angewendeten Lauf neu erzeugen; bei angewendetem manueller Eingriff). **In `docs/user/` steht dazu nichts** (kein Troubleshooting-Eintrag).
+* **P6 Messung Rundlauf** (Rest, nach P1–P5; Fix-Branch vorher prüfen): je frische Datenbank, `unique: true` auf `u`, `migrate --execute --generate-rollback`, `rollback --execute --allow-destructive`, Folgeplan; Fälle A, B, C1, C2, E,
+  Hin- und Rückweg. Erfasst: `sqlite_master.sql`, `down.sql`-Text, Kopfwerte, Folgeplan; Messung zu Ursache B (Vorbedingung vs. Nachprüfung); **ob in anderen Fällen Drift auftritt** (löst ggf. Regel 3 aus).
+  **Prüfpunkt Leser:** `SqliteRebuildPlan.withoutRowid` und `SqliteDiffRenderContext.tableWithoutRowid` sind mit P1/P3 erledigt; die übrigen gegenprüfen und je Down bewerten: `SqliteTableDdlSupport` (`CREATE TABLE`-Klausel,
+  Index/FTS5), `SqliteSequenceDdlSupport.resolveSequenceDefault` (E057) und `shouldSuppressNotNull`, `SqliteSchemaReader` (Quelle). **Erwartung:** `SqliteSequenceDdlSupport.currentSchema` ist ein gleichnamiges, anderes Feld
+  (`beginRun` aus `SqliteDdlGenerator.generate`) und vom Down-Neubau nicht berührt; Abweichung wäre ein Befund. DoD: Messtabelle im Slice.
+* **P7 Rundlauf-Tests** (CLI, je Fall A, B, C1, C2, E): `migrate --execute --generate-rollback`, `rollback --execute --allow-destructive`, Folgeplan, mit `sqlite_master.sql` vor/nach jedem Schritt; Soll aus P6, gegen die
+  Rückweg-Tabelle unten. Ist der Fix-Branch nicht gemergt: zusätzlich `generateDown`-Test für C1/C2 (kleiner Test in `SqliteDdlGeneratorRollbackTest`). DoD: Tests laufen wirklich (einmal absichtlich rot).
+* **P8 Kopfwerte = Dokumentation (Option c).** Kein Code. Heute nennt `docs/user/` `rollbackComplete` und `postUpVerified` nirgends. Ort: Handbuch §3.17 (bei der `WITHOUT ROWID`-Zeile) oder der Rollback-Abschnitt bei
+  `TARGET_STATE_MISMATCH` (Zeile ~1629); den passenderen wählen. **Erst beide Definitionen gegen `RollbackArtefactBuilder` und `SchemaMigrateRollbackArtefactBuilder` prüfen.** Zeitlos: „`rollbackComplete: true` heißt:
+  keine Operation wurde ausgelassen. `postUpVerified: true` heißt: der Post-Up-Stand wurde gelesen. Beides sagt nichts über Strukturmerkmale wie `WITHOUT ROWID`." Kein „früher", kein Verweis auf #67, keine Chronik.
 * **ADR:** nicht angenommen nötig (Planer-/Renderer-Verhalten, kein Fingerabdruck-/Modellvertrag); im Zweifel klärt der Eigner.
 
 ## P0 Messung (Ist vor der Änderung, 2026-10-26)
@@ -103,6 +140,22 @@ Hinweg je Fall (`unique: true`, Neubau), `--plan-only` **und** `--execute`:
    Ein **geblockter** Neubau (z. B. `NOT_NULL_BACKFILL_REQUIRED`) trägt keine `W164`: `render()` kehrt vor der Warnung zurück; der Neubau baut die Tabelle nicht um (Unit-Test).
 5. Spec §3.5 und Handbuch §3.17 widersprechen sich und dem Verhalten nicht; beide ohne Chronik/Forensik.
 
+Rückweg je Fall (P6/P7; `unique: true`, Neubau; Hinweg wie oben), A-FT ausdrücklich ohne Zeile (siehe „Grenze: FULLTEXT"):
+
+| Fall | Datenbank | Datei `metadata` | Rückweg |
+|---|---|---|---|
+| A | Rowid | `true` | Rowid, Index `ux` zurück |
+| B | Rowid | keine | Rowid, Index zurück |
+| C1 | `WITHOUT ROWID` | `true` | `WITHOUT ROWID`, Index zurück |
+| C2 | `WITHOUT ROWID` | keine | `WITHOUT ROWID` (aus dem Datenbank-Stand), Index zurück |
+| E | Rowid | `true`, kein Neubau | Rowid |
+
+6. **CLI-Rundlauf je Fall** (A, B, C1, C2, E) mit gemessenem Soll aus P6; B, C1, C2, E unverändert (Regressionsschutz; C2 bräche jede „immer aus der Datei"-Lösung).
+7. **Folgeplan Fall A:** nach Rollback steht die Datenbank wie vor dem Lauf; der Folgeplan ist derselbe wie vorher: `AddConstraint` + `DropIndex` **und** `W164`, **keine** zusätzliche Operation für das Merkmal
+   (`TableComparator.metadataChangeOrNull` meldet, der Planer ignoriert). B, C1, C2: derselbe Plan wie vor dem Lauf, ohne `W164`.
+8. P8: Handbuchtext wie oben, `make docs-check` grün. Der Rot-Nachweis des Down-Wirings (Unit-Test mit handgebautem `DiffResult`) liegt bei P1 bzw. im Fix-Branch; hier nur prüfen, dass er vorhanden ist.
+9. Zeigt P6 Drift in anderen Fällen: neuer Slice angelegt (`next/`), Rest dieses Slice schließt trotzdem.
+
 ## Verifikation
 
 `make docs-check`; `make docker-check MODULES=":adapters:driven:driver-sqlite"`, `":adapters:driving:cli"` und das Modul des `CodeLedgerValidationTest`, einmal ohne `MODULES` (geteilte Signatur; `MODULES=` lässt `test/integration-*` aus),
@@ -110,4 +163,4 @@ Hinweg je Fall (`unique: true`, Neubau), `--plan-only` **und** `--execute`:
 
 ## Nicht-Scope
 
-Rollback-Absicherung und Doku der Kopfwerte (Schwesterslice); `WITHOUT ROWID` per `schema migrate` gezielt hinzufügen/entfernen (eigener Slice, nur bei Bedarf).
+Fingerabdruck v25 und eine Post-Rollback-Prüfung im Runner (zurückgestellt; bei Drift neuer Slice, siehe Regel 3); Rollback von A-FT mit `--execute` (FULLTEXT-Slice); `WITHOUT ROWID` per `schema migrate` gezielt hinzufügen/entfernen (eigener Slice, nur bei Bedarf).
