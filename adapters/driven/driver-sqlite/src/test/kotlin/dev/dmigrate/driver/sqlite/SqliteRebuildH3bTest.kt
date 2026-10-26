@@ -43,8 +43,10 @@ class SqliteRebuildH3bTest : FunSpec({
         val plan = SqliteRebuildPlanner.planRebuild(
             table = "u",
             bucket = emptyList(),
-            source = table,
-            target = targetTable,
+            sides = SqliteRebuildSides(
+                source = table,
+                target = targetTable,
+            ),
             bucketRisk = OperationRisk.SAFE,
             sql = sql,
         ).copy(emissionMode = mode)
@@ -101,8 +103,10 @@ class SqliteRebuildH3bTest : FunSpec({
         val plan = SqliteRebuildPlanner.planRebuild(
             table = "u",
             bucket = emptyList(),
-            source = table,
-            target = targetTable,
+            sides = SqliteRebuildSides(
+                source = table,
+                target = targetTable,
+            ),
             bucketRisk = OperationRisk.SAFE,
             sql = sql,
         )

@@ -2,7 +2,7 @@
 
 > **Status:** Draft mit Scope (2026-10-26). Entscheidungen des Eigners (2026-10-26) unten. Folge von
 > [`sqlite-without-rowid-im-neubau.md`](../in-progress/sqlite-without-rowid-im-neubau.md) (#60). **Vorbedingung:** Lieferung 1, der Produktslice
-> [`sqlite-without-rowid-umwandlung-produktfrage.md`](sqlite-without-rowid-umwandlung-produktfrage.md) (liefert die gemeinsame Struktur und behebt Down-Fall A). Dieser Slice **konsumiert** sie.
+> [`sqlite-without-rowid-umwandlung-produktfrage.md`](../in-progress/sqlite-without-rowid-umwandlung-produktfrage.md) (liefert die gemeinsame Struktur und behebt Down-Fall A). Dieser Slice **konsumiert** sie.
 > **Reihenfolge:** Schritt 0 Spec (im Produktslice), (1) Produktslice, (2) dieser Slice, (3) Handbuch und `CHANGELOG.md`.
 > **Option Zusammenlegen:** ist der Rest nach Lieferung 1 zu dünn (nur Tests und ein Doku-Absatz), darf dieser Slice im Produktslice aufgehen; nicht ohne Not.
 > **Aktivierung** (Move nach `../in-progress/`) beim ersten Implementierungs-Commit; beim Move die `../in-progress/`-Links auf `./`, die Rückverweise im Schwesterslice, den Nachtrag im #60-Slice

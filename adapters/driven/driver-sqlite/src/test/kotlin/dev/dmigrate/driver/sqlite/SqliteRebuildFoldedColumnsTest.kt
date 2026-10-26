@@ -62,8 +62,10 @@ class SqliteRebuildFoldedColumnsTest : FunSpec({
         SqliteRebuildPlanner.planRebuild(
             table = "t",
             bucket = bucket,
-            source = source,
-            target = target,
+            sides = SqliteRebuildSides(
+                source = source,
+                target = target,
+            ),
             bucketRisk = OperationRisk.SAFE,
             sql = sql,
         )
@@ -138,12 +140,14 @@ class SqliteRebuildFoldedColumnsTest : FunSpec({
     fun planDomain(sourceBase: String, targetBase: String) = SqliteRebuildPlanner.planRebuild(
         table = "t",
         bucket = emptyList(),
-        source = domainTable(),
-        target = domainTable(),
+        sides = SqliteRebuildSides(
+            source = domainTable(),
+            target = domainTable(),
+            sourceSchema = domainSchema(sourceBase),
+            targetSchema = domainSchema(targetBase),
+        ),
         bucketRisk = OperationRisk.SAFE,
         sql = sql,
-        sourceSchema = domainSchema(sourceBase),
-        targetSchema = domainSchema(targetBase),
     ).mapping
 
     test("Domain: ein Basistypwechsel text -> integer ohne AlterColumnType blockiert weiter an der Cast-Matrix") {

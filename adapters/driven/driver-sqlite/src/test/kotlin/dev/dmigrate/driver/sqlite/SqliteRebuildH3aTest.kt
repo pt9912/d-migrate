@@ -383,12 +383,14 @@ class SqliteRebuildH3aTest : FunSpec({
         val plan = SqliteRebuildPlanner.planRebuild(
             table = "users",
             bucket = emptyList(),
-            source = source,
-            target = target,
+            sides = SqliteRebuildSides(
+                source = source,
+                target = target,
+                sourceSchema = sourceSchema,
+                targetSchema = targetSchema,
+            ),
             bucketRisk = dev.dmigrate.core.diff.migration.OperationRisk.SAFE,
             sql = SqliteDiffSqlBuilders(),
-            sourceSchema = sourceSchema,
-            targetSchema = targetSchema,
         )
         // Geloescht wird, was eine Seite kennt: auch die neue Sicht, falls sie schon steht.
         plan.dependentViewsToDrop.map { it.name } shouldBe listOf("v_legacy", "v_new")

@@ -297,8 +297,10 @@ class SqliteRebuildPlannerTest : FunSpec({
         val plan = SqliteRebuildPlanner.planRebuild(
             table = "u",
             bucket = sampleBucket,
-            source = before,
-            target = after,
+            sides = SqliteRebuildSides(
+                source = before,
+                target = after,
+            ),
             bucketRisk = dev.dmigrate.core.diff.migration.OperationRisk.SAFE,
             sql = SqliteDiffSqlBuilders(),
             catalog = catalog,

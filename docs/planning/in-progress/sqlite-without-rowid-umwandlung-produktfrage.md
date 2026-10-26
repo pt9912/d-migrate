@@ -1,8 +1,8 @@
 # SQLite: ein Neubau behält das Merkmal der Datenbank, Abweichung der Datei wird gewarnt (Produktentscheidung zu Issue #67)
 
-> **Status:** Entschieden (Eigner, 2026-10-26): **Option C plus Warnung `W164`**. Draft mit Scope für die Umsetzung; noch kein Implementierungs-Commit.
+> **Status:** Entschieden (Eigner, 2026-10-26): **Option C plus Warnung `W164`**. In Umsetzung (2026-10-26).
 > **Vorbedingung:** keine. **Reihenfolge:** **Schritt 0** Spec-Prosa (vor dem Code), (1) dieser Slice (Struktur, Regel, Warnung, Tests, Ledger), (2) Rollback-Slice
-> [`sqlite-rollback-without-rowid-vorher.md`](sqlite-rollback-without-rowid-vorher.md) (Test und Absicherung), (3) Handbuch (nach dem Code) und `CHANGELOG.md`.
+> [`sqlite-rollback-without-rowid-vorher.md`](../next/sqlite-rollback-without-rowid-vorher.md) (Test und Absicherung), (3) Handbuch (nach dem Code) und `CHANGELOG.md`.
 > Dieser Slice ist der **einzige**, der den Hinweg-Satz in Spec §3.5 und Handbuch §3.17 ändert; der Rollback-Slice ergänzt dort nur den Rückweg.
 > **Aktivierung** (Move nach `../in-progress/`) beim ersten Implementierungs-Commit; beim Move die relativen `../in-progress/`-Links auf `./` umstellen, die Rückverweise im
 > Schwesterslice und den Nachtrag im #60-Slice (`sqlite-without-rowid-im-neubau.md`, `../next/` → `./`) nachziehen **und die Status-Spalte der README-Zeilen** (`next/` und `in-progress/`) mitziehen;
@@ -19,7 +19,7 @@ Ein Tabellenneubau behält `WITHOUT ROWID` genau dann, wenn die **Datenbank** di
 
 Handbuch §3.17 sagt zugleich: ein Neubau erhält das Merkmal, „wenn die Datenbank **oder die Datei** die Tabelle so führt" (Fall A: Umwandlung hin) **und** „`schema migrate` plant das Merkmal
 selbst nicht: es ändert eine bestehende Tabelle weder hinzu noch weg". Beides zugleich stimmt für Fall A nicht. Die Regel stammt aus
-[`sqlite-without-rowid-im-neubau.md`](../in-progress/sqlite-without-rowid-im-neubau.md) P1 (Datei oder Datenbank; als Folge in Kauf genommen); `spec/ddl-generation-rules.md` §3.5 trägt denselben Satz.
+[`sqlite-without-rowid-im-neubau.md`](sqlite-without-rowid-im-neubau.md) P1 (Datei oder Datenbank; als Folge in Kauf genommen); `spec/ddl-generation-rules.md` §3.5 trägt denselben Satz.
 Fall A hatte keinen Test — deshalb rutschte #67 durch.
 
 ## Entscheidung (Eigner, 2026-10-26): Option C plus Warnung
@@ -62,6 +62,24 @@ Fall A hatte keinen Test — deshalb rutschte #67 durch.
   Befund **und** Fix: Version (1.11.0/1.11.1), Betroffene (Neubau bei Datei `true` + Rowid-Datenbank; Rollback-Artefakte daraus), Erkennung (`down.sql` mit `__dmg_rebuild`-Block `WITHOUT ROWID`, obwohl die Tabelle vorher
   Rowid war), Abhilfe (nicht angewendeten Lauf neu erzeugen; bei angewendetem manueller Eingriff). **In `docs/user/` steht dazu nichts** (kein Troubleshooting-Eintrag).
 * **ADR:** nicht angenommen nötig (Planer-/Renderer-Verhalten, kein Fingerabdruck-/Modellvertrag); im Zweifel klärt der Eigner.
+
+## P0 Messung (Ist vor der Änderung, 2026-10-26)
+
+Aufbau: Tabelle `t(id, a)` mit Zeile, Datei mit `a` nullable (Neubau über `AlterColumnNullability`); Fall E: neue nullable Spalte `n` (kein Neubau). Je Fall `--plan-only` und `--execute`, dazu `--output` mit `--generate-rollback`.
+
+| Fall | Hinweg (`up.sql`/Tabelle nach `--execute`) | `down.sql` | Warnung |
+|---|---|---|---|
+| A | `WITHOUT ROWID` (Befund) | `WITHOUT ROWID` (Befund) | keine |
+| A-FT (neuer `FULLTEXT`-Index) | `WITHOUT ROWID`, FTS5 degradiert, `W132` (zweimal: Neubau und `AddIndex`) | `WITHOUT ROWID` | `W132` |
+| B | Rowid | Rowid | keine |
+| C1, C2 | `WITHOUT ROWID` | `WITHOUT ROWID` | keine |
+| E / F | 1 Operation (`AddColumn`), Tabelle bleibt Rowid; die `metadata`-Differenz erzeugt keine Operation | n/a | keine |
+
+Befunde:
+
+* `--plan-only` rendert die Up-DDL (`statementsTotal` 9, `statements: null` im Report): eine Warnung aus dem Renderer erreicht auch den Plan.
+* **Fundstelle der Warnung:** nur der Report (`--report`, `--report-format json|yaml`), Feld `diagnostics` (Einträge mit `code`, `severity`, `message`, `operationId`). `schema migrate` schreibt weder auf stdout noch auf stderr Diagnostics; `--output-format` gibt es bei `schema migrate` nicht (Usage-Fehler). Das `up.sql` trägt keine Diagnostics.
+* **Fall A-FT mit `--execute`** endet schon vor der Änderung mit Exit 8 (`TRANSACTION_SCOPE_UNSUPPORTED`: Neubau und `AddIndex` in einem Lauf) — unabhängig von #67. Der Fall wird deshalb mit `--plan-only` und `--output` getestet.
 
 ## Akzeptanzkriterien
 

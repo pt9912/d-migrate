@@ -38,12 +38,14 @@ class SqliteRebuildViewDependentsTest : FunSpec({
     fun plan(source: SchemaDefinition, target: SchemaDefinition) = SqliteRebuildPlanner.planRebuild(
         table = "t",
         bucket = emptyList(),
-        source = source.tables.getValue("t"),
-        target = target.tables.getValue("t"),
+        sides = SqliteRebuildSides(
+            source = source.tables.getValue("t"),
+            target = target.tables.getValue("t"),
+            sourceSchema = source,
+            targetSchema = target,
+        ),
         bucketRisk = OperationRisk.SAFE,
         sql = SqliteDiffSqlBuilders(),
-        sourceSchema = source,
-        targetSchema = target,
     )
 
     test("eine Sicht, die nur das Soll kennt, wird vor dem Anlegen geloescht (zweiter Eimer)") {

@@ -200,6 +200,9 @@ internal object SqliteRebuildPlanner {
      * used to compute inline. [sql] is threaded for identifier
      * quoting + type-mapping during the column-mapping build.
      *
+     * [sides] nennt Quelle und Ziel des Neubaus (je Tabelle und Schema) und die Richtung;
+     * die Datenbank-Seite ergibt sich daraus ([SqliteRebuildSides.databaseTable]).
+     *
      * Empty defaults for [SqliteRebuildPlan.dependentViewsToDrop] /
      * [SqliteRebuildPlan.dependentViewsToRecreate] /
      * [SqliteRebuildPlan.dependentTriggersToDrop] /
@@ -209,14 +212,15 @@ internal object SqliteRebuildPlanner {
     fun planRebuild(
         table: String,
         bucket: List<DiffOperation>,
-        source: TableDefinition,
-        target: TableDefinition,
+        sides: SqliteRebuildSides,
         bucketRisk: OperationRisk,
         sql: SqliteDiffSqlBuilders,
         catalog: SqliteCatalogSnapshot = SqliteCatalogSnapshot.EMPTY,
-        sourceSchema: SchemaDefinition? = null,
-        targetSchema: SchemaDefinition? = null,
     ): SqliteRebuildPlan {
+        val source = sides.source
+        val target = sides.target
+        val sourceSchema = sides.sourceSchema
+        val targetSchema = sides.targetSchema
         // Eine Domain-Spalte steht in der Spaltenabbildung mit ihrem Basistyp: aendert
         // sich der Basistyp, ist das eine Umwandlung (CAST), keine gleiche Spalte
         // (der Vergleich meldet sie nicht; siehe `typeChangeReported` unten).
@@ -264,6 +268,7 @@ internal object SqliteRebuildPlanner {
             dependentTriggersToRecreate = collectDependentTriggers(targetSchema, table),
             preflight = buildPreflightChecks(table, source, mapping, resolvedTempName, catalog),
             customTypes = targetSchema?.customTypes.orEmpty(),
+            direction = sides.direction,
         )
     }
 

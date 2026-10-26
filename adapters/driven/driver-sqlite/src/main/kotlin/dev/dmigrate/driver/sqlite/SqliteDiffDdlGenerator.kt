@@ -163,13 +163,16 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             val downPlan = SqliteRebuildPlanner.planRebuild(
                 table = table,
                 bucket = bucket,
-                source = desired,
-                target = current,
+                sides = SqliteRebuildSides(
+                    source = desired,
+                    target = current,
+                    sourceSchema = diff.desiredSchema,
+                    targetSchema = diff.currentSchema,
+                    direction = SqliteRenderDirection.DOWN,
+                ),
                 bucketRisk = ctx.bucketRisk(bucket),
                 sql = sql,
                 catalog = downCatalog,
-                sourceSchema = diff.desiredSchema,
-                targetSchema = diff.currentSchema,
             ).copy(emissionMode = emissionModeFor(ctx.options))
             rebuildRenderer.render(downPlan, ctx)
             return
@@ -189,13 +192,15 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         val upPlan = SqliteRebuildPlanner.planRebuild(
             table = table,
             bucket = bucket,
-            source = current,
-            target = desired,
+            sides = SqliteRebuildSides(
+                source = current,
+                target = desired,
+                sourceSchema = diff.currentSchema,
+                targetSchema = diff.desiredSchema,
+            ),
             bucketRisk = ctx.bucketRisk(bucket),
             sql = sql,
             catalog = upCatalog,
-            sourceSchema = diff.currentSchema,
-            targetSchema = diff.desiredSchema,
         ).copy(emissionMode = emissionModeFor(ctx.options))
         rebuildRenderer.render(upPlan, ctx)
     }

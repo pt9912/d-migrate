@@ -15,8 +15,9 @@ import java.nio.file.Path
 import java.sql.DriverManager
 
 /**
- * `WITHOUT ROWID` ueberlebt einen Tabellenneubau: aus einer Datei ohne das Merkmal (Bestandsdatei)
- * ebenso wie aus einer Datei mit `without_rowid: true`; `schema generate` schreibt es.
+ * Ein Tabellenneubau behaelt das Merkmal der Datenbank: `WITHOUT ROWID` bleibt, eine Rowid-Tabelle bleibt eine
+ * Rowid-Tabelle. Die Datei aendert es nicht; fuehrt sie `without_rowid: true` gegen eine Rowid-Tabelle, warnt
+ * `W164`. `schema generate` schreibt das Merkmal der Datei.
  */
 class CliSchemaMigrateWithoutRowidSqliteTest : FunSpec({
 
@@ -110,6 +111,111 @@ class CliSchemaMigrateWithoutRowidSqliteTest : FunSpec({
         migrate(dir, yaml(aRequired = false, withoutRowid = false), db, "up", "--execute").first shouldBe 0
 
         tableSql(db) shouldNotContain "WITHOUT ROWID"
+    }
+
+    fun rowidDatabase(dir: Path): Path {
+        val db = dir.resolve("db.sqlite")
+        exec(
+            db,
+            "CREATE TABLE t (id INTEGER NOT NULL, a TEXT NOT NULL, PRIMARY KEY (id))",
+            "INSERT INTO t (id, a) VALUES (1, 'x')",
+        )
+        return db
+    }
+
+    fun w164(report: String) = Regex("\"code\":\"W164\"").findAll(report).count()
+
+    for (mode in listOf("--plan-only", "--execute")) {
+        test("Fall A ($mode): Datei true gegen Rowid-Datenbank: der Neubau bleibt Rowid, W164 im Report, Exit 0") {
+            val dir = Files.createTempDirectory("cli-wr-a")
+            val db = rowidDatabase(dir)
+
+            val (code, report) = migrate(dir, yaml(aRequired = false, withoutRowid = true), db, "up", mode)
+
+            code shouldBe 0
+            w164(report) shouldBe 1
+            report shouldContain "\"code\":\"W164\",\"severity\":\"WARNING\""
+            report shouldContain "\"operationId\":\"AlterColumnNullability:"
+            if (mode == "--execute") {
+                tableSql(db) shouldNotContain "WITHOUT ROWID"
+                scalar(db, "SELECT count(*) FROM t") shouldBe "1"
+            }
+        }
+
+        test("Fall B ($mode): Datei ohne Angabe gegen Rowid-Datenbank: Rowid, keine Warnung") {
+            val dir = Files.createTempDirectory("cli-wr-b")
+            val db = rowidDatabase(dir)
+
+            val (code, report) = migrate(dir, yaml(aRequired = false, withoutRowid = false), db, "up", mode)
+
+            code shouldBe 0
+            w164(report) shouldBe 0
+            if (mode == "--execute") tableSql(db) shouldNotContain "WITHOUT ROWID"
+        }
+
+        test("Fall C1 und C2 ($mode): Datenbank WITHOUT ROWID bleibt WITHOUT ROWID, keine Warnung") {
+            for (withFlag in listOf(true, false)) {
+                val dir = Files.createTempDirectory("cli-wr-c")
+                val db = databaseWithoutRowid(dir)
+
+                val (code, report) = migrate(dir, yaml(aRequired = false, withoutRowid = withFlag), db, "up", mode)
+
+                code shouldBe 0
+                w164(report) shouldBe 0
+                if (mode == "--execute") tableSql(db) shouldContain "WITHOUT ROWID"
+            }
+        }
+    }
+
+    test("Fall E und F: Datei true ohne Neubau (neue nullable Spalte): 1 Operation, Rowid, keine Warnung") {
+        for (mode in listOf("--plan-only", "--execute")) {
+            val dir = Files.createTempDirectory("cli-wr-e")
+            val db = rowidDatabase(dir)
+            val source = yaml(aRequired = true, withoutRowid = true)
+                .replace("      a: {", "      n: { type: text, required: false }\n      a: {")
+
+            val (code, report) = migrate(dir, source, db, "up", mode)
+
+            code shouldBe 0
+            operations(report) shouldBe 1
+            w164(report) shouldBe 0
+            if (mode == "--execute") tableSql(db) shouldNotContain "WITHOUT ROWID"
+        }
+    }
+
+    test("Fall A mit FULLTEXT-Index (A-FT, plan-only): FTS5-Aufbau statt W132, Tabelle bleibt Rowid, W164") {
+        val dir = Files.createTempDirectory("cli-wr-aft")
+        val db = rowidDatabase(dir)
+        val source = yaml(aRequired = false, withoutRowid = true) +
+            "    indices:\n      - name: ix_ft\n        type: fulltext\n        columns: [a]\n"
+
+        val (code, report) = migrate(dir, source, db, "up", "--plan-only")
+
+        code shouldBe 0
+        w164(report) shouldBe 1
+        report shouldNotContain "\"code\":\"W132\""
+        val up = dir.resolve("up.sql")
+        run(
+            "schema", "migrate", "--source", dir.resolve("up.yaml").toString(),
+            "--target", "db:sqlite://$db", "--output", up.toString(),
+        ) shouldBe 0
+        val sql = Files.readString(up)
+        sql shouldContain "CREATE VIRTUAL TABLE"
+        sql shouldNotContain "WITHOUT ROWID"
+    }
+
+    test("Rollback-Artefakt von Fall A: die Tabelle kommt als Rowid-Tabelle zurueck") {
+        val dir = Files.createTempDirectory("cli-wr-a-down")
+        val db = rowidDatabase(dir)
+        val down = dir.resolve("down.sql")
+        run(
+            "schema", "migrate", "--source", write(dir, "s.yaml", yaml(aRequired = false, withoutRowid = true)).toString(),
+            "--target", "db:sqlite://$db", "--output", dir.resolve("up.sql").toString(),
+            "--generate-rollback", "--rollback-output", down.toString(),
+        ) shouldBe 0
+
+        Files.readString(dir.resolve("up.sql")) shouldNotContain "WITHOUT ROWID"
+        Files.readString(down) shouldNotContain "WITHOUT ROWID"
     }
 
     test("schema generate schreibt WITHOUT ROWID; schema reverse liest es zurueck") {

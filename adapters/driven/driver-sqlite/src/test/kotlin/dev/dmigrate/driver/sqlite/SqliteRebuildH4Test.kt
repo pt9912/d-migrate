@@ -49,8 +49,10 @@ class SqliteRebuildH4Test : FunSpec({
     ): SqliteRebuildPlan = SqliteRebuildPlanner.planRebuild(
         table = "u",
         bucket = bucket,
-        source = source,
-        target = target,
+        sides = SqliteRebuildSides(
+            source = source,
+            target = target,
+        ),
         bucketRisk = OperationRisk.SAFE,
         sql = sql,
         catalog = catalog,

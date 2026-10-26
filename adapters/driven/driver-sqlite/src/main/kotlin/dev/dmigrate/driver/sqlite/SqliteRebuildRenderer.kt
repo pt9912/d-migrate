@@ -101,6 +101,7 @@ internal class SqliteRebuildRenderer(
         emitPreflightInfoDiagnostics(plan, ctx)
         emitCastPreflightInfoDiagnostics(plan, ctx)
         warnRebuiltColumnDegradations(plan, ctx)
+        plan.bucketOperations.firstOrNull()?.let { SqliteRebuildWithoutRowidDeviation.warnIfDeviates(it, ctx, plan) }
     }
 
     /**

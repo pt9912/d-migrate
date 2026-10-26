@@ -369,3 +369,19 @@ entries:
         path_type: production
       - source: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteIdentityModeDegradationTest.kt"
         path_type: test
+
+  # W164 — SQLite-Tabellenneubau: die Datei fuehrt `without_rowid: true`, die
+  # Datenbank-Tabelle ist eine Rowid-Tabelle. Der Neubau behaelt das Merkmal der
+  # Datenbank und aendert es nicht; die Migration laeuft weiter (nur Up, nie Down).
+  - code: W164
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildPlanWithoutRowidTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildWithoutRowidDeviation.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildPlanWithoutRowidTest.kt"
+        path_type: test
+      - source: "adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateWithoutRowidSqliteTest.kt"
+        path_type: test

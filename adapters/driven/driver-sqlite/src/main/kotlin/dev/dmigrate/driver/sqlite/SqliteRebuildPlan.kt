@@ -144,15 +144,27 @@ internal data class SqliteRebuildPlan(
      *   would leak the FK state on external execution.
      */
     val emissionMode: SqliteRebuildEmissionMode = SqliteRebuildEmissionMode.STANDALONE,
+
+    /** Richtung des Neubaus: Up kopiert von der Datenbank (`oldTable`), Down zu ihr (`newTable`). */
+    val direction: SqliteRenderDirection = SqliteRenderDirection.UP,
 ) {
     /**
      * `WITHOUT ROWID` ist ein Strukturmerkmal, das `schema migrate` weder plant noch
-     * aendert; der Neubau erhaelt es, wenn **eine** der beiden Seiten es traegt. Die
-     * Datenbank-Seite ist je nach Richtung `oldTable` (Up) oder `newTable` (Down) und
-     * kommt vom Reader; die Datei kennt das Merkmal bei einer Bestandsdatei nicht.
+     * aendert; der Neubau erhaelt das Merkmal der **Datenbank** (Up: `oldTable`, Down:
+     * `newTable`, vom Reader gelesen). Die Datei aendert es nicht ([fileDeclaresWithoutRowid]).
      */
     val withoutRowid: Boolean
-        get() = oldTable.metadata?.withoutRowid == true || newTable.metadata?.withoutRowid == true
+        get() = databaseTable.metadata?.withoutRowid == true
+
+    /** Die Datei fuehrt `without_rowid: true`, die Datenbank-Tabelle aber nicht: der Neubau folgt der Datenbank. */
+    val fileDeclaresWithoutRowid: Boolean
+        get() = fileTable.metadata?.withoutRowid == true && !withoutRowid
+
+    private val databaseTable: TableDefinition
+        get() = if (direction == SqliteRenderDirection.UP) oldTable else newTable
+
+    private val fileTable: TableDefinition
+        get() = if (direction == SqliteRenderDirection.UP) newTable else oldTable
 }
 
 /**
