@@ -9,6 +9,7 @@ import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.TableMetadata
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -162,9 +163,116 @@ class SqliteRebuildIndexOpsTest : FunSpec({
         render(back, schema("t" to table(aRequired = true)), up = false).diagnostics.count { it.code == "W142" } shouldBe 1
     }
 
-    test("FULLTEXT-Index neben einem Neubau behaelt seinen eigenen Pfad (Strom bleibt gemischt)") {
+    // ── FULLTEXT derselben Tabelle: der Neubau baut FTS5 genau einmal je Ziel-Index ──
+
+    val ft = ix("ft_b", "b", type = IndexType.FULLTEXT)
+
+    fun List<String>.createsOf(fts: String) = count("CREATE VIRTUAL TABLE \"$fts\"")
+
+    fun List<String>.triggersOf(fts: String) =
+        count { it.startsWith("CREATE TRIGGER \"${fts}_a") }
+
+    fun MigrationDdlResult.assertSingleStream() {
+        isBlocked shouldBe false
+        statements.all { it.transactionScope == TransactionScope.STREAM_OWNED } shouldBe true
+        MigrationStreamClassifier.unsupportedTransactionScopeReason(statements).shouldBeNull()
+    }
+
+    test("neuer FULLTEXT-Index neben einem Neubau: ein Strom, UP baut FTS5 genau einmal, DOWN raeumt es ab") {
+        val current = schema("t" to table(uUnique = false, indices = listOf(ix("ix_u", "u", unique = true))))
+        val desired = schema("t" to table(uUnique = true, indices = listOf(ft)))
+
+        val up = render(current, desired, up = true)
+        val down = render(current, desired, up = false)
+
+        up.assertSingleStream()
+        down.assertSingleStream()
+        up.sqls().createsOf("ft_b") shouldBe 1
+        up.sqls().triggersOf("ft_b") shouldBe 3
+        up.sqls().count("INSERT INTO \"ft_b\"(\"ft_b\") VALUES('rebuild')") shouldBe 1
+        down.sqls().createsOf("ft_b") shouldBe 0
+        down.sqls().count("DROP TABLE IF EXISTS \"ft_b\"") shouldBe 1
+        down.sqls().count("CREATE UNIQUE INDEX \"ix_u\"") shouldBe 1
+    }
+
+    test("neuer FULLTEXT-Index neben einem Nullability-Neubau: genau ein FTS5-Aufbau, ohne Zusatz-Operation") {
         val current = schema("t" to table())
-        val desired = schema("t" to table(aRequired = true, indices = listOf(ix("ft_b", "b", type = IndexType.FULLTEXT))))
+        val desired = schema("t" to table(aRequired = true, indices = listOf(ft)))
+
+        val up = render(current, desired, up = true)
+
+        up.assertSingleStream()
+        up.sqls().createsOf("ft_b") shouldBe 1
+        up.sqls().count("CREATE VIRTUAL TABLE") shouldBe 1
+    }
+
+    test("entfallender FULLTEXT-Index neben einem Neubau: UP raeumt FTS5 ab, DOWN legt es genau einmal an") {
+        val current = schema("t" to table(indices = listOf(ft)))
+        val desired = schema("t" to table(aRequired = true))
+
+        val up = render(current, desired, up = true)
+        val down = render(current, desired, up = false)
+
+        up.assertSingleStream()
+        down.assertSingleStream()
+        up.sqls().createsOf("ft_b") shouldBe 0
+        up.sqls().count("DROP TABLE IF EXISTS \"ft_b\"") shouldBe 1
+        down.sqls().createsOf("ft_b") shouldBe 1
+        down.sqls().count("DROP TABLE IF EXISTS \"ft_b\"") shouldBe 0
+    }
+
+    test("geaenderter FULLTEXT-Index neben einem Neubau: je Richtung genau ein Aufbau und genau ein Abraeumen") {
+        val before = ix("ft_b", "b", type = IndexType.FULLTEXT)
+        val after = ix("ft_b", "a", type = IndexType.FULLTEXT)
+        val current = schema("t" to table(indices = listOf(before)))
+        val desired = schema("t" to table(aRequired = true, indices = listOf(after)))
+
+        for (up in listOf(true, false)) {
+            val r = render(current, desired, up = up)
+            r.assertSingleStream()
+            r.sqls().createsOf("ft_b") shouldBe 1
+            r.sqls().count("DROP TABLE IF EXISTS \"ft_b\"") shouldBe 1
+        }
+    }
+
+    test("FULLTEXT-Index neben einem Neubau, Plain-Index bleibt im Neubau") {
+        val keep = ix("ix_b", "b")
+        val current = schema("t" to table(indices = listOf(keep)))
+        val desired = schema("t" to table(aRequired = true, indices = listOf(keep, ft)))
+
+        val up = render(current, desired, up = true)
+
+        up.assertSingleStream()
+        up.sqls().count("CREATE INDEX \"ix_b\"") shouldBe 1
+        up.sqls().createsOf("ft_b") shouldBe 1
+    }
+
+    for ((label, columnName) in listOf("WITHOUT ROWID" to "b", "reservierter Spaltenname" to "rank")) {
+        test("FULLTEXT neben einem Neubau, FTS5 nicht baubar ($label): W132 genau einmal, kein FTS5, kein Blocker") {
+            val meta = if (label == "WITHOUT ROWID") TableMetadata(withoutRowid = true) else null
+            val extra = if (columnName == "rank") mapOf("rank" to ColumnDefinition(NeutralType.Text())) else emptyMap()
+            val index = ix("ft_b", columnName, type = IndexType.FULLTEXT)
+            val current = schema("t" to table(extra = extra).copy(metadata = meta))
+            val desired = schema("t" to table(aRequired = true, indices = listOf(index), extra = extra).copy(metadata = meta))
+
+            val up = render(current, desired, up = true)
+
+            up.assertSingleStream()
+            up.diagnostics.count { it.code == "W132" } shouldBe 1
+            up.sqls().count("CREATE VIRTUAL TABLE") shouldBe 0
+        }
+    }
+
+    test("FULLTEXT-Index einer anderen Tabelle neben einem Neubau bleibt ein gemischter Strom") {
+        val other = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "b" to ColumnDefinition(NeutralType.Text()),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val current = schema("t" to table(), "x" to other)
+        val desired = schema("t" to table(aRequired = true), "x" to other.copy(indices = listOf(ft)))
 
         val r = render(current, desired, up = true)
 

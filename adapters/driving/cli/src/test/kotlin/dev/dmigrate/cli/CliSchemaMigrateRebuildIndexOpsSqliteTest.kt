@@ -57,13 +57,21 @@ class CliSchemaMigrateRebuildIndexOpsSqliteTest : FunSpec({
     fun indexCount(db: Path, name: String) =
         scalar(db, "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = '$name'")
 
-    fun sqlStatements(sql: Path): List<String> =
-        Files.readString(sql).lineSequence()
-            .filterNot { it.trimStart().startsWith("--") }
-            .joinToString("\n")
-            .split(";")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
+    /** Teilt an `;`, haelt aber den Rumpf eines `CREATE TRIGGER` (`BEGIN … ; END;`) zusammen. */
+    fun sqlStatements(sql: Path): List<String> {
+        val text = Files.readString(sql).lineSequence().filterNot { it.trimStart().startsWith("--") }.joinToString("\n")
+        val statements = mutableListOf<String>()
+        var open = ""
+        for (piece in text.split(";")) {
+            open = if (open.isEmpty()) piece.trim() else "$open;$piece"
+            val unfinishedTrigger = open.uppercase().startsWith("CREATE TRIGGER") && !open.trimEnd().uppercase().endsWith("END")
+            if (!unfinishedTrigger) {
+                if (open.isNotBlank()) statements += open.trim()
+                open = ""
+            }
+        }
+        return statements
+    }
 
     fun write(dir: Path, name: String, text: String): Path = dir.resolve(name).also { Files.writeString(it, text) }
 
@@ -72,7 +80,8 @@ class CliSchemaMigrateRebuildIndexOpsSqliteTest : FunSpec({
         indices: String = "",
         other: String = "",
         constraints: String = "",
-    ) = "schema_format: \"1.0\"\nname: \"U\"\nversion: \"1.0\"\ntables:\n$other  t:\n    columns:\n" +
+        meta: String = "",
+    ) = "schema_format: \"1.0\"\nname: \"U\"\nversion: \"1.0\"\ntables:\n$other  t:\n$meta    columns:\n" +
         "      id: { type: integer, required: true }\n$columns    primary_key: [id]\n$constraints$indices"
 
     fun index(vararg lines: String) = "    indices:\n" + lines.joinToString("") { "      $it\n" }
@@ -263,15 +272,250 @@ class CliSchemaMigrateRebuildIndexOpsSqliteTest : FunSpec({
         catalog(db) shouldBe before
     }
 
-    test("FULLTEXT-Index neben einem Neubau behaelt seinen Pfad: --execute bleibt Exit 8, Datenbank unveraendert") {
-        val dir = Files.createTempDirectory("cli-rebuild-index-fulltext")
-        val db = database(dir, textTableDb)
-        val before = catalog(db)
+    // ── FULLTEXT-Index derselben Tabelle neben einem Neubau ──
 
-        val (code, report) = execute(dir, file(required(), index("- { name: ft_b, type: fulltext, columns: [b] }")), db, "up")
+    val ftIndex = index("- { name: ft_b, type: fulltext, columns: [b] }")
+
+    /** Die FTS5-Objekte, die `schema generate` fuer einen `FULLTEXT`-Index auf `t(b)` anlegt. */
+    fun ftsDb(column: String = "b") = listOf(
+        "CREATE VIRTUAL TABLE \"ft_b\" USING fts5(\"$column\", content='t')",
+        "INSERT INTO \"ft_b\"(\"ft_b\") VALUES('rebuild')",
+        "CREATE TRIGGER \"ft_b_ai\" AFTER INSERT ON \"t\" BEGIN INSERT INTO \"ft_b\"(rowid, \"$column\") " +
+            "VALUES (new.rowid, new.\"$column\"); END",
+        "CREATE TRIGGER \"ft_b_ad\" AFTER DELETE ON \"t\" BEGIN INSERT INTO \"ft_b\"(\"ft_b\", rowid, \"$column\") " +
+            "VALUES('delete', old.rowid, old.\"$column\"); END",
+        "CREATE TRIGGER \"ft_b_au\" AFTER UPDATE ON \"t\" BEGIN INSERT INTO \"ft_b\"(\"ft_b\", rowid, \"$column\") " +
+            "VALUES('delete', old.rowid, old.\"$column\"); INSERT INTO \"ft_b\"(rowid, \"$column\") " +
+            "VALUES (new.rowid, new.\"$column\"); END",
+    )
+
+    fun ftsObjects(db: Path) = scalar(db, "SELECT count(*) FROM sqlite_master WHERE name LIKE 'ft_b%'").toInt()
+
+    fun ftsTriggers(db: Path) = scalar(db, "SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'ft_b_a%'").toInt()
+
+    fun warnings(report: Path, code: String) = Regex("\"code\":\"$code\"").findAll(Files.readString(report)).count()
+
+    fun ftsColumns(db: Path) = scalar(db, "SELECT sql FROM sqlite_master WHERE name = 'ft_b'")
+
+    /**
+     * Hinweg mit `--execute` (Exit 0, danach `check`), zweiter Lauf ohne Operationen, danach der Rueckweg: `down.sql`
+     * ueber `schema rollback` bringt den ganzen Katalog (FTS5-Tabelle, Schattentabellen, Trigger) auf den Stand vor dem Lauf.
+     */
+    fun cycle(
+        label: String,
+        dbStatements: List<String>,
+        after: String,
+        warning: Pair<String, Int>? = null,
+        check: (Path) -> Unit,
+    ) {
+        test("FULLTEXT neben einem Neubau, $label: --execute Exit 0, zweiter Lauf 0, schema rollback stellt den Katalog her") {
+            val dir = Files.createTempDirectory("cli-rebuild-fulltext")
+            val db = database(dir, *dbStatements.toTypedArray())
+            val start = structure(db)
+            val (_, down) = scripts(dir, after, db)
+
+            val (code, report) = execute(dir, after, db, "up")
+
+            code shouldBe 0
+            check(db)
+            warning?.let { (c, n) -> warnings(report, c) shouldBe n }
+            secondRun(dir, after, db) shouldBe 0
+            run(
+                "schema", "rollback", "--source", down.toString(), "--target", "db:sqlite://$db",
+                "--execute", "--allow-destructive",
+            ) shouldBe 0
+            structure(db) shouldBe start
+        }
+    }
+
+    val withoutRowid = "    metadata:\n      without_rowid: true\n"
+
+    val ftUniqueDb = listOf(
+        "CREATE TABLE t (id INTEGER NOT NULL, u INTEGER, a TEXT, b TEXT, PRIMARY KEY (id))",
+        "CREATE UNIQUE INDEX ix_u ON t (u)",
+    )
+
+    fun hasFts(db: Path) {
+        ftsObjects(db) shouldBe 8
+        ftsTriggers(db) shouldBe 3
+    }
+
+    cycle(
+        "Fall 1: Neubau (unique) und neuer Index",
+        ftUniqueDb,
+        file("      u: { type: integer, unique: true }\n      a: { type: text }\n      b: { type: text }\n", ftIndex),
+    ) { hasFts(it) }
+
+    cycle("Fall 2: Nullability-Neubau und neuer Index", listOf(textTableDb), file(required(), ftIndex)) { hasFts(it) }
+
+    cycle("Fall 3: Neubau und entfallender Index", listOf(textTableDb) + ftsDb(), file(required())) {
+        ftsObjects(it) shouldBe 0
+    }
+
+    cycle(
+        "Fall 4: Neubau und geaenderter Index",
+        listOf(textTableDb) + ftsDb(),
+        file(required(), index("- { name: ft_b, type: fulltext, columns: [a] }")),
+    ) {
+        hasFts(it)
+        ftsColumns(it) shouldContain "\"a\""
+    }
+
+    cycle(
+        "Fall 10: unveraenderter Plain-Index und Fremdschluessel",
+        listOf(
+            "CREATE TABLE p (id INTEGER NOT NULL PRIMARY KEY)",
+            "CREATE TABLE t (id INTEGER NOT NULL, u INTEGER, a TEXT, b TEXT, PRIMARY KEY (id), " +
+                "CONSTRAINT fk_t_u FOREIGN KEY (u) REFERENCES p (id))",
+            "CREATE INDEX ix_b ON t (b)",
+        ),
+        file(
+            required(),
+            index("- { name: ix_b, columns: [b] }", "- { name: ft_b, type: fulltext, columns: [b] }"),
+            other = "  p:\n    columns:\n      id: { type: integer, required: true }\n    primary_key: [id]\n",
+            constraints = "    constraints:\n      - name: fk_t_u\n        type: foreign_key\n        columns: [u]\n" +
+                "        references: { table: p, columns: [id] }\n",
+        ),
+    ) {
+        hasFts(it)
+        indexCount(it, "ix_b") shouldBe "1"
+        scalar(it, "SELECT sql FROM sqlite_master WHERE name = 't'") shouldContain "fk_t_u"
+    }
+
+    /**
+     * FTS5 nicht baubar: der Neubau laeuft mit genau einer `W132` und ohne FTS5. Die Datei fuehrt den Index weiter, die
+     * Datenbank kann ihn nicht tragen; der Nachvergleich meldet das wie bei jedem `FULLTEXT` ohne Neubau
+     * (`POST_EXECUTE_DRIFT`, Exit 5), nicht den Scope-Blocker. Der Rueckweg stellt den Katalog her.
+     */
+    fun degraded(label: String, dbStatements: List<String>, after: String) {
+        test("FULLTEXT neben einem Neubau, $label: ein Strom, W132 genau einmal, kein FTS5, der Rueckweg stellt den Katalog her") {
+            val dir = Files.createTempDirectory("cli-rebuild-fulltext-degraded")
+            val db = database(dir, *dbStatements.toTypedArray())
+            val start = structure(db)
+            val (_, down) = scripts(dir, after, db)
+
+            val (code, report) = execute(dir, after, db, "up")
+
+            val text = Files.readString(report)
+            text shouldNotContain "TRANSACTION_SCOPE_UNSUPPORTED"
+            text shouldContain "POST_EXECUTE_DRIFT"
+            code shouldBe 5
+            warnings(report, "W132") shouldBe 1
+            ftsObjects(db) shouldBe 0
+            scalar(db, "SELECT sql FROM sqlite_master WHERE name = 't'") shouldContain "\"a\" TEXT NOT NULL"
+            exec(db, *sqlStatements(down).toTypedArray())
+            structure(db) shouldBe start
+        }
+    }
+
+    degraded(
+        "Fall 8: WITHOUT ROWID",
+        listOf("CREATE TABLE t (id INTEGER NOT NULL, u INTEGER, a TEXT, b TEXT, PRIMARY KEY (id)) WITHOUT ROWID"),
+        file(required(), ftIndex, meta = withoutRowid),
+    )
+
+    degraded(
+        "Fall 9: reservierter Spaltenname rank",
+        listOf("CREATE TABLE t (id INTEGER NOT NULL, u INTEGER, a TEXT, b TEXT, rank TEXT, PRIMARY KEY (id))"),
+        file(required("      rank: { type: text }\n"), index("- { name: ft_b, type: fulltext, columns: [rank] }")),
+    )
+
+    cycle(
+        "Kontrolle: Rowid-Datenbank, Datei WITHOUT ROWID (der Neubau bleibt Rowid, FTS5 wird aufgebaut)",
+        listOf(textTableDb),
+        file(required(), ftIndex, meta = withoutRowid),
+        warning = "W164" to 1,
+    ) { hasFts(it) }
+
+    // ── Skript ohne Guard: keine Doppelanlage ──
+
+    test("Skript UP und DOWN (Fall 1) laufen ohne Guard durch, FTS5 wird je Richtung hoechstens einmal angelegt") {
+        val dir = Files.createTempDirectory("cli-rebuild-fulltext-script-add")
+        val db = database(dir, *ftUniqueDb.toTypedArray())
+        val start = structure(db)
+        val after = file("      u: { type: integer, unique: true }\n      a: { type: text }\n      b: { type: text }\n", ftIndex)
+        val (up, down) = scripts(dir, after, db)
+
+        sqlStatements(up).count { it.startsWith("CREATE VIRTUAL TABLE") } shouldBe 1
+        exec(db, *sqlStatements(up).toTypedArray())
+        hasFts(db)
+        sqlStatements(down).count { it.startsWith("CREATE VIRTUAL TABLE") } shouldBe 0
+        exec(db, *sqlStatements(down).toTypedArray())
+
+        structure(db) shouldBe start
+    }
+
+    test("Skript DOWN (Fall 3) legt FTS5 genau einmal an und laeuft ohne Guard durch") {
+        val dir = Files.createTempDirectory("cli-rebuild-fulltext-script-drop")
+        val db = database(dir, textTableDb, *ftsDb().toTypedArray())
+        val start = structure(db)
+        val (up, down) = scripts(dir, file(required()), db)
+
+        sqlStatements(up).count { it.startsWith("CREATE VIRTUAL TABLE") } shouldBe 0
+        exec(db, *sqlStatements(up).toTypedArray())
+        ftsObjects(db) shouldBe 0
+        sqlStatements(down).count { it.startsWith("CREATE VIRTUAL TABLE") } shouldBe 1
+        exec(db, *sqlStatements(down).toTypedArray())
+
+        structure(db) shouldBe start
+    }
+
+    test("Skript UP und DOWN (Fall 4) legen FTS5 je Richtung genau einmal an") {
+        val dir = Files.createTempDirectory("cli-rebuild-fulltext-script-change")
+        val db = database(dir, textTableDb, *ftsDb().toTypedArray())
+        val start = structure(db)
+        val after = file(required(), index("- { name: ft_b, type: fulltext, columns: [a] }"))
+        val (up, down) = scripts(dir, after, db)
+
+        sqlStatements(up).count { it.startsWith("CREATE VIRTUAL TABLE") } shouldBe 1
+        sqlStatements(down).count { it.startsWith("CREATE VIRTUAL TABLE") } shouldBe 1
+        exec(db, *sqlStatements(up).toTypedArray())
+        exec(db, *sqlStatements(down).toTypedArray())
+
+        structure(db) shouldBe start
+    }
+
+    // ── Gegenproben ──
+
+    test("FULLTEXT-Index einer anderen Tabelle neben einem Neubau: --execute bleibt Exit 8, Datenbank unveraendert") {
+        val dir = Files.createTempDirectory("cli-rebuild-index-fulltext-foreign")
+        val db = database(
+            dir, *uniqueIndexDb.toTypedArray(),
+            "CREATE TABLE x (id INTEGER NOT NULL PRIMARY KEY, e TEXT)",
+        )
+        val before = catalog(db)
+        val source = file(
+            uniqueColumn,
+            other = "  x:\n    columns:\n      id: { type: integer, required: true }\n      e: { type: text }\n" +
+                "    primary_key: [id]\n    indices:\n      - { name: ft_e, type: fulltext, columns: [e] }\n",
+        )
+
+        val (code, report) = execute(dir, source, db, "up")
 
         code shouldBe 8
         Files.readString(report) shouldContain "TRANSACTION_SCOPE_UNSUPPORTED"
         catalog(db) shouldBe before
+    }
+
+    test("Neubau mit unveraendertem FULLTEXT-Index (Gegenprobe Fall 5): Exit 0, FTS5 samt Triggern, zweiter Lauf 0") {
+        val dir = Files.createTempDirectory("cli-rebuild-fulltext-keep")
+        val db = database(dir, textTableDb, *ftsDb().toTypedArray())
+        val after = file(required(), ftIndex)
+
+        execute(dir, after, db, "up").first shouldBe 0
+
+        hasFts(db)
+        secondRun(dir, after, db) shouldBe 0
+    }
+
+    test("neuer FULLTEXT-Index ohne Neubau (Gegenprobe Fall 6): Exit 0, zweiter Lauf 0") {
+        val dir = Files.createTempDirectory("cli-rebuild-fulltext-plain")
+        val db = database(dir, textTableDb)
+        val after = file(required().replace("a: { type: text, required: true }", "a: { type: text }"), ftIndex)
+
+        execute(dir, after, db, "up").first shouldBe 0
+
+        hasFts(db)
+        secondRun(dir, after, db) shouldBe 0
     }
 })

@@ -204,7 +204,7 @@ die Datenbank bleibt bei Exit 8 unverändert.
 
 Die Matrix (`test/cross-dialect-matrix`) kennt das Paar Datei-`unique` / Datenbank-Index nicht (siehe P2).
 
-Abweichung von der Erwartung: der FULLTEXT-Fall (11a/11b) hat dieselbe Wurzel und dieselbe Doppelung wie Plain-Indizes; der Neubau
+Abweichung von der Erwartung: der FULLTEXT-Fall (11a/11b) hat dieselbe Wurzel und dieselbe Doppelung wie Plain-Indizes; der Neubau Erledigt in [`sqlite-neubau-mit-fulltext-index-execute.md`](./sqlite-neubau-mit-fulltext-index-execute.md): der Neubau übernimmt die `FULLTEXT`-Operationen derselben Tabelle, `--execute` endet mit Exit 0.
 räumt FTS5 selbst ab und legt es neu an. Absorbieren wäre dort ebenfalls möglich, ist aber `sqlite-fulltext-rebuild-*` und
 bleibt außerhalb (Grenze von (a1) unverändert, Befund für einen Folgeplan).
 

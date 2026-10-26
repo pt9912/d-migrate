@@ -5,7 +5,6 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
-import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -689,9 +688,13 @@ internal object SqliteRebuildPlanner {
      * ("no such index") und das `CREATE INDEX` ("already exists"), und der Strom waere mit einer
      * `RUNNER_OWNED`-Anweisung gemischt.
      *
-     * Ausgenommen sind Indizes, die kein einfacher `CREATE INDEX` sind: `FULLTEXT` (FTS5-Tabelle samt
-     * Triggern, `DROP TABLE` raeumt sie nicht weg) und Geometrie-Indizes (Spatial-Pfad). Sie behalten
-     * ihren Weg. Ob eine Spalte Geometrie ist, sagen die Schemata; fehlen sie, gilt nur der Index-Typ.
+     * `FULLTEXT` gehoert dazu: der Neubau raeumt die FTS5-Objekte der Quellsicht in seiner Drop-Phase
+     * ab und baut die der Zielsicht samt `'rebuild'` und Triggern selbst auf
+     * ([SqliteRebuildRenderer]). Eine einfache Operation daneben baute die FTS5-Objekte ein zweites Mal
+     * und mischte `RUNNER_OWNED` in den Strom.
+     *
+     * Ausgenommen sind Geometrie-Indizes (Spatial-Pfad; der Neubau einer Geometrie-Tabelle ist ohnehin
+     * blockiert). Ob eine Spalte Geometrie ist, sagen die Schemata; fehlen sie, gilt nur der Index-Typ.
      */
     private fun isAbsorbedIndexOp(
         op: DiffOperation,
@@ -703,7 +706,6 @@ internal object SqliteRebuildPlanner {
             is DiffOperation.DropIndex -> op.index
             else -> return false
         }
-        if (index.type == IndexType.FULLTEXT) return false
         val table = op.objectRef.path[0]
         return listOf(current, desired).none { schema ->
             val columns = schema?.tables?.get(table)?.columns.orEmpty()

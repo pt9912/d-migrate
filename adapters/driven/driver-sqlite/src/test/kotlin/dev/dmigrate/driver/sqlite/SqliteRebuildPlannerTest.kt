@@ -104,12 +104,28 @@ class SqliteRebuildPlannerTest : FunSpec({
         c.simpleOps.single().let { it is DiffOperation.AddIndex && it.objectRef.path[0] == "w" } shouldBe true
     }
 
-    test("FULLTEXT index ops keep their own path next to a rebuild") {
+    test("FULLTEXT index ops on a rebuild table are absorbed into the bucket (the rebuild builds the FTS5 objects)") {
         val ft = IndexDefinition(name = "ft", columns = listOf(IndexColumn("c")), type = IndexType.FULLTEXT)
-        val ops = planner.plan(emptySchema(), emptySchema(), ageToInteger("u", index = ft)).operations
+        val gone = IndexDefinition(name = "ft2", columns = listOf(IndexColumn("d")), type = IndexType.FULLTEXT)
+        val ops = planner.plan(emptySchema(), emptySchema(), ageToInteger("u", index = ft, dropped = gone)).operations
         val c = SqliteRebuildPlanner.classify(ops)
+        val bucket = c.rebuildBuckets.getValue("u")
+        bucket.any { it is DiffOperation.AddIndex } shouldBe true
+        bucket.any { it is DiffOperation.DropIndex } shouldBe true
+        c.simpleOps.shouldBeEmpty()
+    }
+
+    test("a FULLTEXT index op of another table stays a simple op next to a rebuild") {
+        val ft = IndexDefinition(name = "ft", columns = listOf(IndexColumn("c")), type = IndexType.FULLTEXT)
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                ageToInteger("u").tablesChanged.single(),
+                TableDiff(name = "w", indicesAdded = listOf(ft)),
+            ),
+        )
+        val c = SqliteRebuildPlanner.classify(planner.plan(emptySchema(), emptySchema(), diff).operations)
         c.rebuildBuckets.getValue("u").any { it is DiffOperation.AddIndex } shouldBe false
-        c.simpleOps.any { it is DiffOperation.AddIndex } shouldBe true
+        c.simpleOps.single().let { it is DiffOperation.AddIndex && it.objectRef.path[0] == "w" } shouldBe true
     }
 
     test("a geometry index keeps its own path next to a rebuild") {

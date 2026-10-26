@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SQLite: Tabellenneubau und `FULLTEXT`-Index derselben Tabelle in einem `--execute`-Lauf** (Issue #67, Fall A-FT).
+  Ein Lauf, der eine Tabelle neu baute (etwa wegen `unique: true` oder einer Nullability-Änderung) und an
+  derselben Tabelle einen `FULLTEXT`-Index anlegte, entfernte oder änderte, endete mit Exit `8`
+  (`TRANSACTION_SCOPE_UNSUPPORTED`); ohne den Guard hätte das Skript die FTS5-Tabelle zweimal angelegt (`table
+  already exists`, im Rückweg beim entfallenden Index ebenso; beim geänderten Index lief es fehlerfrei, aber
+  doppelt). Der Neubau übernimmt diese `FULLTEXT`-Operationen jetzt: je Ziel-Index ein Aufbau in Hin- und Rückweg,
+  `--execute` endet mit Exit `0`, der Rückweg stellt die FTS5-Objekte her. Kann FTS5 nicht gebaut werden
+  (`WITHOUT ROWID`, Spalte `rank`), meldet der Lauf `W132` einmal statt zweimal. Eine Änderung an einer anderen
+  Tabelle neben dem Neubau bleibt Exit `8`. Der Schema-Fingerprint ändert sich nicht.
 - **SQLite: ein Tabellenneubau behält das `WITHOUT ROWID` der Datenbank** (Issue #67). Führte die Datei
   `metadata: { without_rowid: true }` für eine Tabelle, die in der Datenbank eine Rowid-Tabelle war,
   wandelte der Neubau (`schema migrate`, auch das erzeugte Rollback-Skript) die Tabelle in

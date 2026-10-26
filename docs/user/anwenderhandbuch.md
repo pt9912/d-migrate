@@ -2214,10 +2214,10 @@ sie als normale View erzeugt (Warnung **W103**).
     `indices: [{ unique: true }]`.
   - **Index neben einem Neubau:** Legt ein Lauf neben einem Tabellenneubau einen Index an
     oder entfernt einen, übernimmt der Neubau das: er legt die Indizes der Zieltabelle selbst
-    an, und `--execute` endet mit Exit `0`. Das gilt für gewöhnliche Indizes; ein
-    `FULLTEXT`-Index neben einem Neubau derselben Tabelle sowie eine Änderung an
-    einer **anderen** Tabelle neben dem Neubau blockieren `--execute` mit Exit `8`
-    (`TRANSACTION_SCOPE_UNSUPPORTED`, die Datenbank bleibt unverändert).
+    an, und `--execute` endet mit Exit `0`. Das gilt für gewöhnliche Indizes und für
+    `FULLTEXT`-Indizes derselben Tabelle: der Neubau räumt die FTS5-Objekte der Datenbank ab und baut die der
+    Datei genau einmal auf. Eine Änderung an einer **anderen** Tabelle (oder Sicht) neben dem Neubau
+    blockiert `--execute` mit Exit `8` (`TRANSACTION_SCOPE_UNSUPPORTED`, die Datenbank bleibt unverändert).
   - **`WITHOUT ROWID`:** ein Tabellenneubau behält das Merkmal der **Datenbank**, im Plan wie im
     erzeugten Rollback: eine Tabelle `WITHOUT ROWID` bleibt es, eine Rowid-Tabelle bleibt eine Rowid-Tabelle.
     `schema migrate` plant das Merkmal selbst nicht: es ändert eine bestehende Tabelle weder hinzu noch weg,
