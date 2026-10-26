@@ -1,8 +1,8 @@
 # PostgreSQL: eine Spalte vom Domain-Typ (`type: enum` + `ref_type`) plant bei jedem Lauf `AlterColumnType` und blockiert mit Exit 8 (Issue #68)
 
-> **Status: Entschieden (Eigner, 2026-10-26): Option B′; P0-Messung vollständig, Umsetzung offen.** Es gibt noch keinen Implementierungs-Commit. Der Plan liegt auf Anweisung des Eigners
+> **Status: Alle Eigner-Fragen entschieden (2026-10-26): Option B′ und E3, E7–E12 nach Empfehlung; E3 (a2) ist vorläufig und wird in P1b bestätigt. P0-Messung vollständig, Umsetzung offen (nächster Schritt: Schritt 0a, dann P1a).** Es gibt noch keinen Implementierungs-Commit. Der Plan liegt auf Anweisung des Eigners
 > schon in `in-progress/` (ADR 0004 sieht den Move erst mit dem ersten Implementierungs-Commit vor).
-> **Vorbedingung:** E1, E2, E4–E6 entschieden (siehe „Entscheidung“). **Offen (Eigner):** E3 (Fingerabdruck: a1/a2/b/c), E7 (Validierung), E8 (Leser), **E8-Seed** (eigene Frage), E9 (Domain über Domain, Herkunft), E10 (ein oder zwei Slices), E11 (Guard Plan-Artefakte), E12 (Release/Versionierung). **Reihenfolge:** Schritt 0a Spec (Reverse/Verweis) → P1a (Messung auf `main`) → **vorläufige** Entscheidung E3/E7/E9 → Schritt 0b Spec → P2a → P1b (Hash nachher, E3 bestätigt, ADR) → P2b → P2c → P3a/P3b → P5.
+> **Vorbedingung:** E1, E2, E4–E6 entschieden (siehe „Entscheidung“). **Offen:** nur die Bestätigung von E3 (a2) durch P1a/P1b (Rückfall (a1)); sonst keine Eigner-Frage. **Reihenfolge:** Schritt 0a Spec (Reverse/Verweis) → P1a (Messung auf `main`) → **vorläufige** Entscheidung E3/E7/E9 → Schritt 0b Spec → P2a → P1b (Hash nachher, E3 bestätigt, ADR) → P2b → P2c → P3a/P3b → P5.
 > **Plan-Review Runde 3 eingearbeitet (2026-10-26):** `postUpFingerprint`-Befund korrigiert, E3 in a1/a2/b/c, Akzeptanz nach Weg, E12, Schneidung von P2c/P3.
 > **Plan-Review Runde 2 eingearbeitet (2026-10-26):** Tag-Wechsel ist global (E3 neu), Rollback-Verdrahtung schemagebunden (M2), P1 geteilt (M3), zweite Blindheit unter E3(a) (M4), Plan-Artefakt prüft keinen Tag (M5).
 > **Plan-Review Runde 1 eingearbeitet (2026-10-26):** Validierung (H1), Fingerabdruck je Seite (H2), einseitige Projektion (M1), Datenpfade (M2), Schema/Domain über Domain (M3); neue offene Fragen **E7–E9**, E3 konkretisiert. Der Umfang von B′ ist gewachsen (siehe „Umfang von B′“).
@@ -25,9 +25,15 @@ je nach Option, dass auch `schema reverse` → `schema generate` die Domain-Spal
 
 * **E1 = B′:** der Reader liefert für eine Domain-Spalte `Enum(refType = <Domain>)`; der Vergleich löst die **Datenbank-Seite** über den Basistyp auf, wo die Datei-Seite die Spalte **nicht** als `ref_type` führt.
 * **E2 = Toleranz im Vergleich:** eine ältere `reverse`-Datei (Basistyp an der Domain-Spalte) bleibt bei Exit 0; kein harter Bruch.
-* **E3 = in P1 prüfen (Eigner-Beschluss), seither konkretisiert und wieder offen:** Wahl a/b/c und Bump siehe unten („E3“); der Eigner-Beschluss „ADR/v25 nur bei geändertem Hash für bestehende Eingänge“ gilt als Maßstab, ist aber nicht mehr hinreichend (der Tag-Wechsel ändert **jeden** Hash).
+* **E3 = (a2), vorläufig, in P1b bestätigt:** beide Seiten falten die Domain-Spalte auf den Basistyp, ohne `v25`-Bump; die Datenbank-Hashes bleiben bitgleich, neu hasht nur die Datei-Seite mit `ref_type`-Domain. Trägt P1a den Beleg nicht (z. B. ein persistierter Datei-Hash in Artefakten oder ein Datenbank-Hash, der sich doch ändert), gilt **(a1)** (Bump `v25` + ADR 0067). Mit (a) folgen die schemagebundene Rollback-Verdrahtung (P2a-R) und zwei dokumentierte, getestete Blindheiten im Post-Compare.
 * **E4:** Domain außerhalb des gelesenen Schemas (nicht in `custom_types` des Ergebnisses) → Rückfall auf den Basistyp wie bisher.
 * **E5:** strikter `schema compare` (Bundle `null`) zeigt den Unterschied Domain-Spalte gegen Basistyp-Spalte weiter; die Toleranz gilt nur im ziel-bewussten Vergleich (`schema migrate`/Fingerabdruck).
+* **E7 = Regeln lösen auf:** die Validierungsregeln (E009/E017/E130) lösen `Enum(refType)` einer Domain über `custom_types` auf den Basistyp auf (gemeinsamer Helfer, E8); Generator-Identity in P1a messen.
+* **E8 = je Lesestelle auflösen**, mit gemeinsamem Helfer in `hexagon/core` (P2c-0 bis P2c-4); **Seed = auflösen** (Zahlen erzeugen).
+* **E9 = Grenze für Domain über Domain:** Rückfall auf den Basistyp der äußeren Domain, dokumentiert und getestet; `domain_name` hat Vorrang vor `udt_name`; `domain_schema` wird gegen das gelesene Schema geprüft.
+* **E10 = ein Slice** (P2a → P2b → P2c in Commit-Reihenfolge; keine Auslieferung von P2a ohne P2c).
+* **E11 = kein Guard hier:** nur der Rollback-Artefakt-Test; ein Guard für Plan-Artefakte wird bei einem Bump (a1) als eigener Slice angelegt.
+* **E12 = Minor-Release 1.12.0** (neues `reverse`-Format; Eintrag unter `[Unreleased]`); Abwärtskompatibilität: bei (a2) bleiben Rollback-Artefakte gültig, bei (a1) scheitern alle alten an `…ALGORITHM_MISMATCH` und sind neu zu erzeugen.
 * **E6:** kein neuer `R`-/`W`-Code; P4 (Ledger) entfällt, solange der Rückfall keine Meldung trägt.
 
 Verworfen: A (Reader bleibt falsch, Rundlauf der `reverse`-Datei bleibt offen), C (dokumentiert einen Fehler als Eigenschaft). Begründung siehe „Optionen“.
@@ -150,11 +156,11 @@ Aufbau wie oben; Datenbank per `psql` angelegt, `schema reverse`, `schema migrat
 Die Entscheidung berührt den `reverse`-Vertrag und ggf. den Fingerabdruck; sie gehört dem Eigner (E1–E3). Wenn der Eigner Risiko und Aufwand scheut, ist A ohne Reader-Änderung der kleinere, rückwärtskompatible Schritt;
 die blinde Stelle ist dann ausdrücklich zu dokumentieren und kann später durch B ergänzt werden (A und B′ teilen den Mechanismus, in B′ nur umgekehrt).
 
-## Entscheidungsfragen (entschieden, siehe „Entscheidung“)
+## Ausgangsfragen E1–E6 (entschieden, siehe „Entscheidung“)
 
 * **E1 — Option:** A (Vergleich), B (Reader, mit B′ oder ohne Toleranz) oder C (nur dokumentieren)? Empfehlung: B′.
 * **E2 — Altdateien (nur B):** Toleranz im Vergleich (B′: `reverse`-Dateien mit Basistyp bleiben bei Exit 0) oder harter Bruch mit Hinweis „`schema reverse` neu ziehen"? Empfehlung: Toleranz.
-* **E3 — Fingerabdruck, Bump und ADR (neu gefasst nach Review Runde 3, offen; vorläufig vor P2a, in P1b bestätigt):**
+* **E3 — Fingerabdruck, Bump und ADR (entschieden: (a2) vorläufig, in P1b bestätigt, Rückfall (a1)):**
   *Befunde am Code.* (1) `MigrationFingerprint.project` beginnt mit `algorithm=<ALGORITHM>`: **ein Tag-Wechsel ändert jeden Hash**, auch den von Eingängen ohne Domain-Spalte. Ein Test kann nur zeigen: nach Abzug des Tags bleiben Hashes von Eingängen ohne Domain-Spalte gleich; der Wechsel selbst ist global.
   (2) `SchemaMigrateRunner` hasht **beide Seiten unabhängig**, schemagebunden (`registrySchemaAwareCanonicalizer`); eine Toleranz des Vergleichs bildet sich im Hash nicht ab. (3) `SchemaRollbackRunner` nutzt die **kontextfreie** `registryTypeCanonicalizer` (`TypeCanonicalizerWiring` ≈44–51; Runner 55–56, 209).
   (4) Der Post-Compare (`SchemaMigrateExecutionStage` ≈294–310) vergleicht `observed == desiredFp`. (5) Plan-Artefakte führen `fingerprintAlgorithm` nur als nicht-leeres Feld (`MigrationPlanArtifactValidator`, Builder); **kein Vergleich mit `ALGORITHM`**; nur der Rollback-Parser prüft (`ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`, `SchemaRollbackRunner` ≈188).
@@ -176,7 +182,7 @@ die blinde Stelle ist dann ausdrücklich zu dokumentieren und kann später durch
 * **E5 — Sichtbarkeit der blinden Stelle (A, B′):** Soll `schema compare` (strikt) den Unterschied „Domain-Spalte gegen Basistyp-Spalte" zeigen, auch wenn `schema migrate` ihn nicht plant? Empfehlung: ja (strikt bleibt streng).
 * **E6 — Code oder Hinweis:** braucht der Rundlauf eine eigene Meldung (neuer `R`-/`W`-Code), etwa wenn der Reader eine Domain-Spalte auf den Basistyp zurückfallen lässt? Empfehlung: nein, solange der Rückfall selten ist; sonst Ledger-Pflicht. **Entschieden = kein Code:** auch der Rückfall nach E4 (fremdes Schema, Erweiterungs-Domain) bleibt **ohne Meldung**; das ist eine bewusste Entscheidung des Eigners, kein Versehen.
 
-## Neue Fragen aus dem Plan-Review (offen, mit Empfehlung)
+## Fragen aus dem Plan-Review (entschieden 2026-10-26, siehe „Entscheidung“)
 
 * **E7 — Validierung der Domain-Spalte (H1):** `SchemaColumnValidationRules` kennt `Enum(refType)` nur als Textfamilie: ein Spalten-`DEFAULT` als Zahl/Boolean → **E009** (`isNumericDefaultCompatible`, `BooleanLiteral`), eine Fremdschlüssel-Spalte vom Domain-Typ gegen eine
   `integer`-Spalte → **E017** (`isTypeCompatible`), Identity → **E130** (nur `Integer`/`BigInteger`). **Gemessen mit handgeschriebenen Dateien** (gleiche Form, die `reverse` nach B′ schriebe): `default: 5` → E009; FK gegen `integer` → E017;
@@ -257,7 +263,7 @@ Art je Kriterium: **Rot** (scheitert auf `main`; vor dem Fix einmal absichtlich 
 4a'. **Nach Umbau rot (an den Reader-Umbau gebunden).** Array-Domain und `NOT NULL`-/`DEFAULT`-Domain-Spalte schreiben `ref_type` und erzeugen die Domain-Spalte.
 4b. **Wächter.** Eine ältere `reverse`-Datei (Basistyp) bleibt bei Exit 0; Domain aus fremdem Schema und Erweiterungs-Domain schreiben weiter den Basistyp (E4).
 5a. **Rot.** Post-Compare: `migrate --execute` einer unabhängigen Änderung (neue Spalte) gegen eine Datei mit `ref_type: dd` ohne `POST_EXECUTE_DRIFT` (heute blockiert der Plan, Exit 8).
-5b. **Wächter, nur bei E3 (a1/a2).** Dasselbe mit einer Altdatei (Basistyp): kein Drift im Post-Compare. **Bei (b) und (c) unerfüllbar und entfällt** (dort `POST_EXECUTE_DRIFT`, kein Rollback-Artefakt).
+5b. **Wächter, gilt bei der entschiedenen Wahl (a2, Rückfall a1).** Dasselbe mit einer Altdatei (Basistyp): kein Drift im Post-Compare. **Bei (b) und (c) unerfüllbar und entfällt** (dort `POST_EXECUTE_DRIFT`, kein Rollback-Artefakt).
 6. **Je Weg (E3).** Je Seite Hash vorher/nachher dokumentiert; **für jeden Weg (a1, a2, b, c)** gilt: nach Abzug des Tags `algorithm=` bleiben Hashes von Eingängen ohne Domain-Spalte gleich; bei (a2) zusätzlich Datenbank-Hashes bitgleich; bei (c) Datenbank-Hash mit Domain-Spalte als neuer Wert fixiert. Bump (a1/b): `v25`, ADR 0067, `MigrationFingerprintTest`, Rollback-Artefakt alter Version → `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`.
 7. **Nach Umbau rot (Vorbedingung Reader-Umbau).** Validierung (E7): `reverse` → `validate` einer Domain-Spalte mit Spalten-`DEFAULT` und einer FK-Spalte vom Domain-Typ besteht (oder die Grenze ist dokumentiert und getestet). Mit handgeschriebener Datei heute E009/E017.
 8. **Nach Umbau rot (Vorbedingung Reader-Umbau).** Leser (E8): je Lesestelle (Seed, Transfer-Verifikation, Import-Preflight, Codec, Parquet, `CompareValueText`) ein Test mit einer `integer`-Domain-Spalte: gleiches Ergebnis wie mit einer `integer`-Spalte (Seed erzeugt Zahlen; `data transfer` PostgreSQL → PostgreSQL und → MySQL verifiziert die Spalte; Import besteht den Preflight; Parquet bleibt numerisch). Ist-Lage in P1a.
@@ -267,9 +273,9 @@ Art je Kriterium: **Rot** (scheitert auf `main`; vor dem Fix einmal absichtlich 
 
 | Weg | entfällt / ändert sich |
 |---|---|
-| a1, a2 | Kriterium 5b gilt; Rollback-Rundlauf (P2a-R) und die zwei Blindheiten im Post-Compare sind zu testen; a2: Datenbank-Hashes bitgleich (6) |
-| b | 5b entfällt; kein Rollback-Artefakt bei Altdatei-Drift; keine Rollback-Umverdrahtung, keine Blindheit-Tests |
-| c | 5b entfällt; kein globaler Bump; Altartefakte für Datenbanken mit Domain-Spalte scheitern mit `TARGET_STATE_MISMATCH` |
+| a2 (entschieden, vorläufig), a1 (Rückfall) | Kriterium 5b gilt; Rollback-Rundlauf (P2a-R) und die zwei Blindheiten im Post-Compare sind zu testen; a2: Datenbank-Hashes bitgleich (6) |
+| b (nicht gewählt) | 5b entfällt; kein Rollback-Artefakt bei Altdatei-Drift; keine Rollback-Umverdrahtung, keine Blindheit-Tests |
+| c (nicht gewählt) | 5b entfällt; kein globaler Bump; Altartefakte für Datenbanken mit Domain-Spalte scheitern mit `TARGET_STATE_MISMATCH` |
 
 ## Verifikation
 
