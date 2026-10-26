@@ -116,4 +116,33 @@ class PostgresDomainFingerprintWiringTest : FunSpec({
     test("Blindheit 2: Basistyp-Spalte gegen Domain-Spalte neben derselben Domain hasht gleich (der Plan sieht den Wechsel)") {
         fingerprint(schema(NeutralType.Integer, domain("integer"))) shouldBe fingerprint(schema(ref, domain("integer")))
     }
+
+    // ── Bekannte Grenze von (a2): Domains, deren Basistyp nicht verlustfrei in `custom_types` steht ──
+    //
+    // Der Reader schreibt `real` als `float`; die Datenbank-Spalte hasht damit als double. Eine Domain ueber
+    // `bit(n)`, `numeric` ohne `precision` oder ein Array ueber `varchar(n)` hat kein neutrales Gegenstueck und
+    // bleibt `Enum(refType)` im Abdruck. Beides gilt auf beiden Seiten gleich (Datei und Datenbank hashen gleich);
+    // nur der Abdruck der Datenbank gegenueber dem vor dem `ref_type` des Readers aendert sich fuer diese Faelle.
+
+    test("Grenze: Domain ueber real hasht wie double (der Reader schreibt float), nicht wie die frueher gelesene Spalte") {
+        val real = NeutralType.Float(dev.dmigrate.core.model.FloatPrecision.SINGLE)
+        fingerprint(schema(ref, domain("float"))) shouldBe fingerprint(schema(NeutralType.Float(), domain("float")))
+        fingerprint(schema(ref, domain("float"))) shouldNotBe fingerprint(schema(real, domain("float")))
+    }
+
+    test("Grenze: Domain ohne neutrales Gegenstueck bleibt Enum(refType) im Abdruck, auf beiden Seiten gleich") {
+        for (base in listOf("bit(5)", "decimal", "varchar(50)[]", "d1")) {
+            withClue(base) {
+                val custom = domain(base)
+                fingerprint(schema(ref, custom)) shouldBe fingerprint(schema(ref, custom))
+                fingerprint(schema(ref, custom)) shouldNotBe fingerprint(schema(NeutralType.Integer, custom))
+            }
+        }
+    }
+
+    test("Grenze: Domain ueber einer Domain faltet nicht rekursiv: die aeussere nennt die innere, der Abdruck sieht sie als Typ") {
+        val inner = "d1" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "integer")
+        val outer = "dd" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "d1")
+        fingerprint(schema(ref, inner, outer)) shouldNotBe fingerprint(schema(NeutralType.Integer, inner, outer))
+    }
 })

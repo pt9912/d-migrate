@@ -395,6 +395,35 @@ class YamlSchemaCodecTest : FunSpec({
         rt.views["v_incomplete"]!!.dependencies!!.columnProjectionStatus shouldBe DependencyProjectionStatus.UNKNOWN
     }
 
+    test("Issue #68 — a domain column (type enum + ref_type) survives a YAML round trip and validates") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "Domain"
+            version: "1.0.0"
+            custom_types:
+              dd:
+                kind: domain
+                base_type: integer
+                check: "VALUE >= 0"
+            tables:
+              t:
+                columns:
+                  id: { type: integer, required: true }
+                  d: { type: enum, ref_type: dd, default: 5 }
+                primary_key: [id]
+        """.trimIndent()
+        val schema = codec.read(yaml.byteInputStream())
+        schema.tables.getValue("t").columns.getValue("d").type shouldBe NeutralType.Enum(refType = "dd")
+        validator.validate(schema).errors shouldBe emptyList()
+
+        val out = ByteArrayOutputStream()
+        codec.write(out, schema)
+        out.toString() shouldContain "ref_type: dd"
+        val roundTrip = codec.read(out.toByteArray().inputStream())
+        roundTrip.tables.getValue("t").columns.getValue("d").type shouldBe NeutralType.Enum(refType = "dd")
+        roundTrip.customTypes.getValue("dd").kind shouldBe CustomTypeKind.DOMAIN
+    }
+
     test("G.2 — projection_complete defaults to true when omitted") {
         val yaml = """
             schema_format: "1.0"

@@ -1,0 +1,48 @@
+schema_format: "1.0"
+name: "pg-reverse-domain-columns"
+version: "1.0.0"
+
+custom_types:
+  dd_int:
+    kind: domain
+    base_type: integer
+    check: "VALUE >= 0"
+  dd_text:
+    kind: domain
+    base_type: text
+    check: "VALUE <> ''"
+  dd_dec:
+    kind: domain
+    base_type: decimal
+    precision: 10
+    scale: 2
+    check: "VALUE >= 0"
+  dd_tz:
+    kind: domain
+    base_type: "timestamptz(3)"
+  dd_arr:
+    kind: domain
+    base_type: "integer[]"
+
+tables:
+  t:
+    columns:
+      id:
+        type: integer
+        required: true
+      c_int:
+        type: enum
+        ref_type: dd_int
+      c_text:
+        type: enum
+        ref_type: dd_text
+      c_dec:
+        type: enum
+        ref_type: dd_dec
+      c_tz:
+        type: enum
+        ref_type: dd_tz
+      c_arr:
+        type: enum
+        ref_type: dd_arr
+    primary_key: [id]

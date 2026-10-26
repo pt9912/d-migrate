@@ -233,4 +233,18 @@ class SchemaCompareFindingDetailsTest : FunSpec({
             }
         }
     }
+
+    // Issue #68: eine Domain-Spalte gegen die Basistyp-Spalte zeigt der strikte Vergleich (schema_compare ohne Ziel).
+    test("Domain-Spalte gegen Basistyp-Spalte: der Fund nennt enum(ref:dd) und integer") {
+        fun schema(type: NeutralType) = SchemaDefinition(
+            name = "s", version = "1",
+            customTypes = mapOf("dd" to dev.dmigrate.core.model.CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "integer")),
+            tables = mapOf("t" to TableDefinition(columns = mapOf("d" to ColumnDefinition(type)))),
+        )
+        val diff = SchemaComparator().compare(schema(NeutralType.Enum(refType = "dd")), schema(NeutralType.Integer))
+        val finding = SchemaCompareFindings.of(diff).single { it["code"] == "TABLE_COLUMN_TYPE_CHANGED" }
+        details(finding) shouldBe mapOf("before" to "enum(ref:dd)", "after" to "integer")
+        val same = SchemaComparator().compare(schema(NeutralType.Enum(refType = "dd")), schema(NeutralType.Enum(refType = "dd")))
+        SchemaCompareFindings.of(same) shouldBe emptyList()
+    }
 })
