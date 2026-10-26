@@ -38,6 +38,15 @@ Der Befund war damit größer als gemeldet: auch eine Datei **mit** `without_row
 * **P2 Umsetzung:** `SqliteTableDdlSupport` und `SqliteRebuildRenderer` schreiben `) WITHOUT ROWID;`; der
   FTS5-Check im Neubau nutzt dasselbe Merkmal. Tests: `CliSchemaMigrateWithoutRowidSqliteTest` (Bestandsdatei,
   Datei mit Merkmal, Rowid-Tabelle bleibt, Rundlauf `generate` → Datenbank → 0 Operationen, DOWN-Skript).
+  Zusatz aus dem Review: `SqliteDiffRenderContext.tableWithoutRowid` (FTS5-Pruefung beim `AddIndex`) und
+  `SqliteRebuildPlan.withoutRowid` folgen derselben Regel (Datei **oder** Datenbank); ohne das erzeugte ein
+  neuer FULLTEXT-Index auf einer `WITHOUT ROWID`-Tabelle einer Bestandsdatei einen FTS5-Aufbau mit `rowid`-Triggern.
+  Das Zuruecklesen belegt `schema reverse` (`without_rowid: true`), nicht ein Lauf mit 0 Operationen: der Planer
+  macht aus der Metadaten-Differenz keine Operation.
+  **Rot ohne die Aenderung:** mit den Haupt-Dateien (`SqliteTableDdlSupport`, `SqliteRebuildRenderer`,
+  `SqliteDiffRenderContext`) auf dem Stand von `main` schlagen 7 neue Tests fehl (5 CLI: Bestandsdatei, Datei mit
+  Merkmal, FULLTEXT, Rollback, `generate`/`reverse`; je 1 Generator- und Renderer-Test); die Tests fuer Plan-Regel und
+  Rowid-Tabelle sind absichtlich gruen.
   Matrix: die Cross-Dialect-Matrix kennt das Paar nicht (SQLite-spezifisch); der Rundlauf-Test deckt es.
 * **P3 Doku:** Spec `ddl-generation-rules.md` §3.5, Handbuch §3.17 (Grenze gestrichen), `CHANGELOG.md`.
 
@@ -45,3 +54,6 @@ Der Befund war damit größer als gemeldet: auch eine Datei **mit** `without_row
 
 Das Merkmal per `schema migrate` hinzufügen oder entfernen. `WITHOUT ROWID` mit `AUTOINCREMENT` oder ohne
 Primärschlüssel: SQLite lehnt das selbst ab, der Lauf scheitert laut.
+`WITHOUT ROWID` mit SpatiaLite-Geometriespalte oder `CreateSpatialIndex` (der R-Tree haengt an der Rowid): nicht
+gemessen (kein `mod_spatialite` im Testlauf); SpatiaLite-Pfade werden von dieser Aenderung nicht beruehrt, ausser dass
+`CREATE TABLE` das Merkmal schreibt.
