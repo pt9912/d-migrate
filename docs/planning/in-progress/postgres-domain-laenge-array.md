@@ -27,7 +27,7 @@ das nicht rendert); eine unveränderte Domain blockiert nicht.
   nutzt sie schon (`PostgresTypeMetadataQueries`, Composite-Zweig). Keine Rechteabhängigkeit. **Bevorzugt.**
 * **`mapParamType` nicht erweitern:** es wird auch von den Routinen-Readern benutzt (Parameter-/Rückgabetypen von Funktionen);
   eine Änderung dort verschöbe deren Fingerabdrücke. Die Domain-Abbildung bekommt eine eigene Funktion.
-* **Neutralform** ([`CustomTypeBaseType`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/CustomTypeBaseType.kt)):
+* **Neutralform** ([`CustomTypeBaseType`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/model/CustomTypeBaseType.kt)):
   `char`/`bpchar` und `varchar` trennen (heute beide `text`), `[]`-Suffix abtrennen, Kern abbilden, `[]` wieder anhängen
   (`int4[]` = `integer[]`). **`sameParameters` wird strenger:** heute gilt „fehlende Klammer = unbekannt, nicht verschieden"
   (ADR 0061 Entscheidung 4, Begründung „der Katalog nennt sie nicht"); liefert der Reader die Länge, ist `varchar(50)` gegen
