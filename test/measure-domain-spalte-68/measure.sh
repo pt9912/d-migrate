@@ -243,4 +243,24 @@ res "Folgeplan ref_type-Datei nach Rollback" "exit=$ex"
 dm schema reverse --source "$(purl rb2)" --output rev.yaml >/dev/null 2>&1; ex=$?
 res "reverse Domain-Spalte" "exit=$ex d-Zeile=$(grep -A3 '^      d:' "$WORK/rev.yaml" | tr -s ' ' | tr '\n' ' ')"
 
+# ---- M10 Seed mit CHECK der Domain (Handbuch-Belege) --------------------------------
+echo "== M10 data seed: CHECK der Domain"
+mkc() { # <datei> <check>
+  {
+    echo 'schema_format: "1.0"'; echo 'name: "T"'; echo 'version: "1.0.0"'
+    printf 'custom_types:\n  dd:\n    kind: domain\n    base_type: text\n    check: "%s"\n' "$2"
+    printf 'tables:\n  t:\n    columns:\n      id: { type: identifier, auto_increment: true }\n      d: { type: enum, ref_type: dd }\n    primary_key: [id]\n'
+  } > "$WORK/$1"
+}
+newdb sd
+psql_db sd <<'SQL'
+CREATE DOMAIN dd AS text CHECK (VALUE ~ '^[A-Z]+$');
+CREATE TABLE t (id serial primary key, d dd);
+SQL
+mkc regex.yaml 'VALUE ~ '"'"'^[A-Z]+$'"'"''
+dm data seed --schema regex.yaml --target "$(purl sd)" --count 3 --seed 1 >"$WORK/sd1.out" 2>&1; ex=$?
+res "seed regex-CHECK ohne rules" "exit=$ex $(tr '\n' ' ' < "$WORK/sd1.out" | cut -c1-330)"
+printf 'rules:\n  - column: d\n    values: ["ABC", "XYZ"]\n' > "$WORK/rules_d.yaml"
+dm data seed --schema regex.yaml --target "$(purl sd)" --count 3 --seed 1 --rules rules_d.yaml >"$WORK/sd2.out" 2>&1; ex=$?
+res "seed regex-CHECK mit rules values" "exit=$ex $(tr '\n' ' ' < "$WORK/sd2.out" | cut -c1-200) werte=$(docker exec "$PG" psql -At -U postgres sd -c "select string_agg(d, ',') from t")"
 echo "== Ende"

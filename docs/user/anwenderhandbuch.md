@@ -2641,6 +2641,25 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
        primary_key: [id]
    ```
 
+2. Eine **Domain** verwenden Sie in einer Spalte genauso: `type: enum` und
+   `ref_type: <Domain>`.
+
+   ```yaml
+   custom_types:
+     positive_amount:
+       kind: domain
+       base_type: decimal
+       precision: 10
+       scale: 2
+       check: "VALUE >= 0"
+   tables:
+     orders:
+       columns:
+         id:    { type: identifier, auto_increment: true }
+         total: { type: enum, ref_type: positive_amount }
+       primary_key: [id]
+   ```
+
 **Ergebnis:**
 
 - **Enum** → PostgreSQL `CREATE TYPE … ENUM`, MySQL inline `ENUM(…)`,
@@ -2653,6 +2672,12 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
 - **Domain** → PostgreSQL nativ; bei anderen Dialekten nennt der
   Transformations-Report die gewählte Abbildung (SQLite, MySQL, MS SQL Server:
   Basistyp + `CHECK`).
+- **Spalte vom Typ einer Domain** → PostgreSQL erzeugt die Spalte mit dem Typ der
+  Domain (`"total" "positive_amount"`); MySQL, SQLite und MS SQL Server erzeugen
+  die Spalte mit dem Basistyp und dem `CHECK` der Domain. Auf PostgreSQL plant
+  `schema migrate` gegen die erzeugte Datenbank nichts, und `schema reverse`
+  schreibt die Spalte wieder als `type: enum` mit `ref_type`, sodass `schema
+  generate` aus der `reverse`-Datei die Domain-Spalte erhält.
 - **Domain auf MySQL (`schema generate`):** Der `base_type` wird auf den MySQL-Typ des
   neutralen Typs abgebildet, auch wenn er ein PostgreSQL-Katalogname ist
   (`int4` → `INT`, `bool` → `TINYINT(1)`, `uuid` → `CHAR(36)`, `jsonb` →
@@ -2669,6 +2694,35 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
 
 - Vollständige Custom-Type-Felder (inkl. `composite`/`domain`-Beispiele):
   [Anhang F.9](#f9-custom-types).
+- **Spalte vom Typ einer Domain auf PostgreSQL:**
+  - Eine ältere `reverse`-Datei, die an einer Domain-Spalte den Basistyp führt
+    (`type: integer`), gilt gegen die Datenbank als unverändert: `schema migrate`
+    plant nichts (Exit 0). Umgekehrt verlangt eine Datei mit `ref_type` die
+    Domain-Spalte; steht in der Datenbank an der Spalte der Basistyp, plant
+    `schema migrate` ein `AlterColumnType` und endet mit Exit 8. `schema compare`
+    zeigt den Unterschied zwischen Domain-Spalte und Basistyp-Spalte immer.
+  - `schema reverse` nennt die Domain nur, wenn es sie selbst in `custom_types`
+    führt. Eine Domain aus einem anderen Schema als dem gelesenen oder aus einer
+    Erweiterung steht an der Spalte als Basistyp. Bei einer Domain über einer
+    Domain nennt die Spalte die äußere; aufgelöst wird eine Stufe, die innere
+    Domain als Basistyp löst keine Regel weiter auf.
+  - `schema validate` prüft einen Spalten-`default` und einen Fremdschlüssel einer
+    Domain-Spalte gegen den Basistyp der Domain: eine `integer`-Domain nimmt
+    `default: 5` und verweist auf eine `integer`-Spalte. `generation: identity`
+    ist an einer Domain-Spalte nicht zulässig (**E130**).
+  - `data seed` erzeugt für eine Domain-Spalte Werte des Basistyps, die den `CHECK`
+    der Domain erfüllen. Verstanden werden Schranken (`VALUE >= 0`,
+    `VALUE BETWEEN 1 AND 10`, auch mit `AND` verbunden), `VALUE <> ''`,
+    `length(VALUE) > n`, Wertelisten (`VALUE IN ('a', 'b')`) und `VALUE IS NOT NULL`.
+    Ein anderer `CHECK` (etwa ein regulärer Ausdruck), ein unerfüllbarer `CHECK` und
+    eine Domain über einer Domain beendet den Lauf mit Exit 3 und einer Meldung, die
+    Spalte, Domain und `CHECK` nennt — auch bei einer Spalte ohne `NOT NULL`. Geben
+    Sie der Spalte dann mit `--rules` (`values`, `range`, `template`) die Werte vor,
+    siehe [3.22](#322-testdaten-erzeugen-seed). Führt Ihre Datei die Spalte nur mit dem
+    Basistyp (`type: integer`) und die Domain nur unter `custom_types`, kennt
+    `data seed` den `CHECK` nicht und die Datenbank kann einen Wert abweisen.
+  - `data import --schema` und `data transfer` behandeln die Domain-Spalte als ihren
+    Basistyp; der Treiber meldet ebenfalls den Basistyp.
 - **`schema migrate` mit Enum- und Domain-Typen auf SQLite:** SQLite hat kein
   Typ-Objekt. Eine Enum steht als `TEXT` + `CHECK` an der Spalte, eine Domain
   als ihr Basistyp + `CHECK` (`VALUE` wird durch die Spalte ersetzt). Der
@@ -4061,7 +4115,7 @@ Typ-spezifische Attribute:
 | `float_precision` | `float` | `single` oder `double` (Default `double`) |
 | `timezone` | `datetime` | `true` = WITH TIME ZONE |
 | `values` | `enum` | Inline-Werteliste |
-| `ref_type` | `enum` | Verweis auf `custom_types` |
+| `ref_type` | `enum` | Verweis auf `custom_types` (Enum oder Domain) |
 | `element_type` | `array` | Elementtyp (Pflicht) |
 | `geometry_type`, `srid` | `geometry` | Spatial → [F.4](#f4-spatial-typen) |
 | `generation` | `integer`, `biginteger` | Identity-Spalte: `type: identity`, `mode: by_default`/`always`, optional `sequence_name`, `legacy_serial_syntax` |
@@ -4209,6 +4263,11 @@ custom_types:
     precision: 10
     scale: 2
     check: "VALUE >= 0"
+tables:
+  orders:
+    columns:
+      status: { type: enum, ref_type: order_status }      # Spalte vom Typ der Enum
+      total:  { type: enum, ref_type: positive_amount }   # Spalte vom Typ der Domain
 ```
 
 #### F.10 Sequenzen

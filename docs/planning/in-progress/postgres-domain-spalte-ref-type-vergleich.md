@@ -1,6 +1,6 @@
 # PostgreSQL: eine Spalte vom Domain-Typ (`type: enum` + `ref_type`) plant bei jedem Lauf `AlterColumnType` und blockiert mit Exit 8 (Issue #68)
 
-> **Status: Alle Eigner-Fragen entschieden (2026-10-26): Option B′ und E3, E7–E12 nach Empfehlung; E3 (a2) ist nach P1b bestätigt (Datenbank-Hashes bitgleich, siehe „P2a, P2a-R und P1b Ergebnis“). Erledigt: Schritt 0a und 0b (Spec), P1a (Messung auf `main`), P2a (Reader, einseitiger Vergleich, Abdruck), P2a-R (Rollback-Verdrahtung), P1b (Hash nachher), P2b (Validierung, E7), P2c-0 bis P2c-4 (Leser). Nächster Schritt: P3b (Tests Leser, Cross-Dialekt, MCP-Stichprobe), dann P5.** Der Plan liegt auf Anweisung des Eigners
+> **Status: Alle Eigner-Fragen entschieden (2026-10-26): Option B′ und E3, E7–E12 nach Empfehlung; E3 (a2) ist nach P1b bestätigt (Datenbank-Hashes bitgleich, siehe „P2a, P2a-R und P1b Ergebnis“). Erledigt: Schritt 0a und 0b (Spec), P1a (Messung auf `main`), P2a (Reader, einseitiger Vergleich, Abdruck), P2a-R (Rollback-Verdrahtung), P1b (Hash nachher), P2b (Validierung, E7), P2c-0 bis P2c-4 (Leser), P3b (Tests Leser, Cross-Dialekt, MCP-Stichprobe, Grenzen) und P5 (Handbuch §3.21, Anhang F.3/F.9, CHANGELOG). Offen: unabhängiger Review und Abnahme; die Closure-Sektion und der Move nach `done/` folgen erst danach.** Der Plan liegt auf Anweisung des Eigners
 > schon in `in-progress/` (ADR 0004 sieht den Move erst mit dem ersten Implementierungs-Commit vor); P2a ist der erste Implementierungs-Commit.
 > **Vorbedingung:** E1, E2, E4–E6 entschieden (siehe „Entscheidung“). **Offen:** nur die Bestätigung von E3 (a2) durch P1a/P1b (Rückfall (a1)); sonst keine Eigner-Frage. **Reihenfolge:** Schritt 0a Spec (Reverse/Verweis, erledigt) → P1a (Messung auf `main`, erledigt) → **vorläufige** Entscheidung E3/E7/E9 → Schritt 0b Spec → P2a → P1b (Hash nachher, E3 bestätigt, ADR) → P2b → P2c → P3a/P3b → P5.
 > **Plan-Review Runde 3 eingearbeitet (2026-10-26):** `postUpFingerprint`-Befund korrigiert, E3 in a1/a2/b/c, Akzeptanz nach Weg, E12, Schneidung von P2c/P3.
@@ -197,6 +197,30 @@ Umgesetzt: `PostgresTableMetadataQueries.listColumns` wählt `domain_schema`/`do
 Ohne den Fix am Transfer-Preflight haette der Reader-Umbau `data transfer` von PostgreSQL in einen anderen Dialekt fuer jede Datenbank mit Domain-Spalte mit Exit 3 gebrochen — das war die einzige **neue** Regression aus E8 und ist behoben; sie braucht keine Eigner-Entscheidung (Verhalten wie vor dem Umbau). `--verify` PG -> SQLite verifiziert die Spalte weiter (nicht ausgeschlossen), wie auf `main`.
 
 **P2c-1 Seed (Begruendung der Meldung statt NULL):** der Seed loest die Domain-Spalte auf den Basistyp auf und erzeugt Werte, die den CHECK erfuellen: Schranken (`>`, `>=`, `<`, `<=`, `=`, `BETWEEN`) fuer ganze Zahlen, `decimal` und `float`, `VALUE <> '...'`, `length(VALUE) <op> n`, Wertelisten (`IN (...)`, Katalogform `= ANY (ARRAY[...])`), `IS NOT NULL`. Ein CHECK ausserhalb davon (Regex, Funktionen) oder ein unerfuellbarer, und eine Domain ueber einer Domain, ist ein `SeedPreflightException` (Exit 3) mit Spalte, Domain und CHECK und dem Hinweis auf `--rules` — **auch bei nullbarer Spalte**: ein stilles NULL erfuellt jeden CHECK und waere genau der Befund aus P1a. Eine `--rules`-Regel fuer die Spalte umgeht die Pruefung. Tests: `DomainColumnSeedTest`, Rot-Beleg gegen den `main`-Stand von `TableRowSeeder`. P2c-3: `ImportTableValidatorTest`, P2c-2: `TransferVerifierTest`, `TransferPreflightPlannerDomainTest`, je rot gegen `main`.
+
+## P3b, P5 und Akzeptanz gegen Ist (2026-10-26)
+
+**P3b Tests:** Cross-Dialekt `DomainColumnCrossDialectTest` (PostgreSQL-`reverse` mit Domain-Spalten gegen `generate` fuer MySQL, SQLite, MSSQL: Basistyp + `CHECK` an der Spalte, Array-Basistyp E053, `timestamptz` auf MySQL W100; PostgreSQL erzeugt `"c" "dd"`); `YamlSchemaCodecTest` (Rundlauf der Domain-Spalte, Validierung); MCP-Stichprobe `SchemaCompareFindingDetailsTest` (strikter Fund `enum(ref:dd)` -> `integer`, gleiche Form kein Fund); Grenzen als Waechter in `PostgresDomainFingerprintWiringTest` (Domain ueber `real`, ohne neutrales Gegenstueck, Domain ueber Domain), `SchemaColumnDomainValidationTest` (E130, Domain ueber Domain), `PostgresDomainColumnIntegrationTest` (fremdes Schema, Domain ueber Domain, `dd1` -> `dd2`, Basistyp gegen Domain). Gemessen (`measure-edge-hash.sh`): der Datenbank-Hash aendert sich fuer Domains ueber `real`, `bit(5)`, `numeric` ohne `precision` und `varchar(50)[]` (`a68d915c700d` -> `03ade3b6366b`, `527f1bcfada5` -> `1a3da6d891ce`, `ffb297b27697` -> `8dfafe8e1233`, `a462f34a30ee` -> `40a382423cc7`). MCP: der Adapter verdrahtet `SchemaMigrateRunner`/`SchemaRollbackRunner` nicht; `schema_compare` ist strikt, die Reverse-Werkzeuge wirken ueber den Reader (Rundlauf-Test im Codec).
+
+**P5 Doku:** Handbuch §3.21 (Schreibweise, Ergebnis je Dialekt, Hinweise zu Toleranz der Altdatei, Domain aus fremdem Schema/Erweiterung und Domain ueber Domain, Validierung, E130, `data seed` mit den verstandenen CHECK-Formen und `--rules`, Import/Transfer), Anhang F.3 (`ref_type` auch Domain), F.9 (Spalte vom Domain-Typ), CHANGELOG `[Unreleased]` (Fixed, mit Format-, Abdruck- und Artefakt-Folgen, Vermerk Minor 1.12.0). Jede Handbuchaussage ist durch einen Lauf belegt (`measure.sh` M1, M6, M8-M10, Integrations- und Unit-Tests); in `docs/user/` steht keine Chronik. Die Abdruck-Ausnahme (`real` u. a.) steht nur im CHANGELOG.
+
+**Akzeptanzkriterien gegen Ist**
+
+| Nr. | Art | Stand | Beleg |
+|---|---|---|---|
+| 1 | Rot | erfuellt | `PostgresDomainColumnIntegrationTest` „kein Plan, fuer jeden Basistyp“ (integer, bigint, text, varchar(50), numeric(10,2), uuid, boolean) und strikt `IDENTICAL`; auf `main` rot (Stash-Lauf) |
+| 2 | Waechter | erfuellt | anderer Verweis und Basistypwechsel planen weiter (Exit 8), ref gegen Basistyp-Spalte Exit 8, Altdatei Exit 0 |
+| 2b | nach Umbau rot | erfuellt | strikter Vergleich zeigt den Unterschied (Integration, MCP-Stichprobe) |
+| 3 | Waechter | erfuellt (bestehende Tests) | Enum-Konvergenz und Domain-Tests im Modul `integration-postgresql` gruen; `varchar`-Domain bleibt `POSTGRES_RENDER_SKIP` (P0 gemessen) |
+| 4a, 4a' | Rot, nach Umbau rot | erfuellt | Reader-Tests, `reverse` schreibt `ref_type` (`measure.sh` M9), Array-/`NOT NULL`-/`DEFAULT`-Domain in der Integration |
+| 4b | Waechter | erfuellt | Altdatei Exit 0; fremdes Schema schreibt den Basistyp (Integration); Erweiterungs-Domain durch die Regel „nicht in `custom_types`“ (am Code, nicht eigens gemessen) |
+| 5a, 5b | Rot, Waechter | erfuellt | Rollback-Rundlauf mit ref- und Altdatei: Migrate ohne `POST_EXECUTE_DRIFT`, Artefakt, `schema rollback` Exit 0 (Unit und Integration, CLI M9) |
+| 6 | je Weg | erfuellt (a2) | P1b: Hashes je Seite vorher/nachher; Datenbank- und Altdatei-Hashes bitgleich, Hash ohne Domain-Spalte unveraendert; Ausnahme `real` u. a. gemessen und im CHANGELOG |
+| 7 | nach Umbau rot | erfuellt, Grenze E130 | `reverse` -> `validate` besteht (Integration); Identity bleibt E130, in Spec und Handbuch benannt |
+| 8 | nach Umbau rot | erfuellt mit Einschraenkung | Seed (Zahlen unter CHECK), Import-Preflight, Transfer-Verifikation und -Preflight (PG -> PG und PG -> SQLite gemessen; PG -> MySQL **nicht** gemessen), Parquet numerisch; `CompareValueText` bewusst unveraendert |
+| 9 | Gate | erfuellt | `DomainColumnCrossDialectTest`, `cross-dialect-matrix` gruen |
+| 10 | Gate | erfuellt | Spec (Schritt 0a/0b), Handbuch (P5) |
+| 11 | Gate | erfuellt | `docs-check`, `doc-immutable`, `solid-suppression-gate`, `docker-check` je Modul und ohne `MODULES`, Integration PostgreSQL, SQLite, Matrix, e2e-cli |
 
 ## Optionen
 

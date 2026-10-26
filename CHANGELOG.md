@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **PostgreSQL: eine Spalte vom Domain-Typ plante bei jedem `schema migrate` ein `AlterColumnType` und blockierte mit
+  Exit `8`; `schema reverse` verlor die Domain an der Spalte** (Issue #68). Eine Datei mit
+  `d: { type: enum, ref_type: dd }` erzeugte mit `schema generate` die Domain-Spalte, der Plan gegen die erzeugte
+  Datenbank endete aber mit `PG_USING_OVERLAY_MISSING` (Meldung „X to TEXT“); `schema reverse` schrieb dagegen den
+  Basistyp (`type: integer`), sodass `generate` aus der `reverse`-Datei die Domain-Spalte nicht mehr erzeugte. Ursache:
+  `information_schema.columns` meldet an einer Domain-Spalte den Basistyp, die Domain steht nur in `domain_name`.
+  Betroffen sind PostgreSQL-Datenbanken mit Domain-Spalten, gemessen mit 1.11.1. Jetzt gilt:
+  - `schema reverse` schreibt die Spalte als `type: enum` und `ref_type: <Domain>` — **neues `reverse`-Format**, wenn die
+    Domain im gelesenen Schema steht (Domain aus einem anderen Schema oder einer Erweiterung: weiter der Basistyp).
+    `schema migrate` plant für die unveränderte Spalte nichts. Eine ältere `reverse`-Datei mit dem Basistyp bleibt bei
+    Exit `0`; eine Datei mit `ref_type` gegen eine Datenbank-Spalte vom Basistyp bleibt `AlterColumnType` (Exit `8`).
+    `schema compare` zeigt Domain-Spalte gegen Basistyp-Spalte weiter als Unterschied.
+  - `schema validate` prüft Spalten-`default` und Fremdschlüssel einer Domain-Spalte gegen den Basistyp (vorher
+    `E009`/`E017` an einer `reverse`-Datei); `generation: identity` bleibt `E130`.
+  - `data seed` erzeugt für eine Domain-Spalte Werte des Basistyps unter dem `CHECK` der Domain (vorher alle `NULL`,
+    mit der Altdatei Exit `5` an `dd_check`); ein `CHECK`, den der Seed nicht versteht oder nicht erfüllen kann, endet
+    mit Exit `3` und einer Meldung statt mit stillem `NULL` (`--rules` gibt die Werte vor). `data import --schema`
+    besteht den Preflight (vorher Exit `3`); `data transfer` behandelt die Spalte als Basistyp.
+  - **Fingerabdruck:** kein neuer Algorithmus-Tag (`schema-fingerprint-v24`); beide Seiten falten die Domain-Spalte auf
+    den Basistyp, die Datenbank-Abdrücke bleiben bitgleich (gemessen für `integer`, `bigint`, `text`, `varchar(50)`,
+    `numeric(10,2)`, `uuid`, `boolean`), bestehende Rollback-Artefakte bleiben gültig. **Ausnahme:** bei einer Domain
+    über `real`, `bit(n)`, `numeric` ohne `precision` oder einem Array über `varchar(n)` ändert sich der
+    Datenbank-Abdruck; ein vorher erzeugtes Rollback-Artefakt gegen so eine Datenbank scheitert an
+    `TARGET_STATE_MISMATCH` (Exit `8`) und ist neu zu erzeugen. Ein Plan-Artefakt, das auf `main` für eine Datei mit
+    `ref_type` bei Exit `8` entstand, trägt einen anderen Datei-Abdruck als heute.
+    `schema rollback` bindet den Typ-Kanonisierer an das gelesene Ziel-Schema.
+  Das neue `reverse`-Format gehört in ein Minor-Release (1.12.0).
+
 - **SQLite: Tabellenneubau und `FULLTEXT`-Index derselben Tabelle in einem `--execute`-Lauf** (Issue #67, Fall A-FT).
   Ein Lauf, der eine Tabelle neu baute (etwa wegen `unique: true` oder einer Nullability-Änderung) und an
   derselben Tabelle einen `FULLTEXT`-Index anlegte, entfernte oder änderte, endete mit Exit `8`
