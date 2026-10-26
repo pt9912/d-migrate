@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`schema migrate` auf SQLite plant für eine unveränderte Domain-Spalte kein `AlterColumnType`
+  mehr** (Issue #56, Folge von #54). Eine Spalte mit `ref_type` auf eine Domain galt gegen die
+  Datenbank bei jedem Lauf als geändert, sobald der Reader ihren Basistyp nicht als `text` liest
+  (`integer`, `biginteger`, `smallint`, `boolean`, `real`, `float`, `decimal` mit `precision`,
+  `binary`): der Plan trug jedes Mal ein `AlterColumnType` samt Tabellenneubau, und bei `boolean`,
+  `real` und `decimal` endete der Lauf mit Exit `8` (`SQLITE_CAST_NOT_WHITELISTED`). Der
+  ziel-bewusste Vergleich projiziert die Domain-Spalte jetzt über ihren Basistyp, wo die
+  Gegenseite die Spalte nicht auch als `ref_type` führt.
+  - Domains über `uuid`, `json`, `xml`, `date`, `time`, `datetime`, `char` und `varchar` waren nie
+    betroffen (der Reader liest `text`).
+  - Ein Basistypwechsel zweier Dateien bleibt genau ein `AlterCustomType`, ohne `AlterColumnType`.
+  - Eine Domain über `integer` gegen eine Textspalte der Datenbank gilt jetzt als Typänderung
+    (vorher blieb sie unbemerkt).
+  - Der Abdruck ändert sich durch diese Änderung nicht.
+
 - **`schema migrate` auf SQLite plant keinen `DROP INDEX` + `CREATE INDEX` mehr für einen unveränderten
   Ausdrucks-Index** (Issue #55, Folge von #53). Der Generator klammert jeden Ausdrucks-Schlüssel
   (`ON t ((lower(a)))`); der SQLite-Reader gab ihn mit dieser Klammer zurück (`(lower(a))`), die Datei trägt

@@ -190,22 +190,24 @@ class CliSchemaMigrateRebuildFoldedGapsSqliteTest : FunSpec({
         scalar(db, "SELECT n FROM t") shouldBe "abc"
     }
 
-    // Bekannte Grenze, Folge-Slice docs/planning/next/sqlite-domain-spalte-basistyp-vergleich.md: die Datenbank liest
-    // die Domain ueber boolean als `integer`, die Datei traegt `ref_type`; der Vergleich plant bei jedem Lauf ein
-    // AlterColumnType, und die Cast-Matrix blockiert den Neubau -- auch ohne jede Aenderung am Typ. Ist der Folge-Slice
-    // umgesetzt, wird dieser Test zu Exit 0 mit erhaltenen Daten.
-    test("Domain ueber boolean: der Neubau blockiert wegen des Dauer-AlterColumnType (bekannte Grenze)") {
+    // Issue #56: die Datenbank liest die Domain ueber boolean als `integer`, die Datei traegt `ref_type`; der Vergleich
+    // projiziert die Domain-Spalte ueber ihren Basistyp, plant also kein AlterColumnType, und die Cast-Matrix blockiert
+    // den Neubau nicht (vorher: Exit 8, `SQLITE_CAST_NOT_WHITELISTED`).
+    test("Domain ueber boolean: der Neubau aus anderem Grund laeuft durch, die Daten bleiben") {
         val dir = Files.createTempDirectory("cli-folded-domain-boolean")
         val before = write(dir, "a.yaml", yaml(false, domainColumn, domain("boolean")))
         val after = write(dir, "b.yaml", yaml(true, domainColumn, domain("boolean")))
         val db = databaseFromFile(dir, before)
         exec(db, "INSERT INTO t (id, flag, n) VALUES (1, 7, 1)")
-        val catalogBefore = catalog(db)
 
-        migrate(dir, after, db, "up", "--execute") shouldBe 8
+        val code = migrate(dir, after, db, "up", "--execute")
 
-        report(dir, "up") shouldContain "SQLITE_CAST_NOT_WHITELISTED"
-        catalog(db) shouldBe catalogBefore
+        withClue(report(dir, "up")) { code shouldBe 0 }
+        report(dir, "up") shouldNotContain "SQLITE_CAST_NOT_WHITELISTED"
+        scalar(db, "SELECT n FROM t") shouldBe "1"
+        scalar(db, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'flag' AND \"notnull\" = 1") shouldBe "1"
+        migrate(dir, after, db, "again", "--execute") shouldBe 0
+        report(dir, "again") shouldNotContain "AlterColumnType"
     }
 
     // ── Laengenwechsel von Datei zu Datei, beide Richtungen ──

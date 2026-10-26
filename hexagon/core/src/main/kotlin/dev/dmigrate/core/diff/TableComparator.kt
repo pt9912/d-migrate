@@ -249,26 +249,30 @@ internal class TableComparator(
     private data class EnumVocabularies(
         val left: Map<String, List<String>>,
         val right: Map<String, List<String>>,
+        /** Die Domain-Spalten, projiziert ueber ihren Basistyp ([DomainColumnTypes]); je Seite. */
+        val domainLeft: Map<String, NeutralType> = emptyMap(),
+        val domainRight: Map<String, NeutralType> = emptyMap(),
     )
 
     private fun enumVocabularies(
         left: TableDefinition,
         right: TableDefinition,
         customTypes: CustomTypeContext,
-    ): EnumVocabularies =
-        if (targetProjection == null) {
-            EnumVocabularies(emptyMap(), emptyMap())
-        } else {
-            val resolve = targetProjection.resolvesRefTypeVocabulary
-            EnumVocabularies(
-                EnumCheckProjection.vocabulary(
-                    if (resolve) resolvedAgainst(left, customTypes.left, right) else left,
-                ),
-                EnumCheckProjection.vocabulary(
-                    if (resolve) resolvedAgainst(right, customTypes.right, left) else right,
-                ),
-            )
-        }
+    ): EnumVocabularies {
+        if (targetProjection == null) return EnumVocabularies(emptyMap(), emptyMap())
+        val resolve = targetProjection.resolvesRefTypeVocabulary
+        val project = targetProjection.typeWithCustomTypes
+        return EnumVocabularies(
+            EnumCheckProjection.vocabulary(
+                if (resolve) resolvedAgainst(left, customTypes.left, right) else left,
+            ),
+            EnumCheckProjection.vocabulary(
+                if (resolve) resolvedAgainst(right, customTypes.right, left) else right,
+            ),
+            project?.let { DomainColumnTypes.projected(left, customTypes.left, right, it) } ?: emptyMap(),
+            project?.let { DomainColumnTypes.projected(right, customTypes.right, left, it) } ?: emptyMap(),
+        )
+    }
 
     /**
      * [table] mit aufgeloesten `ref_type`-Spalten — ausser dort, wo auch die
@@ -321,6 +325,7 @@ internal class TableComparator(
                 ),
                 absorbed,
                 vocabularies.left[name] to vocabularies.right[name],
+                vocabularies.domainLeft[name] to vocabularies.domainRight[name],
             )
         }
         return ColumnDiffs(added, removed, changed)
@@ -331,6 +336,7 @@ internal class TableComparator(
         pair: ColumnPair,
         absorbed: AbsorbedColumns,
         vocabulary: Pair<List<String>?, List<String>?>,
+        domainTypes: Pair<NeutralType?, NeutralType?>,
     ): ColumnDiff? {
         val left = pair.left
         val right = pair.right
@@ -345,7 +351,8 @@ internal class TableComparator(
         // die Migration liesse den alten Wertevorrat stehen.
         val typeDiff = when {
             vocabulary.first != vocabulary.second -> ValueChange(left.type, right.type)
-            canon != null && canon(left.type) == canon(right.type) -> null
+            canon != null &&
+                (domainTypes.first ?: canon(left.type)) == (domainTypes.second ?: canon(right.type)) -> null
             else -> diffValueChangeOrNull(left.type, right.type)
         }
         // PK ⇒ NOT NULL — `required` vergleicht immer effektiv, auch strikt.

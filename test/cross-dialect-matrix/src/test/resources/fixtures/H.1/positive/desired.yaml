@@ -1,0 +1,52 @@
+schema_format: "1.0"
+name: "matrix-H1-desired"
+version: "1.0.0"
+
+custom_types:
+  d_integer: { kind: domain, base_type: "integer" }
+  d_biginteger: { kind: domain, base_type: "biginteger" }
+  d_smallint: { kind: domain, base_type: "smallint" }
+  d_boolean: { kind: domain, base_type: "boolean" }
+  d_real: { kind: domain, base_type: "real" }
+  d_float: { kind: domain, base_type: "float" }
+  d_decimal: { kind: domain, base_type: decimal, precision: 10, scale: 2 }
+  d_text: { kind: domain, base_type: "text" }
+  d_varchar: { kind: domain, base_type: "varchar(32)" }
+  d_char: { kind: domain, base_type: "char(5)" }
+  d_uuid: { kind: domain, base_type: "uuid" }
+  d_json: { kind: domain, base_type: "json" }
+  d_xml: { kind: domain, base_type: "xml" }
+  d_binary: { kind: domain, base_type: "binary" }
+  d_date: { kind: domain, base_type: "date" }
+  d_time: { kind: domain, base_type: "time" }
+  d_datetime: { kind: domain, base_type: "datetime" }
+  d_timestamptz: { kind: domain, base_type: "timestamptz" }
+  d_enum: { kind: enum, values: [a, b] }
+  d_values: { kind: domain, base_type: text, check: "VALUE IN ('a', 'b')" }
+
+tables:
+  t:
+    columns:
+      id: { type: integer, required: true }
+      flag: { type: integer, required: true }
+      c_integer: { type: enum, ref_type: d_integer }
+      c_biginteger: { type: enum, ref_type: d_biginteger }
+      c_smallint: { type: enum, ref_type: d_smallint }
+      c_boolean: { type: enum, ref_type: d_boolean }
+      c_real: { type: enum, ref_type: d_real }
+      c_float: { type: enum, ref_type: d_float }
+      c_decimal: { type: enum, ref_type: d_decimal }
+      c_text: { type: enum, ref_type: d_text }
+      c_varchar: { type: enum, ref_type: d_varchar }
+      c_char: { type: enum, ref_type: d_char }
+      c_uuid: { type: enum, ref_type: d_uuid }
+      c_json: { type: enum, ref_type: d_json }
+      c_xml: { type: enum, ref_type: d_xml }
+      c_binary: { type: enum, ref_type: d_binary }
+      c_date: { type: enum, ref_type: d_date }
+      c_time: { type: enum, ref_type: d_time }
+      c_datetime: { type: enum, ref_type: d_datetime }
+      c_timestamptz: { type: enum, ref_type: d_timestamptz }
+      c_enum: { type: enum, ref_type: d_enum }
+      c_values: { type: enum, ref_type: d_values }
+    primary_key: [id]

@@ -1,0 +1,30 @@
+schema_format: "1.0"
+name: "matrix-H1-current"
+version: "1.0.0"
+
+tables:
+  t:
+    columns:
+      id: { type: integer, required: true }
+      flag: { type: integer, required: false }
+      c_integer: { type: integer }
+      c_biginteger: { type: integer }
+      c_smallint: { type: integer }
+      c_boolean: { type: integer }
+      c_real: { type: float }
+      c_float: { type: float }
+      c_decimal: { type: float }
+      c_text: { type: text }
+      c_varchar: { type: text }
+      c_char: { type: text }
+      c_uuid: { type: text }
+      c_json: { type: text }
+      c_xml: { type: text }
+      c_binary: { type: binary }
+      c_date: { type: text }
+      c_time: { type: text }
+      c_datetime: { type: text }
+      c_timestamptz: { type: text }
+      c_enum: { type: enum, values: [a, b] }
+      c_values: { type: enum, values: [a, b] }
+    primary_key: [id]

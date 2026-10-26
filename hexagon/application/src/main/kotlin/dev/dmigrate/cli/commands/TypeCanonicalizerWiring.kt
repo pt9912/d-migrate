@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
@@ -55,8 +56,9 @@ internal fun registryTypeCanonicalizer(dialect: DatabaseDialect): (NeutralType) 
  * Seite des Vergleichs loest gegen ihre eigenen Custom Types auf, und ein
  * zurueckgelesenes Schema ohne Custom Types loest schlicht nichts auf.
  *
- * Nur der Fingerprint-Pfad nutzt das. Der strukturelle Vergleich bleibt bei
- * der kontextfreien Projektion — dieselbe Grenze, die ADR 0026 zieht.
+ * Den Fingerprint-Pfad nutzt das ganz. Der strukturelle Vergleich bleibt bei
+ * der kontextfreien Projektion — dieselbe Grenze, die ADR 0026 zieht — mit einer
+ * Ausnahme: Domain-Spalten ([registryDomainAwareCanonicalizer]).
  */
 internal fun registrySchemaAwareCanonicalizer(
     dialect: DatabaseDialect,
@@ -66,6 +68,23 @@ internal fun registrySchemaAwareCanonicalizer(
         ?: return { it }
     val canonicalizer = driver.typeCanonicalizer()
     return { type -> canonicalizer.canonicalize(type, schema.customTypes) }
+}
+
+/**
+ * Die Typ-Projektion mit den Custom Types der Seite -- aber nur fuer einen Dialekt, dessen Reverse eine Domain als
+ * ihren Basistyp zurueckgibt (`resolvesRefTypeVocabulary`, SQLite); sonst `null`.
+ *
+ * Der **strukturelle Vergleich** nutzt sie nur fuer Domain-Spalten, deren Gegenseite die Spalte nicht auch als
+ * `ref_type` fuehrt (`TargetProjection.typeWithCustomTypes`). Fuer PostgreSQL waere ein Aufloesen falsch -- dort ist die
+ * Domain ein Typ-Objekt, das der Reverse zurueckgibt --, und SQL Server kennt keine Domain.
+ */
+internal fun registryDomainAwareCanonicalizer(
+    dialect: DatabaseDialect,
+): ((NeutralType, Map<String, CustomTypeDefinition>) -> NeutralType)? {
+    if (!capabilityResolvesRefTypeVocabulary(dialect)) return null
+    val driver = runCatching { DatabaseDriverRegistry.get(dialect) }.getOrNull() ?: return null
+    val canonicalizer = driver.typeCanonicalizer()
+    return { type, customTypes -> canonicalizer.canonicalize(type, customTypes) }
 }
 
 /**

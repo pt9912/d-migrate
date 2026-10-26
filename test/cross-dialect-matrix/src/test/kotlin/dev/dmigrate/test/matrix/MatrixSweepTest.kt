@@ -1,6 +1,7 @@
 package dev.dmigrate.test.matrix
 
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -28,6 +29,8 @@ import io.kotest.matchers.shouldBe
 class MatrixSweepTest : FunSpec({
 
     val sweepRunner = MatrixSweepRunner()
+
+    afterSpec { DatabaseDriverRegistry.clear() }
     val registry = CarveOutRegistry.load()
     val candidates = MatrixCell.candidates(MatrixWorkstreams.ALL)
 

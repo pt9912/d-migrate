@@ -640,6 +640,7 @@ class SchemaMigrateRunner(
                 DialectCapabilities.forDialect(prep.effectiveDialect).rendersAutoIncrementAsIdentity,
             constraintName = capabilityConstraintNameCanonicalizer(prep.effectiveDialect),
             resolvesRefTypeVocabulary = capabilityResolvesRefTypeVocabulary(prep.effectiveDialect),
+            typeWithCustomTypes = registryDomainAwareCanonicalizer(prep.effectiveDialect),
             comparesDomainTraits = capabilityProjectsCustomTypes(prep.effectiveDialect),
         )
         val authorship = OverlayRawTextAuthorship.of(mergedOverlays)

@@ -111,7 +111,7 @@ Nicht-Ziel: echte Typwechsel (`integer` → `text`), `Date` → `DateTime` (scho
   `text(32)` Datei→Datei ist in P1 entschieden und getestet; eine echte Typänderung neben einer gefalteten Spalte lässt
   nur die echte in `castBlocked`.
 * **Reihenfolge-Pflicht:** P0 (Tabelle im Plan-Nachtrag) vor P1 vor P2.
-* Ein Neubau mit unveränderter `text(n)`-/`boolean`-/`decimal`-/`uuid`-Spalte: `--execute` Exit 0, Daten erhalten,
+* Ein Neubau mit unveränderter (nicht-Domain) `text(n)`-/`boolean`-/`decimal`-/`uuid`-Spalte: `--execute` Exit 0, Daten erhalten,
   zweiter Lauf `operationsTotal` 0.
 * `make docker-test` (ganzes Repo), `make docker-check` der betroffenen Module **und** einmal ohne `MODULES=`,
   `make integration INTEGRATION_TASKS=":test:integration-sqlite:test"`, `make solid-suppression-gate`,
@@ -137,7 +137,7 @@ Spalten, dazu je eine Tabelle mit **einer** Spalte). Stand **vor** dem Fix:
 | `float` (double), `smallint`, `biginteger`, `binary` | gleich gelesen | 0 | nein |
 | `enum` (Regressionsprobe) | durch `onlyVocabularyDiffers` ausgenommen | 0 | nein |
 | Domain über `varchar` (Text) | `Text()` → `Text()` | 0 | nein |
-| Domain über `boolean` / `decimal` / `uuid` | `Integer`/`Float`/`Text` → Domain | 8 | ja, **und** `AlterColumnType` im Plan |
+| Domain über `boolean` / `decimal` (mit `precision`) | `Integer`/`Float` → Domain | 8 | ja, **und** `AlterColumnType` im Plan (Stand #56: behoben; Domain über `uuid` war nie betroffen, `Text()` → `Text()`, Exit 0) |
 | alle Spalten zusammen | | 8 | 18 Einträge |
 | Fremddatenbank gleich (`VARCHAR(64)`, `CHAR(10)`, `DATE`, `BOOLEAN`, `DECIMAL(10,2)`, `DATETIME`) + Neubau | `Text(64)`, `Char(10)`, … gelesen, gleich geschrieben | 0 | nein |
 | Fremddatenbank `VARCHAR(64)` → `text(32)` + Neubau | `Text(64)` → `Text(32)` | 8 | ja |
@@ -153,10 +153,11 @@ Der **Ursprungsbefund bestätigt sich**: jede Spalte, deren `toSql`-Ergebnis zur
 ergibt, blockiert den Neubau. Dazu zwei Befunde, die der Plan nicht kannte:
 
 * `float` mit `single` blockiert ebenfalls (`Float(DOUBLE)` gelesen).
-* Eine Domain über `boolean`, `decimal` oder `uuid` plant **bei jedem Lauf** ein `AlterColumnType` (der
-  Vergleich hält `Integer` aus der Datenbank gegen `Enum(refType)` der Datei für verschieden, auch ohne
-  jede Änderung; zweiter Lauf ohne Änderung: weiter `operationsTotal` > 0). Das ist ein eigener Befund des
-  ziel-bewussten Vergleichs, kein Planerfehler; er bleibt außerhalb dieses Plans (siehe „Offen“).
+* Eine Domain über `boolean` oder `decimal` (nach der Messung in #56 auch über `integer`, `biginteger`, `smallint`,
+  `real`, `float`, `binary`; **nicht** über `uuid`, dessen Reverse-Form `Text()` ist — die ursprüngliche Angabe
+  „`uuid`“ war falsch) plante **bei jedem Lauf** ein `AlterColumnType` (der Vergleich hielt `Integer` aus der Datenbank
+  gegen `Enum(refType)` der Datei für verschieden, auch ohne jede Änderung). Eigener Befund des ziel-bewussten
+  Vergleichs, kein Planerfehler; behoben in Issue #56 (Stand #56, siehe „Offen“).
 
 Rename plus gefaltete Spalte: `--rename-column` führt im Messaufbau zusätzlich zu
 `RENAME_DEPENDENCY_UNPROJECTABLE` (Exit 8) auch ohne Neubau; die Umbenennung selbst erreicht den Planer nur als
@@ -207,21 +208,23 @@ ihr Aufrufkreis ändert sich.
 
 ### Offen
 
-* Domain-Spalte über `boolean`/`decimal`/`uuid`: der ziel-bewusste Vergleich meldet bei jedem Lauf
-  `AlterColumnType` (Datenbank liest `Integer`, Datei `Enum(refType)`); der Neubau blockiert dort weiter.
-  Eigener Plan, Berührung des Vergleichs und möglicherweise des Fingerabdrucks.
+* ~~Domain-Spalte über `boolean`/`decimal`/`uuid`: der ziel-bewusste Vergleich meldet bei jedem Lauf
+  `AlterColumnType`; der Neubau blockiert dort weiter.~~ **Erledigt in Issue #56**
+  ([`sqlite-domain-spalte-basistyp-vergleich.md`](sqlite-domain-spalte-basistyp-vergleich.md)): der Vergleich projiziert die
+  Domain-Spalte über ihren Basistyp, der Fingerabdruck blieb unberührt. `uuid` war nie betroffen (Reverse-Form `Text()`);
+  betroffen waren `integer`, `biginteger`, `smallint`, `boolean`, `real`, `float`, `decimal` mit Präzision und `binary`.
 
 **Review-Nachtrag.** (1) *Regression behoben:* eine Domain-Spalte bleibt auf beiden Seiten `ref_type`; ihren Basistypwechsel
 (`text` → `integer`) meldet der Vergleich als `AlterCustomType`, nicht als `AlterColumnType`. Ohne Gegenmaßnahme fiel er ohne
 `CAST` und ohne Blocker durch. `planRebuild` zählt Domain-Spalten (`SqliteRefTypeColumns.domainColumns`) jetzt immer als
 zu prüfen (aufgelöster Basistyp gegen die Cast-Matrix); Unit-Tests: `text` → `integer` blockiert, `integer` → `biginteger`
 wird gecastet, unveränderter Basistyp wird kopiert. (2) *Folge-Slices:*
-[`sqlite-domain-spalte-basistyp-vergleich.md`](../next/sqlite-domain-spalte-basistyp-vergleich.md) (eine Domain über
-`boolean`/`decimal`/`uuid` plant bei jedem Lauf `AlterColumnType`). (3) Nicht per CLI getestet: Rename plus Neubau
+[`sqlite-domain-spalte-basistyp-vergleich.md`](sqlite-domain-spalte-basistyp-vergleich.md) (eine Domain über
+`boolean`/`decimal` — und weitere Basistypen, nicht `uuid` — plante bei jedem Lauf `AlterColumnType`; Stand #56 behoben). (3) Nicht per CLI getestet: Rename plus Neubau
 (`RENAME_DEPENDENCY_UNPROJECTABLE` in diesem Messaufbau).
 
 **Test-Nachtrag (Lücken aus dem Review, nur Tests).**
-* Domain per CLI: Domain über `varchar` nach Neubau Exit 0 mit erhaltenen Daten; Basistypwechsel `text` → `integer` blockiert (Datei zu Datei und gegen Datenbank mit `'abc'`, Exit 8); Domain über `boolean` als bekannte Grenze festgehalten (Exit 8).
+* Domain per CLI: Domain über `varchar` nach Neubau Exit 0 mit erhaltenen Daten; Basistypwechsel `text` → `integer` blockiert (Datei zu Datei und gegen Datenbank mit `'abc'`, Exit 8); Domain über `boolean` als bekannte Grenze festgehalten (Exit 8); mit #56 erwartet der Test Exit 0, erhaltene Daten und keinen `AlterColumnType` im Folgelauf (`Domain ueber boolean: der Neubau aus anderem Grund laeuft durch, die Daten bleiben`).
 * **Gefundener Fehler (nicht behoben):** eine Domain mit Länge (`varchar(32)`) blockiert gegen eine Datenbank mit `SQLITE_CAST_NOT_WHITELISTED` ("target length is shorter than source length"), weil der Reader `Text()` liest und die aufgelöste Domain `Text(32)` trägt; als bekannter Fehler im Test festgehalten.
 * Plan-Only-Test geschärft (Neubau-Skript mit `DROP TABLE`/`INSERT INTO`, ohne `CAST`); Gegenproben `text(32)` ↔ `text(64)` Datei zu Datei, mit und ohne Neubau.
 * Fremddatenbank `VARCHAR(64)` → `text(32)` mit 50 Zeichen: Wert bleibt vollständig.
