@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.RawSqlExpressionPortability
 import dev.dmigrate.driver.metadata.ComputedColumnClause
+import dev.dmigrate.driver.metadata.DomainTypes
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 /**
@@ -55,7 +56,7 @@ internal class MysqlColumnConstraintHelper(
             columnGeneratedIdentity(colName, col)
         col.type is NeutralType.Identifier && (col.type as NeutralType.Identifier).autoIncrement ->
             columnAutoIncrement(colName, col)
-        col.type is NeutralType.Enum -> columnEnum(tableName, colName, col, schema)
+        col.type is NeutralType.Enum -> columnEnum(tableName, colName, col, schema, notes)
         col.type is NeutralType.Geometry -> columnGeometry(colName, col, notes)
         col.type is NeutralType.FullText -> columnFullText(tableName, colName, col, schema, notes)
         else -> columnSql(tableName, colName, col, schema)
@@ -108,12 +109,18 @@ internal class MysqlColumnConstraintHelper(
         return parts.joinToString(" ")
     }
 
-    private fun columnEnum(tableName: String, colName: String, col: ColumnDefinition, schema: SchemaDefinition): String {
+    private fun columnEnum(
+        tableName: String,
+        colName: String,
+        col: ColumnDefinition,
+        schema: SchemaDefinition,
+        notes: MutableList<TransformationNote>,
+    ): String {
         val type = col.type as NeutralType.Enum
         if (type.refType != null) {
             val customType = schema.customTypes[type.refType]
             if (customType != null && customType.kind == CustomTypeKind.DOMAIN) {
-                return columnDomain(colName, col, customType)
+                return columnDomain(tableName, colName, col, type.refType!!, customType, notes)
             }
             val enumValues = customType?.values
             if (enumValues != null) {
@@ -129,8 +136,34 @@ internal class MysqlColumnConstraintHelper(
     private fun columnEnumInline(colName: String, col: ColumnDefinition, values: List<String>): String =
         MysqlEnumColumnRenderer.inline(quoteIdentifier(colName), col, values, typeMapper::toDefaultSql)
 
-    private fun columnDomain(colName: String, col: ColumnDefinition, customType: CustomTypeDefinition): String {
-        val parts = mutableListOf(quoteIdentifier(colName), customType.baseType ?: "TEXT")
+    /**
+     * Der Basistyp einer Domain laeuft ueber [DomainTypes.resolveBaseType] und den MySQL-Typmapper,
+     * nie roh in die Spalte: ein PostgreSQL-Katalogname (`int4`, `timestamptz`, `integer[]`) ist
+     * kein MySQL-Typ. Ohne neutrales Gegenstueck entsteht E053 und die Spalte wird `TEXT`.
+     */
+    private fun columnDomain(
+        tableName: String,
+        colName: String,
+        col: ColumnDefinition,
+        domainName: String,
+        customType: CustomTypeDefinition,
+        notes: MutableList<TransformationNote>,
+    ): String {
+        val baseType = customType.baseType ?: "text"
+        val neutral = DomainTypes.resolveBaseType(baseType, customType.precision, customType.scale)
+        val sqlType = if (neutral != null) {
+            MysqlTimezoneDegradation.noteFor(tableName, colName, neutral)?.let { notes += it }
+            typeMapper.toSql(neutral)
+        } else {
+            notes += ManualActionRequired(
+                code = "E053", objectType = "domain", objectName = "$tableName.$colName",
+                reason = "Domain '$domainName' base type '$baseType' has no MySQL mapping; column " +
+                    "'$colName' was rendered as TEXT.",
+                hint = "Declare the domain base type as a neutral type, or adjust the column type manually.",
+            ).toNote()
+            "TEXT"
+        }
+        val parts = mutableListOf(quoteIdentifier(colName), sqlType)
         if (col.required) parts += "NOT NULL"
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
         if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"

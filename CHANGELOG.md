@@ -95,6 +95,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`DIALECT_UNSUPPORTED_OPERATION`): ein `ALTER DOMAIN`-Renderer fehlt weiterhin.
   - Der Fingerabdruck steht auf `schema-fingerprint-v24`; ein Rollback-Artefakt einer früheren
     Version ist neu zu erzeugen.
+- **`schema generate` auf MySQL schreibt für eine Domain-Spalte keinen Basistyp mehr roh in die Spalte**
+  (Issue #62). Der Basistyp läuft über die neutrale Typtabelle und den MySQL-Typmapper: `int4` wird `INT`, `uuid` wird
+  `CHAR(36)`, `jsonb` wird `JSON`, `numeric` mit `precision`/`scale` an der Domain wird `DECIMAL(p,s)` (statt `DECIMAL(10,0)`),
+  `varchar` mit Länge wird `VARCHAR(n)`. Ein Basistyp ohne Gegenstück (Array, `bit`, `varbit(n)`, `timetz`, `money`, `numeric`
+  ohne `precision` …) erscheint als `E053`, die Spalte ist `TEXT` – bisher entstand ungültiges DDL oder ein Typ mit anderer
+  Bedeutung ohne jede Notiz. Eine Domain über `timestamptz` meldet `W100` wie eine gewöhnliche Spalte.
 
 ## [1.10.0] - 2026-10-25
 

@@ -2612,6 +2612,17 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
 - **Domain** → PostgreSQL nativ; bei anderen Dialekten nennt der
   Transformations-Report die gewählte Abbildung (SQLite, MySQL, MS SQL Server:
   Basistyp + `CHECK`).
+- **Domain auf MySQL (`schema generate`):** Der `base_type` wird auf den MySQL-Typ des
+  neutralen Typs abgebildet, auch wenn er ein PostgreSQL-Katalogname ist
+  (`int4` → `INT`, `bool` → `TINYINT(1)`, `uuid` → `CHAR(36)`, `jsonb` →
+  `JSON`, `bytea` → `BLOB`); `precision` und `scale` der Domain gelten
+  (`numeric` mit `precision: 12`, `scale: 4` ergibt `DECIMAL(12,4)`). Ein
+  Basistyp ohne Gegenstück (ein Array wie `integer[]`, `bit`, `varbit(n)`,
+  `timetz`, `money`, `interval`, `inet` oder `numeric` ohne `precision`)
+  erscheint als **E053**, die Spalte wird `TEXT`; Sie müssen den Typ dann selbst
+  festlegen. Ein Zeitzonen-Basistyp (`timestamptz`) wird `DATETIME` mit
+  Warnung **W100**. Die Nachkommastellen in `timestamptz(3)` oder `time(3)`
+  übernimmt d-migrate nicht.
 
 **Hinweise:**
 
@@ -2693,14 +2704,11 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   (`(VALUE > 0) AND (VALUE < 10)`), Rechnungen mit Cast und negative Zahlen.
   Eine `schema reverse`-Datei, die für eine `varchar(n)`-, `char(n)`-
   oder Array-Domain nur `text` führt, gilt als geändert und blockiert mit
-  Exit 8; ziehen Sie `schema reverse` neu. Gegen SQLite und MSSQL erzeugt
-  `schema generate` aus `timestamp(3)`/`time(3)` einen Typ ohne Genauigkeit. Ein Array-Basistyp hat auf
-  MySQL, SQLite, MSSQL und Oracle kein Gegenstück. SQLite und MSSQL weisen ihn
-  in `schema generate` als **E053** aus, Oracle schreibt jede Domain als `CLOB`
-  mit E053. MySQL gibt `base_type` unverändert in die Spalte aus; für ein Array
-  (`integer[]`) und für `timestamptz(3)`, `timetz`, `varbit(7)` entsteht dort
-  ungültiges DDL ohne Notiz. Prüfen Sie das erzeugte MySQL-Skript für solche
-  Domains.
+  Exit 8; ziehen Sie `schema reverse` neu. Gegen MySQL, SQLite und MSSQL
+  erzeugt `schema generate` aus `timestamp(3)`/`time(3)` einen Typ ohne Genauigkeit. Ein Array-Basistyp hat auf
+  MySQL, SQLite, MSSQL und Oracle kein Gegenstück. MySQL, SQLite und MSSQL
+  weisen ihn in `schema generate` als **E053** aus, Oracle schreibt jede Domain
+  als `CLOB` mit E053.
 
   Hat eine Domain mehrere `CHECK`-Constraints, liest `schema migrate` alle und
   fasst sie nach Constraint-Name geordnet zu einem Ausdruck zusammen, jedes

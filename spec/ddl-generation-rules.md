@@ -1332,6 +1332,11 @@ im `AND`-Verbund gilt nicht als Werteliste. Ein `NOT VALID`-Constraint behält s
 über einer Domain bleibt an seiner Domain; die innere trägt ihren eigenen.
 
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
+Der Basistyp läuft über die neutrale Typtabelle (auch PostgreSQL-Katalognamen wie `int4`,
+`bytea`, `timestamptz`) und den Typmapper des Dialekts, nie als roher Typname in die Spalte;
+`precision`/`scale` der Domain gelten, ein `numeric` ohne `precision` hat kein Gegenstück. Eine
+Domain über `timestamptz` bekommt auf MySQL dieselbe Warnung W100 wie eine gewöhnliche Spalte.
+Die Klammer bei Zeittypen (`timestamptz(3)`) trägt das neutrale Modell nicht.
 Bei SQLite steht der CHECK **unbenannt** (`"n" INTEGER NOT NULL CHECK ("n" >= 0)`),
 ebenso der CHECK einer Enum mit `ref_type`, in `schema generate` wie in
 `schema migrate` (`CREATE TABLE`, `ADD COLUMN`, Tabellen-Neubau). Der Grund ist

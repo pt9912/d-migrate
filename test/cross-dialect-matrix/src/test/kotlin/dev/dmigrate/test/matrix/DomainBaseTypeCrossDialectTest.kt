@@ -68,8 +68,8 @@ class DomainBaseTypeCrossDialectTest : FunSpec({
             }
         }
 
-        // MySQL reicht den Basistyp roh durch (kein E053, auch fuer ein Array); Oracle schreibt jede Domain als CLOB.
-        if (dialect == DatabaseDialect.SQLITE || dialect == DatabaseDialect.MSSQL) {
+        // Oracle schreibt jede Domain als CLOB und ist hier ausgenommen.
+        if (dialect == DatabaseDialect.SQLITE || dialect == DatabaseDialect.MSSQL || dialect == DatabaseDialect.MYSQL) {
             test("${dialect.name.lowercase()}: ein Array-Basistyp bleibt E053, wie zuvor `_int4`") {
                 for (name in arrays) {
                     withClue("$name in $e053\n$sql") { e053.any { it.endsWith("c_$name") } shouldBe true }
