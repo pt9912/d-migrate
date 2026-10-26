@@ -6,7 +6,6 @@ import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.sqlite.SqliteDriver
-import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -259,16 +258,17 @@ class CliSchemaMigrateExpressionIndexSqliteTest : FunSpec({
         operations(dir, yaml(index("[{ expression: \"lower(a) /* c */\" }]")), db, "plan") shouldBe 2
     }
 
-    // Eigener Befund (nicht hier behoben): der Generator rendert den Ausdruck wortgleich in Klammern; ein
-    // `--`-Kommentar im Text verschluckt die schliessende Klammer, das erzeugte DDL ist ungueltig.
-    test("Befund: Zeilenkommentar im expression-Text erzeugt ungueltiges DDL") {
+    // Ein `--`-Kommentar im expression-Text der Datei verschluckt die schliessende Klammer nicht: der Generator
+    // setzt sie auf eine neue Zeile. Der Reader liest den Ausdruck kommentarfrei, die Datei gilt daher weiter als
+    // verschieden (Restgrenze oben).
+    test("Zeilenkommentar im expression-Text erzeugt gueltiges DDL; die Datei bleibt gegen die Datenbank verschieden") {
         val dir = Files.createTempDirectory("cli-migrate-expr-index-line-comment")
-        val create = dir.resolve("create.sql")
-        run(
-            "schema", "generate", "--source",
-            write(dir, "a.yaml", yaml(index("[{ expression: \"lower(a) -- c\" }]"))).toString(),
-            "--target", "sqlite", "--output", create.toString(),
-        ) shouldBe 0
-        shouldThrowAny { exec(dir.resolve("db.sqlite"), *sqlStatements(create).toTypedArray()) }
+        val text = yaml(index("[{ expression: \"lower(a) -- c\" }]"))
+        val db = generated(dir, text)
+
+        scalar(db, "SELECT count(*) FROM pragma_index_info('ix_t')") shouldBe "1"
+        operations(dir, text, db, "plan") shouldBe 2
+        execute(dir, text, db, "up") shouldBe 0
+        scalar(db, "SELECT count(*) FROM pragma_index_info('ix_t')") shouldBe "1"
     }
 })

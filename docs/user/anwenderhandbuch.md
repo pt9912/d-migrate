@@ -2195,8 +2195,9 @@ sie als normale View erzeugt (Warnung **W103**).
     Datenbank als geändert: schreiben Sie `lower(a)` oder ziehen Sie die Datei mit `schema reverse` neu.
     `COLLATE` gehört nicht zum Modell: `a COLLATE NOCASE` ist ein Schlüssel auf der Spalte `a`, und `schema reverse`
     lässt ein nachgestelltes `COLLATE` weg. Kommentare im Katalogtext eines Ausdrucks entfallen ebenfalls; ein
-    Kommentar im `expression`-Text Ihrer Datei gilt dagegen als Unterschied, und ein `--`-Kommentar dort erzeugt
-    ungültiges DDL (er verschluckt die schließende Klammer) — schreiben Sie den Ausdruck ohne Kommentar.
+    Kommentar im `expression`-Text Ihrer Datei gilt dagegen als Unterschied (`schema migrate` plant `DROP INDEX` +
+    `CREATE INDEX`); schreiben Sie den Ausdruck ohne Kommentar. Ein `--`-Kommentar dort bleibt gültiges DDL: der
+    Generator setzt die schließende Klammer auf eine neue Zeile.
 - **SQLite, Tabellenneubau und Spaltentypen:** SQLite legt viele Typen in derselben Speicherklasse
   ab (`text(n)`, `char`, `date`, `uuid`, `json`, … als `TEXT`, `boolean` als `INTEGER`, `decimal`
   als `REAL`). `schema migrate` plant eine Verengung wie `text(64)` → `text(32)` deshalb nicht als
