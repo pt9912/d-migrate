@@ -47,9 +47,14 @@ if [[ "${GRADLE_TASKS}" != *"-PintegrationTests"* ]]; then
     GRADLE_TASKS="-PintegrationTests ${GRADLE_TASKS}"
 fi
 
-if [[ ! -S /var/run/docker.sock ]]; then
-    echo "Docker socket /var/run/docker.sock not found." >&2
-    echo "This script expects a local Docker daemon and mounts the host socket into the test container." >&2
+# Der Socket wird per `-v` eingebunden; den Quellpfad loest der Docker-Daemon auf, nicht diese Shell. Unter
+# Colima oder Docker Desktop liegt er in der VM unter /var/run/docker.sock, auch wenn er auf dem Host fehlt.
+# Deshalb pruefen wir die Erreichbarkeit des Daemons statt der Datei. Rootless-Daemons oder andere Pfade:
+# DMIGRATE_DOCKER_SOCKET (Pfad aus Sicht des Daemons).
+DOCKER_SOCKET="${DMIGRATE_DOCKER_SOCKET:-/var/run/docker.sock}"
+if ! docker info >/dev/null 2>&1; then
+    echo "Docker daemon not reachable (docker info failed)." >&2
+    echo "This script needs a running Docker daemon and mounts its socket (${DOCKER_SOCKET}, as seen by the daemon) into the test container." >&2
     exit 1
 fi
 
@@ -81,7 +86,7 @@ echo "  log file:     ${LOG_FILE}"
 
 docker run --rm ${TTY_FLAG} \
     --network=host \
-    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "${DOCKER_SOCKET}:/var/run/docker.sock" \
     -e DOCKER_HOST=unix:///var/run/docker.sock \
     -e TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
     -w /src \
