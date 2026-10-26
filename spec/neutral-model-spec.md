@@ -218,7 +218,7 @@ columns:
   # Enum mit Referenz auf custom_type
   status:
     type: enum
-    ref_type: order_status     # Verweis auf custom_types
+    ref_type: order_status     # Verweis auf custom_types (Enum oder Domain)
 
   # Enum inline (ohne custom_type)
   priority:
@@ -1461,7 +1461,7 @@ Das neutrale Modell wird vor der DDL-Generierung validiert:
 
 - `references.table` muss eine existierende Tabelle sein
 - `references.column` muss in der referenzierten Tabelle existieren
-- `ref_type` muss in `custom_types` existieren
+- `ref_type` muss in `custom_types` existieren; das Ziel ist eine Enum (`kind: enum`) oder eine Domain (`kind: domain`)
 - Trigger-`table` muss existieren
 - `dependencies.views` muss auf existierende Eintraege in `views` verweisen
 - Keine unauflösbaren zirkulären Abhängigkeiten (Warnung bei erkannten Zyklen)

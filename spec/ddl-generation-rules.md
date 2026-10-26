@@ -1339,6 +1339,11 @@ im `AND`-Verbund gilt nicht als Werteliste. Ein `NOT VALID`-Constraint behält s
 (er prüft Neues weiter), das Suffix entfällt, die Note `R407` meldet ihn. Der `CHECK` einer Domain
 über einer Domain bleibt an seiner Domain; die innere trägt ihren eigenen.
 
+Eine Spalte vom Typ einer Domain steht in der Schema-Datei als `type: enum` + `ref_type: <Domain>`.
+Auf PostgreSQL rendert der Generator sie als Spalte des Domain-Typs (`"price" "positive_amount"`).
+`schema reverse` schreibt eine solche Spalte in dieser Form zurück, und `schema migrate` plant für
+eine unveränderte Domain-Spalte nichts.
+
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
 Der Basistyp läuft über die neutrale Typtabelle (auch PostgreSQL-Katalognamen wie `int4`,
 `bytea`, `timestamptz`) und den Typmapper des Dialekts, nie als roher Typname in die Spalte;

@@ -289,6 +289,13 @@ dort rendert `schema generate` sie in `CREATE DOMAIN` (`COLLATE`, `DEFAULT`, `NO
 SQL Server und Oracle haben keine Domain — sie rendern Basistyp und `check` an der Spalte
 und ignorieren die drei Felder (`NOT NULL` und `DEFAULT` steuert dort die Spalte selbst).
 
+Verwendung in Spalten: `type: enum` + `ref_type: positive_amount` (wie bei der Enum). Je Dialekt:
+PostgreSQL erzeugt eine Spalte vom Typ der Domain (`"price" "positive_amount"`); MySQL, SQLite,
+SQL Server und Oracle erzeugen eine Spalte vom Basistyp mit dem `check` der Domain. `schema reverse`
+schreibt eine PostgreSQL-Spalte vom Typ einer Domain in dieser Form: `type: enum` und
+`ref_type: <Domain>`, nicht den Basistyp der Domain. Der Name verweist auf einen Eintrag in
+`custom_types`; eine Domain, die der Reverse nicht in `custom_types` führt, steht als Basistyp.
+
 * `default` hat dieselben Formen wie `default` einer Spalte (Skalar, `{ function: … }`,
   `{ sequence_nextval: … }`).
 * `not_null` gehört der Domain, nicht der Spalte: eine Spalte vom Typ der Domain trägt
