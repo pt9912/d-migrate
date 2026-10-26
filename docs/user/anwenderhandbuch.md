@@ -2702,10 +2702,14 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
     `schema migrate` ein `AlterColumnType` und endet mit Exit 8. `schema compare`
     zeigt den Unterschied zwischen Domain-Spalte und Basistyp-Spalte immer.
   - `schema reverse` nennt die Domain nur, wenn es sie selbst in `custom_types`
-    führt. Eine Domain aus einem anderen Schema als dem gelesenen oder aus einer
-    Erweiterung steht an der Spalte als Basistyp. Bei einer Domain über einer
-    Domain nennt die Spalte die äußere; aufgelöst wird eine Stufe, die innere
-    Domain als Basistyp löst keine Regel weiter auf.
+    führt (ein anderes Schema als das gelesene oder eine Erweiterung: die Spalte
+    steht als Basistyp) **und** ihr Basistyp ein neutraler Typ ist, den die Spalte
+    selbst trägt. Sonst steht die Spalte als Basistyp, wie ohne Domain: bei einer
+    Domain über einer anderen Domain, über `real`, `bit(n)`, `inet`, `interval`,
+    `numeric` ohne `precision` oder einem Array über `varchar(n)`. Eine Datei mit
+    diesem Basistyp gilt gegen die Datenbank als unverändert. Schreiben Sie dort
+    selbst `ref_type`, löst die Prüfung eine Domain über einer Domain nicht weiter
+    auf als eine Stufe.
   - `schema validate` prüft einen Spalten-`default` und einen Fremdschlüssel einer
     Domain-Spalte gegen den Basistyp der Domain: eine `integer`-Domain nimmt
     `default: 5` und verweist auf eine `integer`-Spalte. `generation: identity`
@@ -2715,7 +2719,7 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
     `VALUE BETWEEN 1 AND 10`, auch mit `AND` verbunden), `VALUE <> ''`,
     `length(VALUE) > n`, Wertelisten (`VALUE IN ('a', 'b')`) und `VALUE IS NOT NULL`.
     Ein anderer `CHECK` (etwa ein regulärer Ausdruck), ein unerfüllbarer `CHECK` und
-    eine Domain über einer Domain beendet den Lauf mit Exit 3 und einer Meldung, die
+    eine Domain über einer Domain beendet den Lauf vor der ersten geschriebenen Zeile mit Exit 3 und einer Meldung, die
     Spalte, Domain und `CHECK` nennt — auch bei einer Spalte ohne `NOT NULL`. Geben
     Sie der Spalte dann mit `--rules` (`values`, `range`, `template`) die Werte vor,
     siehe [3.22](#322-testdaten-erzeugen-seed). Führt Ihre Datei die Spalte nur mit dem

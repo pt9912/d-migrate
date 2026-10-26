@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `information_schema.columns` meldet an einer Domain-Spalte den Basistyp, die Domain steht nur in `domain_name`.
   Betroffen sind PostgreSQL-Datenbanken mit Domain-Spalten, gemessen mit 1.11.1. Jetzt gilt:
   - `schema reverse` schreibt die Spalte als `type: enum` und `ref_type: <Domain>` — **neues `reverse`-Format**, wenn die
-    Domain im gelesenen Schema steht (Domain aus einem anderen Schema oder einer Erweiterung: weiter der Basistyp).
+    Domain im gelesenen Schema steht und ihr Basistyp ein neutraler Typ ist, den die Spalte selbst trägt (Domain aus
+    einem anderen Schema oder einer Erweiterung, über einer anderen Domain, über `real`, `bit(n)`, `inet`, `interval`,
+    `numeric` ohne `precision` oder einem Array über `varchar(n)`: weiter der Basistyp).
     `schema migrate` plant für die unveränderte Spalte nichts. Eine ältere `reverse`-Datei mit dem Basistyp bleibt bei
     Exit `0`; eine Datei mit `ref_type` gegen eine Datenbank-Spalte vom Basistyp bleibt `AlterColumnType` (Exit `8`).
     `schema compare` zeigt Domain-Spalte gegen Basistyp-Spalte weiter als Unterschied.
@@ -29,12 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     besteht den Preflight (vorher Exit `3`); `data transfer` behandelt die Spalte als Basistyp.
   - **Fingerabdruck:** kein neuer Algorithmus-Tag (`schema-fingerprint-v24`); beide Seiten falten die Domain-Spalte auf
     den Basistyp, die Datenbank-Abdrücke bleiben bitgleich (gemessen für `integer`, `bigint`, `text`, `varchar(50)`,
-    `numeric(10,2)`, `uuid`, `boolean`), bestehende Rollback-Artefakte bleiben gültig. **Ausnahme:** bei einer Domain
-    über `real`, `bit(n)`, `numeric` ohne `precision` oder einem Array über `varchar(n)` ändert sich der
-    Datenbank-Abdruck; ein vorher erzeugtes Rollback-Artefakt gegen so eine Datenbank scheitert an
-    `TARGET_STATE_MISMATCH` (Exit `8`) und ist neu zu erzeugen. Ein Plan-Artefakt, das auf `main` für eine Datei mit
-    `ref_type` bei Exit `8` entstand, trägt einen anderen Datei-Abdruck als heute.
-    `schema rollback` bindet den Typ-Kanonisierer an das gelesene Ziel-Schema.
+    `numeric(10,2)`, `uuid`, `boolean`, ebenso für Domains über `real`, `bit(5)`, `numeric` ohne `precision` und
+    `varchar(50)[]`, deren Spalte `schema reverse` weiter als Basistyp schreibt); bestehende Rollback-Artefakte bleiben
+    gültig. Ein Plan-Artefakt, das auf `main` für eine Datei mit `ref_type` bei Exit `8` entstand, trägt einen anderen
+    Datei-Abdruck als heute. `schema rollback` bindet den Typ-Kanonisierer an das gelesene Ziel-Schema.
   Das neue `reverse`-Format gehört in ein Minor-Release (1.12.0).
 
 - **SQLite: Tabellenneubau und `FULLTEXT`-Index derselben Tabelle in einem `--execute`-Lauf** (Issue #67, Fall A-FT).

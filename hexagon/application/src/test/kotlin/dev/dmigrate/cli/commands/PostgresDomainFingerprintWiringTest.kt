@@ -117,14 +117,13 @@ class PostgresDomainFingerprintWiringTest : FunSpec({
         fingerprint(schema(NeutralType.Integer, domain("integer"))) shouldBe fingerprint(schema(ref, domain("integer")))
     }
 
-    // ── Bekannte Grenze von (a2): Domains, deren Basistyp nicht verlustfrei in `custom_types` steht ──
+    // ── Grenzen: Domains, deren Basistyp der Spalte nicht gleicht oder kein neutrales Gegenstueck hat ──
     //
-    // Der Reader schreibt `real` als `float`; die Datenbank-Spalte hasht damit als double. Eine Domain ueber
-    // `bit(n)`, `numeric` ohne `precision` oder ein Array ueber `varchar(n)` hat kein neutrales Gegenstueck und
-    // bleibt `Enum(refType)` im Abdruck. Beides gilt auf beiden Seiten gleich (Datei und Datenbank hashen gleich);
-    // nur der Abdruck der Datenbank gegenueber dem vor dem `ref_type` des Readers aendert sich fuer diese Faelle.
+    // Der Reader nennt so eine Domain nicht (die Spalte liest wie ohne Domain-Erkennung, der Abdruck der Datenbank
+    // bleibt, was er war). Schreibt ein Autor `ref_type` darauf, faltet die Datei-Seite auf den Basistyp der Domain
+    // (`real` -> `float`, double) oder bleibt `Enum(refType)`, wenn es keinen gibt.
 
-    test("Grenze: Domain ueber real hasht wie double (der Reader schreibt float), nicht wie die frueher gelesene Spalte") {
+    test("Grenze: eine Datei mit ref_type auf eine real-Domain hasht wie double, nicht wie die real-Spalte") {
         val real = NeutralType.Float(dev.dmigrate.core.model.FloatPrecision.SINGLE)
         fingerprint(schema(ref, domain("float"))) shouldBe fingerprint(schema(NeutralType.Float(), domain("float")))
         fingerprint(schema(ref, domain("float"))) shouldNotBe fingerprint(schema(real, domain("float")))

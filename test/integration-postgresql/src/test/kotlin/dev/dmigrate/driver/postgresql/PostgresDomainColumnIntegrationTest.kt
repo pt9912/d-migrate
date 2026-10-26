@@ -178,7 +178,7 @@ class PostgresDomainColumnIntegrationTest : FunSpec({
         column(schema, "c").required shouldBe true
     }
 
-    test("eine Domain ueber einer Domain nennt die aeussere Domain, nicht die innere") {
+    test("eine Domain ueber einer Domain ist nicht aufloesbar: die Spalte liest wie ohne Domain-Erkennung") {
         exec(
             "CREATE DOMAIN d1 AS integer",
             "CREATE DOMAIN d2 AS d1",
@@ -186,7 +186,49 @@ class PostgresDomainColumnIntegrationTest : FunSpec({
         )
         val schema = read()
         column(schema, "a").type shouldBe NeutralType.Enum(refType = "d1")
-        column(schema, "b").type shouldBe NeutralType.Enum(refType = "d2")
+        // `udt_name` nennt den inneren Namen; die aeussere Domain steht nicht als `ref_type`.
+        column(schema, "b").type shouldBe NeutralType.Enum(refType = "d1")
+    }
+
+    // Domains, deren Basistyp kein neutrales Gegenstueck hat oder der Spalte nicht gleicht: der Reader nennt sie nicht
+    // (die Spalte liest wie ohne Domain-Erkennung), und die Datei in dieser Form plant nichts.
+    val unresolvable = listOf(
+        "real" to "real",
+        "bit(5)" to "bit(5)",
+        "numeric" to "numeric",
+        "varchar(50)[]" to "varchar(50)[]",
+        "inet" to "inet",
+        "interval" to "interval",
+    )
+
+    test("Domain ueber real, bit(n), numeric, varchar(n)[], inet, interval: nicht genannt, die Datei plant nichts") {
+        for ((label, base) in unresolvable) {
+            exec("DROP SCHEMA public CASCADE", "CREATE SCHEMA public")
+            exec("CREATE DOMAIN dd AS $base", "CREATE TABLE t (id integer NOT NULL, d dd, PRIMARY KEY (id))")
+            val type = column(read(), "d").type
+            withClue(label) { (type is NeutralType.Enum && type.refType == "dd") shouldBe false }
+            val o = migrate(withColumns(read()) { it["n"] = ColumnDefinition(NeutralType.Text()) })
+            withClue("$label ${o.errors} ${o.report.take(700)}") {
+                o.exit shouldBe 0
+                o.report.contains("AlterColumnType") shouldBe false
+                o.report.contains("operationsTotal=1") shouldBe true
+            }
+        }
+    }
+
+    test("Domain ueber einer Domain: die Datei in der gelesenen Form plant nichts, und der Basistyp von Hand ebenso") {
+        exec(
+            "CREATE DOMAIN d1 AS integer",
+            "CREATE DOMAIN d2 AS d1",
+            "CREATE TABLE t (id integer NOT NULL, b d2, PRIMARY KEY (id))",
+        )
+        val o = migrate(withColumns(read()) { it["n"] = ColumnDefinition(NeutralType.Text()) })
+        withClue("${o.errors} ${o.report.take(700)}") { o.exit shouldBe 0 }
+        val byHand = migrate(withColumns(read()) {
+            it["b"] = it.getValue("b").copy(type = NeutralType.Integer)
+            it["n"] = ColumnDefinition(NeutralType.Text())
+        })
+        withClue("${byHand.errors} ${byHand.report.take(700)}") { byHand.exit shouldBe 0 }
     }
 
     test("eine Domain aus einem anderen Schema steht als Basistyp") {
