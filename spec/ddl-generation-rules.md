@@ -2263,10 +2263,12 @@ würde gekürzt, rendert der Down kein `DROP` mit erratenem Namen, sondern block
 Führt die Spalte **mehrere** Wertevorrat-CHECKs, meldet der Vergleich keinen davon als Werteliste
 des Spaltentyps, sondern jeden als eigenen Abgang (`DropConstraint`). Der Up löst sie dann über
 diese Operationen, jeden Namen genau einmal, und legt den neuen CHECK unbenannt an; die
-Anweisung zum Ändern der Spalte selbst löst keinen davon. Weil der Renderer den Namen des neuen CHECKs dann nicht sicher kennt (er hängt davon ab, ob
-`<tabelle>_<spalte>_check` unter den alten steht), blockiert der Down bei mehreren Wertevorrat-CHECKs
-an der Spalte immer mit `ROLLBACK_NOT_POSSIBLE`. Ein Wertevorrat-CHECK neben einem fachlichen CHECK an derselben Spalte
-ist davon nicht betroffen.
+Anweisung zum Ändern der Spalte selbst löst keinen davon.
+
+Den Namen des neuen CHECKs kennt der Renderer dann nicht sicher: er hängt davon ab, ob
+`<tabelle>_<spalte>_check` unter den alten steht. Der Down blockiert deshalb bei mehreren
+Wertevorrat-CHECKs an der Spalte immer mit `ROLLBACK_NOT_POSSIBLE`. Ein Wertevorrat-CHECK neben
+einem fachlichen CHECK an derselben Spalte ist davon nicht betroffen.
 
 **Oracle** setzt `IF EXISTS` nur, wenn die Version des Ziels bekannt ist und
 die Klausel traegt. Sie kam mit der 23er-Linie; davor bricht jedes `DROP` ab,

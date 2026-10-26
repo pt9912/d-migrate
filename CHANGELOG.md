@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.11.0] - 2026-10-26
-
 ### Fixed
 
 - **`schema migrate` auf PostgreSQL mit zwei Wertelisten-`CHECK`s an einer Spalte endet nicht mehr mit
@@ -18,7 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unveränderter Werteliste. Jetzt löst das `AlterColumnType` bei mehreren Wertelisten-`CHECK`s keinen
   und überlässt das den `DropConstraint`-Operationen. Mit `--generate-rollback` meldet der Lauf den Down
   als nicht möglich (`ROLLBACK_NOT_POSSIBLE`, Exit `8`), weil der Name des neuen `CHECK`s nicht sicher
-  ist. Der Abdruck ändert sich nicht.
+  ist. Der Schema-Fingerprint ändert sich nicht.
+
+## [1.11.0] - 2026-10-26
+
+### Fixed
+
 - **`schema migrate` auf SQLite plant für eine unveränderte Domain-Spalte kein `AlterColumnType`
   mehr** (Issue #56, Folge von #54). Eine Spalte mit `ref_type` auf eine Domain galt gegen die
   Datenbank bei jedem Lauf als geändert, sobald der Reader ihren Basistyp nicht als `text` liest

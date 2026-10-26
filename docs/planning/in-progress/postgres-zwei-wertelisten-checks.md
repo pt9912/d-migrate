@@ -23,7 +23,7 @@ Tabelle `t (id, e text NOT NULL CHECK (e IN ('a','b','c')), CONSTRAINT second CH
 **Ursache.** `EnumCheckProjection.foldable` faltet einen Wertelisten-CHECK nur, wenn er der **einzige** der Spalte ist
 (`perColumn.size == 1`). Bei zweien bleibt jeder ein eigener Constraint der Ist-Seite, und der Vergleich meldet
 `AlterColumnType` plus je ein `DropConstraint` (`second`, `t_e_check`). `renderAlterColumnType` löst vor dem neuen CHECK den ersten
-Treffer von `enumValueCheckName` (`DROP … IF EXISTS "second"`); das folgende `DropConstraint "second"` (ohne `IF EXISTS`) trifft
+Treffer von `enumValueCheckName` (Singular, vor dieser Änderung; heute `enumValueCheckNames`) (`DROP … IF EXISTS "second"`); das folgende `DropConstraint "second"` (ohne `IF EXISTS`) trifft
 einen fehlenden Constraint, die Anweisung scheitert, die Transaktion rollt zurück. Das ist ein Statement-Fehler im Apply, kein
 Drift nach dem Apply. Die Datenbank bleibt unverändert, weil der Up transaktional ist.
 
