@@ -1679,6 +1679,17 @@ zurück.
   Feld `planFullyRollbackable` im Report meint dabei nur, dass die Anweisungen des
   Ausrollens transaktional sind, nicht, dass der Down möglich ist; maßgeblich ist
   `downBlocked`.
+- **Mehrere Wertelisten-`CHECK`s an einer Spalte auf PostgreSQL.** Trägt eine Spalte
+  zwei oder mehr `CHECK`s mit einer Werteliste (`"e" IN (…)`), führt `schema migrate`
+  gegen die Datenbank beide ab und legt einen einzigen neuen `CHECK` mit der Werteliste
+  Ihres Schemas an; der Folgelauf plant nichts mehr. Das gilt auch, wenn die Liste
+  gleich bleibt, denn die Datenbank trägt dann zwei `CHECK`s, das Schema keinen. Mit
+  `--generate-rollback` meldet `schema migrate` den Down als nicht möglich
+  (`downBlocked: true`, Blocker `ROLLBACK_NOT_POSSIBLE`, Diagnose
+  `POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN`, Exit 8) und führt nichts aus; ohne
+  `--generate-rollback` läuft das Ausrollen. Ein Wertelisten-`CHECK` neben einem
+  fachlichen `CHECK` an derselben Spalte (`length("e") > 0`) ist davon nicht betroffen:
+  Ausrollen und Rollback stellen beide wieder her.
 
 ### 3.15 d-migrate als MCP-Server für KI-Agenten bereitstellen
 

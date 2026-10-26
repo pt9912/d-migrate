@@ -2260,6 +2260,14 @@ Katalogseite, ist der Name belegt oder
 würde gekürzt, rendert der Down kein `DROP` mit erratenem Namen, sondern blockiert mit
 `ROLLBACK_NOT_POSSIBLE` (Diagnose `POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN`).
 
+Führt die Spalte **mehrere** Wertevorrat-CHECKs, meldet der Vergleich keinen davon als Werteliste
+des Spaltentyps, sondern jeden als eigenen Abgang (`DropConstraint`). Der Up löst sie dann über
+diese Operationen, jeden Namen genau einmal, und legt den neuen CHECK unbenannt an; die
+Anweisung zum Ändern der Spalte selbst löst keinen davon. Weil der Name des neuen CHECKs dann nicht
+`<tabelle>_<spalte>_check` ist (der Name des alten ist noch belegt), blockiert der Down mit
+`ROLLBACK_NOT_POSSIBLE`. Ein Wertevorrat-CHECK neben einem fachlichen CHECK an derselben Spalte
+ist davon nicht betroffen.
+
 **Oracle** setzt `IF EXISTS` nur, wenn die Version des Ziels bekannt ist und
 die Klausel traegt. Sie kam mit der 23er-Linie; davor bricht jedes `DROP` ab,
 sobald das Objekt fehlt. Der Lesepfad reicht die Version aus

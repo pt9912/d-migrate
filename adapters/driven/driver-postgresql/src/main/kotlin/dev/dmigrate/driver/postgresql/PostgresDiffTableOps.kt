@@ -255,8 +255,12 @@ internal object PostgresDiffTableOps {
 
     /**
      * Loest den CHECK, der den Wertevorrat der Spalte bisher durchsetzt —
-     * unter seinem echten Katalognamen ([PostgresDiffRenderContext.enumValueCheckName]).
+     * unter seinem echten Katalognamen ([PostgresDiffRenderContext.enumValueCheckNames]).
      * Steht dort keiner, entfaellt die Anweisung.
+     *
+     * Fuehrt die Spalte **mehrere** solcher CHECKs, vergleicht der Vergleich keinen von ihnen mit der
+     * Werteliste des Typs: er meldet jeden als eigenen `DropConstraint`. Diese Operationen loesen sie
+     * dann; ein `DROP` hier liesse den ersten doppelt loesen und scheiterte an der zweiten Anweisung.
      */
     private fun dropExistingEnumValueCheck(
         op: DiffOperation.AlterColumnType,
@@ -264,7 +268,7 @@ internal object PostgresDiffTableOps {
         table: String,
         column: String,
     ) {
-        val name = ctx.enumValueCheckName(table, column) ?: return
+        val name = ctx.enumValueCheckNames(table, column).singleOrNull() ?: return
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT IF EXISTS ${ctx.sql.quote(name)};")
     }
 

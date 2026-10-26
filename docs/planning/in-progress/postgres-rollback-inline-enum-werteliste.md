@@ -225,8 +225,8 @@ Ergebnis eines `INSERT`. `planFullyRollbackable` war in allen Läufen `true`, `d
 Reproduktion (PostgreSQL 18): `CREATE TABLE t (id integer NOT NULL, e text NOT NULL CHECK ("e" IN ('a','b','c')),
 CONSTRAINT second CHECK ("e" IN ('a','b')), PRIMARY KEY (id))`; Datei mit `e: enum values [a, b, d]` (required).
 `schema migrate --execute --generate-rollback` plant `AlterColumnType` + 2× `DropConstraint` und endet mit **Exit 5**; die Datenbank bleibt
-unverändert (beide CHECKs stehen weiter), kein Rollback-Skript. Ursache nicht untersucht. Nicht Teil von #61; ob ein Issue entsteht,
-klärt der Eigner.
+unverändert (beide CHECKs stehen weiter), kein Rollback-Skript. Nicht Teil von #61. Ursache und Behebung:
+[`postgres-zwei-wertelisten-checks.md`](postgres-zwei-wertelisten-checks.md).
 
 ## Nicht-Scope
 

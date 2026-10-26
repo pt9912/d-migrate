@@ -35,6 +35,10 @@ import kotlin.io.path.createTempDirectory
  * legt den neuen unbenannt an; ein Down, der nur `TYPE TEXT` rendert, liesse den neuen stehen — und
  * `schema rollback` endete mit Exit 0, ohne etwas zurueckgenommen zu haben.
  *
+ * Zwei Wertelisten-CHECKs an einer Spalte: der Vergleich meldet beide als eigene `DropConstraint`,
+ * der Up loest sie darueber (kein doppeltes `DROP`), der Down blockiert, weil er den Namen des vom Up
+ * angelegten CHECKs nicht kennt.
+ *
  * Jede Spec fuehrt den echten Hin- und Rueckweg aus (`schema migrate --execute --generate-rollback`,
  * dann `schema rollback --execute --allow-destructive`) und prueft, was die **Datenbank** danach tut:
  * der Katalog und ein `INSERT`, nicht der Text des Skripts.
@@ -421,5 +425,82 @@ class PostgresEnumRollbackIntegrationTest : FunSpec({
         }
         // Ohne Rollback-Skript bleibt der Up moeglich — der Blocker gehoert dem Down.
         migrate(schemaOf(mapOf("e" to enumOf("a", "b", "c")))).exit shouldBe 0
+    }
+
+    val twoChecks =
+        "e text NOT NULL CHECK (\"e\" IN ('a','b','c')), CONSTRAINT second CHECK (\"e\" IN ('a','b'))"
+
+    fun valuesAfterUp() {
+        // Ein CHECK, nicht zwei; der zweite Migrate plant nichts.
+        checks().size shouldBe 1
+    }
+
+    test("two value CHECKs on one column: a widened list migrates and leaves one CHECK") {
+        exec(table(twoChecks))
+        val want = schemaOf(mapOf("e" to enumOf("a", "b", "d")))
+
+        val out = migrate(want)
+
+        withClue("${out.errors} ${out.report.take(1500)}") { out.exit shouldBe 0 }
+        withClue(checks().toString()) {
+            valuesAfterUp()
+            accepts("e", "d") shouldBe true
+            accepts("e", "c") shouldBe false
+        }
+        noPlannedOperations(want)
+    }
+
+    test("two value CHECKs on one column: a shortened list migrates") {
+        exec(table(twoChecks))
+        val want = schemaOf(mapOf("e" to enumOf("a")))
+
+        migrate(want).exit shouldBe 0
+
+        withClue(checks().toString()) {
+            valuesAfterUp()
+            accepts("e", "b") shouldBe false
+            accepts("e", "a") shouldBe true
+        }
+        noPlannedOperations(want)
+    }
+
+    test("two value CHECKs on one column: the list of one of them migrates too") {
+        exec(table(twoChecks))
+        val want = schemaOf(mapOf("e" to enumOf("a", "b")))
+
+        migrate(want).exit shouldBe 0
+
+        withClue(checks().toString()) { valuesAfterUp() }
+        noPlannedOperations(want)
+    }
+
+    test("two value CHECKs on one column: with a rollback script the migrate blocks and changes nothing") {
+        exec(table(twoChecks))
+        val before = checks()
+        val tmp = createTempDirectory("pg-enum-rollback-two")
+        try {
+            val out = migrate(schemaOf(mapOf("e" to enumOf("a", "b", "d"))), rollbackOutput = tmp.resolve("down.sql"))
+
+            withClue("${out.errors} ${out.report.take(1500)}") {
+                out.exit shouldBe 8
+                out.report.contains("ROLLBACK_NOT_POSSIBLE") shouldBe true
+                out.report.contains("POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN") shouldBe true
+            }
+            checks() shouldBe before
+        } finally {
+            tmp.toFile().deleteRecursively()
+        }
+    }
+
+    test("a value CHECK next to a business CHECK on the same column: the business CHECK survives the round trip") {
+        exec(table("e text NOT NULL CHECK (\"e\" IN ('a','b')), CONSTRAINT biz CHECK (length(\"e\") > 0)"))
+        val before = checks()
+
+        roundTrip(schemaOf(mapOf("e" to enumOf("a", "b", "c"))))
+
+        withClue(checks().toString()) {
+            checks() shouldBe before
+            accepts("e", "c") shouldBe false
+        }
     }
 })
