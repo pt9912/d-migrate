@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.data.ImportSchemaMismatchException
+import dev.dmigrate.core.model.DomainBaseTypes
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.data.TargetColumn
 
@@ -63,9 +64,11 @@ object ImportTableValidator {
                             "${if (targetColumn.nullable) "NULLABLE" else "NOT NULL"}"
                     )
                 }
-                if (!ImportTypeCompatibility.isTypeCompatible(schemaColumn.type, targetColumn)) {
+                // A domain column is a column of the domain's base type: the JDBC driver reports the base type.
+                val schemaType = DomainBaseTypes.effectiveType(schemaColumn.type, schema.customTypes)
+                if (!ImportTypeCompatibility.isTypeCompatible(schemaType, targetColumn)) {
                     add(
-                        "column '$columnName' type mismatch: schema expects ${ImportTypeCompatibility.describe(schemaColumn.type)} " +
+                        "column '$columnName' type mismatch: schema expects ${ImportTypeCompatibility.describe(schemaType)} " +
                             "but target is ${targetColumn.sqlTypeName ?: "jdbcType=${targetColumn.jdbcType}"}"
                     )
                 }

@@ -2,6 +2,8 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.CustomTypeDefinition
+import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -209,5 +211,47 @@ class ImportTableValidatorTest : FunSpec({
             ImportTableValidator.validateTargetTable(schema, "users", targets)
         }
         ex.message!! shouldContain "jdbcType=${Types.VARCHAR}"
+    }
+
+    // Issue #68: der JDBC-Treiber meldet an einer Domain-Spalte den Basistyp, nie den Namen der Domain.
+    fun domainSchema(base: String, type: NeutralType = NeutralType.Enum(refType = "dd")) = SchemaDefinition(
+        name = "S", version = "1",
+        customTypes = mapOf("dd" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = base)),
+        tables = mapOf("t" to TableDefinition(columns = mapOf("d" to ColumnDefinition(type, required = false)))),
+    )
+
+    test("domain column: the schema type is the domain's base type (integer domain against int4)") {
+        ImportTableValidator.validateTargetTable(
+            domainSchema("integer"), "t", listOf(TargetColumn("d", nullable = true, jdbcType = Types.INTEGER, sqlTypeName = "int4")),
+        )
+        ImportTableValidator.validateTargetTable(
+            domainSchema("text"), "t", listOf(TargetColumn("d", nullable = true, jdbcType = Types.VARCHAR, sqlTypeName = "text")),
+        )
+    }
+
+    test("domain column: a base type that does not match the target is still a mismatch, named by the base type") {
+        val ex = shouldThrow<ImportSchemaMismatchException> {
+            ImportTableValidator.validateTargetTable(
+                domainSchema("text"), "t",
+                listOf(TargetColumn("d", nullable = true, jdbcType = Types.INTEGER, sqlTypeName = "int4")),
+            )
+        }
+        ex.message shouldContain "type mismatch"
+    }
+
+    test("enum column (kind enum) keeps the enum rule: text-like target passes, integer target does not") {
+        val enumSchema = SchemaDefinition(
+            name = "S", version = "1",
+            customTypes = mapOf("dd" to CustomTypeDefinition(kind = CustomTypeKind.ENUM, values = listOf("a"))),
+            tables = mapOf("t" to TableDefinition(columns = mapOf("d" to ColumnDefinition(NeutralType.Enum(refType = "dd"))))),
+        )
+        ImportTableValidator.validateTargetTable(
+            enumSchema, "t", listOf(TargetColumn("d", nullable = true, jdbcType = Types.VARCHAR, sqlTypeName = "varchar")),
+        )
+        shouldThrow<ImportSchemaMismatchException> {
+            ImportTableValidator.validateTargetTable(
+                enumSchema, "t", listOf(TargetColumn("d", nullable = true, jdbcType = Types.INTEGER, sqlTypeName = "int4")),
+            )
+        }
     }
 })
