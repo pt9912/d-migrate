@@ -50,6 +50,9 @@ internal object PostgresTableMetadataQueries {
         return session.queryList(
             """
             SELECT column_name, data_type, udt_name, udt_schema, is_nullable,
+                   -- `domain_name`/`domain_schema` benennen die Domain einer Domain-Spalte; `data_type` und
+                   -- `udt_name` tragen dort deren Basistyp (bei einer Domain ueber einer Domain den inneren Namen).
+                   domain_schema, domain_name,
                    column_default, ordinal_position,
                    character_maximum_length, numeric_precision, numeric_scale,
                    is_identity, identity_generation,

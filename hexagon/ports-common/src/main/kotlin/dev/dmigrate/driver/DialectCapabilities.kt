@@ -369,6 +369,17 @@ data class DialectCapabilities(
      * darf sich nichts aendern.
      */
     val resolvesRefTypeVocabulary: Boolean = false,
+    /**
+     * Ob der Reverse des Dialekts eine Spalte vom Typ einer Domain als `Enum(refType = <Domain>)` zurueckgibt.
+     * Nur PostgreSQL: dort ist die Domain ein Typ-Objekt, und die Spalte traegt ihren Namen. Der ziel-bewusste
+     * Vergleich loest die **Datenbank-Seite** dann ueber den Basistyp auf, wo die Datei die Spalte nicht als
+     * `ref_type` fuehrt -- eine aeltere Datei mit Basistyp bleibt unveraendert. In die andere Richtung gibt es
+     * keine Toleranz: eine Datei mit `ref_type` verlangt die Domain-Spalte.
+     *
+     * SQLite liest eine Domain als Basistyp ([resolvesRefTypeVocabulary]); MySQL, SQL Server und Oracle kennen
+     * keine Domain.
+     */
+    val readsDomainColumnsAsRefType: Boolean = false,
 ) {
     companion object {
         /**

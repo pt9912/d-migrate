@@ -12,6 +12,9 @@ import dev.dmigrate.core.model.TableDefinition
  * `Enum(refType)`. Die kontextfreie Projektion macht aus `Enum(refType)` `Text()` und stellte es gegen den
  * Basistyp — ein Unterschied, den es nicht gibt ([TargetProjection.typeWithCustomTypes]).
  *
+ * Bei einem Dialekt, dessen Reverse die Domain-Spalte als `ref_type` liest (PostgreSQL), projiziert der Vergleich nur die
+ * Datenbank-Seite ([TargetProjection.domainProjectionCurrentOnly]).
+ *
  * Eine Spalte, die auch die Gegenseite als `ref_type` fuehrt, fehlt im Ergebnis: dort deckt der Vergleich der Custom
  * Types einen Basistypwechsel ab (`AlterCustomType`), und ein zweites `ColumnDiff` aenderte Operations-IDs.
  *

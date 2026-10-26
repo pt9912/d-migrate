@@ -21,8 +21,11 @@ import dev.dmigrate.core.model.CustomTypeDefinition
  *   unterscheidet Dimensionen nicht.
  * * Die Klammer jedes anderen Typs (`integer(11)`) wird nur verglichen, wenn **beide** Seiten sie
  *   tragen ([sameParameters]); fehlt sie einer Seite, ist sie unbekannt, nicht verschieden.
+ *
+ * Auch die Treiber nutzen diese Form: eine Domain-Spalte faltet im Abdruck auf den Basistyp ihrer Domain, und zwei
+ * Domains, die der Vergleich als gleich ansieht, muessen auf denselben Typ falten.
  */
-internal object CustomTypeBaseType {
+object CustomTypeBaseType {
 
     private val PARAMETERS = Regex("""\s*\(([^)]*)\)\s*$""")
     private val ARRAY_SUFFIX = Regex("""(\s*\[\s*\d*\s*])+\s*$""")

@@ -641,6 +641,7 @@ class SchemaMigrateRunner(
             constraintName = capabilityConstraintNameCanonicalizer(prep.effectiveDialect),
             resolvesRefTypeVocabulary = capabilityResolvesRefTypeVocabulary(prep.effectiveDialect),
             typeWithCustomTypes = registryDomainAwareCanonicalizer(prep.effectiveDialect),
+            domainProjectionCurrentOnly = capabilityReadsDomainColumnsAsRefType(prep.effectiveDialect),
             comparesDomainTraits = capabilityProjectsCustomTypes(prep.effectiveDialect),
         )
         val authorship = OverlayRawTextAuthorship.of(mergedOverlays)
@@ -702,6 +703,7 @@ class SchemaMigrateRunner(
                     capabilityFoldsAutoIncrementOntoIdentity(prep.effectiveDialect),
                 projectsCustomTypes = capabilityProjectsCustomTypes(prep.effectiveDialect),
                 resolvesRefTypeVocabulary = capabilityResolvesRefTypeVocabulary(prep.effectiveDialect),
+                canonicalizeTypeFor = { schema -> registrySchemaAwareCanonicalizer(prep.effectiveDialect, schema) },
             )
         }
         // Wo der Berechnungsausdruck einer Spalte nicht entscheidbar war, plant

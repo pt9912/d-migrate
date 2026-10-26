@@ -58,6 +58,8 @@ object PostgresCapabilities : DialectReadCapabilityProvider {
             // `SERIAL` und `GENERATED ... AS IDENTITY` sind in PostgreSQL
             // zwei verschiedene Dinge, nicht zwei Schreibweisen desselben.
             rendersAutoIncrementAsIdentity = false,
+            // Eine Spalte vom Typ einer Domain nennt die Domain; der Reverse liest sie als `ref_type`.
+            readsDomainColumnsAsRefType = true,
         )
     }
 

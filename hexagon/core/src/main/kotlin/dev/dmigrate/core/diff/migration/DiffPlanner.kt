@@ -130,6 +130,9 @@ open class DiffPlanner {
         projectsCustomTypes: Boolean = true,
         // Und dieselbe Aufloesung der Wertevorraete von `ref_type`-Enums.
         resolvesRefTypeVocabulary: Boolean = false,
+        // Schemagebunden statt kontextfrei, wo gesetzt: ein `Enum(refType)` einer Domain faltet auf den Basistyp
+        // SEINER Seite (ihre Custom Types), wie bei den Endpunkt-Abdruecken des Runners. Ersetzt `canonicalizeType`.
+        canonicalizeTypeFor: ((SchemaDefinition) -> (NeutralType) -> NeutralType)? = null,
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         // F.5 Sub-Slice A (2026-05-19): the planner-level block
@@ -231,7 +234,7 @@ open class DiffPlanner {
         }
 
         val projections = FingerprintProjections(
-            canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+            canonicalizeTypeFor ?: { canonicalizeType }, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
             foldsAutoIncrementOntoIdentity, projectsCustomTypes, resolvesRefTypeVocabulary,
         )
         return DiffResult(
@@ -250,7 +253,7 @@ open class DiffPlanner {
 
     /** Die Projektionen, durch die beide Endpunkte denselben Abdruck bilden. */
     private data class FingerprintProjections(
-        val canonicalizeType: (NeutralType) -> NeutralType,
+        val canonicalizeTypeFor: (SchemaDefinition) -> (NeutralType) -> NeutralType,
         val canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
         val canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
         val canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
@@ -264,7 +267,7 @@ open class DiffPlanner {
             schemaName = schema.name,
             schemaVersion = schema.version,
             fingerprint = MigrationFingerprint.compute(
-                schema, projections.canonicalizeType, projections.canonicalizeIndex,
+                schema, projections.canonicalizeTypeFor(schema), projections.canonicalizeIndex,
                 projections.canonicalizeGeneration, projections.canonicalizePartitioning,
                 projections.foldsAutoIncrementOntoIdentity, projections.projectsCustomTypes,
                 projections.resolvesRefTypeVocabulary,

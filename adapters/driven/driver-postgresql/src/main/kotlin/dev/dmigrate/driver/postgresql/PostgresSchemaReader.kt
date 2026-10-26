@@ -43,9 +43,13 @@ class PostgresSchemaReader(
             val schema = currentSchema(conn)
             val database = conn.catalog ?: "unknown"
 
-            val rawTables = readPostgresTables(session, schema, notes)
+            // Die Typen zuerst: eine Spalte nennt ihre Domain nur, wenn die Domain in `custom_types` steht.
+            // Ihre Hinweise folgen trotzdem denen der Tabellen.
+            val typeNotes = mutableListOf<SchemaReadNote>()
+            val customTypes = readPostgresCustomTypes(session, schema, typeNotes)
+            val rawTables = readPostgresTables(session, schema, domainNamesOf(customTypes), notes)
             val sequences = readPostgresSequences(session, schema)
-            val customTypes = readPostgresCustomTypes(session, schema, notes)
+            notes += typeNotes
 
             readPostgresExtensionNotes(session, notes)
             val views = if (options.includeViews) readPostgresViews(session, schema) else emptyMap()

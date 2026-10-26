@@ -99,12 +99,14 @@ class SchemaMigratePrePlanOverlayGateTest : FunSpec({
                 foldsAutoIncrementOntoIdentity: Boolean,
                 projectsCustomTypes: Boolean,
                 resolvesRefTypeVocabulary: Boolean,
+                canonicalizeTypeFor: ((SchemaDefinition) -> (dev.dmigrate.core.model.NeutralType) ->
+                dev.dmigrate.core.model.NeutralType)?,
             ): DiffResult {
                 plannerCallCount[0]++
                 return super.plan(
                     current, desired, schemaDiff, migrationOverlays, capabilities, triggerPlanningContext,
                     canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
-                    foldsAutoIncrementOntoIdentity, projectsCustomTypes, resolvesRefTypeVocabulary,
+                    foldsAutoIncrementOntoIdentity, projectsCustomTypes, resolvesRefTypeVocabulary, canonicalizeTypeFor,
                 )
             }
         }

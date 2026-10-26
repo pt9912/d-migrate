@@ -71,17 +71,22 @@ internal fun registrySchemaAwareCanonicalizer(
 }
 
 /**
- * Die Typ-Projektion mit den Custom Types der Seite -- aber nur fuer einen Dialekt, dessen Reverse eine Domain als
- * ihren Basistyp zurueckgibt (`resolvesRefTypeVocabulary`, SQLite); sonst `null`.
+ * Die Typ-Projektion mit den Custom Types der Seite -- aber nur fuer einen Dialekt, dessen Vergleich eine
+ * Domain-Spalte ueber ihren Basistyp projizieren muss; sonst `null`. Zwei Faelle:
+ *
+ * * SQLite (`resolvesRefTypeVocabulary`): der Reverse gibt eine Domain als ihren Basistyp zurueck, beide Seiten des
+ *   Vergleichs projizieren eine Domain-Spalte darueber.
+ * * PostgreSQL (`readsDomainColumnsAsRefType`): der Reverse gibt die Domain-Spalte als `ref_type` zurueck; projiziert
+ *   wird nur die Datenbank-Seite (`TargetProjection.domainProjectionCurrentOnly`), damit eine Datei mit dem Basistyp
+ *   als unveraendert gilt. Die Domain als **Typ-Objekt** (`custom_types`) bleibt unberuehrt.
  *
  * Der **strukturelle Vergleich** nutzt sie nur fuer Domain-Spalten, deren Gegenseite die Spalte nicht auch als
- * `ref_type` fuehrt (`TargetProjection.typeWithCustomTypes`). Fuer PostgreSQL waere ein Aufloesen falsch -- dort ist die
- * Domain ein Typ-Objekt, das der Reverse zurueckgibt --, und SQL Server kennt keine Domain.
+ * `ref_type` fuehrt (`TargetProjection.typeWithCustomTypes`). SQL Server kennt keine Domain.
  */
 internal fun registryDomainAwareCanonicalizer(
     dialect: DatabaseDialect,
 ): ((NeutralType, Map<String, CustomTypeDefinition>) -> NeutralType)? {
-    if (!capabilityResolvesRefTypeVocabulary(dialect)) return null
+    if (!capabilityResolvesRefTypeVocabulary(dialect) && !capabilityReadsDomainColumnsAsRefType(dialect)) return null
     val driver = runCatching { DatabaseDriverRegistry.get(dialect) }.getOrNull() ?: return null
     val canonicalizer = driver.typeCanonicalizer()
     return { type, customTypes -> canonicalizer.canonicalize(type, customTypes) }
@@ -254,6 +259,13 @@ fun capabilityProjectsCustomTypes(dialect: DatabaseDialect): Boolean =
  */
 fun capabilityResolvesRefTypeVocabulary(dialect: DatabaseDialect): Boolean =
     DialectCapabilities.forDialect(dialect).resolvesRefTypeVocabulary
+
+/**
+ * Ob der Reverse des Dialekts eine Domain-Spalte als `ref_type` zurueckgibt (PostgreSQL). Dann projiziert der
+ * Vergleich nur die Datenbank-Seite ueber den Basistyp; der Abdruck faltet beide Seiten.
+ */
+fun capabilityReadsDomainColumnsAsRefType(dialect: DatabaseDialect): Boolean =
+    DialectCapabilities.forDialect(dialect).readsDomainColumnsAsRefType
 
 /**
  * Der Name eines einspaltigen Constraints — oder `null`, wo der Dialekt ihn

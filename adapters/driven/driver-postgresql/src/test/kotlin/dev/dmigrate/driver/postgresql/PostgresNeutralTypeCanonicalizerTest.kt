@@ -1,8 +1,11 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.core.model.CustomTypeDefinition
+import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.FloatPrecision
 import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.NeutralType
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 
@@ -90,5 +93,65 @@ class PostgresNeutralTypeCanonicalizerTest : FunSpec({
             val once = canon.canonicalize(type)
             canon.canonicalize(once) shouldBe once
         }
+    }
+
+    // Eine Domain-Spalte faltet im Abdruck auf ihren Basistyp -- auf dieselbe Form, die der Reader vor dem
+    // `ref_type` an der Datenbank-Spalte schrieb (`PostgresTypeMapping.mapColumn` aus den Spaltenangaben).
+    fun domain(base: String, precision: Int? = null, scale: Int? = null) = mapOf(
+        "dd" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = base, precision = precision, scale = scale),
+    )
+
+    fun readerForm(dataType: String, udt: String, length: Int? = null, precision: Int? = null, scale: Int? = null) =
+        PostgresTypeMapping.mapColumn(
+            PostgresTypeMapping.ColumnInput(
+                dataType = dataType, udtName = udt, isPkCol = false, isIdentity = false, identityGeneration = null,
+                colDefault = null, generatedSequenceName = null, charMaxLen = length, numPrecision = precision,
+                numScale = scale, tableName = "t", colName = "d",
+            ),
+        ).type
+
+    val ref = NeutralType.Enum(refType = "dd")
+
+    test("domain column folds onto the base type the reader formerly wrote for the database column") {
+        val cases = listOf(
+            Triple(domain("integer"), readerForm("integer", "int4"), "integer"),
+            Triple(domain("biginteger"), readerForm("bigint", "int8"), "biginteger"),
+            Triple(domain("text"), readerForm("text", "text"), "text"),
+            Triple(domain("varchar(50)"), readerForm("character varying", "varchar", length = 50), "varchar(50)"),
+            Triple(domain("decimal", 10, 2), readerForm("numeric", "numeric", precision = 10, scale = 2), "decimal"),
+            Triple(domain("uuid"), readerForm("uuid", "uuid"), "uuid"),
+            Triple(domain("boolean"), readerForm("boolean", "bool"), "boolean"),
+            Triple(domain("integer[]"), readerForm("ARRAY", "_int4"), "integer[]"),
+        )
+        for ((customTypes, formerDatabaseForm, label) in cases) {
+            withClue(label) {
+                canon.canonicalize(ref, customTypes) shouldBe canon.canonicalize(formerDatabaseForm)
+            }
+        }
+    }
+
+    test("two spellings of the same domain base type fold onto the same type (file and reader write them differently)") {
+        val spellings = listOf(
+            "real" to "float4", "real" to "float", "bigint" to "int8", "int4[]" to "integer[]",
+            "integer[][]" to "integer[]", "timestamp(3) with time zone" to "timestamptz(3)",
+            "character varying(50)" to "varchar(50)", "varchar" to "text", "char" to "char(1)",
+            "timestamp" to "timestamp(6)",
+        )
+        for ((written, read) in spellings) {
+            withClue("$written = $read") {
+                canon.canonicalize(ref, domain(written)) shouldBe canon.canonicalize(ref, domain(read))
+            }
+        }
+        canon.canonicalize(ref, domain("numeric(10,2)")) shouldBe canon.canonicalize(ref, domain("decimal", 10, 2))
+    }
+
+    test("domain column without custom types, enum column and unresolvable base stay as they are") {
+        canon.canonicalize(ref, emptyMap()) shouldBe ref
+        canon.canonicalize(ref) shouldBe ref
+        val enum = mapOf("dd" to CustomTypeDefinition(kind = CustomTypeKind.ENUM, values = listOf("a")))
+        canon.canonicalize(ref, enum) shouldBe ref
+        // Domain ueber einer Domain und `varchar(n)[]`: kein neutrales Gegenstueck, Rueckfall.
+        canon.canonicalize(ref, domain("d1")) shouldBe ref
+        canon.canonicalize(ref, domain("varchar(50)[]")) shouldBe ref
     }
 })

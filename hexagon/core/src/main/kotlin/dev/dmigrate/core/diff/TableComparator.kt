@@ -270,7 +270,11 @@ internal class TableComparator(
                 if (resolve) resolvedAgainst(right, customTypes.right, left) else right,
             ),
             project?.let { DomainColumnTypes.projected(left, customTypes.left, right, it) } ?: emptyMap(),
-            project?.let { DomainColumnTypes.projected(right, customTypes.right, left, it) } ?: emptyMap(),
+            if (targetProjection.domainProjectionCurrentOnly) {
+                emptyMap()
+            } else {
+                project?.let { DomainColumnTypes.projected(right, customTypes.right, left, it) } ?: emptyMap()
+            },
         )
     }
 

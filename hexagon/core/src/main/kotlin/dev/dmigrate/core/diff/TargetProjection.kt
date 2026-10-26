@@ -127,17 +127,27 @@ data class TargetProjection(
      */
     val comparesDomainTraits: Boolean = true,
     /**
-     * Die Typ-Projektion mit den Custom Types der Seite, oder `null`, wo der Dialekt die Domain nicht auf den
-     * Basistyp auflaesst (SQLite tut es: die Datenbank fuehrt kein Typ-Objekt, der Reverse liest den Basistyp).
+     * Die Typ-Projektion mit den Custom Types der Seite, oder `null`, wo der Dialekt keine Domain-Spalte auf den
+     * Basistyp aufloesen muss. Zwei Faelle:
      *
-     * Dann projiziert der Vergleich eine **Domain-Spalte** ueber ihren Basistyp statt ueber das kontextfreie
-     * `Enum(refType)` (`Text`): sonst stuende `Enum(refType)` gegen `Integer`/`Float`/`Binary` des Reverse, und der
-     * Planer plante bei jedem Lauf ein `AlterColumnType` an einer Spalte, die sich nicht geaendert hat
-     * ([DomainColumnTypes]).
+     * * SQLite: die Datenbank fuehrt kein Typ-Objekt, der Reverse liest den Basistyp. Der Vergleich projiziert die
+     *   **Domain-Spalte** beider Seiten ueber ihren Basistyp statt ueber das kontextfreie `Enum(refType)` (`Text`):
+     *   sonst stuende `Enum(refType)` gegen `Integer`/`Float`/`Binary` des Reverse, und der Planer plante bei jedem
+     *   Lauf ein `AlterColumnType` an einer Spalte, die sich nicht geaendert hat ([DomainColumnTypes]).
+     * * PostgreSQL ([domainProjectionCurrentOnly]): der Reverse liest die Domain-Spalte als `Enum(refType)`; nur die
+     *   **Datenbank-Seite** wird ueber den Basistyp projiziert, damit eine Datei mit dem Basistyp (aeltere
+     *   `reverse`-Datei) als unveraendert gilt. Die Datei-Seite bleibt `Enum(refType)`: eine Datei, die eine
+     *   Domain-Spalte verlangt, gegen eine Datenbank-Spalte vom Basistyp bleibt ein `AlterColumnType`.
      *
      * Wie [resolvesRefTypeVocabulary] nur dort, wo die Gegenseite die Spalte nicht auch als `ref_type` fuehrt: ein
      * Basistypwechsel zweier Dateien bleibt genau ein `AlterCustomType`, ohne zusaetzliches `AlterColumnType`.
      * Der kontextfreie Vertrag von [type] bleibt unberuehrt.
      */
     val typeWithCustomTypes: ((NeutralType, Map<String, CustomTypeDefinition>) -> NeutralType)? = null,
+    /**
+     * Ob [typeWithCustomTypes] nur die **Datenbank-Seite** (die linke, `current`) projiziert. Gesetzt fuer einen
+     * Dialekt, dessen Reverse die Domain-Spalte als `ref_type` fuehrt (`DialectCapabilities.readsDomainColumnsAsRefType`);
+     * sonst projizieren beide Seiten.
+     */
+    val domainProjectionCurrentOnly: Boolean = false,
 )

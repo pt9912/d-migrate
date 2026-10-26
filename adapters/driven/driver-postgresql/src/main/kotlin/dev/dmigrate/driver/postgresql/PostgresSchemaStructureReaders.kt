@@ -9,6 +9,7 @@ import dev.dmigrate.driver.metadata.SchemaReaderUtils
 internal fun readPostgresTables(
     session: JdbcOperations,
     schema: String,
+    domainNames: Set<String>,
     notes: MutableList<SchemaReadNote>,
 ): Map<String, TableDefinition> {
     val tableRefs = PostgresMetadataQueries.listTableRefs(session, schema)
@@ -18,18 +19,26 @@ internal fun readPostgresTables(
     val postgisSchema = PostgresMetadataQueries.postgisSchema(session)
     val result = LinkedHashMap<String, TableDefinition>()
     for (ref in tableRefs) {
-        result[ref.name] = readPostgresTable(session, schema, ref.name, postgisSchema, notes)
+        result[ref.name] = readPostgresTable(session, schema, ref.name, ReadContext(postgisSchema, domainNames), notes)
     }
     return result
 }
+
+/** Was eine Tabelle ueber ihre Spalten hinaus braucht: die PostGIS-Heimat und die gelesenen Domain-Namen. */
+private data class ReadContext(val postgisSchema: String?, val domainNames: Set<String>)
+
+/** Die Namen der Domains, die der Reader in `custom_types` fuehrt -- nur auf die darf eine Spalte verweisen. */
+internal fun domainNamesOf(customTypes: Map<String, CustomTypeDefinition>): Set<String> =
+    customTypes.filterValues { it.kind == CustomTypeKind.DOMAIN }.keys
 
 private fun readPostgresTable(
     session: JdbcOperations,
     schema: String,
     tableName: String,
-    postgisSchema: String?,
+    context: ReadContext,
     notes: MutableList<SchemaReadNote>,
 ): TableDefinition {
+    val postgisSchema = context.postgisSchema
     val columnRows = PostgresMetadataQueries.listColumns(session, schema, tableName)
     val primaryKeyColumns = PostgresMetadataQueries.listPrimaryKeyColumns(session, schema, tableName)
     val foreignKeys = PostgresMetadataQueries.listForeignKeys(session, schema, tableName)
@@ -88,7 +97,14 @@ private fun readPostgresTable(
                 geometrySrid = postgisColumns[columnName]?.srid,
             )
         )
-        if (mapping.note != null) notes += mapping.note
+        // Eine Spalte vom Typ einer Domain nennt die Domain; `data_type`/`udt_name` tragen nur deren Basistyp.
+        // Eine Erzeugungsart (Identity, Serial, berechnet) bleibt beim Basistyp: das Modell traegt sie nur dort.
+        val domainType = if (mapping.generation == null && computed == null && mapping.type !is NeutralType.Identifier) {
+            domainColumnType(row, schema, context.domainNames)
+        } else {
+            null
+        }
+        if (mapping.note != null && domainType == null) notes += mapping.note
 
         // PK-Spalten folgen der Reverse-Konvention required=false/unique=false —
         // PK impliziert beides (MySQL-Praezedenz, dieselbe Regel in allen fuenf
@@ -112,7 +128,7 @@ private fun readPostgresTable(
         }
 
         columns[columnName] = ColumnDefinition(
-            type = mapping.type,
+            type = domainType ?: mapping.type,
             required = required,
             unique = unique,
             uniqueConstraintName = if (unique) singleColumnUniqueNames[columnName] else null,
@@ -415,4 +431,23 @@ internal fun normalizeDomainCheck(raw: String?): String? {
         s = PostgresDomainCheckForm.predicate(s.substring(5).trim())
     }
     return s.ifEmpty { null }
+}
+
+/**
+ * Der Typ einer Domain-Spalte: `Enum(refType = <Domain>)`, wenn die Spalte eine Domain des gelesenen Schemas
+ * traegt, die in `custom_types` steht ([domainNames]); sonst `null` (Basistyp wie bei jeder Spalte).
+ *
+ * `domain_name` gilt vor `udt_name`: bei einer Domain ueber einer Domain traegt `udt_name` den inneren Namen.
+ * Eine Domain aus einem anderen Schema oder einer Erweiterung fuehrt der Reader nicht in `custom_types`; ein
+ * Verweis ins Leere waere ein ungueltiges Schema. Fehlt `domain_name` in der Zeile, ist die Spalte keine
+ * Domain-Spalte.
+ */
+internal fun domainColumnType(
+    row: Map<String, Any?>,
+    schema: String,
+    domainNames: Set<String>,
+): NeutralType.Enum? {
+    val name = row["domain_name"] as? String ?: return null
+    if (row["domain_schema"] != schema || name !in domainNames) return null
+    return NeutralType.Enum(refType = name)
 }

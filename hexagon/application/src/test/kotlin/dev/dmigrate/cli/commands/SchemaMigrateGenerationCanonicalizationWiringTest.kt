@@ -88,13 +88,14 @@ class SchemaMigrateGenerationCanonicalizationWiringTest : FunSpec({
             foldsAutoIncrementOntoIdentity: Boolean,
             projectsCustomTypes: Boolean,
             resolvesRefTypeVocabulary: Boolean,
+            canonicalizeTypeFor: ((SchemaDefinition) -> (NeutralType) -> NeutralType)?,
         ): DiffResult {
             captured = canonicalizeGeneration
             capturedPartitioning = canonicalizePartitioning
             return super.plan(
                 current, desired, schemaDiff, migrationOverlays, capabilities, triggerPlanningContext,
                 canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
-                foldsAutoIncrementOntoIdentity, projectsCustomTypes, resolvesRefTypeVocabulary,
+                foldsAutoIncrementOntoIdentity, projectsCustomTypes, resolvesRefTypeVocabulary, canonicalizeTypeFor,
             )
         }
     }

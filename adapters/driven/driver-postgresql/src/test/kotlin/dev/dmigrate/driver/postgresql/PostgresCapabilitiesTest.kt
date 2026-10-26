@@ -37,4 +37,9 @@ class PostgresCapabilitiesTest : FunSpec({
         dev.dmigrate.driver.DialectCapabilities.forDialect(DatabaseDialect.POSTGRESQL)
             .resolvesRefTypeVocabulary shouldBe false
     }
+
+    test("eine Domain-Spalte liest der Reverse als ref_type, ohne den Wertevorrat aufzuloesen") {
+        dev.dmigrate.driver.DialectCapabilities.forDialect(DatabaseDialect.POSTGRESQL)
+            .readsDomainColumnsAsRefType shouldBe true
+    }
 })

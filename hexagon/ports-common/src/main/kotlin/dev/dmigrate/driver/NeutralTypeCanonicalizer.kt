@@ -34,8 +34,9 @@ interface NeutralTypeCanonicalizer {
      * den `refType` aber nie zurueck, und der Post-Compare meldete Drift.
      *
      * Der Default ignoriert den Kontext: fuer Dialekte mit nativem Enum-Typ
-     * (PostgreSQL) waere ein Aufloesen sogar falsch — zwei verschiedene Typen
-     * mit denselben Werten sind dort verschiedene Typen.
+     * (PostgreSQL) waere ein Aufloesen einer **Enum** sogar falsch — zwei verschiedene Typen
+     * mit denselben Werten sind dort verschiedene Typen. Eine **Domain-Spalte** loest PostgreSQL
+     * dagegen auf ihren Basistyp auf: der Abdruck sieht sie wie die Basistyp-Spalte.
      */
     fun canonicalize(type: NeutralType, customTypes: Map<String, CustomTypeDefinition>): NeutralType =
         canonicalize(type)

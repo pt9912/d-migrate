@@ -37,4 +37,9 @@ class SqliteCapabilitiesTest : FunSpec({
         dev.dmigrate.driver.DialectCapabilities.forDialect(DatabaseDialect.SQLITE)
             .resolvesRefTypeVocabulary shouldBe true
     }
+
+    test("eine Domain-Spalte liest der Reverse als Basistyp, nicht als ref_type") {
+        dev.dmigrate.driver.DialectCapabilities.forDialect(DatabaseDialect.SQLITE)
+            .readsDomainColumnsAsRefType shouldBe false
+    }
 })
