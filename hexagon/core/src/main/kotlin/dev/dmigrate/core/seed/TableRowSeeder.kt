@@ -89,9 +89,23 @@ class TableRowSeeder(
         val order = sortTablesByDependency(tableNames, buildFkEdges(schema, tableNames))
         val circularEdges = order.circularEdges.toSet()
         val valuePools = mutableMapOf<Pair<String, String>, MutableList<Any?>>()
+        // Vor dem ersten Schreiben: eine Domain-Spalte, fuer die kein Wert erzeugt werden kann, soll nicht erst die
+        // dritte Tabelle abbrechen, nachdem die ersten beiden geschrieben sind.
+        preflightDomainColumns(schema, order.sorted)
         for (tableName in order.sorted) {
             val table = schema.tables.getValue(tableName)
             onTable(tableName, seedTable(tableName, table, schema.customTypes, countPerTable, circularEdges, valuePools))
+        }
+    }
+
+    private fun preflightDomainColumns(schema: SchemaDefinition, tableNames: List<String>) {
+        for (tableName in tableNames) {
+            val table = schema.tables.getValue(tableName)
+            for ((columnName, domain) in DomainSeed.of(table.columns, schema.customTypes)) {
+                val covered = table.columns.getValue(columnName).references != null ||
+                    rules?.resolve(tableName, columnName) != null
+                if (!covered) domain.preflight(tableName, columnName, locale)
+            }
         }
     }
 

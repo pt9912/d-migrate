@@ -116,6 +116,7 @@ internal class DomainCheck private constructor(private val terms: List<Term>) {
             """^VALUE\s*=\s*ANY\s*\(\s*\(?\s*ARRAY\s*\[(.*)]\s*\)?(?:::[\w\s\[\]]+)?\s*\)$""", RegexOption.IGNORE_CASE,
         )
         private val NOT_NULL = Regex("""^VALUE\s+IS\s+NOT\s+NULL$""", RegexOption.IGNORE_CASE)
+        private val SINGLE_LITERAL = Regex("""^'(?:[^']|'')*'$""")
         private val CAST = Regex("""::[A-Za-z_][\w ]*(\[])?""")
 
         /** `null`, wenn der `CHECK` (oder einer seiner Terme) ausserhalb dessen liegt, was [DomainCheck] versteht. */
@@ -138,12 +139,12 @@ internal class DomainCheck private constructor(private val terms: List<Term>) {
             return null
         }
 
+        /** Jedes Element muss **ein** Literal sein; ein Rest (etwa `'a') OR VALUE IN ('b'`) ist kein Wertevorrat. */
         private fun listTerm(body: String): Term? {
-            val items = splitList(CAST.replace(body, ""))
-            val values = items.map { item ->
+            val values = splitList(CAST.replace(body, "")).map { item ->
                 val s = item.trim()
                 when {
-                    s.length >= 2 && s.startsWith("'") && s.endsWith("'") -> s.substring(1, s.length - 1).replace("''", "'")
+                    SINGLE_LITERAL.matches(s) -> s.substring(1, s.length - 1).replace("''", "'")
                     s.toBigDecimalOrNull() != null -> s
                     else -> return null
                 }

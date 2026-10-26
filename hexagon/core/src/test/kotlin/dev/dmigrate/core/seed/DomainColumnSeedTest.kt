@@ -64,6 +64,30 @@ class DomainColumnSeedTest : FunSpec({
         values.all { it is BigDecimal && it >= BigDecimal.ZERO && it.scale() == 2 } shouldBe true
     }
 
+    test("Schranken nahe Long.MIN/MAX laufen nicht ueber: Werte im Bereich oder Meldung") {
+        val high = 9_223_372_036_854_775_800L
+        fun big(check: String) = rows(mapOf("dd" to domain("biginteger", check))).map { it as Long }
+        big("VALUE >= $high").all { it >= high } shouldBe true
+        big("VALUE <= -$high").all { it <= -high } shouldBe true
+        shouldThrow<SeedPreflightException> { rows(mapOf("dd" to domain("integer", "VALUE > 3000000000"))) }
+    }
+
+    test("numeric(2,2) erzeugt nur Werte, die die Spalte annimmt (|Wert| < 1); ein Bereich ausserhalb ist unerfuellbar") {
+        val values = rows(mapOf("dd" to domain("decimal", precision = 2, scale = 2)))
+        values.all { it is BigDecimal && it.abs() < BigDecimal.ONE && it.scale() == 2 } shouldBe true
+        val bounded = rows(mapOf("dd" to domain("decimal", "VALUE >= 0", precision = 2, scale = 2)))
+        bounded.all { (it as BigDecimal) >= BigDecimal.ZERO && it < BigDecimal.ONE } shouldBe true
+        val outside = domain("decimal", "VALUE >= 5", precision = 2, scale = 2)
+        shouldThrow<SeedPreflightException> { rows(mapOf("dd" to outside)) }
+    }
+
+    test("Domain ueber real, int[] und INTEGER[] (handgeschrieben): der Seed loest sie auf") {
+        rows(mapOf("dd" to domain("real", "VALUE >= 0"))).all { it is Double && it >= 0.0 } shouldBe true
+        for (base in listOf("int[]", "INTEGER[]", "int4[]")) {
+            withClue(base) { rows(mapOf("dd" to domain(base)), count = 5).all { it is List<*> } shouldBe true }
+        }
+    }
+
     test("text-Domain: VALUE <> '' und length(VALUE) > 2") {
         rows(mapOf("dd" to domain("text", "VALUE <> ''"))).all { (it as String).isNotEmpty() } shouldBe true
         rows(mapOf("dd" to domain("text", "length(VALUE) > 2"))).all { (it as String).length > 2 } shouldBe true
@@ -86,6 +110,20 @@ class DomainColumnSeedTest : FunSpec({
         }
     }
 
+    test("IN/ANY mit mehr als einem Literal je Element oder einem OR-Rest ist kein Wertevorrat: Meldung") {
+        val forms = listOf(
+            "VALUE IN ('a') OR VALUE IN ('b')",
+            "VALUE = ANY (ARRAY['a'::text]) OR VALUE = ANY (ARRAY['b'::text])",
+            "VALUE IN ('a' || 'b')",
+        )
+        for (check in forms) {
+            withClue(check) {
+                shouldThrow<SeedPreflightException> { rows(mapOf("dd" to domain("text", check))) }
+                    .message!! shouldContain "versteht den CHECK"
+            }
+        }
+    }
+
     test("unerfuellbarer CHECK: Meldung") {
         shouldThrow<SeedPreflightException> { rows(mapOf("dd" to domain("integer", "VALUE > 5 AND VALUE < 3"))) }
             .message!! shouldContain "findet keinen Wert"
@@ -102,6 +140,38 @@ class DomainColumnSeedTest : FunSpec({
         withClue("Enum mit ref_type erzeugt weiter keinen Wert (UnsupportedSeedType -> NULL)") {
             values.all { it == null } shouldBe true
         }
+    }
+
+    test("Preflight: eine nicht erzeugbare Domain-Spalte in Tabelle 3 bricht ab, bevor Tabelle 1 geschrieben wird") {
+        fun table(column: ColumnDefinition?, fk: String? = null) = TableDefinition(
+            columns = buildMap {
+                put("id", ColumnDefinition(NeutralType.Identifier(), required = true, unique = true))
+                if (fk != null) {
+                    put(
+                        "p_id",
+                        ColumnDefinition(
+                            NeutralType.Integer, required = true,
+                            references = dev.dmigrate.core.model.ReferenceDefinition(table = fk, column = "id"),
+                        ),
+                    )
+                }
+                if (column != null) put("d", column)
+            },
+        )
+        val schema = SchemaDefinition(
+            name = "t", version = "1",
+            customTypes = mapOf("dd" to domain("text", "VALUE ~ '^[A-Z]+$'")),
+            tables = mapOf(
+                "t1" to table(null),
+                "t2" to table(null, fk = "t1"),
+                "t3" to table(ColumnDefinition(NeutralType.Enum(refType = "dd")), fk = "t2"),
+            ),
+        )
+        val written = mutableListOf<String>()
+        shouldThrow<SeedPreflightException> {
+            TableRowSeeder(Random(1), SeedLocale.EN).seedEach(schema, 3) { name, _ -> written += name }
+        }
+        written shouldBe emptyList()
     }
 
     test("deterministisch bei gleichem Seed") {

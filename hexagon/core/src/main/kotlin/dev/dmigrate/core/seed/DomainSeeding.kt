@@ -43,7 +43,14 @@ internal class DomainSeed(
             )
     }
 
+    /** Erzeugt einen Probewert mit eigenem Zufallszustand: meldet, was [generate] spaeter melden wuerde, vor dem ersten Schreiben. */
+    fun preflight(table: String, column: String, locale: SeedLocale) {
+        generate(table, column, ColumnValueGenerator(Random(PROBE_SEED), locale), Random(PROBE_SEED))
+    }
+
     companion object {
+        private const val PROBE_SEED = 0L
+
         /** Die Domain-Spalten einer Tabelle, je Spaltenname; die Spalte selbst bleibt unveraendert. */
         fun of(
             columns: Map<String, ColumnDefinition>,
@@ -97,26 +104,35 @@ private class DomainValues(private val random: Random, private val generator: Co
             is NeutralType.BigInteger -> Long.MIN_VALUE to Long.MAX_VALUE
             else -> Int.MIN_VALUE.toLong() to Int.MAX_VALUE.toLong()
         }
-        val span = if (type is NeutralType.BigInteger) BIG_SPAN else SPAN
+        val span = BigDecimal(if (type is NeutralType.BigInteger) BIG_SPAN else SPAN)
         val b = check.bounds()
         val lo = b.lowestAt(0)
         val hi = b.highestAt(0)
-        // Eine offene Seite bekommt eine feste Spanne, damit die Werte klein bleiben; der Typbereich begrenzt beide.
-        val from = maxOf(typeMin, lo?.toLong() ?: (hi?.toLong()?.minus(span) ?: -span))
-        val to = minOf(typeMax, hi?.toLong() ?: (lo?.toLong()?.plus(span) ?: span))
+        // Mit BigDecimal gerechnet: eine Schranke nahe Long.MIN/MAX laeuft sonst ueber. Eine offene Seite bekommt eine
+        // feste Spanne, damit die Werte klein bleiben; der Typbereich begrenzt beide.
+        val from = BigDecimal(typeMin).max(lo ?: hi?.subtract(span) ?: span.negate())
+        val to = BigDecimal(typeMax).min(hi ?: lo?.add(span) ?: span)
         if (from > to) return null
-        return sample(check) { random.nextLong(from, to + 1) } as Long?
+        return sample(check) { drawLong(from.toLong(), to.toLong()) } as Long?
+    }
+
+    /** Ein Wert in `[from, to]`; `nextLong` nimmt die obere Grenze nicht, und `to + 1` liefe bei `Long.MAX_VALUE` ueber. */
+    private fun drawLong(from: Long, to: Long): Long = when {
+        from == to -> from
+        to == Long.MAX_VALUE -> if (random.nextBoolean()) to else random.nextLong(from, to)
+        else -> random.nextLong(from, to + 1)
     }
 
     private fun decimal(type: NeutralType.Decimal, check: DomainCheck): BigDecimal? {
         val scale = type.scale.coerceAtLeast(0)
         val step = BigDecimal.ONE.movePointLeft(scale)
-        val limit = BigDecimal.TEN.pow((type.precision - scale).coerceIn(1, DECIMAL_DIGITS)).subtract(step)
+        // Die Stellen vor dem Komma: `numeric(2,2)` hat keine, dort gilt |Wert| < 1.
+        val limit = BigDecimal.TEN.pow((type.precision - scale).coerceIn(0, DECIMAL_DIGITS)).subtract(step)
         val b = check.bounds()
         val lo = b.lowestAt(scale)
         val hi = b.highestAt(scale)
-        val from = lo ?: (hi?.let { (it - DECIMAL_SPAN).max(limit.negate()) } ?: DECIMAL_SPAN.negate().max(limit.negate()))
-        val to = hi ?: (lo?.let { (it + DECIMAL_SPAN).min(limit) } ?: DECIMAL_SPAN.min(limit))
+        val from = limit.negate().max(lo ?: hi?.subtract(DECIMAL_SPAN) ?: DECIMAL_SPAN.negate())
+        val to = limit.min(hi ?: lo?.add(DECIMAL_SPAN) ?: DECIMAL_SPAN)
         if (from > to) return null
         return sample(check) {
             from.add(to.subtract(from).multiply(BigDecimal(random.nextDouble()))).setScale(scale, RoundingMode.HALF_UP)
