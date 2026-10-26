@@ -2,7 +2,6 @@ package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.ColumnDefaultProjection
 import dev.dmigrate.core.diff.ConstraintDiffContract
-import dev.dmigrate.core.model.CustomTypeBaseType
 import dev.dmigrate.core.diff.DomainTraits
 import dev.dmigrate.core.diff.EffectivePrimaryKey
 import dev.dmigrate.core.diff.EnumCheckProjection
@@ -13,6 +12,7 @@ import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintReferenceDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.CustomTypeBaseType
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.IdentityMode
@@ -197,7 +197,7 @@ object MigrationFingerprint {
      * v19: **der Basistyp einer Domain** (Issue #52). Eine Datei schreibt `bigint`,
      * `numeric` oder `varchar(50)`, der PostgreSQL-Reader liefert `biginteger`,
      * `decimal`, `text`; der Abdruck traegt jetzt die Neutralform
-     * ([dev.dmigrate.core.diff.CustomTypeBaseType]: Typname, `precision`/`scale`
+     * ([dev.dmigrate.core.model.CustomTypeBaseType]: Typname, `precision`/`scale`
      * nur bei `decimal`; seit v23 mit Laenge und `[]`, siehe dort), damit der Post-Compare eines Migrationslaufs nicht an der
      * Schreibweise driftet. Ausserdem liefert der PostgreSQL-Reader `precision`/`scale` nur
      * noch fuer `decimal` und den `CHECK` in Autorenform. Eine Domain traegt damit auf
@@ -227,7 +227,7 @@ object MigrationFingerprint {
      * andere Schreibweise fuer jede SQLite-Datenbank mit Ausdrucks-Index. Alle anderen Schemas
      * hashen bis auf den Algorithmus-Tag wie zuvor.
      *
-     * v23: **der Basistyp einer Domain mit Laenge oder Array** (Issue #58). [dev.dmigrate.core.diff.CustomTypeBaseType.canonical] trennt `char`/`varchar` von
+     * v23: **der Basistyp einer Domain mit Laenge oder Array** (Issue #58). [dev.dmigrate.core.model.CustomTypeBaseType.canonical] trennt `char`/`varchar` von
      * `text`, traegt die Laenge von `varchar(n)`, `char(n)`, `timestamp(n)`, `timestamptz(n)`,
      * `time(n)`, `timetz(n)`, `bit(n)`, `varbit(n)` in der Klammer (`varchar` ohne Laenge ist `text`, `char` ist `char(1)`) und haengt bei einem
      * Array `[]` an. `base=` einer Domain mit solchem Basistyp hasht damit anders; Schemas ohne

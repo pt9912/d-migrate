@@ -1,7 +1,5 @@
 package dev.dmigrate.core.model
 
-import dev.dmigrate.core.model.CustomTypeDefinition
-
 /**
  * Der Basistyp einer Domain, wie Datei und Reader ihn verschieden schreiben (Issue #52, #58).
  *

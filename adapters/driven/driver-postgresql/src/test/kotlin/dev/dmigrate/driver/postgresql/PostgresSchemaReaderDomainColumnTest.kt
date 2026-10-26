@@ -142,21 +142,26 @@ class PostgresSchemaReaderDomainColumnTest : FunSpec({
     }
 
     test("Domain ohne neutrales Gegenstueck oder mit anderem Typ als der Basistyp bleibt beim Basistyp (real, bit, numeric, varchar[])") {
+        // Erwartet: die Spalte liest genau wie dieselbe Zeile ohne `domain_name` (ohne Domain-Erkennung).
         val cases = listOf(
-            // real: die Spalte ist Float(SINGLE), die Domain schreibt `float` -- ein anderer Typ.
-            Triple("real", column("d", dataType = "real", udt = "float4", domain = "dd"), NeutralType.Float(FloatPrecision.SINGLE)),
-            Triple("bit(5)", column("d", dataType = "bit", udt = "bit", domain = "dd"), null),
-            Triple("numeric", column("d", dataType = "numeric", udt = "numeric", domain = "dd"), null),
-            Triple("character varying(50)[]", column("d", dataType = "ARRAY", udt = "_varchar", domain = "dd"), NeutralType.Array("text")),
-            Triple("inet", column("d", dataType = "inet", udt = "inet", domain = "dd"), null),
+            "real" to column("d", dataType = "real", udt = "float4", domain = "dd"),
+            "bit(5)" to column("d", dataType = "bit", udt = "bit", domain = "dd"),
+            "numeric" to column("d", dataType = "numeric", udt = "numeric", domain = "dd"),
+            "character varying(50)[]" to column("d", dataType = "ARRAY", udt = "_varchar", domain = "dd"),
+            "inet" to column("d", dataType = "inet", udt = "inet", domain = "dd"),
+            "interval" to column("d", dataType = "interval", udt = "interval", domain = "dd"),
         )
-        for ((format, col, expected) in cases) {
-            val type = types(read(listOf(domainRow("dd", format = format)), column("id"), col)).getValue("d")
+        for ((format, col) in cases) {
+            val withDomain = types(read(listOf(domainRow("dd", format = format)), column("id"), col)).getValue("d")
+            val plain = col - "domain_name" - "domain_schema"
+            val without = types(read(emptyList(), column("id"), plain)).getValue("d")
             withClue(format) {
-                (type is NeutralType.Enum && type.refType == "dd") shouldBe false
-                if (expected != null) type shouldBe expected
+                (withDomain is NeutralType.Enum && withDomain.refType == "dd") shouldBe false
+                withDomain shouldBe without
             }
         }
+        types(read(listOf(domainRow("dd", format = "real")), column("id"), cases[0].second)).getValue("d") shouldBe
+            NeutralType.Float(FloatPrecision.SINGLE)
     }
 
     test("eine Identity-Spalte bleibt beim Basistyp: das Modell traegt die Erzeugungsart nur dort") {

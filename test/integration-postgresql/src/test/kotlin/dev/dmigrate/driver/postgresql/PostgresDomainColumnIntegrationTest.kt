@@ -147,6 +147,8 @@ class PostgresDomainColumnIntegrationTest : FunSpec({
         Triple("numeric(10,2)", "VALUE >= 0", NeutralType.Decimal(10, 2)),
         Triple("uuid", "VALUE IS NOT NULL", NeutralType.Uuid),
         Triple("boolean", "VALUE IS NOT NULL", NeutralType.BooleanType),
+        Triple("timestamptz(3)", "VALUE IS NOT NULL", NeutralType.DateTime(timezone = true)),
+        Triple("char(5)", "VALUE <> ''", NeutralType.Char(5)),
     )
 
     test("der Reader nennt die Domain an der Spalte: type enum + ref_type, fuer jeden Basistyp") {

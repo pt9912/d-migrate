@@ -90,8 +90,8 @@ class TableRowSeeder(
         val circularEdges = order.circularEdges.toSet()
         val valuePools = mutableMapOf<Pair<String, String>, MutableList<Any?>>()
         // Vor dem ersten Schreiben: eine Domain-Spalte, fuer die kein Wert erzeugt werden kann, soll nicht erst die
-        // dritte Tabelle abbrechen, nachdem die ersten beiden geschrieben sind.
-        preflightDomainColumns(schema, order.sorted)
+        // dritte Tabelle abbrechen, nachdem die ersten beiden geschrieben sind. Ohne Zeilen entsteht kein Wert.
+        if (countPerTable > 0) preflightDomainColumns(schema, order.sorted)
         for (tableName in order.sorted) {
             val table = schema.tables.getValue(tableName)
             onTable(tableName, seedTable(tableName, table, schema.customTypes, countPerTable, circularEdges, valuePools))

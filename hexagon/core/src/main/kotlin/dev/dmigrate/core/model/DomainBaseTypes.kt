@@ -12,6 +12,9 @@ object DomainBaseTypes {
 
     private val TYPE_WITH_PARAMS = Regex("""^([A-Za-z][A-Za-z0-9_ ]*?)\s*\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\)$""")
 
+    /** Elementtypen eines Array-Basistyps, die das neutrale Modell kennt. */
+    private val ARRAY_ELEMENTS = setOf("integer", "biginteger", "text", "boolean", "uuid", "float", "decimal", "json")
+
     /**
      * Neutrale Typnamen (wie sie der Reverse in `base_type` ablegt) und die
      * gaengigen PostgreSQL-Katalognamen, die der PG-Reverse roh durchreicht.
@@ -52,7 +55,6 @@ object DomainBaseTypes {
             else -> null
         }
 
-
     /**
      * Der neutrale Basistyp der Domain, oder `null`, wo es keinen gibt (Domain ueber Domain, `bit(n)`, `inet`,
      * `numeric` ohne `precision`, Array ueber `varchar(n)`, ...). Der Typname geht ueber [CustomTypeBaseType]: Datei und
@@ -73,6 +75,4 @@ object DomainBaseTypes {
             ?.takeIf { it.kind == CustomTypeKind.DOMAIN } ?: return type
         return baseTypeOf(domain) ?: type
     }
-
-    private val ARRAY_ELEMENTS = setOf("integer", "biginteger", "text", "boolean", "uuid", "float", "decimal", "json")
 }

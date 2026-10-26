@@ -174,6 +174,51 @@ class DomainColumnSeedTest : FunSpec({
         written shouldBe emptyList()
     }
 
+    test("eine --rules-Regel fuer die Spalte nimmt sie vom Preflight aus: kein Abbruch trotz unverstaendlichem CHECK") {
+        val rules = SeedRuleSet(
+            listOf(SeedRuleEntry(table = null, column = "d", rule = ColumnRule.Values(listOf("ABC")))),
+        )
+        val values = rows(mapOf("dd" to domain("text", "VALUE ~ '^[A-Z]+$'")), rules = rules, count = 5)
+        values.all { it == "ABC" } shouldBe true
+    }
+
+    test("eine FK-Spalte vom Domain-Typ bekommt Werte aus der Zieltabelle, kein Domain-Preflight") {
+        val schema = SchemaDefinition(
+            name = "t", version = "1",
+            customTypes = mapOf("dd" to domain("text", "VALUE ~ '^[A-Z]+$'")),
+            tables = mapOf(
+                "p" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(NeutralType.Identifier(), required = true, unique = true),
+                        "code" to ColumnDefinition(NeutralType.Text(10), required = true, unique = true),
+                    ),
+                ),
+                "c" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(NeutralType.Identifier(), required = true, unique = true),
+                        "code" to ColumnDefinition(
+                            NeutralType.Enum(refType = "dd"), required = true,
+                            references = dev.dmigrate.core.model.ReferenceDefinition(table = "p", column = "code"),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val result = TableRowSeeder(Random(1), SeedLocale.EN).seedAll(schema, 3)
+        val parents = result.getValue("p").map { it["code"] }.toSet()
+        result.getValue("c").all { it["code"] in parents } shouldBe true
+    }
+
+    test("ohne Zeilen (count 0) entsteht kein Wert: kein Preflight-Abbruch") {
+        TableRowSeeder(Random(1), SeedLocale.EN).seedAll(
+            SchemaDefinition(
+                name = "t", version = "1", customTypes = mapOf("dd" to domain("text", "VALUE ~ 'x'")),
+                tables = mapOf("t" to TableDefinition(columns = mapOf("d" to ColumnDefinition(NeutralType.Enum(refType = "dd"))))),
+            ),
+            0,
+        ).getValue("t") shouldBe emptyList()
+    }
+
     test("deterministisch bei gleichem Seed") {
         val types = mapOf("dd" to domain("integer", "VALUE BETWEEN 1 AND 10"))
         rows(types) shouldBe rows(types)
