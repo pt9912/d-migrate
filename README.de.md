@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.11.0** (stabil, [veröffentlicht 2026-10-26](https://github.com/pt9912/d-migrate/releases/tag/v1.11.0)).
+**1.11.1** (stabil, [veröffentlicht 2026-10-26](https://github.com/pt9912/d-migrate/releases/tag/v1.11.1)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,15 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.11.0** (2026-10-26) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Weitere Objekte, die Datei und
+- **Aktuelles Stable** · **1.11.1** (2026-10-26) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Zwei Folge-Fixes zu 1.11.0.**
+  Auf SQLite behalten ein Tabellenneubau und `schema generate` `WITHOUT ROWID`
+  (der Neubau ließ es fallen, und `schema generate` schrieb es nie). Auf
+  PostgreSQL lässt eine Tabelle mit zwei Wertelisten-`CHECK`s an einer Spalte
+  `schema migrate --execute` nicht mehr mit Exit 5 scheitern; mit
+  `--generate-rollback` endet der Lauf mit Exit 8, weil der Name des neuen
+  `CHECK`s nicht sicher ist.
+  1.11.0 (2026-10-26) — **Weitere Objekte, die Datei und
   Datenbank gleich führen, gelten nicht mehr als geändert, und eine
   PostgreSQL-Domain trägt mehr von ihrer Definition.** Auf SQLite planen ein
   Ausdrucks-Index (`lower(a)`) und eine Domain-Spalte über `integer`, `boolean`,
