@@ -101,6 +101,8 @@ internal class SqliteRebuildRenderer(
         emitPreflightInfoDiagnostics(plan, ctx)
         emitCastPreflightInfoDiagnostics(plan, ctx)
         warnRebuiltColumnDegradations(plan, ctx)
+        // W164 steht nur hier, nach erfolgreicher Neubau-Sequenz: ein geblockter Neubau (fruehe Rueckkehr
+        // oben) erzeugt keine Warnung, weil er die Tabelle nicht umbaut.
         plan.bucketOperations.firstOrNull()?.let { SqliteRebuildWithoutRowidDeviation.warnIfDeviates(it, ctx, plan) }
     }
 
@@ -113,6 +115,9 @@ internal class SqliteRebuildRenderer(
      *  - W135 (identity column in a composite PK → AUTOINCREMENT dropped, [SqliteCompositePkIdentity])
      *  - W162 (array → TEXT, no native array type, [SqliteArrayDegradation])
      *  - W163 (`mode: always` ohne Entsprechung, [SqliteIdentityModeDegradation])
+     *
+     * W164 (abweichendes `without_rowid`, [SqliteRebuildWithoutRowidDeviation]) kommt nicht von hier,
+     * sondern aus einem eigenen Aufruf in [render] (es gilt der Tabelle, nicht einer Spalte).
      */
     private fun warnRebuiltColumnDegradations(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
         if (ctx.direction != SqliteRenderDirection.UP) return

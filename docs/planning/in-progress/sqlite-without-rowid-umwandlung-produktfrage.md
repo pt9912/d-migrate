@@ -100,6 +100,7 @@ Hinweg je Fall (`unique: true`, Neubau), `--plan-only` **und** `--execute`:
 3. `W164` erscheint als `DiffDiagnostic` (Severity `WARNING`, `operationId` des Neubau-Eimers) in `--plan-only`, `--execute` und im Report; Fundstelle je Ausgabe (Text, `--output-format json`, Report) aus P0 benannt;
    Exit 0; **Down erzeugt keine Warnung**. Der Folgeplan nach einem Rollback in Fall A trägt `W164` wieder (Datei `true`, Datenbank Rowid) — erwartet.
 4. Ledger: `W164` mit `test_path` und Evidence, `CodeLedgerValidationTest` grün; `spec/ledger.md` und `spec/cli-spec.md` §4.5 tragen die Zeile.
+   Ein **geblockter** Neubau (z. B. `NOT_NULL_BACKFILL_REQUIRED`) trägt keine `W164`: `render()` kehrt vor der Warnung zurück; der Neubau baut die Tabelle nicht um (Unit-Test).
 5. Spec §3.5 und Handbuch §3.17 widersprechen sich und dem Verhalten nicht; beide ohne Chronik/Forensik.
 
 ## Verifikation

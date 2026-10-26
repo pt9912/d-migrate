@@ -145,6 +145,40 @@ class SqliteRebuildPlanWithoutRowidTest : FunSpec({
         r.w164().size shouldBe 0
     }
 
+    test("Down in Fall C1 und C2: der Rollback behaelt WITHOUT ROWID der Datenbank, keine Warnung (Datei true, ohne Angabe)") {
+        for (file in listOf(true, null)) {
+            val r = gen.generateDown(diffOf(dbFlag = true, fileFlag = file), DdlGenerationOptions())
+            r.statements.any { it.sql.startsWith("CREATE TABLE") } shouldBe true
+            r.withoutRowidRebuild() shouldBe true
+            r.w164().size shouldBe 0
+        }
+    }
+
+    test("geblockter Neubau in Fall A: keine W164, weil render() vor der Warnung zurueckkehrt") {
+        val old = rebuildTable(null, NeutralType.SmallInt)
+        val file = rebuildTable(true, NeutralType.Integer).let {
+            it.copy(columns = it.columns + ("status" to ColumnDefinition(NeutralType.Text(), required = true)))
+        }
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "t",
+                    columnsAdded = mapOf("status" to ColumnDefinition(NeutralType.Text(), required = true)),
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff("views", type = ValueChange(NeutralType.SmallInt, NeutralType.Integer)),
+                    ),
+                ),
+            ),
+        )
+        val r = gen.generateUp(
+            planner.plan(schemaWith(mapOf("t" to old)), schemaWith(mapOf("t" to file)), diff),
+            DdlGenerationOptions(),
+        )
+        r.isBlocked shouldBe true
+        r.diagnostics.any { it.code == "NOT_NULL_BACKFILL_REQUIRED" } shouldBe true
+        r.w164().size shouldBe 0
+    }
+
     test("FULLTEXT recreate degrades when only the database side is WITHOUT ROWID (file silent)") {
         val fulltext = IndexDefinition(
             name = "docs_fts",

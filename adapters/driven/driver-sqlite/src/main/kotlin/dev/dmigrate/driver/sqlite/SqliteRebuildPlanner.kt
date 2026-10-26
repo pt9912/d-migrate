@@ -201,7 +201,7 @@ internal object SqliteRebuildPlanner {
      * quoting + type-mapping during the column-mapping build.
      *
      * [sides] nennt Quelle und Ziel des Neubaus (je Tabelle und Schema) und die Richtung;
-     * die Datenbank-Seite ergibt sich daraus ([SqliteRebuildSides.databaseTable]).
+     * die Datenbank-Seite ergibt sich daraus ([SqliteRebuildPlan.withoutRowid]).
      *
      * Empty defaults for [SqliteRebuildPlan.dependentViewsToDrop] /
      * [SqliteRebuildPlan.dependentViewsToRecreate] /

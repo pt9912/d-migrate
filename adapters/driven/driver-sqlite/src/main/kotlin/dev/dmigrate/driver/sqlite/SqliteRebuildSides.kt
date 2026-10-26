@@ -9,7 +9,8 @@ import dev.dmigrate.core.model.TableDefinition
  * (`desired`), Down umgekehrt.
  *
  * Die Datenbank-Seite ist je Richtung die Quelle (Up) oder das Ziel (Down); die Datei-Seite die andere.
- * Strukturmerkmale, die `schema migrate` nicht plant (`WITHOUT ROWID`), folgen der Datenbank-Seite.
+ * Strukturmerkmale, die `schema migrate` nicht plant (`WITHOUT ROWID`), folgen der Datenbank-Seite;
+ * die Richtungslogik dafuer steht in [SqliteRebuildPlan.withoutRowid].
  */
 internal data class SqliteRebuildSides(
     val source: TableDefinition,
@@ -17,12 +18,4 @@ internal data class SqliteRebuildSides(
     val sourceSchema: SchemaDefinition? = null,
     val targetSchema: SchemaDefinition? = null,
     val direction: SqliteRenderDirection = SqliteRenderDirection.UP,
-) {
-    /** Die Tabelle, wie die Datenbank sie vor dem Lauf fuehrt. */
-    val databaseTable: TableDefinition
-        get() = if (direction == SqliteRenderDirection.UP) source else target
-
-    /** Die Tabelle, wie die Datei sie beschreibt. */
-    val fileTable: TableDefinition
-        get() = if (direction == SqliteRenderDirection.UP) target else source
-}
+)
