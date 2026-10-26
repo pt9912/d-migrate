@@ -1,8 +1,6 @@
-package dev.dmigrate.core.diff
+package dev.dmigrate.core.model
 
-import dev.dmigrate.core.model.CustomTypeDefinition
-import dev.dmigrate.core.model.CustomTypeKind
-import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.diff.SchemaComparator
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 

@@ -9,7 +9,7 @@ import dev.dmigrate.driver.metadata.SchemaReaderUtils
 internal fun readPostgresTables(
     session: JdbcOperations,
     schema: String,
-    domainNames: Set<String>,
+    domainBases: Map<String, NeutralType>,
     notes: MutableList<SchemaReadNote>,
 ): Map<String, TableDefinition> {
     val tableRefs = PostgresMetadataQueries.listTableRefs(session, schema)
@@ -19,17 +19,23 @@ internal fun readPostgresTables(
     val postgisSchema = PostgresMetadataQueries.postgisSchema(session)
     val result = LinkedHashMap<String, TableDefinition>()
     for (ref in tableRefs) {
-        result[ref.name] = readPostgresTable(session, schema, ref.name, ReadContext(postgisSchema, domainNames), notes)
+        result[ref.name] = readPostgresTable(session, schema, ref.name, ReadContext(postgisSchema, domainBases), notes)
     }
     return result
 }
 
-/** Was eine Tabelle ueber ihre Spalten hinaus braucht: die PostGIS-Heimat und die gelesenen Domain-Namen. */
-private data class ReadContext(val postgisSchema: String?, val domainNames: Set<String>)
+/** Was eine Tabelle ueber ihre Spalten hinaus braucht: die PostGIS-Heimat und die Basistypen der gelesenen Domains. */
+private data class ReadContext(val postgisSchema: String?, val domainBases: Map<String, NeutralType>)
 
-/** Die Namen der Domains, die der Reader in `custom_types` fuehrt -- nur auf die darf eine Spalte verweisen. */
-internal fun domainNamesOf(customTypes: Map<String, CustomTypeDefinition>): Set<String> =
-    customTypes.filterValues { it.kind == CustomTypeKind.DOMAIN }.keys
+/**
+ * Die Domains, auf die eine Spalte verweisen darf, mit ihrem neutralen Basistyp: die Domain steht in `custom_types`
+ * **und** ihr Basistyp hat ein neutrales Gegenstueck ([DomainBaseTypes.baseTypeOf]). Eine Domain ueber einer Domain
+ * oder ueber `real`, `bit(n)`, `numeric` ohne `precision`, einem Array ueber `varchar(n)` bleibt aussen vor: ihre
+ * Spalte liest wie ohne Domain-Erkennung.
+ */
+internal fun domainBasesOf(customTypes: Map<String, CustomTypeDefinition>): Map<String, NeutralType> =
+    customTypes.filterValues { it.kind == CustomTypeKind.DOMAIN }
+        .mapNotNull { (name, def) -> DomainBaseTypes.baseTypeOf(def)?.let { name to it } }.toMap()
 
 private fun readPostgresTable(
     session: JdbcOperations,
@@ -100,7 +106,7 @@ private fun readPostgresTable(
         // Eine Spalte vom Typ einer Domain nennt die Domain; `data_type`/`udt_name` tragen nur deren Basistyp.
         // Eine Erzeugungsart (Identity, Serial, berechnet) bleibt beim Basistyp: das Modell traegt sie nur dort.
         val domainType = if (mapping.generation == null && computed == null && mapping.type !is NeutralType.Identifier) {
-            domainColumnType(row, schema, context.domainNames)
+            domainColumnType(row, schema, context.domainBases, mapping.type)
         } else {
             null
         }
@@ -435,19 +441,24 @@ internal fun normalizeDomainCheck(raw: String?): String? {
 
 /**
  * Der Typ einer Domain-Spalte: `Enum(refType = <Domain>)`, wenn die Spalte eine Domain des gelesenen Schemas
- * traegt, die in `custom_types` steht ([domainNames]); sonst `null` (Basistyp wie bei jeder Spalte).
+ * traegt, die in [domainBases] steht, **und** der Typ der Spalte ([mapped], aus `information_schema`) derselbe ist wie
+ * der Basistyp der Domain; sonst `null` (die Spalte bleibt, was sie ohne Domain-Erkennung ist).
  *
- * `domain_name` gilt vor `udt_name`: bei einer Domain ueber einer Domain traegt `udt_name` den inneren Namen.
- * Eine Domain aus einem anderen Schema oder einer Erweiterung fuehrt der Reader nicht in `custom_types`; ein
- * Verweis ins Leere waere ein ungueltiges Schema. Fehlt `domain_name` in der Zeile, ist die Spalte keine
- * Domain-Spalte.
+ * Die zweite Bedingung haelt Abdruck und Vergleich genau: die Domain-Spalte faltet im Abdruck auf den Basistyp der
+ * Domain, und das muss dieselbe Form sein, die die Spalte vorher hatte (`real`: die Spalte war `Float(SINGLE)`, die
+ * Domain schreibt `float`, also ein anderer Typ -- die Spalte bleibt beim Basistyp). `domain_name` gilt vor
+ * `udt_name`. Eine Domain aus einem anderen Schema oder einer Erweiterung fuehrt der Reader nicht; ein Verweis ins
+ * Leere waere ein ungueltiges Schema. Fehlt `domain_name` in der Zeile, ist die Spalte keine Domain-Spalte.
  */
 internal fun domainColumnType(
     row: Map<String, Any?>,
     schema: String,
-    domainNames: Set<String>,
+    domainBases: Map<String, NeutralType>,
+    mapped: NeutralType,
 ): NeutralType.Enum? {
     val name = row["domain_name"] as? String ?: return null
-    if (row["domain_schema"] != schema || name !in domainNames) return null
-    return NeutralType.Enum(refType = name)
+    if (row["domain_schema"] != schema) return null
+    val base = domainBases[name] ?: return null
+    val same = PostgresNeutralTypeCanonicalizer.canonicalize(base) == PostgresNeutralTypeCanonicalizer.canonicalize(mapped)
+    return NeutralType.Enum(refType = name).takeIf { same }
 }

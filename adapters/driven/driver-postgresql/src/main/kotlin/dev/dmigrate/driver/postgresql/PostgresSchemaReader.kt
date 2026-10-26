@@ -47,7 +47,7 @@ class PostgresSchemaReader(
             // Ihre Hinweise folgen trotzdem denen der Tabellen.
             val typeNotes = mutableListOf<SchemaReadNote>()
             val customTypes = readPostgresCustomTypes(session, schema, typeNotes)
-            val rawTables = readPostgresTables(session, schema, domainNamesOf(customTypes), notes)
+            val rawTables = readPostgresTables(session, schema, domainBasesOf(customTypes), notes)
             val sequences = readPostgresSequences(session, schema)
             notes += typeNotes
 

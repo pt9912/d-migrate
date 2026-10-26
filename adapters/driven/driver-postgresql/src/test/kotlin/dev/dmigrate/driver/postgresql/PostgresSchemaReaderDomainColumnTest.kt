@@ -1,11 +1,13 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.core.model.FloatPrecision
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.SchemaReadResult
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.metadata.JdbcOperations
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
@@ -32,8 +34,10 @@ class PostgresSchemaReaderDomainColumnTest : FunSpec({
     every { rs.getString(1) } returns "public"
     every { conn.catalog } returns "testdb"
 
-    fun domainRow(name: String, base: String = "int4") = mapOf(
-        "typname" to name, "base_type" to base, "numeric_precision" to 32, "numeric_scale" to 0,
+    // `format` ist `format_type(typbasetype, typtypmod)`, wie der Katalog den Basistyp nennt.
+    fun domainRow(name: String, format: String = "integer", base: String = "int4", schema: String = "pg_catalog") = mapOf(
+        "typname" to name, "base_type" to base, "base_type_sql" to format, "base_schema" to schema,
+        "numeric_precision" to 32, "numeric_scale" to 0,
         "domain_default" to null, "conname" to null, "check_clause" to null,
     )
 
@@ -99,40 +103,59 @@ class PostgresSchemaReaderDomainColumnTest : FunSpec({
         types(result).getValue("d") shouldBe NeutralType.Integer
     }
 
-    test("domain_name gilt vor udt_name: eine Domain ueber einer Domain nennt die aeussere") {
-        // `udt_name` traegt hier den inneren Domain-Namen (der Reader hat ihn bisher als refType geschrieben).
+    test("Domain ueber einer Domain: die aeussere ist nicht aufloesbar, die Spalte liest wie ohne Domain-Erkennung") {
+        // `udt_name` traegt den inneren Namen; ohne Domain-Erkennung ist das `Enum(refType = d1)`.
         val result = read(
-            listOf(domainRow("d1"), domainRow("d2", base = "d1")),
-            column("id"), column("b", dataType = "USER-DEFINED", udt = "d1", domain = "d2"),
+            listOf(domainRow("d1"), domainRow("d2", format = "d1", base = "d1", schema = "public")),
+            column("id"), column("a", domain = "d1"), column("b", dataType = "USER-DEFINED", udt = "d1", domain = "d2"),
         )
 
-        types(result).getValue("b") shouldBe NeutralType.Enum(refType = "d2")
+        types(result).getValue("a") shouldBe NeutralType.Enum(refType = "d1")
+        types(result).getValue("b") shouldBe NeutralType.Enum(refType = "d1")
     }
 
     test("eine Array-Domain nennt die Domain, nicht das Array") {
         val result = read(
-            listOf(domainRow("ia", base = "integer[]")),
+            listOf(domainRow("ia", format = "integer[]")),
             column("id"), column("a", dataType = "ARRAY", udt = "_int4", domain = "ia"),
         )
 
         types(result).getValue("a") shouldBe NeutralType.Enum(refType = "ia")
     }
 
-    test("jede Basistyp-Domain nennt die Domain (text, varchar(n), decimal, uuid, boolean, bigint)") {
+    test("jede Basistyp-Domain mit neutralem Gegenstueck nennt die Domain (text, varchar(n), decimal, uuid, boolean, bigint)") {
         val cases = listOf(
-            Triple("text", "text", mapOf<String, Any?>()),
-            Triple("character varying", "varchar", mapOf<String, Any?>("character_maximum_length" to 50)),
-            Triple("numeric", "numeric", mapOf<String, Any?>("numeric_precision" to 10, "numeric_scale" to 2)),
-            Triple("uuid", "uuid", mapOf<String, Any?>()),
-            Triple("boolean", "bool", mapOf<String, Any?>()),
-            Triple("bigint", "int8", mapOf<String, Any?>()),
+            Triple("text" to "text", "text", mapOf<String, Any?>()),
+            Triple("character varying" to "varchar", "character varying(50)", mapOf<String, Any?>("character_maximum_length" to 50)),
+            Triple("numeric" to "numeric", "numeric(10,2)", mapOf<String, Any?>("numeric_precision" to 10, "numeric_scale" to 2)),
+            Triple("uuid" to "uuid", "uuid", mapOf<String, Any?>()),
+            Triple("boolean" to "bool", "boolean", mapOf<String, Any?>()),
+            Triple("bigint" to "int8", "bigint", mapOf<String, Any?>()),
         )
-        for ((dataType, udt, extra) in cases) {
+        for ((names, format, extra) in cases) {
             val result = read(
-                listOf(domainRow("dd")), column("id"),
-                column("d", dataType = dataType, udt = udt, domain = "dd", extra = extra),
+                listOf(domainRow("dd", format = format)), column("id"),
+                column("d", dataType = names.first, udt = names.second, domain = "dd", extra = extra),
             )
-            types(result).getValue("d") shouldBe NeutralType.Enum(refType = "dd")
+            withClue(format) { types(result).getValue("d") shouldBe NeutralType.Enum(refType = "dd") }
+        }
+    }
+
+    test("Domain ohne neutrales Gegenstueck oder mit anderem Typ als der Basistyp bleibt beim Basistyp (real, bit, numeric, varchar[])") {
+        val cases = listOf(
+            // real: die Spalte ist Float(SINGLE), die Domain schreibt `float` -- ein anderer Typ.
+            Triple("real", column("d", dataType = "real", udt = "float4", domain = "dd"), NeutralType.Float(FloatPrecision.SINGLE)),
+            Triple("bit(5)", column("d", dataType = "bit", udt = "bit", domain = "dd"), null),
+            Triple("numeric", column("d", dataType = "numeric", udt = "numeric", domain = "dd"), null),
+            Triple("character varying(50)[]", column("d", dataType = "ARRAY", udt = "_varchar", domain = "dd"), NeutralType.Array("text")),
+            Triple("inet", column("d", dataType = "inet", udt = "inet", domain = "dd"), null),
+        )
+        for ((format, col, expected) in cases) {
+            val type = types(read(listOf(domainRow("dd", format = format)), column("id"), col)).getValue("d")
+            withClue(format) {
+                (type is NeutralType.Enum && type.refType == "dd") shouldBe false
+                if (expected != null) type shouldBe expected
+            }
         }
     }
 

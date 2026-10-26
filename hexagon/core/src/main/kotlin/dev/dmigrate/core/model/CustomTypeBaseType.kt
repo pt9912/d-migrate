@@ -1,4 +1,4 @@
-package dev.dmigrate.core.diff
+package dev.dmigrate.core.model
 
 import dev.dmigrate.core.model.CustomTypeDefinition
 

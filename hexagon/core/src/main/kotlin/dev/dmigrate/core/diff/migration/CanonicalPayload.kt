@@ -1,6 +1,6 @@
 package dev.dmigrate.core.diff.migration
 
-import dev.dmigrate.core.diff.CustomTypeBaseType
+import dev.dmigrate.core.model.CustomTypeBaseType
 import dev.dmigrate.core.diff.DomainTraits
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration

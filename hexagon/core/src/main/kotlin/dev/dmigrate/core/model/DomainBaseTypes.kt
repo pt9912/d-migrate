@@ -53,13 +53,18 @@ object DomainBaseTypes {
         }
 
 
-    /** Der neutrale Basistyp der Domain, oder `null`, wo es keinen gibt (Domain ueber Domain, `bit(n)`, ...). */
+    /**
+     * Der neutrale Basistyp der Domain, oder `null`, wo es keinen gibt (Domain ueber Domain, `bit(n)`, `inet`,
+     * `numeric` ohne `precision`, Array ueber `varchar(n)`, ...). Der Typname geht ueber [CustomTypeBaseType]: Datei und
+     * Reader schreiben ihn verschieden (`real` und `float`, `int4[]` und `INTEGER[]`), und zwei Domains, die der
+     * Vergleich gleich nennt, haben denselben Basistyp.
+     */
     fun baseTypeOf(domain: CustomTypeDefinition): NeutralType? {
-        val base = domain.baseType ?: "text"
+        val base = CustomTypeBaseType.canonical(domain.baseType ?: "text") ?: return null
         if (base.endsWith("[]")) {
-            return base.removeSuffix("[]").trim().takeIf { it in ARRAY_ELEMENTS }?.let { NeutralType.Array(it) }
+            return base.removeSuffix("[]").takeIf { it in ARRAY_ELEMENTS }?.let { NeutralType.Array(it) }
         }
-        return resolveBaseType(base, domain.precision, domain.scale)
+        return resolveBaseType(base, CustomTypeBaseType.precision(domain), CustomTypeBaseType.scale(domain))
     }
 
     /** Der Typ der Spalte fuer Regeln, die den Typ brauchen: die Domain-Spalte als ihr Basistyp, sonst [type]. */

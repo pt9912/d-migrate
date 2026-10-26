@@ -1,11 +1,10 @@
 package dev.dmigrate.driver.postgresql
 
-import dev.dmigrate.core.diff.CustomTypeBaseType
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
+import dev.dmigrate.core.model.DomainBaseTypes
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.NeutralTypeCanonicalizer
-import dev.dmigrate.driver.metadata.DomainTypes
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 
 /**
@@ -37,7 +36,6 @@ internal object PostgresNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
 
     private val typeMapper = PostgresTypeMapper()
     private val parenContent = Regex("""\([^)]*\)""")
-    private val ARRAY_ELEMENTS = setOf("integer", "biginteger", "text", "boolean", "uuid", "float", "decimal", "json")
 
     /**
      * Eine Spalte vom Typ einer Domain wird zu ihrem Basistyp: der Fingerabdruck sieht die Domain-Spalte wie die
@@ -47,18 +45,7 @@ internal object PostgresNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
     override fun canonicalize(type: NeutralType, customTypes: Map<String, CustomTypeDefinition>): NeutralType {
         val domain = (type as? NeutralType.Enum)?.refType?.let { customTypes[it] }
             ?.takeIf { it.kind == CustomTypeKind.DOMAIN }
-        return canonicalize(domain?.let(::domainBaseType) ?: type)
-    }
-
-    /**
-     * Der Basistyp einer Domain als neutraler Typ, ueber die Neutralform des Typvergleichs
-     * ([CustomTypeBaseType]): Datei und Reader schreiben ihn verschieden (`real` und `float`, `int4[]` und
-     * `integer[]`), zwei Domains, die der Vergleich gleich nennt, falten auf denselben Typ.
-     */
-    private fun domainBaseType(domain: CustomTypeDefinition): NeutralType? {
-        val base = CustomTypeBaseType.canonical(domain.baseType ?: "text") ?: return null
-        if (base.endsWith("[]")) return base.removeSuffix("[]").takeIf { it in ARRAY_ELEMENTS }?.let { NeutralType.Array(it) }
-        return DomainTypes.resolveBaseType(base, CustomTypeBaseType.precision(domain), CustomTypeBaseType.scale(domain))
+        return canonicalize(domain?.let(DomainBaseTypes::baseTypeOf) ?: type)
     }
 
     override fun canonicalize(type: NeutralType): NeutralType = when {
