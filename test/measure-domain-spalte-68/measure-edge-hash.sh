@@ -13,5 +13,15 @@ CREATE TABLE t (id serial primary key, d dd);
 SQL
   printf 'schema_format: "1.0"\nname: "T"\nversion: "1.0.0"\ntables:\n  t:\n    columns:\n      id: { type: identifier, auto_increment: true }\n      n: { type: integer }\n    primary_key: [id]\n' > $WORK/f.yaml
   docker run --rm --network $NET -v "$WORK:/w" -w /w $IMAGE schema migrate --source f.yaml --target "db:postgresql://postgres:pw@$PG:5432/e$i" --plan-only --report r.json --plan-artefact pa.json >/dev/null 2>&1
+  # Datei = reverse der Datenbank, die Spalte d von Hand als ref_type geschrieben: der Plan gegen die Datenbank
+  docker run --rm --network $NET -v "$WORK:/w" -w /w $IMAGE schema reverse --source "postgresql://postgres:pw@$PG:5432/e$i" --output rev.yaml >/dev/null 2>&1
+  python3 -I - "$WORK/rev.yaml" <<'PY'
+import re,sys
+p=sys.argv[1]; s=open(p).read()
+s=re.sub(r"(\n      d:\n)(        [^\n]*\n)+?(?=        ordinal|      \w|    \w)", r"\1        type: enum\n        ref_type: dd\n", s, count=1)
+open(p,'w').write(s)
+PY
+  docker run --rm --network $NET -v "$WORK:/w" -w /w $IMAGE schema migrate --source rev.yaml --target "db:postgresql://postgres:pw@$PG:5432/e$i" --plan-only --report r2.json >/dev/null 2>&1; ex=$?
+  echo "base=$base ref_type-Datei gegen die Datenbank: exit=$ex alterColumnType=$(grep -c AlterColumnType $WORK/r2.json) ($(grep -A3 '^      d:' $WORK/rev.yaml | tr -s ' ' | tr '\n' ' '))"
   echo "base=$base src(DB)=$(python3 -I -c "import json;print(json.load(open('$WORK/pa.json'))['sourceFingerprint'][:12])")"
 done

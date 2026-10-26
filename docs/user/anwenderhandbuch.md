@@ -2704,12 +2704,16 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
   - `schema reverse` nennt die Domain nur, wenn es sie selbst in `custom_types`
     führt (ein anderes Schema als das gelesene oder eine Erweiterung: die Spalte
     steht als Basistyp) **und** ihr Basistyp ein neutraler Typ ist, den die Spalte
-    selbst trägt. Sonst steht die Spalte als Basistyp, wie ohne Domain: bei einer
-    Domain über einer anderen Domain, über `real`, `bit(n)`, `inet`, `interval`,
-    `numeric` ohne `precision` oder einem Array über `varchar(n)`. Eine Datei mit
-    diesem Basistyp gilt gegen die Datenbank als unverändert. Schreiben Sie dort
-    selbst `ref_type`, löst die Prüfung eine Domain über einer Domain nicht weiter
-    auf als eine Stufe.
+    selbst trägt. Sonst steht die Spalte wie ohne Domain-Erkennung: als Basistyp bei
+    einer Domain über `real`, `bit(n)`, `inet`, `interval`, `numeric` ohne
+    `precision` oder einem Array über `varchar(n)`, und mit dem Namen der inneren
+    Domain bei einer Domain über einer anderen Domain. Eine Datei in dieser Form gilt
+    gegen die Datenbank als unverändert. Schreiben Sie für eine Domain über `real`,
+    `bit(n)`, `inet`, `interval`, `numeric` ohne `precision`, ein Array über
+    `varchar(n)` oder eine andere Domain den Basistyp an die Spalte, nicht
+    `ref_type` auf die äußere Domain: `schema migrate` plant sonst bei jedem Lauf ein
+    `AlterColumnType` (Exit 8). Löst die Prüfung einen von Hand geschriebenen
+    `ref_type` auf, geht sie eine Stufe weit.
   - `schema validate` prüft einen Spalten-`default` und einen Fremdschlüssel einer
     Domain-Spalte gegen den Basistyp der Domain: eine `integer`-Domain nimmt
     `default: 5` und verweist auf eine `integer`-Spalte. `generation: identity`
@@ -2721,7 +2725,8 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
     Ein anderer `CHECK` (etwa ein regulärer Ausdruck), ein unerfüllbarer `CHECK` und
     eine Domain über einer Domain beendet den Lauf vor der ersten geschriebenen Zeile mit Exit 3 und einer Meldung, die
     Spalte, Domain und `CHECK` nennt — auch bei einer Spalte ohne `NOT NULL`. Geben
-    Sie der Spalte dann mit `--rules` (`values`, `range`, `template`) die Werte vor,
+    Sie der Spalte dann mit `--rules` (`values`, `range`, `template`) die Werte vor — eine
+    Regel für die Spalte nimmt sie von dieser Prüfung aus —,
     siehe [3.22](#322-testdaten-erzeugen-seed). Führt Ihre Datei die Spalte nur mit dem
     Basistyp (`type: integer`) und die Domain nur unter `custom_types`, kennt
     `data seed` den `CHECK` nicht und die Datenbank kann einen Wert abweisen.

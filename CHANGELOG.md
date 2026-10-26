@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Betroffen sind PostgreSQL-Datenbanken mit Domain-Spalten, gemessen mit 1.11.1. Jetzt gilt:
   - `schema reverse` schreibt die Spalte als `type: enum` und `ref_type: <Domain>` — **neues `reverse`-Format**, wenn die
     Domain im gelesenen Schema steht und ihr Basistyp ein neutraler Typ ist, den die Spalte selbst trägt (Domain aus
-    einem anderen Schema oder einer Erweiterung, über einer anderen Domain, über `real`, `bit(n)`, `inet`, `interval`,
-    `numeric` ohne `precision` oder einem Array über `varchar(n)`: weiter der Basistyp).
+    einem anderen Schema oder einer Erweiterung, über `real`, `bit(n)`, `inet`, `interval`, `numeric` ohne `precision`
+    oder einem Array über `varchar(n)`: weiter der Basistyp; über einer anderen Domain: weiter die innere Domain).
     `schema migrate` plant für die unveränderte Spalte nichts. Eine ältere `reverse`-Datei mit dem Basistyp bleibt bei
     Exit `0`; eine Datei mit `ref_type` gegen eine Datenbank-Spalte vom Basistyp bleibt `AlterColumnType` (Exit `8`).
     `schema compare` zeigt Domain-Spalte gegen Basistyp-Spalte weiter als Unterschied.

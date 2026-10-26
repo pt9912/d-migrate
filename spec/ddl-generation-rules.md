@@ -1353,12 +1353,13 @@ Identity an einer Spalte vom Typ einer Domain.
 
 Der Reverse nennt an der Spalte die Domain (`ref_type`), wenn die Domain in `custom_types` steht (eine Domain
 des gelesenen Schemas, keine Erweiterungs-Domain) **und** ihr Basistyp ein neutraler Typ ist, den die Spalte
-selbst trägt. Sonst liest die Spalte, wie sie ohne Domain gelesen würde: als Basistyp. Das gilt für eine Domain
-über einer anderen Domain, über einem Typ ohne neutrales Gegenstück (`bit(n)`, `inet`, `interval`, `numeric` ohne
-`precision`, ein Array über `varchar(n)`) und über `real` (die Domain führt `float`, die Spalte ist einfach
-genau). Ein `ref_type` ins Leere schreibt der Reverse nie. Schreibt ein Autor `ref_type` auf eine Domain, löst
-die Prüfung den Basistyp der Domain eine Stufe weit auf; ist er selbst eine Domain oder ohne neutrales
-Gegenstück, bleibt die Spalte unaufgelöst.
+selbst trägt. Sonst liest die Spalte, wie sie ohne Domain-Erkennung gelesen würde. Für eine Domain über einem Typ
+ohne neutrales Gegenstück (`bit(n)`, `inet`, `interval`, `numeric` ohne `precision`, ein Array über
+`varchar(n)`) und über `real` (die Domain führt `float`, die Spalte ist einfach genau) ist das der Basistyp. Bei
+einer Domain über einer anderen Domain nennt die Spalte die innere Domain, die der Katalog als Typ der Spalte
+führt. Ein `ref_type` ins Leere schreibt der Reverse nie. Schreibt ein Autor `ref_type` auf eine Domain, löst die
+Prüfung den Basistyp der Domain eine Stufe weit auf; ist er selbst eine Domain oder ohne neutrales Gegenstück,
+bleibt die Spalte unaufgelöst.
 
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
 Der Basistyp läuft über die neutrale Typtabelle (auch PostgreSQL-Katalognamen wie `int4`,
