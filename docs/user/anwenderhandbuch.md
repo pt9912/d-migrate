@@ -1639,7 +1639,9 @@ zweite Hinweis unten.
   gelesen und er stimmte mit dem Soll-Schema überein; ohne diesen Abgleich
   steht `false`. Verglichen wird der Aufbau des Schemas, den der Plan kennt
   (Spalten, Indizes, Constraints). Strukturmerkmale wie `WITHOUT ROWID` gehören
-  nicht dazu: Weder diese Felder noch ein Plan melden eine Abweichung darin.
+  nicht dazu: Diese Felder melden keine Abweichung darin, und ein Plan plant
+  dafür keine Operation (nur beim Neubau einer Tabelle warnt er, wenn die
+  Datei das Merkmal anders verlangt).
   `schema rollback` prüft nur die Vorbedingung (`TARGET_STATE_MISMATCH`); nach
   der Ausführung vergleicht es nichts.
 - **Den Stand nach dem Rollback prüfen Sie selbst.** Erzeugen Sie vor dem
