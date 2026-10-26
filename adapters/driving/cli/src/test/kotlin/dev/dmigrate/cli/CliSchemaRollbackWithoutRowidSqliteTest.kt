@@ -17,8 +17,8 @@ import java.sql.DriverManager
 /**
  * Rundlauf je Fall ueber die CLI: `schema migrate --execute --generate-rollback`, `schema rollback --execute
  * --allow-destructive`, Folgeplan. Der Rueckweg stellt das Merkmal `WITHOUT ROWID` her, das die Datenbank vor dem
- * Lauf fuehrte; die Datei aendert es nicht. Die Kopfwerte `rollbackComplete` und `postUpVerified` sind in allen
- * Faellen `true` und sagen darueber nichts: geprueft wird der Zustand der Datenbank (`sqlite_master`).
+ * Lauf fuehrte; die Datei aendert es nicht. Die Felder `rollbackComplete` und `postUpVerified` im Kopf des
+ * Down-Skripts sind in allen Faellen `true` und sagen darueber nichts: geprueft wird der Zustand der Datenbank (`sqlite_master`).
  */
 class CliSchemaRollbackWithoutRowidSqliteTest : FunSpec({
 
@@ -52,6 +52,9 @@ class CliSchemaRollbackWithoutRowidSqliteTest : FunSpec({
         }
 
     fun tableSql(db: Path) = rows(db, "SELECT sql FROM sqlite_master WHERE name = 't'").single()
+
+    /** Die Tabellen-SQL ohne Quoting, Gross-/Kleinschreibung und Leerraum: nur fuer Faelle ohne Neubau stabil. */
+    fun normalized(sql: String) = sql.replace("\"", "").replace("`", "").lowercase().replace(Regex("\\s+"), " ")
 
     fun indexSql(db: Path) = rows(db, "SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 't' AND sql IS NOT NULL")
 
@@ -131,7 +134,7 @@ class CliSchemaRollbackWithoutRowidSqliteTest : FunSpec({
             val downText = Files.readString(down)
             downText shouldContain "\"rollbackComplete\":true"
             downText shouldContain "\"postUpVerified\":true"
-            downText.contains("WITHOUT ROWID") shouldBe (case.databaseWithoutRowid && !case.caseE)
+            downText.contains("WITHOUT ROWID") shouldBe case.databaseWithoutRowid
 
             // Rueckweg: dieselbe Tabellenform und der Index `ux` wie vor dem Lauf.
             run(
@@ -140,8 +143,12 @@ class CliSchemaRollbackWithoutRowidSqliteTest : FunSpec({
             ) shouldBe 0
             tableSql(db).contains("WITHOUT ROWID") shouldBe before.contains("WITHOUT ROWID")
             tableSql(db) shouldNotContain "UNIQUE"
+            // Der Neubau (A, B, C1, C2) schreibt den Primaerschluessel als Tabellenconstraint statt inline: dort ist die
+            // SQL nicht stabil vergleichbar, es bleiben Merkmal und Spaltenliste. Fall E baut nicht neu und ist stabil.
+            if (case.caseE) normalized(tableSql(db)) shouldBe normalized(before)
+            rows(db, "SELECT name FROM pragma_table_info('t') ORDER BY cid") shouldBe listOf("id", "u")
             indexSql(db).single().replace("\"", "") shouldContain "UNIQUE INDEX ux ON t"
-            rows(db, "SELECT count(*) FROM t") shouldBe listOf("1")
+            rows(db, "SELECT id || ',' || u FROM t") shouldBe listOf("1,5")
 
             // Folgeplan: dieselben Operationen und dieselbe Warnung wie vor dem Lauf, keine Operation fuers Merkmal.
             val planAfter = plan(dir, source, db, "plan-after")

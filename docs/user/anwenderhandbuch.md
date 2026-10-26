@@ -1619,8 +1619,9 @@ zuerst gegen eine Kopie (Staging).
    ```
 
 **Ergebnis:** Nach Schritt 2 entspricht die Datenbank dem neuen Schema. Schlägt
-der Test fehl, bringt Schritt 4 sie exakt in den Zustand vor der Migration
-zurück.
+der Test fehl, bringt Schritt 4 den Aufbau, den d-migrate vergleicht, in den
+Stand vor der Migration zurück. Was d-migrate nicht vergleicht, nennt der
+zweite Hinweis unten.
 
 **Hinweise:**
 
@@ -1632,12 +1633,23 @@ zurück.
   vergleicht der Rollback dabei nicht mit: Der Server gibt ihn in eigener
   Schreibweise zurück, und die Prüfung gilt dem Aufbau des Schemas. Eine
   Änderung allein an diesem Text fällt dem Rollback deshalb nicht auf.
-- **Die Kopfwerte des Down-Skripts prüfen nichts nach.** `rollbackComplete: true` heißt:
-  keine Operation wurde ausgelassen. `postUpVerified: true` heißt: der Post-Up-Stand wurde
-  gelesen. Beides sagt nichts über Strukturmerkmale wie `WITHOUT ROWID`. `schema rollback`
-  prüft nur die Vorbedingung (`TARGET_STATE_MISMATCH`), nach der Ausführung vergleicht es
-  nichts; ob der Stand dem vor dem Lauf gleicht, sehen Sie an einem Folgeplan
-  (`schema migrate --plan-only`).
+- **Die Felder im Kopf des Down-Skripts sind keine Nachprüfung.**
+  `rollbackComplete: true` heißt: keine Operation wurde ausgelassen.
+  `postUpVerified: true` heißt: d-migrate hat den Stand nach dem Ausrollen
+  gelesen und er stimmte mit dem Soll-Schema überein; ohne diesen Abgleich
+  steht `false`. Verglichen wird der Aufbau des Schemas, den der Plan kennt
+  (Spalten, Indizes, Constraints). Strukturmerkmale wie `WITHOUT ROWID` gehören
+  nicht dazu: Weder diese Felder noch ein Plan melden eine Abweichung darin.
+  `schema rollback` prüft nur die Vorbedingung (`TARGET_STATE_MISMATCH`); nach
+  der Ausführung vergleicht es nichts.
+- **Den Stand nach dem Rollback prüfen Sie selbst.** Erzeugen Sie vor dem
+  Ausrollen einen Plan mit derselben Soll-Datei
+  (`schema migrate --plan-only --report vorher.json`) und nach dem Rollback
+  einen zweiten (`--report nachher.json`). Stimmen die Operationen beider
+  Pläne überein, hat die Datenbank wieder denselben Aufbau, soweit der Plan ihn
+  vergleicht. Ein Plan vergleicht mit der Soll-Datei, nicht mit dem Stand vor
+  dem Lauf; Merkmale wie `WITHOUT ROWID` sehen Sie nur an der Tabellendefinition
+  selbst (bei SQLite `SELECT sql FROM sqlite_master WHERE name = 'tabelle'`).
 - Nach einem **d-migrate-Update** kann ein älteres Down-Artefakt abgelehnt werden
   (Exit 8, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`) — erzeugen Sie es dann mit
   der neuen Version neu. Siehe [Fehlerbehebung](#5-fehlerbehebung).
