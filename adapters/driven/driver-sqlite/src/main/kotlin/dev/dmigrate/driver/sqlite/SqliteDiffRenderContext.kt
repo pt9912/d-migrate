@@ -282,13 +282,12 @@ internal class SqliteDiffRenderContext(
     /**
      * ADR 0025 (Slice P4): whether [table] is declared WITHOUT ROWID — external-content FTS5 needs
      * the implicit rowid, so a WITHOUT ROWID base table degrades the FULLTEXT expansion
-     * ([SqliteFullTextExpansion.unsupportedReason]). Schema selection mirrors [indexTouchesGeometry]
-     * (desired UP, current DOWN); unknown table → false (best effort, guard is direction-agnostic).
+     * ([SqliteFullTextExpansion.unsupportedReason]). Traegt **eine** der beiden Seiten das Merkmal,
+     * gilt es: eine Bestandsdatei kennt `without_rowid` nicht, die Datenbank-Tabelle hat es aber
+     * (dieselbe Regel wie beim Neubau, [SqliteRebuildPlan.withoutRowid]). Unknown table → false.
      */
-    fun tableWithoutRowid(table: String): Boolean {
-        val schema = if (direction == SqliteRenderDirection.UP) desiredSchema else currentSchema
-        return schema?.tables?.get(table)?.metadata?.withoutRowid ?: false
-    }
+    fun tableWithoutRowid(table: String): Boolean =
+        listOf(desiredSchema, currentSchema).any { it?.tables?.get(table)?.metadata?.withoutRowid == true }
 
     /**
      * VA4: erste Geometriespalte, die [index] indiziert (für `CreateSpatialIndex`,

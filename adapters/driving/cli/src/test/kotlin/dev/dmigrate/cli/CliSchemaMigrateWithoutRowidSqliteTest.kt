@@ -112,7 +112,7 @@ class CliSchemaMigrateWithoutRowidSqliteTest : FunSpec({
         tableSql(db) shouldNotContain "WITHOUT ROWID"
     }
 
-    test("schema generate schreibt WITHOUT ROWID; Rundlauf: reverse liest es zurueck") {
+    test("schema generate schreibt WITHOUT ROWID; schema reverse liest es zurueck") {
         val dir = Files.createTempDirectory("cli-wr-gen")
         val db = dir.resolve("db.sqlite")
         val create = dir.resolve("gen.sql")
@@ -122,7 +122,38 @@ class CliSchemaMigrateWithoutRowidSqliteTest : FunSpec({
         exec(db, Files.readString(create))
 
         tableSql(db) shouldContain "WITHOUT ROWID"
-        operations(migrate(dir, yaml(true, true), db, "again").second) shouldBe 0
+        val reversed = dir.resolve("reversed.yaml")
+        run("schema", "reverse", "--source", "sqlite://$db", "--output", reversed.toString()) shouldBe 0
+        Files.readString(reversed) shouldContain "without_rowid: true"
+    }
+
+    test("Reverse einer Rowid-Tabelle traegt kein without_rowid") {
+        val dir = Files.createTempDirectory("cli-wr-reverse-plain")
+        val db = dir.resolve("db.sqlite")
+        exec(db, "CREATE TABLE t (id INTEGER NOT NULL, a TEXT NOT NULL, PRIMARY KEY (id))")
+        val reversed = dir.resolve("reversed.yaml")
+
+        run("schema", "reverse", "--source", "sqlite://$db", "--output", reversed.toString()) shouldBe 0
+
+        Files.readString(reversed) shouldNotContain "without_rowid"
+    }
+
+    test("FULLTEXT-Index auf einer WITHOUT-ROWID-Tabelle der Datenbank: der Neubau degradiert mit Skip-Kommentar") {
+        val dir = Files.createTempDirectory("cli-wr-fulltext")
+        val db = databaseWithoutRowid(dir)
+        val source = yaml(aRequired = false, withoutRowid = false) +
+            "    indices:\n      - name: ix_ft\n        type: fulltext\n        columns: [a]\n"
+        val up = dir.resolve("up.sql")
+
+        run(
+            "schema", "migrate", "--source", write(dir, "ft.yaml", source).toString(),
+            "--target", "db:sqlite://$db", "--output", up.toString(),
+        ) shouldBe 0
+
+        val sql = Files.readString(up)
+        sql shouldContain ") WITHOUT ROWID;"
+        sql shouldContain "-- FULLTEXT index"
+        sql shouldNotContain "CREATE VIRTUAL TABLE"
     }
 
     test("Rollback eines Neubaus stellt die Tabelle mit WITHOUT ROWID wieder her") {
