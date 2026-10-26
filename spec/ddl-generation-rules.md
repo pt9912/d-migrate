@@ -468,9 +468,9 @@ Besonderheiten:
   `schema generate` und `schema migrate`, einschließlich des Tabellen-Neubaus
 - `metadata.without_rowid: true` → `) WITHOUT ROWID;` am Ende von `CREATE TABLE`, in
   `schema generate` wie in `schema migrate` (`CreateTable`). Ein **Tabellen-Neubau**
-  legt die Tabelle mit `WITHOUT ROWID` neu an, wenn Datei **oder** Datenbank sie so
-  führt: `schema migrate` plant das Merkmal nicht und ändert es nicht, eine Datei
-  ohne `metadata` (Bestandsdatei) ändert es also nicht durch einen Neubau. Eine Tabelle
+  behält das Merkmal der Datenbank, in `schema migrate` wie im erzeugten Rollback. Eine
+  abweichende Datei ändert es nicht und löst `W164` aus; eine fehlende oder
+  `false`-Angabe der Datei warnt nicht. Eine Tabelle
   ohne `PRIMARY KEY` oder mit `AUTOINCREMENT` lehnt SQLite selbst ab
 - `mode: always` → W163: SQLite kennt keinen Modus, und AUTOINCREMENT nimmt
   einen ausdrücklich gesetzten Wert an. `mode: by_default` meldet nichts; im

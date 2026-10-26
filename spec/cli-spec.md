@@ -308,6 +308,7 @@ W200 - W299: Performance-Warnungen
 | W161 | A computed target column is excluded from `data transfer`; the target computes it itself |
 | W162 | An `array` column loses its array nature: MySQL renders it as `JSON`, SQLite as `TEXT`, and a reverse read yields `json`/`text` without the element type |
 | W163 | An identity column declared `mode: always` is rendered as an auto-increment column that accepts explicit values (MySQL, SQLite): the mode is not enforced in the target |
+| W164 | A table rebuild keeps the table's `WITHOUT ROWID` feature from the database; the schema file declares `without_rowid: true` for a table that is a rowid table in the database, and the rebuilt table stays a rowid table (SQLite, `schema migrate`) |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)
 
