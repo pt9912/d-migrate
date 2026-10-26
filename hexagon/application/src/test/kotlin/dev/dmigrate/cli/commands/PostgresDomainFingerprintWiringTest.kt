@@ -100,4 +100,20 @@ class PostgresDomainFingerprintWiringTest : FunSpec({
         fingerprint(schema(ref, enumA, enumB)) shouldNotBe
             fingerprint(schema(NeutralType.Enum(refType = "ee"), enumA, enumB))
     }
+
+    // ── Die zwei dokumentierten Blindheiten des gefalteten Abdrucks (beide fing der Plan schon vorher) ──
+    //
+    // Falten beide Seiten die Domain-Spalte auf den Basistyp, sieht der Abdruck weder den Wechsel zwischen zwei
+    // Domains gleichen Basistyps noch den Wechsel von der Basistyp-Spalte zur Domain-Spalte. Der Plan faengt beide:
+    // der strukturelle Vergleich meldet ein AlterColumnType (Exit 8), bevor ein Post-Compare laeuft. Blind ist nur
+    // der Post-Compare nach einem erfolgreichen Lauf, in dem eine Operation das Ziel ohne den Wechsel erreicht haette.
+
+    test("Blindheit 1: zwei Domains gleichen Basistyps an derselben Spalte hashen gleich (der Plan sieht den Wechsel)") {
+        val both = arrayOf(domain("integer"), "ee" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "integer"))
+        fingerprint(schema(ref, *both)) shouldBe fingerprint(schema(NeutralType.Enum(refType = "ee"), *both))
+    }
+
+    test("Blindheit 2: Basistyp-Spalte gegen Domain-Spalte neben derselben Domain hasht gleich (der Plan sieht den Wechsel)") {
+        fingerprint(schema(NeutralType.Integer, domain("integer"))) shouldBe fingerprint(schema(ref, domain("integer")))
+    }
 })
