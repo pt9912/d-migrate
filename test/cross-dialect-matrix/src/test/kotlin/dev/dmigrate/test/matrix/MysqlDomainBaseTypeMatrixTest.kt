@@ -67,7 +67,7 @@ class MysqlDomainBaseTypeMatrixTest : FunSpec({
 
     for ((name, spec) in expected) {
         val (sqlType, needsE053) = spec
-        test("mysql: Domain-Basistyp '$name' ergibt $sqlType${if (needsE053) " mit genau einer E053" else ""}") {
+        test("MySQL: Domain-Basistyp '$name' ergibt $sqlType${if (needsE053) " mit genau einer E053" else ""}") {
             withClue(sql) {
                 sql.lines().map { it.trim().trimEnd(',') } shouldContain "`c_$name` $sqlType"
             }
@@ -76,12 +76,12 @@ class MysqlDomainBaseTypeMatrixTest : FunSpec({
         }
     }
 
-    test("mysql: die E053-Notizen decken genau die Basistypen ohne Gegenstueck") {
+    test("MySQL: die E053-Notizen decken genau die Basistypen ohne Gegenstueck") {
         e053.map { it.objectName }.toSet() shouldBe
             expected.filterValues { it.second }.keys.map { "t.c_$it" }.toSet()
     }
 
-    test("mysql: nur die Domain ueber timestamptz traegt W100") {
+    test("MySQL: nur die Domain ueber timestamptz traegt W100") {
         result.notes.filter { it.code == "W100" }.map { it.objectName } shouldBe listOf("t.c_timestamptz3")
     }
 })

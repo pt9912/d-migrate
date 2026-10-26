@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.10.0**
-(stable, [released 2026-10-25](https://github.com/pt9912/d-migrate/releases/tag/v1.10.0)).
+d-migrate is a working production tool at version **1.11.0**
+(stable, [released 2026-10-26](https://github.com/pt9912/d-migrate/releases/tag/v1.11.0)).
 
 The current capabilities:
 
@@ -161,8 +161,23 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.10.0** (2026-10-25) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **`schema migrate` no longer
+- **Current stable** · **1.11.0** (2026-10-26) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **More objects that file and
+  database hold alike are no longer reported as changed, and a PostgreSQL domain
+  carries more of its definition.** On SQLite, an expression index (`lower(a)`)
+  and a domain column over `integer`, `boolean`, `decimal`, … no longer plan a
+  change on every run, and a table rebuild carries the index operations of its
+  table, so `unique: true` against a `CREATE UNIQUE INDEX` runs with exit 0. On
+  PostgreSQL, the reader returns all `CHECK`s of a domain, the length and array of
+  its base type, and its `DEFAULT`, `NOT NULL` and collation (new `default`,
+  `not_null` and `collation` on a domain); a change to one of these stops with
+  exit 8, since there is no `ALTER DOMAIN` rendering. `schema rollback` after a
+  changed value list of an inline enum restores the `CHECK`, or stops with exit 8
+  (file against file: exit 8 instead of a faulty rollback script). On MySQL,
+  `schema generate` reports a domain base type without a counterpart as E053
+  instead of writing it raw. Rollback artefacts made by an earlier version must
+  be created again (ADR 0064–0066).
+  1.10.0 (2026-10-25) — **`schema migrate` no longer
   reports objects as changed that file and database hold alike.** On SQLite, a
   unique index stays an index (it no longer shows up as a constraint to drop and
   re-create), a numeric or `boolean` default is not a change when only its

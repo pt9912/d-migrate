@@ -1481,7 +1481,7 @@ dmi schema generate --source /repro/source.yaml --target "$d" --output "/repro/g
 dmi schema reverse --source "$c" --output "/repro/reversed_$d.yaml"
 # je Paar (a, b): postgresql/mssql, postgresql/mysql, mssql/mysql, postgresql/sqlite
 dmi schema compare --source "file:/repro/reversed_$a.yaml" --target "file:/repro/reversed_$b.yaml"
-docker run --rm -v "$R:/repro" ghcr.io/pt9912/d-migrate:1.10.0 schema compare \
+docker run --rm -v "$R:/repro" ghcr.io/pt9912/d-migrate:1.11.0 schema compare \
   --source "file:/repro/reversed_$a.yaml" --target "file:/repro/reversed_$b.yaml"
 ```
 
