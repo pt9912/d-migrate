@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.10.0** (stabil, [veröffentlicht 2026-10-25](https://github.com/pt9912/d-migrate/releases/tag/v1.10.0)).
+**1.11.0** (stabil, [veröffentlicht 2026-10-26](https://github.com/pt9912/d-migrate/releases/tag/v1.11.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,24 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.10.0** (2026-10-25) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **`schema migrate` meldet
+- **Aktuelles Stable** · **1.11.0** (2026-10-26) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Weitere Objekte, die Datei und
+  Datenbank gleich führen, gelten nicht mehr als geändert, und eine
+  PostgreSQL-Domain trägt mehr von ihrer Definition.** Auf SQLite planen ein
+  Ausdrucks-Index (`lower(a)`) und eine Domain-Spalte über `integer`, `boolean`,
+  `decimal`, … nicht mehr bei jedem Lauf eine Änderung, und ein Tabellenneubau
+  übernimmt die Index-Operationen seiner Tabelle, sodass `unique: true` gegen
+  einen `CREATE UNIQUE INDEX` mit Exit 0 läuft. Auf PostgreSQL liest der Reader
+  alle `CHECK`s einer Domain, Länge und Array ihres Basistyps sowie `DEFAULT`,
+  `NOT NULL` und Kollation (neu `default`, `not_null` und `collation` an einer
+  Domain); eine Änderung daran endet mit Exit 8, weil es kein `ALTER DOMAIN`
+  gibt. `schema rollback` nach einer geänderten Werteliste einer Inline-Enum
+  stellt den `CHECK` wieder her oder endet mit Exit 8 (Datei gegen Datei: Exit 8
+  statt eines fehlerhaften Rollback-Skripts). Auf MySQL weist `schema generate`
+  einen Domain-Basistyp ohne Gegenstück als E053 aus, statt ihn roh zu
+  schreiben. Rollback-Artefakte einer früheren Version sind neu zu erzeugen
+  (ADR 0064–0066).
+  1.10.0 (2026-10-25) — **`schema migrate` meldet
   keine Objekte mehr als geändert, die Datei und Datenbank gleich führen.** Auf
   SQLite bleibt ein eindeutiger Index ein Index (er erscheint nicht mehr als
   Constraint, der gelöscht und neu angelegt wird), ein Zahlen- oder
