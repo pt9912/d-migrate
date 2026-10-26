@@ -503,4 +503,28 @@ class PostgresEnumRollbackIntegrationTest : FunSpec({
             accepts("e", "c") shouldBe false
         }
     }
+
+    for ((label, names) in listOf("chk_a/chk_b" to ("chk_a" to "chk_b"), "t_e_check/zzz" to ("t_e_check" to "zzz"))) {
+        test("two value CHECKs named $label: the Up runs, with a rollback script the migrate blocks") {
+            val columns = "e text NOT NULL CONSTRAINT ${names.first} CHECK (\"e\" IN ('a','b','c')), " +
+                "CONSTRAINT ${names.second} CHECK (\"e\" IN ('a','b'))"
+            exec(table(columns))
+            val before = checks()
+            val want = schemaOf(mapOf("e" to enumOf("a", "b", "d")))
+            val tmp = createTempDirectory("pg-enum-rollback-names")
+            try {
+                val blocked = migrate(want, rollbackOutput = tmp.resolve("down.sql"))
+                withClue("${blocked.errors} ${blocked.report.take(1500)}") {
+                    blocked.exit shouldBe 8
+                    blocked.report.contains("POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN") shouldBe true
+                }
+                checks() shouldBe before
+            } finally {
+                tmp.toFile().deleteRecursively()
+            }
+            migrate(want).exit shouldBe 0
+            valuesAfterUp()
+            noPlannedOperations(want)
+        }
+    }
 })

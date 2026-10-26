@@ -272,7 +272,6 @@ internal object PostgresDiffTableOps {
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT IF EXISTS ${ctx.sql.quote(name)};")
     }
 
-
     fun renderAlterColumnNullability(op: DiffOperation.AlterColumnNullability, ctx: PostgresDiffRenderContext) {
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
         val targetRequired = if (ctx.direction == PostgresRenderDirection.UP) op.after else op.before

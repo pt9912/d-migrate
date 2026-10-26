@@ -33,8 +33,11 @@ Drift nach dem Apply. Die Datenbank bleibt unverändert, weil der Up transaktion
   `DropConstraint`-Operationen, die der Vergleich ohnehin meldet, lösen beide, jeden Namen einmal. Der Up-Text für die Einzel-CHECK-Spalte
   ändert sich nicht. Verworfen: beide im `AlterColumnType` lösen — dann scheiterten die `DropConstraint`s, oder man müsste sie
   planabhängig in `IF EXISTS` verwandeln und so das laute Scheitern eines falschen Namens aufweichen.
-* **Down: unverändert blockiert.** Der neue CHECK entsteht, solange `t_e_check` noch steht, und heißt deshalb `t_e_check1`; den Namen
-  rät der Renderer nicht (Regel aus dem Plan zu #61). Der Down blockiert vor dem Apply (Exit 8), statt mit Exit 5 zu scheitern. Fail-loud ist hier die
+* **Down: bei mehreren Wertelisten-CHECKs bedingungslos blockiert** (Review-Befund). Steht `t_e_check` unter den alten CHECKs, entsteht
+  der neue, solange er noch steht, und heißt `t_e_check1`; bei anderen Namen (`chk_a`/`chk_b`) heißt er `t_e_check`. Beides weiß der Renderer
+  nicht (Regel aus dem Plan zu #61), und die inversen `DropConstraint`s legten die alten CHECKs zusätzlich an. Die erste Fassung blockierte nur das
+  gemessene Paar `second` + `t_e_check`; die Fälle `chk_a`/`chk_b` (Doppel-ADD) und `t_e_check`/`zzz` (falscher Name im DROP) liefen durch.
+  Der Down blockiert jetzt vor dem Apply (Exit 8), sobald die Ist-Seite zwei oder mehr Wertelisten-CHECKs an der Spalte führt. Fail-loud ist hier die
   tragfähige Lösung; ein vollständiger Down bräuchte das Namens-Wissen des Servers und ist ein eigenes Thema.
 * **Kein Fingerabdruck-Tag, kein ADR**: Adapter-Eingriff im Renderer, Modell und Fingerabdruck unberührt.
 
@@ -43,6 +46,8 @@ Drift nach dem Apply. Die Datenbank bleibt unverändert, weil der Up transaktion
 * `PostgresDiffRenderContext.enumValueCheckNames` (statt `enumValueCheckName`), `PostgresDiffTableOps.dropExistingEnumValueCheck`.
 * Tests: `PostgresEnumCheckRollbackTest` (Renderer: jeder Name genau einmal gelöst) und
   `PostgresEnumRollbackIntegrationTest` (Erweitern, Verkürzen, Liste eines der beiden, Block mit Rollback, fachlicher CHECK daneben).
+  Review-Runde 1: je Renderer- und Integrationstest für `chk_a`/`chk_b` und `t_e_check`/`zzz` (Down blockiert, Up allein Exit 0);
+  ohne die Blockade gemessen rot (Doppel-ADD bzw. falscher DROP-Name statt Exit 8).
   Ohne die Änderung rot: der Renderer-Test und die drei Up-Specs; die Block- und die fachliche-CHECK-Spec sind grüne Gegenproben.
 
 ## P3 Doku

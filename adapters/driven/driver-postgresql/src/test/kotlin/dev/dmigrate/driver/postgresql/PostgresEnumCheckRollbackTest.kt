@@ -260,4 +260,21 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         )
         sqls(r).count { it.contains("ADD CHECK") } shouldBe 1
     }
+
+    for ((label, names) in listOf("chk_a/chk_b" to ("chk_a" to "chk_b"), "t_e_check/zzz" to ("t_e_check" to "zzz"))) {
+        test("two value CHECKs ($label): the Down blocks whatever the names are") {
+            val live = schema(
+                NeutralType.Text(),
+                listOf(check(names.first, "a", "b"), check(names.second, "a", "b", "c")),
+            )
+            val file = schema(enumOf("a", "b", "d"))
+            val r = gen.generateDown(
+                planner.plan(live, file, typeChange(NeutralType.Text(), enumOf("a", "b", "d"))),
+                liveOptions,
+            )
+            r.isBlocked shouldBe true
+            r.blockers.map { it.reason } shouldContain MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
+            sqls(r).none { it.contains("DROP CONSTRAINT \"t_e_check\"") } shouldBe true
+        }
+    }
 })

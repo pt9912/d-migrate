@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.EnumCheckProjection
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.metadata.EnumValueCheck
@@ -46,6 +47,14 @@ internal object PostgresEnumCheckRollback {
         column: String,
         typeStatement: String?,
     ): Boolean {
+        // Mehrere Wertevorrat-CHECKs an der Spalte: der Up hat sie ueber eigene DropConstraint-Operationen
+        // geloest und den neuen CHECK unter einem Namen angelegt, den der Renderer nicht kennt (der
+        // Standardname war beim Anlegen noch belegt, wenn er unter den alten stand). Die inversen
+        // DropConstraints legen die alten ohnehin wieder an, `findState` sah nur den ersten.
+        if (ctx.currentSchema?.tables?.get(table)?.constraints.orEmpty().count { isValueCheck(it, column) } > 1) {
+            blockUnknownName(op, ctx, "$table.$column")
+            return true
+        }
         val createdByUp = EnumValueCheck.inlineValues(op.after)
         val droppedByUp = findState(ctx.currentSchema, table, column)
         val restore = droppedByUp?.values ?: EnumValueCheck.inlineValues(op.before)
@@ -71,6 +80,9 @@ internal object PostgresEnumCheckRollback {
         }
         return true
     }
+
+    private fun isValueCheck(constraint: ConstraintDefinition, column: String): Boolean =
+        constraint.type == ConstraintType.CHECK && EnumCheckProjection.valuesOf(constraint.expression, column) != null
 
     /** Der Wertevorrat-CHECK von [column] in [schema], falls es einen gibt. */
     fun findState(schema: SchemaDefinition?, table: String, column: String): State? =
