@@ -466,6 +466,12 @@ Besonderheiten:
   Primärschlüssel bildet; sonst ein blankes `INTEGER` im
   Tabellen-`PRIMARY KEY` + W135. Beide Render-Pfade schreiben dieselbe Spalte —
   `schema generate` und `schema migrate`, einschließlich des Tabellen-Neubaus
+- `metadata.without_rowid: true` → `) WITHOUT ROWID;` am Ende von `CREATE TABLE`, in
+  `schema generate` wie in `schema migrate` (`CreateTable`). Ein **Tabellen-Neubau**
+  legt die Tabelle mit `WITHOUT ROWID` neu an, wenn Datei **oder** Datenbank sie so
+  führt: `schema migrate` plant das Merkmal nicht und ändert es nicht, eine Datei
+  ohne `metadata` (Bestandsdatei) ändert es also nicht durch einen Neubau. Eine Tabelle
+  ohne `PRIMARY KEY` oder mit `AUTOINCREMENT` lehnt SQLite selbst ab
 - `mode: always` → W163: SQLite kennt keinen Modus, und AUTOINCREMENT nimmt
   einen ausdrücklich gesetzten Wert an. `mode: by_default` meldet nichts; im
   zusammengesetzten Schlüssel sagt W135 das Stärkere, und W163 entfällt dort

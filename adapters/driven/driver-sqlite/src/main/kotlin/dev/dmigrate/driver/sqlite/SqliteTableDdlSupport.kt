@@ -48,7 +48,8 @@ internal class SqliteTableDdlSupport(
             )
         }
 
-        val tableSql = "CREATE TABLE ${quoteIdentifier(name)} (\n${columnLines.joinToString(",\n") { "    $it" }}\n);"
+        val rowidClause = if (table.metadata?.withoutRowid == true) " WITHOUT ROWID" else ""
+        val tableSql = "CREATE TABLE ${quoteIdentifier(name)} (\n${columnLines.joinToString(",\n") { "    $it" }}\n)$rowidClause;"
         notes += sequenceSupport.drainPendingNotes()
         val statements = mutableListOf(DdlStatement(tableSql, notes))
         if (isSpatiaLite) statements += generateSpatiaLiteColumns(name, geometryColumns)

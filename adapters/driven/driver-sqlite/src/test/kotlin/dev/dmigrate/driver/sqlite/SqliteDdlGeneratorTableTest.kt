@@ -563,4 +563,26 @@ class SqliteDdlGeneratorTableTest : FunSpec({
         sql shouldNotContain "CHECK"
     }
 
+
+    test("metadata.withoutRowid schreibt WITHOUT ROWID hinter die Tabelle") {
+        val t = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+            metadata = TableMetadata(withoutRowid = true),
+        )
+
+        val ddl = generator.generate(schema(mapOf("t" to t))).render()
+
+        ddl shouldContain "\n) WITHOUT ROWID;"
+    }
+
+    test("ohne metadata.withoutRowid bleibt die Tabelle eine Rowid-Tabelle") {
+        val t = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+            metadata = TableMetadata(withoutRowid = false),
+        )
+
+        generator.generate(schema(mapOf("t" to t))).render() shouldNotContain "WITHOUT ROWID"
+    }
 })

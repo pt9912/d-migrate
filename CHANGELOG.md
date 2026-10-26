@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **SQLite: `WITHOUT ROWID` bleibt erhalten.** Ein Tabellenneubau (`schema migrate --execute`, auch das
+  DOWN-Skript) legte die Tabelle ohne `WITHOUT ROWID` neu an, auch wenn die Datenbank sie so führte;
+  `schema generate` schrieb das Merkmal gar nicht, obwohl das Modell `without_rowid` kennt. Beide Pfade
+  schreiben jetzt `) WITHOUT ROWID;`; der Neubau erhält das Merkmal, wenn Datei oder Datenbank es
+  tragen. Der Abdruck ändert sich nicht.
+
 ## [1.11.0] - 2026-10-26
 
 ### Fixed

@@ -433,7 +433,7 @@ internal class SqliteRebuildRenderer(
         // TABLES phase: schema reshape. Statements that touch data inherit bucketRisk;
         // CREATE temp is structurally safe (no data yet).
         ctx.emitRebuildStatement(
-            buildCreateTempSql(tempName, originalTable, plan.newTable, plan.customTypes),
+            buildCreateTempSql(tempName, originalTable, plan.newTable, plan.customTypes, plan.withoutRowid),
             opIds, risk = safe, phase = DiffPhase.TABLES,
         )
         ctx.emitRebuildStatement(
@@ -565,8 +565,7 @@ internal class SqliteRebuildRenderer(
     ) {
         val table = plan.originalTableName
         val fts = SqliteFullTextExpansion.ftsName(table, idx)
-        val withoutRowid = plan.newTable.metadata?.withoutRowid ?: false
-        val reason = SqliteFullTextExpansion.unsupportedReason(withoutRowid, idx, fts)
+        val reason = SqliteFullTextExpansion.unsupportedReason(plan.withoutRowid, idx, fts)
         if (reason != null) {
             ctx.emitRebuildStatement(
                 SqliteFullTextDegradation.skipComment(quoteSqliteIdentifier(fts)),
@@ -652,6 +651,7 @@ internal class SqliteRebuildRenderer(
         finalName: String,
         target: TableDefinition,
         customTypes: Map<String, dev.dmigrate.core.model.CustomTypeDefinition>,
+        withoutRowid: Boolean,
     ): String {
         val lines = mutableListOf<String>()
         val solePrimaryKey = target.primaryKey.singleOrNull()
@@ -677,7 +677,7 @@ internal class SqliteRebuildRenderer(
         return buildString {
             append("CREATE TABLE ").append(sql.quote(tempName)).append(" (\n")
             append(lines.joinToString(",\n"))
-            append("\n);")
+            append("\n)").append(if (withoutRowid) " WITHOUT ROWID" else "").append(";")
         }
     }
 
