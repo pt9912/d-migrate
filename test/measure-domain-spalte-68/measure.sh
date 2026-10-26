@@ -183,4 +183,64 @@ if [ -f "$WORK/sdown.sql" ]; then
   dm schema rollback --source sdown.sql --target "db:sqlite:///w/s.db" --execute --allow-destructive >"$WORK/sl2.out" 2>&1; ex=$?
   res "sqlite schema rollback" "exit=$ex $(tail -n 2 "$WORK/sl2.out" | tr '\n' ' ' | cut -c1-200)"
 fi
+# ---- M8 Hash je Seite und Basistyp (P1b: vorher/nachher je Image vergleichen) --------
+# IMAGE=<main-Image> und IMAGE=<Branch-Image> laufen lassen und die RESULT-Zeilen "hash base=" vergleichen:
+# bei E3 (a2) bleiben die Datenbank-Hashes (src) und der Hash der Altdatei (alt) gleich, nur ref (tgt) aendert sich.
+echo "== M8 Hash je Basistyp (Datei ref/alt gegen Datenbank mit Domain-Spalte)"
+mkb() { # <datei> <spalte-d> <base_type-Zeilen>
+  {
+    echo 'schema_format: "1.0"'; echo 'name: "T"'; echo 'version: "1.0.0"'
+    printf 'custom_types:\n  dd:\n    kind: domain\n%s\n' "$3"
+    printf 'tables:\n  t:\n    columns:\n      id: { type: identifier, auto_increment: true }\n      d: %s\n    primary_key: [id]\n' "$2"
+  } > "$WORK/$1"
+}
+i=0
+for spec in \
+  "integer|integer|    base_type: integer" \
+  "bigint|bigint|    base_type: biginteger" \
+  "text|text|    base_type: text" \
+  "varchar(50)|varchar(50)|    base_type: \"varchar(50)\"" \
+  "numeric(10,2)|numeric(10,2)|    base_type: decimal\n    precision: 10\n    scale: 2" \
+  "uuid|uuid|    base_type: uuid" \
+  "boolean|boolean|    base_type: boolean"; do
+  i=$((i+1)); label=${spec%%|*}; rest=${spec#*|}; ddl=${rest%%|*}; yaml=${rest#*|}
+  db=b$i; newdb $db
+  psql_db $db <<SQL
+CREATE DOMAIN dd AS $ddl;
+CREATE TABLE t (id serial primary key, d dd);
+SQL
+  yamltype=$(echo "$label" | sed -e 's/(.*//' -e 's/^bigint$/biginteger/')
+  [ "$label" = "numeric(10,2)" ] && alt='{ type: decimal, precision: 10, scale: 2 }' || alt="{ type: $yamltype }"
+  [ "$label" = "varchar(50)" ] && alt='{ type: text, max_length: 50 }'
+  mkb refb.yaml '{ type: enum, ref_type: dd }' "$(printf "$yaml")"
+  mkb altb.yaml "$alt" "$(printf "$yaml")"
+  for f in refb altb; do
+    rm -f "$WORK/pa.json"
+    dm schema migrate --source "$f.yaml" --target "$(url $db)" --plan-only --report r.json --plan-artefact pa.json >/dev/null 2>&1; ex=$?
+    res "hash base=$label file=$f" "exit=$ex src(DB)=$(short "$(json_get "$WORK/pa.json" sourceFingerprint)") tgt(Datei)=$(short "$(json_get "$WORK/pa.json" targetFingerprint)")"
+  done
+done
+
+# ---- M9 Rundlauf mit ref_type-Datei: Migrate + Rollback-Artefakt + schema rollback ------
+echo "== M9 ref_type-Datei: execute + Rollback-Artefakt, danach schema rollback"
+newdb rb2
+psql_db rb2 <<'SQL'
+CREATE DOMAIN dd AS integer CHECK (VALUE >= 0);
+CREATE TABLE t (id serial primary key, d dd);
+SQL
+rm -f "$WORK/down3.sql" "$WORK/rep3.json"
+dm schema migrate --source ref_n.yaml --target "$(url rb2)" --execute --generate-rollback \
+   --rollback-output down3.sql --report rep3.json >"$WORK/rb3.out" 2>&1; ex=$?
+res "execute ref_type-Datei+n" "exit=$ex rollback-artefakt=$([ -f "$WORK/down3.sql" ] && echo ja || echo nein)"
+if [ -f "$WORK/down3.sql" ]; then
+  res "rollback-artefakt Felder (ref)" "$(sed -n 2p "$WORK/down3.sql" | sed 's/^-- //' | python3 -I -c "import json,sys; d=json.load(sys.stdin); print(' '.join('%s=%s'%(k,str(d[k])[:12] if 'ingerprint' in k and k!='fingerprintAlgorithm' else d[k]) for k in ['currentFingerprint','desiredFingerprint','postUpFingerprint','postUpVerified','fingerprintAlgorithm','recovery']))")"
+  dm schema rollback --source down3.sql --target "$(url rb2)" --execute --allow-destructive >"$WORK/rb4.out" 2>&1; ex=$?
+  res "schema rollback --execute (ref)" "exit=$ex $(tail -n 2 "$WORK/rb4.out" | tr '\n' ' ' | cut -c1-200)"
+fi
+# Folgeplan nach dem Rundlauf, und die reverse-Datei einer Domain-Spalte
+dm schema migrate --source ref.yaml --target "$(url rb2)" --plan-only --report r5.json >/dev/null 2>&1; ex=$?
+res "Folgeplan ref_type-Datei nach Rollback" "exit=$ex"
+dm schema reverse --source "$(purl rb2)" --output rev.yaml >/dev/null 2>&1; ex=$?
+res "reverse Domain-Spalte" "exit=$ex d-Zeile=$(grep -A3 '^      d:' "$WORK/rev.yaml" | tr -s ' ' | tr '\n' ' ')"
+
 echo "== Ende"

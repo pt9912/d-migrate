@@ -4,6 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.diff.migration.RawSqlTextProjection
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationDdlStatement
@@ -51,9 +52,13 @@ class SchemaRollbackRunner(
     private val fileReader: (Path) -> String = { Files.readString(it) },
     private val fingerprint: FingerprintOfSchema =
         MigrationFingerprint::compute,
-    /** v7: target-dialect type canonicalisation — must match the migrate run that wrote the artefact. */
-    private val typeCanonicalizerFor: (DatabaseDialect) -> (NeutralType) -> NeutralType =
-        ::registryTypeCanonicalizer,
+    /**
+     * v7: target-dialect type canonicalisation, bound to the schema read from the target — must match the
+     * migrate run that wrote the artefact, whose post-up fingerprint hashes the observed database schema with its
+     * own custom types (a domain column folds onto its base type).
+     */
+    private val typeCanonicalizerFor: (DatabaseDialect, SchemaDefinition) -> (NeutralType) -> NeutralType =
+        ::registrySchemaAwareCanonicalizer,
     private val printError: (message: String, source: String) -> Unit,
 ) {
     private val userFacingErrors = UserFacingErrors(urlScrubber)
@@ -206,7 +211,7 @@ class SchemaRollbackRunner(
         // nur Fallback für dialekt-lose Operanden.
         val dialect = targetResolved.dialect
             ?: runCatching { DatabaseDialect.valueOf(parsed.dialect) }.getOrNull()
-        val canonicalizeType = dialect?.let(typeCanonicalizerFor) ?: { it }
+        val canonicalizeType = dialect?.let { typeCanonicalizerFor(it, targetResolved.schema) } ?: { it }
         // Dieselbe Index-Projektion wie beim Migrate: das Artefakt haelt einen
         // Fingerabdruck, der durch die Brille des Ziel-Dialekts entstanden ist.
         val canonicalizeIndex = dialect?.let(::capabilityIndexCanonicalizer) ?: { it }
