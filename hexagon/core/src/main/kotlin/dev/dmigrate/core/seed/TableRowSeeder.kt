@@ -4,6 +4,7 @@ import dev.dmigrate.core.dependency.FkEdge
 import dev.dmigrate.core.dependency.sortTablesByDependency
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -33,6 +34,7 @@ class SeedUniquenessExhaustedException(message: String) : RuntimeException(messa
 private class TableSeedContext(
     val tableName: String,
     val generator: ColumnValueGenerator,
+    val random: Random,
     val circularEdges: Set<FkEdge>,
     val valuePools: Map<Pair<String, String>, List<Any?>>,
     val usedValues: MutableMap<String, MutableSet<Any?>>,
@@ -41,6 +43,8 @@ private class TableSeedContext(
     val uniqueColumns: Set<String> = emptySet(),
     /** AE-6: pro Spalte einmalig (Fisher-Yates) gemischte, dann konsumierte `values`-Warteschlange für `unique`. */
     val valueQueues: MutableMap<String, ArrayDeque<Any?>> = mutableMapOf(),
+    /** Domain-Spalten der Tabelle (Basistyp und `CHECK` der Domain), je Spaltenname; die Spalten sind schon aufgeloest. */
+    val domains: Map<String, DomainSeed> = emptyMap(),
 )
 
 /**
@@ -87,7 +91,7 @@ class TableRowSeeder(
         val valuePools = mutableMapOf<Pair<String, String>, MutableList<Any?>>()
         for (tableName in order.sorted) {
             val table = schema.tables.getValue(tableName)
-            onTable(tableName, seedTable(tableName, table, countPerTable, circularEdges, valuePools))
+            onTable(tableName, seedTable(tableName, table, schema.customTypes, countPerTable, circularEdges, valuePools))
         }
     }
 
@@ -120,19 +124,29 @@ class TableRowSeeder(
 
     private fun seedTable(
         tableName: String,
-        table: TableDefinition,
+        declared: TableDefinition,
+        customTypes: Map<String, CustomTypeDefinition>,
         count: Int,
         circularEdges: Set<FkEdge>,
         valuePools: MutableMap<Pair<String, String>, MutableList<Any?>>,
     ): List<Map<String, Any?>> {
+        // Eine Domain-Spalte erzeugt Werte ihres Basistyps unter dem CHECK der Domain (Issue #68).
+        val domains = DomainSeed.of(declared.columns, customTypes)
+        val table = declared.copy(
+            columns = declared.columns.mapValues { (name, column) ->
+                domains[name]?.baseType?.let { column.copy(type = it) } ?: column
+            },
+        )
         val ctx = TableSeedContext(
             tableName = tableName,
             generator = ColumnValueGenerator(random, locale),
+            random = random,
             circularEdges = circularEdges,
             valuePools = valuePools,
             usedValues = mutableMapOf(),
             rules = rules,
             uniqueColumns = uniqueColumnsOf(table),
+            domains = domains,
         )
         val rows = ArrayList<Map<String, Any?>>(count)
         repeat(count) {
@@ -218,17 +232,22 @@ class TableRowSeeder(
         }
 
         val mustBeUnique = columnName in ctx.uniqueColumns || column.type is NeutralType.Identifier
-        if (!mustBeUnique) return ctx.generator.generate(column.type)
+        if (!mustBeUnique) return generateValue(columnName, column, ctx)
 
         val used = ctx.usedValues.getOrPut(columnName) { mutableSetOf() }
         repeat(MAX_UNIQUE_ATTEMPTS) {
-            val candidate = ctx.generator.generate(column.type)
+            val candidate = generateValue(columnName, column, ctx)
             if (used.add(candidate)) return candidate
         }
         throw SeedUniquenessExhaustedException(
             "Spalte '${ctx.tableName}.$columnName' ist eindeutig, aber nach $MAX_UNIQUE_ATTEMPTS Versuchen " +
                 "wurde kein neuer Wert gefunden (Wertebereich zu klein für die gewünschte Zeilenzahl).",
         )
+    }
+
+    private fun generateValue(columnName: String, column: ColumnDefinition, ctx: TableSeedContext): Any? {
+        val domain = ctx.domains[columnName] ?: return ctx.generator.generate(column.type)
+        return domain.generate(ctx.tableName, columnName, ctx.generator, ctx.random)
     }
 
     // ---- --rules-Anwendung (P2, AE-4/AE-5/AE-6) -------------------------------------
