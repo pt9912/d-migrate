@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.dependency.sortTablesByDependency
 import dev.dmigrate.core.dependency.sortTablesIntoLayers
 import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.core.model.DomainBaseTypes
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.TransferTypeCompatibility
@@ -79,9 +80,12 @@ internal class TransferPreflightPlanner {
             for ((column, sourceDefinition) in source.tables[table]!!.columns) {
                 val targetDefinition = target.tables[table]!!.columns[column]
                     ?: throw TransferPreflightException("Column '$table.$column' missing in target")
-                if (!typeCompatibility.isCompatible(sourceDefinition.type, targetDefinition.type)) {
+                // A domain column is a column of the domain's base type (the PostgreSQL reader names the domain).
+                val sourceType = DomainBaseTypes.effectiveType(sourceDefinition.type, source.customTypes)
+                val targetType = DomainBaseTypes.effectiveType(targetDefinition.type, target.customTypes)
+                if (!typeCompatibility.isCompatible(sourceType, targetType)) {
                     throw TransferPreflightException(
-                        "Column '$table.$column' type mismatch: ${sourceDefinition.type} vs ${targetDefinition.type}"
+                        "Column '$table.$column' type mismatch: $sourceType vs $targetType"
                     )
                 }
             }
