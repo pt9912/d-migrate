@@ -1,8 +1,8 @@
 # PostgreSQL: eine Spalte vom Domain-Typ (`type: enum` + `ref_type`) plant bei jedem Lauf `AlterColumnType` und blockiert mit Exit 8 (Issue #68)
 
-> **Status: Scope und Messung stehen (2026-10-26), Entscheidung offen (E1).** Es gibt noch keinen Implementierungs-Commit. Der Plan liegt auf Anweisung des Eigners
-> schon in `in-progress/` (ADR 0004 sieht den Move erst mit dem ersten Implementierungs-Commit vor); die Umsetzung wartet auf E1.
-> **Vorbedingung:** Eigner-Entscheidung E1 (Option), E2 (Altdateien), E3 (Fingerabdruck/ADR). **Reihenfolge:** Entscheidung → **Schritt 0** Spec-Prosa (vor dem Code) → P2–P4 → P5 Doku.
+> **Status: Entschieden (Eigner, 2026-10-26): Option B′; P0-Messung vollständig, Umsetzung offen.** Es gibt noch keinen Implementierungs-Commit. Der Plan liegt auf Anweisung des Eigners
+> schon in `in-progress/` (ADR 0004 sieht den Move erst mit dem ersten Implementierungs-Commit vor).
+> **Vorbedingung:** E1–E6 entschieden (siehe „Entscheidung“); offen bleibt nur die Fingerabdruck-Prüfung in P1 (E3). **Reihenfolge:** **Schritt 0** Spec-Prosa (vor dem Code) → P1 → P2–P4 → P5 Doku.
 > GitHub-Issue: [#68](https://github.com/pt9912/d-migrate/issues/68) (als Frage gestellt: „Ist die Form vorgesehen?"). Folge der Domain-Reihe #52, #58, #59.
 > **Vorgabe für Spec und Handbuch:** nur der gültige Zustand, zeitlos; keine Chronik, keine Herleitung. Version, Betroffene und Herleitung stehen nur im `CHANGELOG.md` und hier in `docs/planning/`.
 
@@ -18,16 +18,27 @@ je nach Option, dass auch `schema reverse` → `schema generate` die Domain-Spal
    (Handbuch §3.21, `spec/schema-reference.md` „Verwendung in Spalten" steht nur beim Enum-Abschnitt); für die Domain fehlt die Schreibweise in Spec und Handbuch. Das ist eine Lücke, kein Entscheid dagegen.
 2. **Der Fehler liegt im Leseweg und im Vergleich**, nicht im Generator (siehe Ursache). Die Frage „wie sonst ausdrücken" stellt sich nicht, sobald der Rundlauf funktioniert.
 
+## Entscheidung (Eigner, 2026-10-26): Option B′
+
+* **E1 = B′:** der Reader liefert für eine Domain-Spalte `Enum(refType = <Domain>)`; der Vergleich löst die **Datenbank-Seite** über den Basistyp auf, wo die Datei-Seite die Spalte **nicht** als `ref_type` führt.
+* **E2 = Toleranz im Vergleich:** eine ältere `reverse`-Datei (Basistyp an der Domain-Spalte) bleibt bei Exit 0; kein harter Bruch.
+* **E3 = Faltung in P1 prüfen:** ADR und `schema-fingerprint-v25` nur, wenn sich der Hash für **bestehende** Eingänge ändert (Datei ohne Domain-Spalte darf nicht wechseln; Datenbank mit Domain-Spalte gegen Altartefakt prüfen).
+* **E4:** Domain außerhalb des gelesenen Schemas (nicht in `custom_types` des Ergebnisses) → Rückfall auf den Basistyp wie bisher.
+* **E5:** strikter `schema compare` (Bundle `null`) zeigt den Unterschied Domain-Spalte gegen Basistyp-Spalte weiter; die Toleranz gilt nur im ziel-bewussten Vergleich (`schema migrate`/Fingerabdruck).
+* **E6:** kein neuer `R`-/`W`-Code; P4 (Ledger) entfällt, solange der Rückfall keine Meldung trägt.
+
+Verworfen: A (Reader bleibt falsch, Rundlauf der `reverse`-Datei bleibt offen), C (dokumentiert einen Fehler als Eigenschaft). Begründung siehe „Optionen“.
+
 ## Ist / Soll
 
 | | Ist (gemessen) | Soll |
 |---|---|---|
 | `generate` aus `d: { type: enum, ref_type: dd }` | `"d" "dd"` (Domain-Spalte) | unverändert |
 | `migrate --plan-only` Datei gegen die erzeugte Datenbank | Exit 8, `AlterColumnType`, `PG_USING_OVERLAY_MISSING`, „X to TEXT" | Exit 0, leer |
-| `reverse` einer Domain-Spalte | `type: <Basistyp>`, die Domain steht nur unter `custom_types` | Option-abhängig (B: `type: enum` + `ref_type`) |
-| `generate` aus der `reverse`-Datei | `"d" INTEGER` (Domain-Spalte weg) | Option-abhängig (B: `"d" "dd"`) |
+| `reverse` einer Domain-Spalte | `type: <Basistyp>`, die Domain steht nur unter `custom_types` | `type: enum` + `ref_type: <Domain>` (B′) |
+| `generate` aus der `reverse`-Datei | `"d" INTEGER` (Domain-Spalte weg) | `"d" "dd"` (B′) |
 | `schema compare` Datei gegen Datenbank | `DIFFERENT`: `column d: type: enum(ref:dd) -> integer` (Exit 1) | `IDENTICAL` |
-| Datei `type: integer` gegen Datenbank mit Domain-Spalte | Exit 0 (Domain-Spalte und Basistyp-Spalte gelten als gleich) | Option-abhängig, siehe unten (Gegenprobe) |
+| Datei `type: integer` gegen Datenbank mit Domain-Spalte | Exit 0 (Domain-Spalte und Basistyp-Spalte gelten als gleich) | `schema migrate`: Exit 0 (Toleranz E2); strikter `schema compare`: Unterschied sichtbar (E5) |
 
 ## Ursache (am Code belegt; P0 misst die Ergebnisse)
 
@@ -71,14 +82,29 @@ Befunde:
   für die `reverse`-Datei heute keine Antwort; für die handgeschriebene Datei antwortet `ref_type`.
 * Die Domain **als Typ** ist nicht betroffen (K-ohne); ihre `varchar`-Grenze (`AlterCustomType` blockiert) ist bekannt (Handbuch §3.21) und bleibt außerhalb.
 
-### Offene Messungen (vor E1/E3, Teil von P0)
+### Weitere P0-Messungen (2026-10-26, Stand `main`, gleiches Image)
 
-* Post-Compare: Datei mit Domain-Spalte plus unabhängiger Änderung (neue Spalte) mit `--execute` — erwartet `AlterColumnType`-Blockade schon im Plan, daher eine Variante mit `reverse`-Datei plus neuer Spalte, um den
-  Post-Compare ohne Blockade zu sehen.
-* Domain in einem **anderen Schema** als `public`/dem gelesenen; Domain über Domain; Domain über Array (`integer[]`); `NOT NULL`-Domain-Spalte (Zusammenspiel mit #59).
-* Leser von Spaltentypen, die bei Option B einen anderen Typ sähen: Datenexport/-transfer (`ChunkSchemaToManifest` schreibt `refType` in den Manifest), `ImportTypeCompatibility` (Zeile 145 wertet `refType` aus),
-  Profiling, `schema generate` für MySQL/SQLite/MSSQL aus einer PostgreSQL-`reverse`-Datei (die Domain-`CHECK` landen dann an der Spalte), `schema compare` quer über Dialekte.
-* Welche bestehenden Tests die Basistyp-Form einer Domain-Spalte pinnen (`PostgresSchemaReaderTest`, `PostgresSchemaReaderIntegrationTest`).
+Aufbau wie oben; Datenbank per `psql` angelegt, `schema reverse`, `schema migrate --plan-only` mit der `reverse`-Datei, wo genannt `--execute` mit zusätzlicher Spalte.
+
+| Messung | Befund |
+|---|---|
+| Post-Compare: Domain-Spalte, `reverse`-Datei plus neue Spalte `n`, `migrate --execute --report` | Exit 0, keine Diagnose im Report (Ist-Stand, beide Seiten Basistyp). Der Post-Compare mit `ref_type` auf der Datei-Seite ist heute nicht messbar (der Plan blockiert vorher); er kommt als Test in P3 (Akzeptanz 5). |
+| Domain in anderem Schema (`s2.dd2`), Spalte `a`; Domain `dd` in `public`, Spalte `b` | `reverse`: `custom_types` enthält nur `dd` (die Domain aus `s2` fehlt), beide Spalten `type: integer`; Plan Exit 0. Bestätigt E4: der Reader führt die fremde Domain nicht in `custom_types`, ein `ref_type` liefe ins Leere. |
+| **Domain über Domain** (`d2` über `d1`), Spalten `a d1`, `b d2` | `reverse`: Spalte `a` = `type: integer` (Domain verloren), Spalte `b` = **`type: enum`, `ref_type: d1`** — falsche Domain (`d2` steht in der Datenbank). Der Reader liefert hier **schon heute** `Enum(refType)`, weil `udt_name` den **inneren** Domain-Namen trägt (`mapUserDefined`). Befund neben der Frage des Issues; B′ muss `domain_name` **vor** `udt_name` auswerten. Plan Exit 0 (beide Seiten gleich falsch). |
+| Array-Domain (`ia` über `integer[]`), Spalte `a` | `reverse`: `type: array`, `element_type: integer`; die Domain geht verloren (wie bei Skalaren). `generate` aus der Datei: `"a" INTEGER[]`. B′ muss die Array-Domain-Spalte ebenfalls als `ref_type` führen. |
+| `NOT NULL`-Domain (`nn`, `default 1`): Spalte `b nn`, Spalte `c nn NOT NULL` | `reverse`: `b` = `type: integer` ohne `required`, `c` = `type: integer`, `required: true` (stimmt mit #59 überein); die Domain trägt `not_null: true`, `default: 1`. `generate` aus der Datei: `"b" INTEGER` (Domain und ihr `NOT NULL`/`DEFAULT` an der Spalte weg), `"c" INTEGER NOT NULL`. B′ ändert `required` nicht. |
+| Bestehende Tests, die die Basistyp-Form einer Domain-Spalte festschreiben | **Keiner gefunden.** `PostgresSchemaReaderIntegrationTest` legt `positive_int` nur als Typ an (keine Spalte); die Unit-Tests (`PostgresSchemaReaderTest`, `…PartitionTest`) füttern `listColumns`-Zeilen **ohne** `domain_name` — der Reader muss das Feld wie `column_not_null` tolerieren (fehlt es, gilt es als keine Domain). `DomainTraitsMatrixTest` nutzt `Enum(refType)` nur als Datei-Form für `generate`. |
+| Weitere Leser des Spaltentyps | siehe unten (Code gelesen, nicht alle gemessen). |
+
+**Leser des Spaltentyps (Code, bei B′ zu prüfen und in P3 zu messen):**
+
+* `data seed` (`ColumnValueGenerator.randomEnumValue`): eine `Enum` **ohne `values`** wirft `UnsupportedSeedTypeException`. Eine `reverse`-Datei mit `type: enum` + `ref_type` an einer Domain-Spalte erzeugte heute `integer` und seedet; nach B′ würde sie am Seed scheitern oder die Spalte nullen (`TableRowSeeder`). **Regressrisiko, gleiche Lücke wie bei einer handgeschriebenen Datei heute.** Abhilfe: der Seed löst `ref_type` auf eine Domain über deren Basistyp auf (eigenes Arbeitspaket P2c) — oder die Zeile wird bewusst als Grenze dokumentiert (Entscheidung für den Eigner, siehe Rückmeldung).
+* `data import` (`ImportTypeCompatibility.isEnumCompatible`): wertet `refType` gegen den JDBC-`sqlTypeName` aus; für eine Domain-Spalte meldet der PostgreSQL-Treiber voraussichtlich den Basistyp (INTEGER) — dann „inkompatibel". Nicht gemessen; P3 misst Import einer Datei mit Domain-`ref_type` in die Domain-Spalte.
+* `data transfer` liest beide Schemas **zur Laufzeit** über den Reader (`DataTransferRunner`, `schemaReader().read`): die Quell- und Ziel-Typen der Domain-Spalte werden nach B′ `Enum(refType)`; Verifikation (`TransferVerifier`) fasst `Enum` wie Text. Nicht gemessen; P3.
+* `ChunkSchemaToManifest` schreibt `refType` in den Parquet-Manifest (neue Information, kein Bruch erwartet).
+* Cross-Dialekt-`generate` aus einer PostgreSQL-`reverse`-Datei: die Domain-`CHECK` landet an der Spalte (gewollt); `test/cross-dialect-matrix` prüfen.
+
+**Einfluss auf die Entscheidung:** keine Messung kippt E1–E6. Sie erweitern den Umfang: (a) `domain_name` hat Vorrang vor `udt_name` (Domain über Domain heute schon falsch); (b) Array-Domain gehört dazu; (c) `data seed`/`import`/`transfer` brauchen eine Prüfung (P3), der Seed vermutlich eine Auflösung.
 
 ## Optionen
 
@@ -110,14 +136,14 @@ Befunde:
   * **Gegen C:** dokumentiert einen Fehler als Eigenschaft: das Handbuch müsste schreiben, dass die einzige Schreibweise, mit der `generate` die Domain-Spalte erzeugt, den Folgeplan blockiert. Eine Ausweichform
     (`type: integer`) erzeugt keine Domain-Spalte. Es gäbe keinen Weg, der beide Anforderungen erfüllt. Nur als Interimslösung bis A/B vertretbar (Troubleshooting-Eintrag).
 
-### Empfehlung
+### Empfehlung (vom Eigner übernommen: B′)
 
 **B′ (Reader schreibt `ref_type`, Toleranz für Altdateien im Vergleich)**, sonst **A** als schnelle Korrektur. Begründung: A behebt das Symptom im Vergleich, lässt aber den Reader eine fachlich falsche Aussage treffen
 (Domain-Spalte = Basistyp-Spalte) und beantwortet Frage 2 des Issues für die `reverse`-Datei nicht; B behebt die Ursache, die Enum-Behandlung wird gleich, und B′ fängt den einzigen echten Bruch (Altdateien) ab.
 Die Entscheidung berührt den `reverse`-Vertrag und ggf. den Fingerabdruck; sie gehört dem Eigner (E1–E3). Wenn der Eigner Risiko und Aufwand scheut, ist A ohne Reader-Änderung der kleinere, rückwärtskompatible Schritt;
 die blinde Stelle ist dann ausdrücklich zu dokumentieren und kann später durch B ergänzt werden (A und B′ teilen den Mechanismus, in B′ nur umgekehrt).
 
-## Entscheidungsfragen an den Eigner
+## Entscheidungsfragen (entschieden, siehe „Entscheidung“)
 
 * **E1 — Option:** A (Vergleich), B (Reader, mit B′ oder ohne Toleranz) oder C (nur dokumentieren)? Empfehlung: B′.
 * **E2 — Altdateien (nur B):** Toleranz im Vergleich (B′: `reverse`-Dateien mit Basistyp bleiben bei Exit 0) oder harter Bruch mit Hinweis „`schema reverse` neu ziehen"? Empfehlung: Toleranz.
@@ -138,23 +164,24 @@ die blinde Stelle ist dann ausdrücklich zu dokumentieren und kann später durch
 
 * **Schritt 0 Spec (vor dem Code, nur Zielbild, keine Links auf Pläne/ADRs — `.d-check.yml` matrix; `spec/` darf Ungebautes beschreiben):**
   * `spec/schema-reference.md` Abschnitt „Domain": „Verwendung in Spalten: `type: enum` + `ref_type: <domain>`" (heute nur beim Enum); je Dialekt, was daraus wird (PostgreSQL: Spalte vom Domain-Typ; MySQL, SQLite, MSSQL: Basistyp + `CHECK`).
-  * `spec/ddl-generation-rules.md` (Domain-Abschnitt um Z. 1296ff.): Reverse und Vergleich der Domain-Spalte auf PostgreSQL — zeitlos, Option-abhängig (B: „`schema reverse` schreibt eine Spalte vom Domain-Typ als `type: enum` + `ref_type`; `schema migrate`
+  * `spec/ddl-generation-rules.md` (Domain-Abschnitt um Z. 1296ff.): Reverse und Vergleich der Domain-Spalte auf PostgreSQL — zeitlos („`schema reverse` schreibt eine Spalte vom Domain-Typ als `type: enum` + `ref_type`; `schema migrate`
     plant für eine unveränderte Domain-Spalte nichts").
   * `spec/neutral-model-spec.md` (§13.2/`ref_type` Zeile 221): Verweisziel ist `enum` **oder** `domain`; ggf. `spec/cli-spec.md` (`schema reverse`), falls dort die Spalten-Form genannt ist.
 * **P0 Messung** (Tabelle oben; die offenen Messungen vor E1/E3 abschließen). DoD: Tabelle und Befund im Slice, Messskript reproduzierbar im Stand `main`.
-* **P1 Entscheidung und Folgenabschätzung:** E1–E6 mit dem Eigner; bei B die Leser des Spaltentyps (Export/Transfer/Import/Profiling/Manifest) und die Cross-Dialekt-Matrix gegenprüfen; Fingerabdruck-Prüfung: derselbe Eingang,
+* **P1 Folgenabschätzung (E1–E6 entschieden):** die Leser des Spaltentyps (Export/Transfer/Import/Profiling/Manifest) und die Cross-Dialekt-Matrix gegenprüfen; Fingerabdruck-Prüfung: derselbe Eingang,
   Hash vorher/nachher (Datei-Seite und Datenbank-Seite je Option). DoD: Entscheidung dokumentiert; ADR (E3) geschrieben, falls ein Hash sich ändert (`make doc-immutable` beachten: Frontmatter-Kern akzeptierter ADRs nicht anfassen).
 * **P2 Umsetzung** (je Option):
   * **A:** `PostgresNeutralTypeCanonicalizer.canonicalize(type, customTypes)` löst `Enum(refType)` auf eine Domain über deren Basistyp (`PostgresDomainBaseType`); `TypeCanonicalizerWiring.registryDomainAwareCanonicalizer`
     nicht mehr an `resolvesRefTypeVocabulary` hängen, sondern an eine eigene Fähigkeit (`DialectCapabilities`, Muster SQLite); KDoc „Fuer PostgreSQL waere ein Aufloesen falsch" berichtigen.
-  * **B/B′:** `PostgresTableMetadataQueries.listColumns` um `domain_schema`, `domain_name`; `PostgresTypeMapping.ColumnInput`/`mapColumn` um die Domain; `PostgresSchemaStructureReaders` setzt den Verweis nur, wenn die Domain in `custom_types`
-    steht (E4); B′: `DomainColumnTypes` in Gegenrichtung (Datenbank-Seite) nach dem Muster `TargetProjection.typeWithCustomTypes`.
+  * **B′ (entschieden):** `PostgresTableMetadataQueries.listColumns` um `domain_schema`, `domain_name`; `PostgresTypeMapping.ColumnInput`/`mapColumn` um die Domain; `PostgresSchemaStructureReaders` setzt den Verweis nur, wenn die Domain in `custom_types`
+    steht (E4); `domain_name` hat Vorrang vor `udt_name` (Domain über Domain, Array-Domain; fehlt das Feld in einer Zeile, keine Domain); `DomainColumnTypes` in Gegenrichtung (Datenbank-Seite) nach dem Muster `TargetProjection.typeWithCustomTypes`.
+  * **P2c Leser:** `data seed` löst `ref_type` auf eine Domain über den Basistyp auf (oder bewusste Grenze, siehe offene Rückfrage); `data import`/`data transfer` nach Messung (P3).
   * Keine zweite Verdrahtung in `SchemaMigrateRunner`/`SchemaRollbackRunner`/`PartitionOverlayHint` (Kriterium wie in #56).
   * DoD: `make docker-check MODULES=…` je betroffenem Modul, **einmal ohne `MODULES`** (geteilte Signatur: Modell, Port, Fingerabdruck), `make solid-suppression-gate`, kein `@Suppress`.
 * **P3 Tests:** Unit: Reader-Zeile mit `domain_name` (B) bzw. Kanonisierer/Vergleich (A); Vergleich pro Basistyp-Matrix (integer, text, varchar(n), decimal(p,s), uuid, boolean, biginteger); Enum-Kontrolle; Domain ohne Spalte;
   Datei gegen Datei (Basistypwechsel bleibt ein `AlterCustomType`). Integration PostgreSQL (Testcontainers): generate → anwenden → `migrate --plan-only` Exit 0 → `reverse` → `generate` (Domain-Spalte erhalten, B) → Folgeplan Exit 0;
-  Altdatei (`type: integer`) Exit 0 (B′). Fingerabdruck-Test (E3). DoD: Tests laufen wirklich (einmal absichtlich rot, `-PintegrationTests` beachten: `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"`).
-* **P4 Ledger:** nur falls ein Code berührt wird (E6). Neue Codes: `ledger/warn-code-ledger-1.1.0.yaml` (W) bzw. `ledger/error-code-ledger-1.1.0.yaml` (E/R) mit `test_path`/`evidence_paths`, Zeile in `spec/ledger.md`;
+  Altdatei (`type: integer`) Exit 0 (B′); Domain über Domain (`ref_type` = die äußere Domain); Array-Domain; Domain aus fremdem Schema (Rückfall Basistyp); `data seed`, `data import`, `data transfer` mit Domain-Spalte; strikter `schema compare` zeigt Domain-Spalte gegen Basistyp-Spalte (E5). Fingerabdruck-Test (E3). DoD: Tests laufen wirklich (einmal absichtlich rot, `-PintegrationTests` beachten: `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"`).
+* **P4 Ledger:** entfällt (E6: kein neuer Code). Falls sich das ändert: neue Codes: `ledger/warn-code-ledger-1.1.0.yaml` (W) bzw. `ledger/error-code-ledger-1.1.0.yaml` (E/R) mit `test_path`/`evidence_paths`, Zeile in `spec/ledger.md`;
   `CodeLedgerValidationTest` läuft mit. Sonst entfällt P4 (der Slice führt heute keinen Code ein).
 * **P5 Doku (nach dem Code):**
   * Handbuch §3.21: Beispiel einer Domain-Spalte (`type: enum` + `ref_type`) beim Enum-Beispiel; ein Satz zum Rundlauf (`generate` → `migrate`, `reverse`) — zeitlos, ohne „bisher/neu/ab".
@@ -169,7 +196,7 @@ die blinde Stelle ist dann ausdrücklich zu dokumentieren und kann später durch
    ohne Operation; `schema compare` Datei ↔ Datenbank ergibt `IDENTICAL`.
 2. Eine **echte** Änderung an der Domain-Spalte (Verweis auf eine andere Domain; Basistypwechsel der Domain) plant weiter (Exit 8 mit `AlterCustomType` bzw. `AlterColumnType`), nicht still nichts.
 3. Kontrollen unverändert: Enum-Spalte Exit 0; Domain ohne Spalte Exit 0; `varchar`-Domain selbst blockiert wie dokumentiert (`POSTGRES_RENDER_SKIP`).
-4. **Option B/B′:** `schema reverse` einer Domain-Spalte schreibt `type: enum` + `ref_type`; `generate` aus dieser Datei erzeugt die Domain-Spalte; `migrate --plan-only` Exit 0. **B′:** eine ältere `reverse`-Datei (Basistyp an der Domain-Spalte) bleibt bei Exit 0.
+4. **B′:** `schema reverse` einer Domain-Spalte schreibt `type: enum` + `ref_type`; `generate` aus dieser Datei erzeugt die Domain-Spalte; `migrate --plan-only` Exit 0. **B′:** eine ältere `reverse`-Datei (Basistyp an der Domain-Spalte) bleibt bei Exit 0.
 5. Der Post-Compare nach `migrate --execute` einer unabhängigen Änderung in derselben Tabelle meldet keinen Drift an der Domain-Spalte.
 6. Fingerabdruck (E3): Hash vorher/nachher je Eingang dokumentiert; kein unbeabsichtigter Wechsel für Eingänge ohne Domain-Spalte; bei Wechsel Tag, ADR und Test (`MigrationFingerprintTest`).
 7. Cross-Dialekt (B): `test/cross-dialect-matrix` grün; Export/Transfer/Import/Profiling mit Domain-Spalte gemessen, kein Regress.
