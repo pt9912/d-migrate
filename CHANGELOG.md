@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.11.0] - 2026-10-26
-
 ### Fixed
 
 - **SQLite: `WITHOUT ROWID` bleibt erhalten.** Ein Tabellenneubau (`schema migrate --execute`, auch das
@@ -16,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `schema generate` schrieb das Merkmal gar nicht, obwohl das Modell `without_rowid` kennt. Beide Pfade
   schreiben jetzt `) WITHOUT ROWID;`; der Neubau erhält das Merkmal, wenn Datei oder Datenbank es
   tragen. Der Abdruck ändert sich nicht.
+
+## [1.11.0] - 2026-10-26
+
+### Fixed
+
 - **`schema migrate` auf SQLite plant für eine unveränderte Domain-Spalte kein `AlterColumnType`
   mehr** (Issue #56, Folge von #54). Eine Spalte mit `ref_type` auf eine Domain galt gegen die
   Datenbank bei jedem Lauf als geändert, sobald der Reader ihren Basistyp nicht als `text` liest
