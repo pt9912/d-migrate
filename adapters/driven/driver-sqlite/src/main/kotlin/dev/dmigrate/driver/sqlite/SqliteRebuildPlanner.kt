@@ -5,10 +5,12 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.util.sha256Hex
 
 /**
@@ -68,7 +70,7 @@ internal object SqliteRebuildPlanner {
                 continue
             }
             val target = tableOf(op)
-            if (target != null && target in rebuildTables && isAbsorbedByRebuild(op)) {
+            if (target != null && target in rebuildTables && isAbsorbed(op, current, desired)) {
                 buckets.getValue(target) += op
                 continue
             }
@@ -655,8 +657,7 @@ internal object SqliteRebuildPlanner {
     /**
      * Ops absorbed into the rebuild when the table is being rebuilt:
      * everything that affects column structure or constraint shape.
-     * Index ops are NOT absorbed — they run after the rebuild via
-     * the planner's INDEXES phase.
+     * Index ops are handled by [isAbsorbedIndexOp].
      */
     private fun isAbsorbedByRebuild(op: DiffOperation): Boolean = when (op) {
         is DiffOperation.AddColumn,
@@ -671,6 +672,38 @@ internal object SqliteRebuildPlanner {
         -> true
         is DiffOperation.AlterColumnGeneration -> !SqliteGenerationTransitions.isIdentityMatter(op)
         else -> false
+    }
+
+    private fun isAbsorbed(op: DiffOperation, current: SchemaDefinition?, desired: SchemaDefinition?): Boolean =
+        isAbsorbedByRebuild(op) || isAbsorbedIndexOp(op, current, desired)
+
+    /**
+     * `AddIndex`/`DropIndex` einer Neubau-Tabelle gehen in den Eimer: der Neubau legt die Indizes der
+     * Zielsicht selbst an ([SqliteRebuildPlan.indexesToRecreate]), und ein Index der Quellsicht
+     * verschwindet mit `DROP TABLE`. Als einfache Operation nach dem Neubau scheiterte das `DROP INDEX`
+     * ("no such index") und das `CREATE INDEX` ("already exists"), und der Strom waere mit einer
+     * `RUNNER_OWNED`-Anweisung gemischt.
+     *
+     * Ausgenommen sind Indizes, die kein einfacher `CREATE INDEX` sind: `FULLTEXT` (FTS5-Tabelle samt
+     * Triggern, `DROP TABLE` raeumt sie nicht weg) und Geometrie-Indizes (Spatial-Pfad). Sie behalten
+     * ihren Weg. Ob eine Spalte Geometrie ist, sagen die Schemata; fehlen sie, gilt nur der Index-Typ.
+     */
+    private fun isAbsorbedIndexOp(
+        op: DiffOperation,
+        current: SchemaDefinition?,
+        desired: SchemaDefinition?,
+    ): Boolean {
+        val index = when (op) {
+            is DiffOperation.AddIndex -> op.index
+            is DiffOperation.DropIndex -> op.index
+            else -> return false
+        }
+        if (index.type == IndexType.FULLTEXT) return false
+        val table = op.objectRef.path[0]
+        return listOf(current, desired).none { schema ->
+            val columns = schema?.tables?.get(table)?.columns.orEmpty()
+            index.isSpatialGeometryIndex { columns[it]?.type }
+        }
     }
 
     private fun tableOf(op: DiffOperation): String? = when (op) {

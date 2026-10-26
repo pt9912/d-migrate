@@ -124,6 +124,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             }
             return
         }
+        if (!SqliteDiffSimpleOps.checkAbsorbedIndexOps(bucket, ctx)) return
         if (blockExcludeConstraintsInRebuild(table, bucket, current, desired, ctx)) return
         if (blockCheckPreflightFailures(bucket, ctx)) return
         if (ctx.direction == SqliteRenderDirection.DOWN) {

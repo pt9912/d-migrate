@@ -101,8 +101,8 @@ class SqliteRebuildRendererTest : FunSpec({
         val current = schemaWith(mapOf("u" to before))
         val desired = schemaWith(mapOf("u" to after))
         val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
-        // The AddIndex op stays simple (not absorbed) — so it shows up after the rebuild.
-        r.statements.any { it.sql.startsWith("CREATE INDEX \"idx_u_id\"") } shouldBe true
+        // The AddIndex op is absorbed into the rebuild: exactly one CREATE INDEX, from the target table.
+        r.statements.count { it.sql.startsWith("CREATE INDEX \"idx_u_id\"") } shouldBe 1
     }
 
     test("new NOT NULL column without default blocks the rebuild") {

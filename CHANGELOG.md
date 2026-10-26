@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Eine Domain über `integer` gegen eine Textspalte der Datenbank gilt jetzt als Typänderung
     (vorher blieb sie unbemerkt).
   - Der Abdruck ändert sich durch diese Änderung nicht.
+- **`schema migrate --execute` auf SQLite führt einen Tabellenneubau mit Index-Operationen derselben Tabelle aus**
+  (Issue #60). Eine Datei mit `unique: true` an einer Spalte gegen eine Datenbank mit `CREATE UNIQUE INDEX` plante
+  `AddConstraint` + `DropIndex`; `--execute` endete mit Exit `8` (`TRANSACTION_SCOPE_UNSUPPORTED`) — auch ohne weitere
+  Änderung. Dahinter lag ein zweiter Fehler: das `DROP INDEX` lief nach dem Neubau und scheiterte mit `no such index`;
+  ein neuer Index neben einem Neubau wurde doppelt angelegt. Der Neubau übernimmt jetzt `AddIndex`/`DropIndex` der
+  Tabelle (er legt die Indizes der Zieltabelle selbst an); `--execute` endet mit Exit `0`, ein zweiter Lauf plant
+  nichts, und das Rollback-Skript stellt den Index genau einmal wieder her (vorher scheiterte es mit
+  `index already exists`). Unverändert: ein `FULLTEXT`-Index neben einem Neubau und eine Änderung an
+  einer anderen Tabelle neben dem Neubau enden weiter mit Exit `8`. Der Fingerabdruck bleibt `schema-fingerprint-v22`.
 
 - **`schema migrate` auf SQLite plant keinen `DROP INDEX` + `CREATE INDEX` mehr für einen unveränderten
   Ausdrucks-Index** (Issue #55, Folge von #53). Der Generator klammert jeden Ausdrucks-Schlüssel

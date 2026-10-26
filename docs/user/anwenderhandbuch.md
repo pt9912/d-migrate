@@ -2157,11 +2157,21 @@ sie als normale View erzeugt (Warnung **W103**).
   daneben aus. Index und Constraint sind in SQLite verschiedene Objekte; ein Wechsel ist
   ein Tabellenneubau und gilt als Änderung.
   - **Abweichende Schreibweise:** trägt Ihre Datei `unique: true` an einer Spalte, deren
-    Datenbank dafür einen `CREATE UNIQUE INDEX` führt, zeigt `schema migrate --plan-only`
-    ohne Änderung im Schema einen Neubau (Constraint anlegen, Index löschen). `--execute` endet
-    damit — auch ohne weitere Änderung daneben — mit Exit `8`
-    (`TRANSACTION_SCOPE_UNSUPPORTED`); die Datenbank bleibt unverändert. Ziehen Sie die Datei
-    mit `schema reverse` neu oder schreiben Sie die Spalte als `indices: [{ unique: true }]`.
+    Datenbank dafür einen `CREATE UNIQUE INDEX` führt, plant `schema migrate` einen Neubau
+    der Tabelle (Constraint anlegen, Index löschen). `--execute` führt ihn aus (Exit `0`),
+    allein oder neben einer weiteren Änderung an derselben Tabelle: die Tabelle trägt danach
+    den `UNIQUE`-Constraint statt des Indexes, ein zweiter Lauf plant nichts, und
+    `schema rollback` stellt den Index wieder her. Wollen Sie den Neubau vermeiden, ziehen Sie
+    die Datei mit `schema reverse` neu oder schreiben Sie die Spalte als
+    `indices: [{ unique: true }]`.
+  - **Index neben einem Neubau:** Legt ein Lauf neben einem Tabellenneubau einen Index an
+    oder entfernt einen, übernimmt der Neubau das: er legt die Indizes der Zieltabelle selbst
+    an, und `--execute` endet mit Exit `0`. Das gilt für gewöhnliche Indizes; ein
+    `FULLTEXT`-Index neben einem Neubau derselben Tabelle sowie eine Änderung an
+    einer **anderen** Tabelle neben dem Neubau blockieren `--execute` mit Exit `8`
+    (`TRANSACTION_SCOPE_UNSUPPORTED`, die Datenbank bleibt unverändert).
+  - **Grenze `WITHOUT ROWID`:** ein Neubau aus einer Datei legt die Tabelle ohne `WITHOUT ROWID` neu an, auch
+    wenn die Datenbank sie so führt; die Datei kennt das Merkmal nicht. Betrifft jeden Neubau, nicht nur diesen Fall.
   - **Ausdrucks-Index:** ein Index über einen Ausdruck (`lower(a)`) erzeugt keine Operation, wenn Datei und Datenbank
     ihn gleich ausdrücken. `schema reverse` schreibt den Ausdruck ohne die eine äußere Klammer, die der Generator setzt;
     Klammern, die zum Ausdruck gehören (`(a) || (b)`), bleiben. Eine Datei mit `(lower(a))` gilt gegen die

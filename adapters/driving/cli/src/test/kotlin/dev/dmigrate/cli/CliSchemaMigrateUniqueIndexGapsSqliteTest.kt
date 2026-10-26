@@ -207,33 +207,63 @@ class CliSchemaMigrateUniqueIndexGapsSqliteTest : FunSpec({
         rejects(db, "INSERT INTO t (id, a, b, c) VALUES (2, 'x', 'y', 'z')") shouldBe true
     }
 
-    // ── Grenze fuer Bestandsdateien (ADR 0062) ──
+    // ── Bestandsdateien (ADR 0062): Index und Constraint sind verschiedene Objekte, der Wechsel ist ein Neubau ──
 
-    test("Bestandsdatei (unique an der Spalte) gegen eindeutigen Index: --execute mit weiterer Aenderung endet mit Exit 8") {
+    fun hasIndex(db: Path) = scalar(db, "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'ix_t'")
+
+    test("Bestandsdatei (unique an der Spalte) gegen eindeutigen Index: --execute mit weiterer Aenderung Exit 0") {
         val dir = Files.createTempDirectory("cli-unique-index-gap-legacy")
         val db = databaseFrom(dir, yaml(uniqueIndex("[a]")))
-        val before = catalog(db)
+        val after = yaml(colUnique = true, withD = true)
 
-        val (code, report) = execute(dir, yaml(colUnique = true, withD = true), db, "up")
+        val (code, report) = execute(dir, after, db, "up")
 
-        code shouldBe 8
-        report shouldContain "TRANSACTION_SCOPE_UNSUPPORTED"
-        catalog(db) shouldBe before
-        hasColumnD(db) shouldBe "0"
+        report shouldNotContain "TRANSACTION_SCOPE_UNSUPPORTED"
+        code shouldBe 0
+        hasColumnD(db) shouldBe "1"
+        hasIndex(db) shouldBe "0"
+        scalar(db, "SELECT sql FROM sqlite_master WHERE name = 't'") shouldContain "UNIQUE"
+        rejects(db, "INSERT INTO t (id, a, b, c) VALUES (2, 'x', 'y', 'z')") shouldBe true
+        plan(dir, after, db, "again").first shouldBe 0
     }
 
-    // Bekannte Grenze (Issue #60): der Neubau allein ist `--execute`-seitig nicht ausfuehrbar, obwohl der Plan
-    // (`--plan-only`) Exit 0 liefert. Wird #60 umgesetzt, kippt dieser Test auf Exit 0.
-    test("Bestandsdatei (unique an der Spalte) gegen eindeutigen Index: --execute ohne weitere Aenderung endet mit Exit 8") {
+    test("Bestandsdatei (unique an der Spalte) gegen eindeutigen Index: --execute ohne weitere Aenderung Exit 0") {
         val dir = Files.createTempDirectory("cli-unique-index-gap-legacy-alone")
         val db = databaseFrom(dir, yaml(uniqueIndex("[a]")))
+        val after = yaml(colUnique = true)
+
+        val (code, report) = execute(dir, after, db, "up")
+
+        report shouldNotContain "TRANSACTION_SCOPE_UNSUPPORTED"
+        code shouldBe 0
+        hasIndex(db) shouldBe "0"
+        scalar(db, "SELECT sql FROM sqlite_master WHERE name = 't'") shouldContain "UNIQUE"
+        rejects(db, "INSERT INTO t (id, a, b, c) VALUES (2, 'x', 'y', 'z')") shouldBe true
+        plan(dir, after, db, "again").first shouldBe 0
+    }
+
+    test("schema rollback stellt nach dem Neubau (Bestandsdatei) den eindeutigen Index wieder her") {
+        val dir = Files.createTempDirectory("cli-unique-index-gap-legacy-rollback")
+        val db = databaseFrom(dir, yaml(uniqueIndex("[a]")))
         val before = catalog(db)
+        val up = dir.resolve("up.sql")
+        val down = dir.resolve("down.sql")
 
-        val (code, report) = execute(dir, yaml(colUnique = true), db, "up")
+        run(
+            "schema", "migrate", "--source", write(dir, "after.yaml", yaml(colUnique = true)).toString(),
+            "--target", "db:sqlite://$db", "--generate-rollback", "--output", up.toString(),
+            "--rollback-output", down.toString(), "--report", dir.resolve("plan.json").toString(),
+        ) shouldBe 0
+        exec(db, *sqlStatements(up).toTypedArray())
+        hasIndex(db) shouldBe "0"
+        run(
+            "schema", "rollback", "--source", down.toString(), "--target", "db:sqlite://$db",
+            "--execute", "--allow-destructive",
+        ) shouldBe 0
 
-        code shouldBe 8
-        report shouldContain "TRANSACTION_SCOPE_UNSUPPORTED"
         catalog(db) shouldBe before
+        scalar(db, "SELECT sql FROM sqlite_master WHERE name = 'ix_t'") shouldContain "UNIQUE"
+        plan(dir, yaml(uniqueIndex("[a]")), db, "after-rollback").first shouldBe 0
     }
 
     // ── Ausdrucks-Index ──
