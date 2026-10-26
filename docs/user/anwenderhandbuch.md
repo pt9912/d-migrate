@@ -1632,6 +1632,12 @@ zurück.
   vergleicht der Rollback dabei nicht mit: Der Server gibt ihn in eigener
   Schreibweise zurück, und die Prüfung gilt dem Aufbau des Schemas. Eine
   Änderung allein an diesem Text fällt dem Rollback deshalb nicht auf.
+- **Die Kopfwerte des Down-Skripts prüfen nichts nach.** `rollbackComplete: true` heißt:
+  keine Operation wurde ausgelassen. `postUpVerified: true` heißt: der Post-Up-Stand wurde
+  gelesen. Beides sagt nichts über Strukturmerkmale wie `WITHOUT ROWID`. `schema rollback`
+  prüft nur die Vorbedingung (`TARGET_STATE_MISMATCH`), nach der Ausführung vergleicht es
+  nichts; ob der Stand dem vor dem Lauf gleicht, sehen Sie an einem Folgeplan
+  (`schema migrate --plan-only`).
 - Nach einem **d-migrate-Update** kann ein älteres Down-Artefakt abgelehnt werden
   (Exit 8, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`) — erzeugen Sie es dann mit
   der neuen Version neu. Siehe [Fehlerbehebung](#5-fehlerbehebung).
