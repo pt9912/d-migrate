@@ -2216,7 +2216,9 @@ sie als normale View erzeugt (Warnung **W103**).
     oder entfernt einen, übernimmt der Neubau das: er legt die Indizes der Zieltabelle selbst
     an, und `--execute` endet mit Exit `0`. Das gilt für gewöhnliche Indizes und für
     `FULLTEXT`-Indizes derselben Tabelle: der Neubau räumt die FTS5-Objekte der Datenbank ab und baut die der
-    Datei genau einmal auf. Eine Änderung an einer **anderen** Tabelle (oder Sicht) neben dem Neubau
+    Datei genau einmal auf. Kann FTS5 für die Tabelle nicht gebaut werden (`WITHOUT ROWID`, Spalte `rank`),
+    läuft der Neubau mit Warnung `W132` ohne FTS5, und `--execute` endet mit Exit `5`, weil die Datei einen
+    `FULLTEXT`-Index verlangt, den die Tabelle nicht tragen kann. Eine Änderung an einer **anderen** Tabelle neben dem Neubau
     blockiert `--execute` mit Exit `8` (`TRANSACTION_SCOPE_UNSUPPORTED`, die Datenbank bleibt unverändert).
   - **`WITHOUT ROWID`:** ein Tabellenneubau behält das Merkmal der **Datenbank**, im Plan wie im
     erzeugten Rollback: eine Tabelle `WITHOUT ROWID` bleibt es, eine Rowid-Tabelle bleibt eine Rowid-Tabelle.

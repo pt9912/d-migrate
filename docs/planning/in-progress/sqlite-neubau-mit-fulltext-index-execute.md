@@ -154,7 +154,7 @@ Gemessen am Runtime-Image (`make docker-build`, `d-migrate:dev`) gegen echte SQL
 ## Akzeptanzkriterien
 
 1. P0-Tabelle ausgefüllt; Schnitt (nur `FULLTEXT`, E2 für Spatial) gegen die Messung bestätigt.
-2. Fälle 1–4, 8, 10 enden mit `--execute` Exit 0; zweiter Lauf `operationsTotal` 0; FTS5-Objekte entsprechen der Datei (neu vorhanden, weg entfernt, geändert neu aufgebaut); degradierte Fälle (8, 9) mit `W132` **einmal**.
+2. Fälle 1–4, 10 enden mit `--execute` Exit 0; zweiter Lauf `operationsTotal` 0; FTS5-Objekte entsprechen der Datei (neu vorhanden, weg entfernt, geändert neu aufgebaut). Degradierte Fälle (8, 9): Neubau mit `W132` **einmal**, ohne FTS5, ohne Scope-Blocker; Exit 5 (`POST_EXECUTE_DRIFT`) nach E3.
 3. **Rückweg:** `schema rollback --execute` bringt den `catalog()`-Snapshot (inkl. FTS5-Tabelle und Trigger) auf den Stand vor dem Lauf.
 4. Gegenproben unverändert: Fall 5 (Exit 0), Fall 6 (Exit 0), Fall 7 bleibt Exit 8 `TRANSACTION_SCOPE_UNSUPPORTED`.
 5. **Rot ohne Änderung** (Renderer-Anweisungsfolge, Skript ohne Guard) belegt; Pin-Tests umgeschrieben und als solche gekennzeichnet (kein Rot-Beleg); neue Tests laufen wirklich.

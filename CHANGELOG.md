@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already exists`, im Rückweg beim entfallenden Index ebenso; beim geänderten Index lief es fehlerfrei, aber
   doppelt). Der Neubau übernimmt diese `FULLTEXT`-Operationen jetzt: je Ziel-Index ein Aufbau in Hin- und Rückweg,
   `--execute` endet mit Exit `0`, der Rückweg stellt die FTS5-Objekte her. Kann FTS5 nicht gebaut werden
-  (`WITHOUT ROWID`, Spalte `rank`), meldet der Lauf `W132` einmal statt zweimal. Eine Änderung an einer anderen
+  (`WITHOUT ROWID`, Spalte `rank`), meldet der Lauf `W132` einmal statt zweimal; `--execute` endet dort weiter mit Exit `5`
+  (`POST_EXECUTE_DRIFT`), weil die Datei den Index verlangt. Eine Änderung an einer anderen
   Tabelle neben dem Neubau bleibt Exit `8`. Der Schema-Fingerprint ändert sich nicht.
 - **SQLite: ein Tabellenneubau behält das `WITHOUT ROWID` der Datenbank** (Issue #67). Führte die Datei
   `metadata: { without_rowid: true }` für eine Tabelle, die in der Datenbank eine Rowid-Tabelle war,
