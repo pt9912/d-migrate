@@ -144,7 +144,16 @@ internal data class SqliteRebuildPlan(
      *   would leak the FK state on external execution.
      */
     val emissionMode: SqliteRebuildEmissionMode = SqliteRebuildEmissionMode.STANDALONE,
-)
+) {
+    /**
+     * `WITHOUT ROWID` ist ein Strukturmerkmal, das `schema migrate` weder plant noch
+     * aendert; der Neubau erhaelt es, wenn **eine** der beiden Seiten es traegt. Die
+     * Datenbank-Seite ist je nach Richtung `oldTable` (Up) oder `newTable` (Down) und
+     * kommt vom Reader; die Datei kennt das Merkmal bei einer Bestandsdatei nicht.
+     */
+    val withoutRowid: Boolean
+        get() = oldTable.metadata?.withoutRowid == true || newTable.metadata?.withoutRowid == true
+}
 
 /**
  * Phase H.3b: emission-mode switch on [SqliteRebuildPlan]. See the

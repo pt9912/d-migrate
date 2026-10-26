@@ -2187,8 +2187,11 @@ sie als normale View erzeugt (Warnung **W103**).
     `FULLTEXT`-Index neben einem Neubau derselben Tabelle sowie eine Änderung an
     einer **anderen** Tabelle neben dem Neubau blockieren `--execute` mit Exit `8`
     (`TRANSACTION_SCOPE_UNSUPPORTED`, die Datenbank bleibt unverändert).
-  - **Grenze `WITHOUT ROWID`:** ein Neubau aus einer Datei legt die Tabelle ohne `WITHOUT ROWID` neu an, auch
-    wenn die Datenbank sie so führt; die Datei kennt das Merkmal nicht. Betrifft jeden Neubau, nicht nur diesen Fall.
+  - **`WITHOUT ROWID`:** ein Tabellenneubau erhält das Merkmal, wenn die Datenbank oder die Datei (`metadata:
+    { without_rowid: true }`) die Tabelle so führt; eine Datei ohne `metadata` macht aus der Tabelle keine
+    Rowid-Tabelle. `schema migrate` plant das Merkmal selbst nicht: es ändert eine bestehende Tabelle weder
+    hinzu noch weg. `schema generate` und das Anlegen einer neuen Tabelle schreiben `WITHOUT ROWID`, wenn die
+    Datei es verlangt. Eine Tabelle ohne `PRIMARY KEY` oder mit `AUTOINCREMENT` lehnt SQLite dabei selbst ab.
   - **Ausdrucks-Index:** ein Index über einen Ausdruck (`lower(a)`) erzeugt keine Operation, wenn Datei und Datenbank
     ihn gleich ausdrücken. `schema reverse` schreibt den Ausdruck ohne die eine äußere Klammer, die der Generator setzt;
     Klammern, die zum Ausdruck gehören (`(a) || (b)`), bleiben. Eine Datei mit `(lower(a))` gilt gegen die
