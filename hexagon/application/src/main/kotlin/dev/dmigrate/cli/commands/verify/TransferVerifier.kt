@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands.verify
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.DomainBaseTypes
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -162,8 +163,16 @@ class TransferVerifier(
     private fun foldEmptyString(value: Any?): Any? =
         if (targetFoldsEmptyStringToNull && value == "") null else value
 
-    /** Spalten einer (ggf. schema-qualifizierten) Tabelle aus dem Schema. */
-    private fun columnsFor(schema: SchemaDefinition, table: String): Map<String, ColumnDefinition> {
+    /**
+     * Spalten einer (ggf. schema-qualifizierten) Tabelle aus dem Schema. Eine Domain-Spalte steht mit ihrem Basistyp:
+     * `Enum(refType)` gehoerte sonst zur Textfamilie und stuende gegen `Integer` der Gegenseite (Issue #68).
+     */
+    private fun columnsFor(schema: SchemaDefinition, table: String): Map<String, ColumnDefinition> =
+        rawColumnsFor(schema, table).mapValues { (_, column) ->
+            column.copy(type = DomainBaseTypes.effectiveType(column.type, schema.customTypes))
+        }
+
+    private fun rawColumnsFor(schema: SchemaDefinition, table: String): Map<String, ColumnDefinition> {
         schema.tables[table]?.let { return it.columns }
         val bare = table.substringAfterLast('.')
         schema.tables[bare]?.let { return it.columns }

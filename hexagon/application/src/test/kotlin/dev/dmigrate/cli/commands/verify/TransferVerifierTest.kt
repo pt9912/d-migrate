@@ -4,6 +4,8 @@ import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.CustomTypeDefinition
+import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.FloatPrecision
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
@@ -151,5 +153,25 @@ class TransferVerifierTest : FunSpec({
         val sReader = reader(chunk("users", listOf("id", "name", "extra"), listOf(row(1, "a", "X"))))
         val tReader = reader(chunk("users", listOf("id", "name"), listOf(row(1, "a"))))
         verify(sReader, tReader, src, tgt).allMatch shouldBe true
+    }
+
+    // Issue #68: die Domain-Spalte des PostgreSQL-Readers (Enum(refType)) steht mit ihrem Basistyp im Vergleich.
+    test("Domain-Spalte (integer) gegen Integer-Spalte des Ziels: verifiziert, nicht als Quereinfuehrung ausgeschlossen") {
+        val domain = mapOf("dd" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "integer"))
+        val src = schema("id" to NeutralType.Integer, "d" to NeutralType.Enum(refType = "dd"))
+            .copy(customTypes = domain)
+        val tgt = schema("id" to NeutralType.Integer, "d" to NeutralType.Integer)
+        val data = chunk("users", listOf("id", "d"), listOf(row(1, 5), row(2, 7)))
+        val report = verify(reader(data), reader(data), src, tgt)
+        report.allMatch shouldBe true
+        report.tables[0].excluded shouldBe emptyList()
+    }
+
+    test("Enum-Spalte (kind enum) gegen Integer-Spalte bleibt ausgeschlossen (Textfamilie gegen numerisch)") {
+        val enumTypes = mapOf("dd" to CustomTypeDefinition(kind = CustomTypeKind.ENUM, values = listOf("a")))
+        val src = schema("id" to NeutralType.Integer, "d" to NeutralType.Enum(refType = "dd")).copy(customTypes = enumTypes)
+        val tgt = schema("id" to NeutralType.Integer, "d" to NeutralType.Integer)
+        val data = chunk("users", listOf("id", "d"), listOf(row(1, 5)))
+        verify(reader(data), reader(data), src, tgt).tables[0].excluded.map { it.column } shouldBe listOf("d")
     }
 })
