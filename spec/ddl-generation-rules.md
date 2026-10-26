@@ -1346,9 +1346,10 @@ eine unveränderte Domain-Spalte nichts.
 
 Die Prüfregeln für Spaltenwerte lösen eine Domain-Spalte über `custom_types` auf den Basistyp der
 Domain auf: ein Spalten-`DEFAULT` wird gegen den Basistyp geprüft (`E009`), ein Fremdschlüssel gegen
-den Typ der referenzierten Spalte nach dem Basistyp (`E017`), `generation: identity` gegen den
-Basistyp (`E130`). Eine Spalte vom Typ einer `integer`-Domain verhält sich dort wie eine
-`integer`-Spalte, nicht wie eine Textspalte.
+den Typ der referenzierten Spalte nach dem Basistyp (`E017`). Eine Spalte vom Typ einer
+`integer`-Domain verhält sich dort wie eine `integer`-Spalte, nicht wie eine Textspalte.
+`generation: identity` ist an einer Domain-Spalte nicht zulässig (`E130`): PostgreSQL erlaubt keine
+Identity an einer Spalte vom Typ einer Domain.
 
 Der Reverse nennt an der Spalte die Domain, deren Typ die Spalte im Katalog trägt. Eine Domain über
 einer Domain wird nicht rekursiv aufgelöst: die Spalte nennt die äußere Domain, und als Basistyp

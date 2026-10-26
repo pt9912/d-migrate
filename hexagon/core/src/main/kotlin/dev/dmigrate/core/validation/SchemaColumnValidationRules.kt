@@ -16,7 +16,7 @@ internal object SchemaColumnValidationRules {
         validateForeignKeyColumnExists(path, column, schema, errors)
         validateForeignKeyTypeCompatibility(path, column, schema, errors)
         validateRefTypeExists(path, column, schema, errors)
-        validateDefaultTypeCompatibility(path, column, errors)
+        validateDefaultTypeCompatibility(path, column, schema, errors)
         validateSequenceDefaultReference(path, column, schema, errors)
         validateGeneration(path, column, table, schema, errors)
         return errors
@@ -131,7 +131,9 @@ internal object SchemaColumnValidationRules {
         val reference = column.references ?: return
         val targetTable = schema.tables[reference.table] ?: return
         val targetColumn = targetTable.columns[reference.column] ?: return
-        if (!isTypeCompatible(column.type, targetColumn.type)) {
+        val source = DomainBaseTypes.effectiveType(column.type, schema.customTypes)
+        val target = DomainBaseTypes.effectiveType(targetColumn.type, schema.customTypes)
+        if (!isTypeCompatible(source, target)) {
             errors += ValidationError(
                 "E017",
                 "Foreign key type incompatible with referenced column '${reference.table}.${reference.column}'",
@@ -159,10 +161,12 @@ internal object SchemaColumnValidationRules {
     private fun validateDefaultTypeCompatibility(
         path: String,
         column: ColumnDefinition,
+        schema: SchemaDefinition,
         errors: MutableList<ValidationError>,
     ) {
         val default = column.default ?: return
-        if (!isDefaultCompatible(default, column.type)) {
+        // Eine Domain-Spalte nimmt den Default ihres Basistyps (Spec: Spalte vom Typ einer Domain).
+        if (!isDefaultCompatible(default, DomainBaseTypes.effectiveType(column.type, schema.customTypes))) {
             errors += ValidationError(
                 "E009",
                 "Default value incompatible with column type",
@@ -274,6 +278,8 @@ internal object SchemaColumnValidationRules {
         schema: SchemaDefinition,
         errors: MutableList<ValidationError>,
     ) {
+        // Eine Domain-Spalte bleibt hier ausgenommen: PostgreSQL erlaubt keine Identity an einer Spalte vom Typ einer
+        // Domain, und der Generator liesse sie sonst still weg.
         if (column.type !is NeutralType.Integer && column.type !is NeutralType.BigInteger) {
             errors += ValidationError(
                 "E130",

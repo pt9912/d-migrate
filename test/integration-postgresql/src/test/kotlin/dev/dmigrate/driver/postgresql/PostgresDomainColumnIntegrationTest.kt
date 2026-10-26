@@ -10,6 +10,7 @@ import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
@@ -263,6 +264,21 @@ class PostgresDomainColumnIntegrationTest : FunSpec({
         SchemaComparator().compare(db, db).tablesChanged.size shouldBe 0
         val alt = withColumns(db) { it["d"] = it.getValue("d").copy(type = NeutralType.Integer) }
         SchemaComparator().compare(db, alt).tablesChanged.single().columnsChanged.single().name shouldBe "d"
+    }
+
+    test("reverse -> validate: Domain-Spalte mit Spalten-DEFAULT und Fremdschluessel-Spalte vom Domain-Typ bestehen") {
+        exec(
+            "CREATE DOMAIN dd AS integer CHECK (VALUE >= 0)",
+            "CREATE DOMAIN du AS uuid",
+            "CREATE TABLE p (id dd NOT NULL, PRIMARY KEY (id))",
+            "CREATE TABLE q (id integer NOT NULL, d dd DEFAULT 5, fk dd REFERENCES p (id), " +
+                "u du DEFAULT gen_random_uuid(), PRIMARY KEY (id))",
+            "CREATE TABLE r (id integer NOT NULL, fk integer REFERENCES p (id), PRIMARY KEY (id))",
+        )
+        val schema = read()
+        column(schema.copy(tables = mapOf("t" to schema.tables.getValue("q"))), "d").type shouldBe ref
+        val result = SchemaValidator().validate(schema)
+        withClue(result.errors.toString()) { result.errors.map { it.code } shouldBe emptyList() }
     }
 
     // ── Post-Compare und Rollback-Rundlauf (Abdruck der Domain-Spalte) ──
