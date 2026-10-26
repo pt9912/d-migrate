@@ -326,21 +326,20 @@ internal class PostgresDiffRenderContext(
     }
 
     /**
-     * Der Name des CHECKs, der den Wertevorrat von [column] aufzaehlt, auf der
-     * Seite, von der **weg** geaendert wird — oder `null`, wenn dort keiner
-     * steht.
+     * Die Namen der CHECKs, die den Wertevorrat von [column] aufzaehlen, auf der
+     * Seite, von der **weg** geaendert wird — leer, wenn dort keiner steht.
      *
      * Der echte Katalogname, nicht ein nachgebildeter: PostgreSQL benennt einen
      * unbenannten Constraint selbst, haengt bei Kollision eine Ziffer an und
      * kuerzt lange Namen (live gemessen). Ein erratener Name traefe genau die
      * Faelle nicht, in denen es darauf ankommt.
      */
-    fun enumValueCheckName(table: String, column: String): String? {
+    fun enumValueCheckNames(table: String, column: String): List<String> {
         val schema = if (direction == PostgresRenderDirection.UP) currentSchema else desiredSchema
-        val definition = schema?.tables?.get(table) ?: return null
-        return definition.constraints.firstOrNull {
+        val definition = schema?.tables?.get(table) ?: return emptyList()
+        return definition.constraints.filter {
             it.type == ConstraintType.CHECK && EnumCheckProjection.valuesOf(it.expression, column) != null
-        }?.name
+        }.map { it.name }
     }
 
     /** Columns of [table] on the side this render direction reads (UP=desired, DOWN=current). */

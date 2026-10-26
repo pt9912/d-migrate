@@ -233,4 +233,48 @@ class PostgresEnumCheckRollbackTest : FunSpec({
             "ALTER TABLE \"t\" ADD CHECK (\"e\" IN ('a', 'b', 'c'));",
         )
     }
+
+    test("two value CHECKs on the column: the Up leaves the drops to the DropConstraint operations") {
+        val first = check("second", "a", "b")
+        val second = check("t_e_check", "a", "b", "c")
+        val live = schema(NeutralType.Text(), listOf(first, second))
+        val file = schema(enumOf("a", "b", "d"))
+        // Wie der Vergleich es meldet: keiner der beiden CHECKs wird gefaltet, jeder ist ein eigener Abgang.
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "t",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "e", type = ValueChange(NeutralType.Text(), enumOf("a", "b", "d"))),
+                    ),
+                    constraintsRemoved = listOf(first, second),
+                ),
+            ),
+        )
+        val r = gen.generateUp(planner.plan(live, file, diff), DdlGenerationOptions())
+        val drops = sqls(r).filter { it.contains("DROP CONSTRAINT") }
+        // Jeder Name genau einmal: ein zweites DROP derselben Constraint scheiterte beim Ausfuehren.
+        drops shouldBe listOf(
+            "ALTER TABLE \"t\" DROP CONSTRAINT \"second\";",
+            "ALTER TABLE \"t\" DROP CONSTRAINT \"t_e_check\";",
+        )
+        sqls(r).count { it.contains("ADD CHECK") } shouldBe 1
+    }
+
+    for ((label, names) in listOf("chk_a/chk_b" to ("chk_a" to "chk_b"), "t_e_check/zzz" to ("t_e_check" to "zzz"))) {
+        test("two value CHECKs ($label): the Down blocks whatever the names are") {
+            val live = schema(
+                NeutralType.Text(),
+                listOf(check(names.first, "a", "b"), check(names.second, "a", "b", "c")),
+            )
+            val file = schema(enumOf("a", "b", "d"))
+            val r = gen.generateDown(
+                planner.plan(live, file, typeChange(NeutralType.Text(), enumOf("a", "b", "d"))),
+                liveOptions,
+            )
+            r.isBlocked shouldBe true
+            r.blockers.map { it.reason } shouldContain MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
+            sqls(r).none { it.contains("DROP CONSTRAINT \"t_e_check\"") } shouldBe true
+        }
+    }
 })

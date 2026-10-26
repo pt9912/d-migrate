@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `schema generate` schrieb das Merkmal gar nicht, obwohl das Modell `without_rowid` kennt. Beide Pfade
   schreiben jetzt `) WITHOUT ROWID;`; der Neubau erhält das Merkmal, wenn Datei oder Datenbank es
   tragen. Der Abdruck ändert sich nicht.
+- **`schema migrate` auf PostgreSQL mit zwei Wertelisten-`CHECK`s an einer Spalte endet nicht mehr mit
+  Exit `5`.** Der Plan trug für die Spalte ein `AlterColumnType` und für jeden der beiden `CHECK`s ein
+  `DropConstraint`; das `AlterColumnType` löste einen davon, das folgende `DropConstraint` desselben
+  Namens scheiterte, die Transaktion brach ab und die Datenbank blieb unverändert, auch bei
+  unveränderter Werteliste. Jetzt löst das `AlterColumnType` bei mehreren Wertelisten-`CHECK`s keinen
+  und überlässt das den `DropConstraint`-Operationen. Mit `--generate-rollback` meldet der Lauf den Down
+  als nicht möglich (`ROLLBACK_NOT_POSSIBLE`, Exit `8`), weil der Name des neuen `CHECK`s nicht sicher
+  ist. Der Schema-Fingerprint ändert sich nicht.
 
 ## [1.11.0] - 2026-10-26
 
