@@ -1,6 +1,6 @@
 # PostgreSQL: eine Spalte vom Domain-Typ (`type: enum` + `ref_type`) plant bei jedem Lauf `AlterColumnType` und blockiert mit Exit 8 (Issue #68)
 
-> **Status: Alle Eigner-Fragen entschieden (2026-10-26): Option B′ und E3, E7–E12 nach Empfehlung; E3 (a2) ist nach P1b bestätigt (Datenbank-Hashes bitgleich, siehe „P2a, P2a-R und P1b Ergebnis“). Erledigt: Schritt 0a und 0b (Spec), P1a (Messung auf `main`), P2a (Reader, einseitiger Vergleich, Abdruck), P2a-R (Rollback-Verdrahtung), P1b (Hash nachher), P2b (Validierung, E7). Nächster Schritt: P2c-0 bis P2c-4, dann P3b, P5.** Der Plan liegt auf Anweisung des Eigners
+> **Status: Alle Eigner-Fragen entschieden (2026-10-26): Option B′ und E3, E7–E12 nach Empfehlung; E3 (a2) ist nach P1b bestätigt (Datenbank-Hashes bitgleich, siehe „P2a, P2a-R und P1b Ergebnis“). Erledigt: Schritt 0a und 0b (Spec), P1a (Messung auf `main`), P2a (Reader, einseitiger Vergleich, Abdruck), P2a-R (Rollback-Verdrahtung), P1b (Hash nachher), P2b (Validierung, E7), P2c-0 bis P2c-4 (Leser). Nächster Schritt: P3b (Tests Leser, Cross-Dialekt, MCP-Stichprobe), dann P5.** Der Plan liegt auf Anweisung des Eigners
 > schon in `in-progress/` (ADR 0004 sieht den Move erst mit dem ersten Implementierungs-Commit vor); P2a ist der erste Implementierungs-Commit.
 > **Vorbedingung:** E1, E2, E4–E6 entschieden (siehe „Entscheidung“). **Offen:** nur die Bestätigung von E3 (a2) durch P1a/P1b (Rückfall (a1)); sonst keine Eigner-Frage. **Reihenfolge:** Schritt 0a Spec (Reverse/Verweis, erledigt) → P1a (Messung auf `main`, erledigt) → **vorläufige** Entscheidung E3/E7/E9 → Schritt 0b Spec → P2a → P1b (Hash nachher, E3 bestätigt, ADR) → P2b → P2c → P3a/P3b → P5.
 > **Plan-Review Runde 3 eingearbeitet (2026-10-26):** `postUpFingerprint`-Befund korrigiert, E3 in a1/a2/b/c, Akzeptanz nach Weg, E12, Schneidung von P2c/P3.
@@ -176,6 +176,27 @@ Umgesetzt: `PostgresTableMetadataQueries.listColumns` wählt `domain_schema`/`do
 ## P2b Ergebnis (2026-10-26)
 
 `SchemaColumnValidationRules` loest eine Domain-Spalte (`Enum(refType)` mit `customTypes[ref].kind == DOMAIN`) ueber den neuen gemeinsamen Helfer `DomainBaseTypes` (`hexagon/core`, `model`; schon der Helfer von P2c-0) auf den Basistyp auf: **E009** (Default, inkl. `FunctionDefaultCompatibility`: `gen_uuid` auf einer `uuid`-Domain, `current_timestamp` auf `timestamptz`) und **E017** (Fremdschluessel, beide Seiten aufgeloest). Eine Stufe: Domain ueber Domain, unbekannter Verweis und Basistyp ohne neutrales Gegenstueck bleiben `Enum(refType)` (Textfamilie wie bisher); `kind: enum` unveraendert. `DomainTypes.resolveBaseType` (driver-common) delegiert an den Helfer. **Abweichung von der Empfehlung E7 fuer Identity:** E130 **bleibt** an einer Domain-Spalte: PostgreSQL erlaubt keine Identity an einer Spalte vom Typ einer Domain, und der Generator liesse sie sonst still weg; die Spec (`ddl-generation-rules.md` §6.3, `neutral-model-spec.md` §13.3) sagt das jetzt so. Tests: `SchemaColumnDomainValidationTest` (Default Zahl/Boolean/String/Funktion, Fremdschluessel beide Richtungen, Identity, Domain ueber Domain, unbekannte Domain, Array-Domain, Enum), `PostgresDomainColumnIntegrationTest` (reverse -> validate mit Default und FK). Rot-Beleg: `SchemaColumnValidationRules` auf den `main`-Stand -> Default-, Fremdschluessel- und Domain-ueber-Domain-Test rot.
+
+## P2c Ergebnis (2026-10-26)
+
+**P2c-0 Helfer.** `DomainBaseTypes` (`hexagon/core`, seit P2b) genuegt fuer alle Lesestellen: `effectiveType(type, customTypes)` loest eine Domain-Spalte auf den Basistyp auf (eine Stufe, sonst unveraendert), `baseTypeOf(domain)` liefert den neutralen Basistyp. Die CHECK-Information der Domain braucht nur der Seed (`CustomTypeDefinition.check`), sie bleibt dort ([`DomainCheck`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/seed/DomainCheck.kt)).
+
+**Befund zu den Lesestellen (am Code und gemessen):** die Datenpfade `export`, Parquet, `CanonicalValueCodec` und `CompareValueText` lesen ihre Spaltentypen **nicht** aus dem Schema-Reader, sondern aus den JDBC-Metadaten des Daten-Readers (`ChunkSchema`) bzw. dem Parquet-Footer; der Export nutzt den Schema-Reader nur fuer Primaerschluessel. Der Reader-Umbau erreicht dort nichts. Schema-Typen des Readers lesen nur der Seed (Datei oder Datenbank), der Import-Preflight (`--schema`), der Transfer (Preflight und `--verify`) und `schema compare`.
+
+| Lesestelle | vorher (`main`, gemessen) | nach dem Reader-Umbau ohne Fix | nachher |
+|---|---|---|---|
+| P2c-1 `data seed`, ref-Datei | Exit 0, `d` in allen Zeilen NULL (0/3) | unveraendert | Exit 0, 3/3 Zahlen, den CHECK der Domain erfuellend |
+| `data seed`, Altdatei (`type: integer`, Domain nur unter `custom_types`) | Exit 5, `dd_check` verletzt | unveraendert | **unveraendert Exit 5**: die Spalte nennt die Domain nicht, der Seed kann sie nicht kennen (ausserhalb) |
+| P2c-2 `data transfer` PG -> PG `--verify` | Exit 0 | Exit 0 | Exit 0 (Verify OK) |
+| `data transfer` PG -> SQLite `--verify` | Exit 0 | **Exit 3** (Preflight: `Enum(refType)` gegen `Integer`; am Unit-Test rot belegt) | Exit 0 |
+| P2c-3 `data import --schema ref.yaml` | Exit 3 (`type mismatch ... target is int4`) | unveraendert | Exit 0 (2 Zeilen) |
+| `data import` ohne Schemadatei | Exit 0 | Exit 0 | Exit 0 |
+| P2c-4 Parquet-Export einer Domain-Spalte | Manifest `neutralType: kind: Integer` | unveraendert | unveraendert (kein Code, JDBC-Typen) |
+| `CanonicalValueCodec`, `CompareValueText` | — | — | unveraendert: der Codec bekommt die Typen aus `TransferVerifier` (jetzt aufgeloest); `CompareValueText` beschreibt den Vergleich und nennt `enum(ref:dd)` richtig (`schema compare` strikt, E5) |
+
+Ohne den Fix am Transfer-Preflight haette der Reader-Umbau `data transfer` von PostgreSQL in einen anderen Dialekt fuer jede Datenbank mit Domain-Spalte mit Exit 3 gebrochen — das war die einzige **neue** Regression aus E8 und ist behoben; sie braucht keine Eigner-Entscheidung (Verhalten wie vor dem Umbau). `--verify` PG -> SQLite verifiziert die Spalte weiter (nicht ausgeschlossen), wie auf `main`.
+
+**P2c-1 Seed (Begruendung der Meldung statt NULL):** der Seed loest die Domain-Spalte auf den Basistyp auf und erzeugt Werte, die den CHECK erfuellen: Schranken (`>`, `>=`, `<`, `<=`, `=`, `BETWEEN`) fuer ganze Zahlen, `decimal` und `float`, `VALUE <> '...'`, `length(VALUE) <op> n`, Wertelisten (`IN (...)`, Katalogform `= ANY (ARRAY[...])`), `IS NOT NULL`. Ein CHECK ausserhalb davon (Regex, Funktionen) oder ein unerfuellbarer, und eine Domain ueber einer Domain, ist ein `SeedPreflightException` (Exit 3) mit Spalte, Domain und CHECK und dem Hinweis auf `--rules` — **auch bei nullbarer Spalte**: ein stilles NULL erfuellt jeden CHECK und waere genau der Befund aus P1a. Eine `--rules`-Regel fuer die Spalte umgeht die Pruefung. Tests: `DomainColumnSeedTest`, Rot-Beleg gegen den `main`-Stand von `TableRowSeeder`. P2c-3: `ImportTableValidatorTest`, P2c-2: `TransferVerifierTest`, `TransferPreflightPlannerDomainTest`, je rot gegen `main`.
 
 ## Optionen
 
