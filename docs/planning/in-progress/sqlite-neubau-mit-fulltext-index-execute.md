@@ -1,12 +1,12 @@
 # SQLite: Tabellen-Neubau mit `FULLTEXT`-Index derselben Tabelle in einem `--execute`-Lauf
 
-> **Status:** Draft mit Scope, **entschieden (Eigner, 2026-10-26)** für E1 (Richtung (A)), E3 und E4. **E2 (Spatial) bleibt offen** und hängt an P0. Ursache am Code belegt, Umfang des Falls in P0 nachzumessen.
+> **Status:** In Arbeit (P0 gemessen), **entschieden (Eigner, 2026-10-26)** für E1 (Richtung (A)), E3 und E4. **E2 (Spatial) bleibt offen**, mit Empfehlung aus P0 (siehe unten). Ursache am Code belegt und gemessen.
 > **Anlass:** Fall „A-FT" aus der P0-Messtabelle von
-> [`sqlite-without-rowid-umwandlung-produktfrage.md`](../in-progress/sqlite-without-rowid-umwandlung-produktfrage.md) (Issue #67): Neubau (z. B. wegen `unique: true`) plus neuer `FULLTEXT`-Index in einem Lauf endet mit
+> [`sqlite-without-rowid-umwandlung-produktfrage.md`](./sqlite-without-rowid-umwandlung-produktfrage.md) (Issue #67): Neubau (z. B. wegen `unique: true`) plus neuer `FULLTEXT`-Index in einem Lauf endet mit
 > `--execute` mit Exit 8 (`TRANSACTION_SCOPE_UNSUPPORTED`), schon **vor** der #67-Änderung. #67 testet A-FT nur mit `--plan-only` und `--output`.
 > **Unabhängig von #67:** beide Slices lassen sich in jeder Reihenfolge liefern; keiner setzt den anderen voraus. (Berührungspunkt, kein Hindernis: beide fassen `SqliteRebuildPlan`/`SqliteRebuildRenderer` an; wer später landet, rebased.)
-> **Vorbedingung:** keine Eigner-Entscheidung, kein ADR, keine Spec vorab (siehe „Rückwirkung"). **Verwandt:** [`sqlite-neubau-allein-execute-bestandsdatei.md`](../in-progress/sqlite-neubau-allein-execute-bestandsdatei.md) (#60, hat den Plain-/BTREE-Teil gelöst und `FULLTEXT` ausdrücklich als Folgeplan abgegrenzt),
-> [`sqlite-neubau-abhaengige-sichten.md`](../in-progress/sqlite-neubau-abhaengige-sichten.md) (#50, Neubau neben **anderer** Tabelle/Sicht), [`sqlite-fulltext-rebuild-recreate.md`](../done/sqlite-fulltext-rebuild-recreate.md) (Neubau erhält FTS5).
+> **Vorbedingung:** keine Eigner-Entscheidung, kein ADR, keine Spec vorab (siehe „Rückwirkung"). **Verwandt:** [`sqlite-neubau-allein-execute-bestandsdatei.md`](./sqlite-neubau-allein-execute-bestandsdatei.md) (#60, hat den Plain-/BTREE-Teil gelöst und `FULLTEXT` ausdrücklich als Folgeplan abgegrenzt),
+> [`sqlite-neubau-abhaengige-sichten.md`](./sqlite-neubau-abhaengige-sichten.md) (#50, Neubau neben **anderer** Tabelle/Sicht), [`sqlite-fulltext-rebuild-recreate.md`](../done/sqlite-fulltext-rebuild-recreate.md) (Neubau erhält FTS5).
 > **Aktivierung** (Move nach `../in-progress/`) beim ersten Implementierungs-Commit; beim Move die `../in-progress/`-Links auf `./`, die Status-Spalte der README-Zeile nachziehen; nur Planning-Dateien, kein ADR-`consulted:`.
 > **Vorgabe für Spec und Handbuch:** nur der gültige Zustand, keine Chronik oder Forensik; Version und Herleitung nur im `CHANGELOG.md`.
 
@@ -104,6 +104,30 @@ Der Schnitt ist kein Raten: P0 misst die Matrix unten, auch die Fälle, die **ni
   * `CHANGELOG.md`: Eintrag mit Version und Herleitung (hier und nur hier).
   * `docs/planning/in-progress/sqlite-neubau-allein-execute-bestandsdatei.md`: Verweis im Abschnitt zu 11a/11b nachtragen („erledigt in …").
 * **P4 Abschluss:** Gates (unten), Move nach `done/` mit Closure-Notiz; Bezug zu #67 (A-FT mit `--execute` jetzt testbar): der #67-Slice darf seinen Hinweis „nur `--plan-only`/`--output`" erst **nach** diesem Slice streichen; er wartet nicht darauf.
+
+### P0 Messung (Ergebnis)
+
+Gemessen am Runtime-Image (`make docker-build`, `d-migrate:dev`) gegen echte SQLite-Dateien; Datenbank mit `sqlite3` aus SQL (3.54, FTS5 vorhanden), Soll-Schema als YAML. Je Fall: `schema migrate --plan-only --output` (Plan), `--generate-rollback --output --rollback-output` ohne Ausführung (Skripte), `--execute` (Exit, Diagnostics, `sqlite_master` vor/nach), bei Exit 0 zweiter Lauf und `schema rollback --execute --allow-destructive` mit Katalogvergleich, **Skript ohne Guard** (`up.sql` direkt mit `sqlite3 -bail`, danach `down.sql`). Das Messprogramm war ein Wegwerf-Shellskript; `--plan-only` verbietet `--rollback-output` („--plan-only forbids --rollback-output"), deshalb zwei Läufe. Der Mechanismus „Skript direkt ausführen" ist derselbe wie in #60 (`CliSchemaMigrateRebuildIndexOpsSqliteTest`, Skript per JDBC; dort trigger-bewusster Teiler). Bei „Skript ohne Guard" ist der Katalog nach UP und DOWN in allen Fällen gleich dem Stand vor dem Lauf, wo der Fehler nach dem COMMIT des Neubaus auftritt; die Fehler sind die Befunde.
+
+| # | Fall | Gemessen | Erwartung |
+|---|---|---|---|
+| 1 | Neubau (`unique: true` gegen `CREATE UNIQUE INDEX`) + `FULLTEXT` neu, Rowid-Tabelle | Plan Exit 0, 3 Operationen; `--execute` **Exit 8** `TRANSACTION_SCOPE_UNSUPPORTED`, DB unverändert. Ohne Guard: UP bricht am zweiten `CREATE VIRTUAL TABLE "ft_b"` mit `table "ft_b" already exists` (danach `trigger "ft_b_ai" already exists`); FTS5 samt Triggern steht schon aus dem Neubau | bestätigt |
+| 2 | Neubau (`AlterColumnNullability`) + `FULLTEXT` neu | wie 1 (Exit 8; ohne Guard `ft_b already exists`) | bestätigt |
+| 3 | Neubau + `FULLTEXT` weg | Exit 8; UP ohne Guard läuft (Neubau räumt FTS5 per `DROP … IF EXISTS`); **DOWN** legt FTS5 zweimal an: `table "ft_b" already exists` | bestätigt |
+| 4 | Neubau + `FULLTEXT` geändert (gleicher Name, andere Spalte) | Exit 8; Plan: 3 Operationen. Ohne Guard laufen UP und DOWN **fehlerfrei**: der Neubau legt FTS5 an, die `simpleOp` räumt per `DROP … IF EXISTS` ab und legt erneut an (zweimal `CREATE VIRTUAL TABLE` im UP, redundant, kein Fehler) | **Abweichung** (Erwartung nur „Exit 8"): kein Laufzeitfehler, nur Doppelung |
+| 5 | Gegenprobe: Neubau, `FULLTEXT` **unverändert** | Exit 0, FTS5 samt drei Triggern danach vorhanden, zweiter Lauf 0 Operationen, **Rollback Exit 0, Katalog == Stand vor dem Lauf**; je ein `CREATE VIRTUAL TABLE` in UP und DOWN | bestätigt |
+| 6 | Gegenprobe: `FULLTEXT` neu ohne Neubau | Exit 0, zweiter Lauf 0, Rollback Exit 0, Katalog == vorher | bestätigt |
+| 7 | Neubau an `t`, `FULLTEXT` neu an **anderer** Tabelle `x` | Exit 8 `TRANSACTION_SCOPE_UNSUPPORTED`; ohne Guard laufen UP und DOWN fehlerfrei (kein Doppel-Anlegen) | bestätigt (gehört zu #50) |
+| 8 | Neubau + `FULLTEXT` neu, Tabelle `WITHOUT ROWID` (Datei `without_rowid: true`) | Exit 8; `W132` **zweimal** im Report (Plan und Execute); kein FTS5 im Skript; ohne Guard UP/DOWN fehlerfrei | bestätigt |
+| 9 | Neubau + `FULLTEXT` neu, Spalte `rank` | wie 8 (Exit 8, `W132` zweimal) | bestätigt |
+| 10 | Neubau + `FULLTEXT` neu, unveränderter Plain-Index `ix_u` und Fremdschlüssel | Exit 8; ohne Guard `ft_b already exists`; `ix_u` und FK im Neubau; DOWN fehlerfrei | bestätigt |
+| 11 | Spatial-Index neben Neubau, `--spatial-profile spatialite` (ohne `E052`) | Plan **und** `--execute` Exit 8, aber **nicht** `TRANSACTION_SCOPE_UNSUPPORTED`: `SPATIAL_METADATA_UNSUPPORTED` (BLOCKER, je Operation des Neubau-Eimers) und `EXTENSION_DEPENDENCY_UNKNOWN` (BLOCKER am `AddIndex`); es entstehen keine Skripte. Ohne Profil (11b): `E052` wie in #60 | **Abweichung/Befund:** siehe E2 unten |
+| 12 | Rückweg des Falls 1 (`down.sql`, ohne Guard) | läuft nach dem UP fehlerfrei; der Katalog gleicht danach dem Stand vor dem Lauf (der Stand vor dem Lauf hat kein FTS5, die Drop-Phase des Neubaus räumt `ft_b` ab); **keine** FTS5-Doppelung im DOWN von Fall 1. Die Doppelung steht im DOWN von Fall 3 (FTS5 in der Datenbank) | **Abweichung:** Erwartung „FTS5-Doppelung im DOWN" gilt nur für Fall 3, nicht für 1 |
+| K | Kontrolle #67: Rowid-Datenbank, Datei `without_rowid: true`, Neubau + `FULLTEXT` neu | Exit 8; `W164` im Report; ohne Guard wie Fall 1 (`ft_b already exists`); der Neubau bleibt Rowid, FTS5 wird aufgebaut | bestätigt |
+
+**E2 (Spatial), Befund.** Fall 11 ist als „Neubau + Geometrie-Index derselben Tabelle in einem `--execute`-Lauf" **nicht erreichbar**, auch mit gesetztem Spatial-Profil. Ursache am Code: `SqliteRebuildRenderer.emitGeometryBlockerIfAny` blockiert **jeden** Neubau einer Tabelle, deren Soll- oder Ist-Seite eine `Geometry`-Spalte trägt (`SPATIAL_METADATA_UNSUPPORTED`, `MANUAL_ACTION_REQUIRED`), unabhängig vom Profil; ein Geometrie-Index (`isSpatialGeometryIndex`: Typ nicht `FULLTEXT` und Spalte `Geometry`) setzt aber eine solche Spalte voraus. Der Strom wird gar nicht erst ausgegeben, der Guard `TRANSACTION_SCOPE_UNSUPPORTED` erreicht ihn nicht. **Empfehlung E2: ausnehmen, Nicht-Scope** (`isAbsorbedIndexOp` behält die Geometrie-Ausnahme); kein Satz im Handbuch §3.17 nötig, weil die Blockade eine andere, schon eigenständige Ursache und Meldung hat. Eine Aufnahme wäre sinnlos, solange der Neubau Geometrie-Registrierung nicht mitnimmt (eigener Posten, im Renderer-Kommentar benannt).
+
+**Schnitt bestätigt:** nur `FULLTEXT` derselben Tabelle ist dieser Slice; Plain-/BTREE (#60) gelöst, fremde Tabelle (Fall 7) bleibt #50, Geometrie unerreichbar (E2). **Rückweg im Ist-Stand:** wo messbar (Fälle 5, 6 und Kontrolle: Neubau mit unverändertem `FULLTEXT`, nur `AddIndex`), stellt `schema rollback --execute` den Katalog (inkl. FTS5-Tabelle, Schatten-Tabellen und drei Trigger) exakt wieder her, keine Abweichung. Für die blockierten Fälle ist der Rollback-Rundlauf vor dem Fix nicht messbar; ersatzweise UP+DOWN ohne Guard: Katalog gleich dem Stand vor dem Lauf, aber DOWN von Fall 3 bricht mit `already exists`, und Fall 4 zeigt die redundante Doppelung (P2 muss auch dort je Ziel-Index genau einen Aufbau erzeugen). Die Slice-Annahme „`W132` zweimal" (Fälle 8, 9) ist gemessen.
 
 ## Rückwirkung auf Spec und Handbuch (getrennt)
 

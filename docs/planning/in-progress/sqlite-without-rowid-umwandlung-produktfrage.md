@@ -63,7 +63,7 @@ Fall A hatte keinen Test — deshalb rutschte #67 durch.
 ## Grenze: FULLTEXT (unabhängig von #67)
 
 Fall A mit `FULLTEXT`-Index und `--execute` endet unabhängig von #67 mit Exit 8 (`TRANSACTION_SCOPE_UNSUPPORTED`). Eigener Slice:
-[`sqlite-neubau-mit-fulltext-index-execute.md`](../next/sqlite-neubau-mit-fulltext-index-execute.md). **Hier kein Rollback-Rundlauf für A-FT mit `--execute`** (ohne angewendeten Lauf nichts zurückzurollen); der Rückweg
+[`sqlite-neubau-mit-fulltext-index-execute.md`](./sqlite-neubau-mit-fulltext-index-execute.md). **Hier kein Rollback-Rundlauf für A-FT mit `--execute`** (ohne angewendeten Lauf nichts zurückzurollen); der Rückweg
 von A-FT gehört in den FULLTEXT-Slice.
 
 ## Arbeitspakete
