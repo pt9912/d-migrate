@@ -1344,6 +1344,18 @@ Auf PostgreSQL rendert der Generator sie als Spalte des Domain-Typs (`"price" "p
 `schema reverse` schreibt eine solche Spalte in dieser Form zurück, und `schema migrate` plant für
 eine unveränderte Domain-Spalte nichts.
 
+Die Prüfregeln für Spaltenwerte lösen eine Domain-Spalte über `custom_types` auf den Basistyp der
+Domain auf: ein Spalten-`DEFAULT` wird gegen den Basistyp geprüft (`E009`), ein Fremdschlüssel gegen
+den Typ der referenzierten Spalte nach dem Basistyp (`E017`), `generation: identity` gegen den
+Basistyp (`E130`). Eine Spalte vom Typ einer `integer`-Domain verhält sich dort wie eine
+`integer`-Spalte, nicht wie eine Textspalte.
+
+Der Reverse nennt an der Spalte die Domain, deren Typ die Spalte im Katalog trägt. Eine Domain über
+einer Domain wird nicht rekursiv aufgelöst: die Spalte nennt die äußere Domain, und als Basistyp
+zählt der Basistyp der äußeren Domain, wie der Reverse ihn führt. Eine Domain, die der Reverse nicht
+in `custom_types` führt (anderes Schema als das gelesene, Erweiterungs-Domain), steht an der Spalte
+als Basistyp; ein `ref_type` ins Leere schreibt der Reverse nie.
+
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
 Der Basistyp läuft über die neutrale Typtabelle (auch PostgreSQL-Katalognamen wie `int4`,
 `bytea`, `timestamptz`) und den Typmapper des Dialekts, nie als roher Typname in die Spalte;

@@ -1469,7 +1469,7 @@ Das neutrale Modell wird vor der DDL-Generierung validiert:
 ### 13.3 Typkompatibilitäts-Regeln
 
 - `references`-Spaltentyp muss kompatibel mit der referenzierten Spalte sein
-- `default`-Wert muss zum Spaltentyp passen
+- `default`-Wert muss zum Spaltentyp passen; bei einer Spalte vom Typ einer Domain (`type: enum` + `ref_type` auf `kind: domain`) gilt der Basistyp der Domain, ebenso für die Typkompatibilität eines Fremdschlüssels und für `generation: identity`
 - `precision` und `scale` müssen bei `decimal` angegeben sein
 - `max_length` bei `text` muss positiv sein
 - `check`-Expressions dürfen nur auf Spalten der eigenen Tabelle verweisen
