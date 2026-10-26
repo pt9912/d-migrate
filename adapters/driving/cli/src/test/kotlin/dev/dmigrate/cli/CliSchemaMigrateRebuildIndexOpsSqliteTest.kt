@@ -420,6 +420,44 @@ class CliSchemaMigrateRebuildIndexOpsSqliteTest : FunSpec({
         file(required("      rank: { type: text }\n"), index("- { name: ft_b, type: fulltext, columns: [rank] }")),
     )
 
+    /**
+     * Gegenprobe ohne Neubau: die Tabelle stimmt mit der Datei ueberein, nur der `FULLTEXT`-Index fehlt. Der Exit 5
+     * (`POST_EXECUTE_DRIFT`) stammt aus der Drift-Pruefung, nicht aus dem Neubau; der zweite Lauf zeigt weiter die
+     * Operation `AddIndex`.
+     */
+    fun degradedWithoutRebuild(label: String, tableDb: String, after: String) {
+        test("FULLTEXT ohne Neubau, $label: --execute Exit 5 (POST_EXECUTE_DRIFT), kein Neubau, zweiter Lauf zeigt 1 Operation") {
+            val dir = Files.createTempDirectory("cli-fulltext-degraded-no-rebuild")
+            val db = database(dir, tableDb)
+            val tableBefore = scalar(db, "SELECT sql FROM sqlite_master WHERE name = 't'")
+
+            val (code, report) = execute(dir, after, db, "up")
+
+            Files.readString(report) shouldContain "POST_EXECUTE_DRIFT"
+            code shouldBe 5
+            ftsObjects(db) shouldBe 0
+            scalar(db, "SELECT sql FROM sqlite_master WHERE name = 't'") shouldBe tableBefore
+            val again = dir.resolve("again.json")
+            run(
+                "schema", "migrate", "--source", write(dir, "again.yaml", after).toString(),
+                "--target", "db:sqlite://$db", "--output", dir.resolve("again.sql").toString(), "--report", again.toString(),
+            ) shouldBe 0
+            operations(again) shouldBe 1
+        }
+    }
+
+    degradedWithoutRebuild(
+        "Fall 8: WITHOUT ROWID",
+        "CREATE TABLE t (id INTEGER NOT NULL, u INTEGER, a TEXT NOT NULL, b TEXT, PRIMARY KEY (id)) WITHOUT ROWID",
+        file(required(), ftIndex, meta = withoutRowid),
+    )
+
+    degradedWithoutRebuild(
+        "Fall 9: reservierter Spaltenname rank",
+        "CREATE TABLE t (id INTEGER NOT NULL, u INTEGER, a TEXT NOT NULL, b TEXT, rank TEXT, PRIMARY KEY (id))",
+        file(required("      rank: { type: text }\n"), index("- { name: ft_b, type: fulltext, columns: [rank] }")),
+    )
+
     cycle(
         "Kontrolle: Rowid-Datenbank, Datei WITHOUT ROWID (der Neubau bleibt Rowid, FTS5 wird aufgebaut)",
         listOf(textTableDb),
