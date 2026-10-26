@@ -629,6 +629,7 @@ class SchemaMigrateRunner(
         // Drift-MELDUNG und liesse den Planer dieselbe Aenderung dennoch bei
         // jedem Lauf erneut planen -- eine Migration, die gesund aussieht und
         // nie fertig wird.
+        val targetIsDatabase = prep.targetOp is CompareOperand.Database
         val projection = TargetProjection(
             type = canonicalizeType,
             index = capabilityIndexCanonicalizer(prep.effectiveDialect),
@@ -640,7 +641,11 @@ class SchemaMigrateRunner(
                 DialectCapabilities.forDialect(prep.effectiveDialect).rendersAutoIncrementAsIdentity,
             constraintName = capabilityConstraintNameCanonicalizer(prep.effectiveDialect),
             resolvesRefTypeVocabulary = capabilityResolvesRefTypeVocabulary(prep.effectiveDialect),
-            typeWithCustomTypes = registryDomainAwareCanonicalizer(prep.effectiveDialect),
+            // Wo der Reverse die Domain-Spalte als `ref_type` liest (PostgreSQL), projiziert der Vergleich die
+            // Datenbank-Seite -- und nur gegen eine Datenbank. Ein Datei-Ziel kennt die Altform nicht: dort wuerde
+            // die Projektion zwei Dateien als gleich ansehen, die der Planer als Aenderung behandeln muss.
+            typeWithCustomTypes = registryDomainAwareCanonicalizer(prep.effectiveDialect)
+                ?.takeUnless { capabilityReadsDomainColumnsAsRefType(prep.effectiveDialect) && !targetIsDatabase },
             domainProjectionCurrentOnly = capabilityReadsDomainColumnsAsRefType(prep.effectiveDialect),
             comparesDomainTraits = capabilityProjectsCustomTypes(prep.effectiveDialect),
         )

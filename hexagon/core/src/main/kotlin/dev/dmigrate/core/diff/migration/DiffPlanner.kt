@@ -131,7 +131,8 @@ open class DiffPlanner {
         // Und dieselbe Aufloesung der Wertevorraete von `ref_type`-Enums.
         resolvesRefTypeVocabulary: Boolean = false,
         // Schemagebunden statt kontextfrei, wo gesetzt: ein `Enum(refType)` einer Domain faltet auf den Basistyp
-        // SEINER Seite (ihre Custom Types), wie bei den Endpunkt-Abdruecken des Runners. Ersetzt `canonicalizeType`.
+        // SEINER Seite (ihre Custom Types), wie bei den Endpunkt-Abdruecken des Runners. **Wenn gesetzt, hat es
+        // Vorrang und `canonicalizeType` wird fuer die Endpunkt-Abdruecke nicht benutzt.**
         canonicalizeTypeFor: ((SchemaDefinition) -> (NeutralType) -> NeutralType)? = null,
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
