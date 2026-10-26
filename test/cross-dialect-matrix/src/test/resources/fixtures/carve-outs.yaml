@@ -445,12 +445,14 @@ carve_outs:
     dialect: "*"
     kind: rollback
     permanent: true
-    reason: "Canonical rollback-artefact round-trip lives in the builder + parser + runner triplet, which already covers v2 delimiters, hash invariants, and SchemaRollbackRunner execute."
+    reason: "Canonical rollback-artefact round-trip lives in the builder + parser + runner triplet, which already covers v2 delimiters, hash invariants, and SchemaRollbackRunner execute. The PostgreSQL rollback of a changed enum value list (DROP of the Up's CHECK, then ADD of the old one) is pinned by the renderer unit test and the PostgreSQL round trip: the sweep compares exit codes only and shares one dialect-neutral fixture, so it cannot tell a Down that restores the CHECK from one that leaves it widened."
     planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.2
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/RollbackArtefactBuilderTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/RollbackArtefactParserTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaRollbackRunnerTest.kt
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresEnumCheckRollbackTest.kt
+      - test/integration-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresEnumRollbackIntegrationTest.kt
   - workstream: G.2
     dialect: "*"
     kind: file-mode

@@ -1,7 +1,7 @@
 # PostgreSQL: der Rollback nach erweiterter Werteliste stellt den CHECK nicht her (Issue #61)
 
-> **Status:** Draft mit Scope (2026-10-25). **Vorbedingung:** keine für P0; P2 wartet auf die P1-Entscheidung.
-> **Aktivierung** (Move nach `../in-progress/`) beim ersten Implementierungs-Commit.
+> **Status:** In Arbeit (2026-10-25); P0 und P1 abgeschlossen, P2 umgesetzt. **Vorbedingung:** keine.
+> **Aktiviert** mit dem ersten Implementierungs-Commit (Move von `../next/`).
 > GitHub-Issue: [#61](https://github.com/pt9912/d-migrate/issues/61). Bezug: ADR 0055 (Wertevorrat im zielbewussten
 > Vergleich), ADR 0060 (`RefTypeVocabulary`, SQLite); Lastenheft: [LF-014](../../../spec/lastenheft-d-migrate.md#lf-014) („Migrations-Rollback"),
 > gegengelesen.
@@ -133,6 +133,100 @@ Kandidat 1 und 3 sind für den benannten Alt-CHECK nur mit Fallback (b) oder mit
   PostgreSQL tut bzw. dass er verweigert; Grenzen), `CHANGELOG.md` unter `[Unreleased]` → „Fixed" mit Verweis auf #61,
   `spec/ddl-generation-rules.md` nur falls eine Render-/Rollback-Regel sich ändert (dort mitziehen, nicht nachträglich), ADR gemäß
   P1 falls nötig. `docs/planning/next/README.md`/`done/` nachführen.
+
+## P0 Messergebnis (2026-10-25, `postgres:18-alpine`, `TestImages.POSTGRESQL`)
+
+Gemessen mit einem Wegwerf-Integrationstest (Hin- und Rückweg über `SchemaMigrateRunner` mit `--execute --generate-rollback`
+und `SchemaRollbackRunner --execute --allow-destructive` gegen eine echte Datenbank; Ist-Seite wie `schema generate`
+sie anlegt: `e TEXT NOT NULL CHECK ("e" IN (…))`, Katalogname `t_e_check`). Spalte „nach Rollback“ ist der Katalog bzw. das
+Ergebnis eines `INSERT`. `planFullyRollbackable` war in allen Läufen `true`, `downBlocked` `false`, wo nicht anders vermerkt.
+
+| Fall | Ops (`before`→`after`) | `down.sql` (vor der Änderung) | Exit Migrate / Rollback | Katalog nach Rollback | `INSERT` |
+| ---- | ---------------------- | ----------------------------- | ----------------------- | --------------------- | -------- |
+| 1 erweitert `[a,b]`→`[a,b,c]` | `AlterColumnType` Text→Enum(a,b,c) | `ALTER … TYPE TEXT;` | 0 / 0 | `t_e_check … ARRAY['a','b','c']` (unverändert weit offen) | `c` **angenommen** (Befund des Issues) |
+| 2 verkürzt `[a,b,c]`→`[a,b]` | wie 1 | `ALTER … TYPE TEXT;` | 0 / 0 | `… ARRAY['a','b']` (kurz geblieben) | `c` **abgelehnt** (müsste wieder erlaubt sein) |
+| 3 Inline gegen `ref_type`/nativen Enum | `AlterCustomType` | — (Up blockiert) | 8 (`DIALECT_UNSUPPORTED_OPERATION`), nichts ausgeführt | unverändert | — Gegenprobe: anderer Pfad, nicht betroffen |
+| 4a zwei Spalten, eine geändert | ein `AlterColumnType` (e) | `TYPE TEXT` für `e` | 0 / 0 | `e` weit, `f` unverändert | `c` angenommen |
+| 4b zwei Spalten, beide geändert | zwei `AlterColumnType` | zweimal `TYPE TEXT` (f, e) | 0 / 0 | beide weit | `z` angenommen |
+| 5a Hin- und Rückweg nach `--execute` | = Fall 1 | = Fall 1 | 0 / 0 | = Fall 1 | = Fall 1 |
+| 5b `file:` gegen `file:` (planOnly) | beide Seiten Inline-Werte | Up: `ADD CHECK (a,b,c)`, Down: `ADD CHECK (a,b)`, jeweils **ohne** `DROP` (aus dem Code gelesen; der Renderer-Test blockiert dort jetzt) | 0 | — | — (`--plan-only` verbietet `--rollback-output`, Exit 2) |
+| 6 SQLite, dasselbe Schema | Tabellenneubau, benannter CHECK `ck_t_e` | Neubau | 0 / 0 | `ck_t_e` mit `[a,b]` | `c` **abgelehnt** (Soll); Spec `SqliteEnumRollbackIntegrationTest` bleibt grün |
+| 7 vom Nutzer benannter CHECK `my_e_values` | `AlterColumnType` | `TYPE TEXT` | 0 / 0 | nur `t_e_check … (a,b,c)`: der Up löste `my_e_values` und legte **`t_e_check`** an | `c` angenommen |
+| 8a Typ + Werteliste: `varchar(10)` → Enum | `AlterColumnType` | — | 8 (`MANUAL_ACTION_REQUIRED`, `USING`-Overlay fehlt) | unverändert | — Up blockiert, nicht Gegenstand |
+| 8b Enum → `varchar(20)` | `AlterColumnType` | — | 8 (wie 8a) | unverändert | — |
+| 9 nur Reihenfolge `[a,b]`→`[b,a]` | keine Operation | leer | 0 / 0 | unverändert | `c` abgelehnt (richtig, kein Rollback-Statement) |
+| 10 zwei Wertelisten-CHECKs | `AlterColumnType` + 2× `DropConstraint` | — | **5** (Up bricht ab, nichts verändert) | unverändert | — **eigener Befund, nicht dieser Slice** |
+| 11 `NOT VALID`-CHECK | `AlterColumnType` | `TYPE TEXT` | 0 / 0 | `t_e_check` (a,b,c), validiert; der Up löst `nv` und legt einen **validierten** CHECK an | `c` angenommen |
+| 12 langer Name (63 Byte) | `AlterColumnType` | `TYPE TEXT` | 0 / 0 | weit, Name unverändert (`t_x…x_check`) | `c` angenommen |
+| 13 Down-only-Blocker (`DropTable`, `--allow-destructive`) | `DropTable` (NOT_REVERSIBLE) | — | **8**, `primaryBlockedReason=ROLLBACK_NOT_POSSIBLE`, `downBlocked=true`, nichts ausgeführt | unverändert | — |
+| B Text → Enum (neu) | `AlterColumnType` | `TYPE TEXT` | 0 / 0 | `t_e_check (a,b)` bleibt stehen | `c` abgelehnt, nach Rollback sollte `c` erlaubt sein |
+| C Enum → Text | `AlterColumnType` | `TYPE TEXT` | 0 / 0 | CHECK bleibt **weg** | `c` angenommen, sollte abgelehnt werden |
+
+**Bestätigt:**
+* **L1** (Down kennt die alten Werte nicht): `op.before` ist `Text` in allen Live-Läufen; der Down rendert nur `TYPE TEXT`.
+* **L2** (der Up-CHECK wird im Down nicht gelöst): kein `DROP`, der weite CHECK bleibt (Fälle 1, 4, 7).
+* **L3** (keine Meldung): Exit 0, `downBlocked=false`.
+* **Down-Blocker greift (für (b))**: Fall 13 endet mit Exit 8, `downBlocked=true`, `primaryBlockedReason=ROLLBACK_NOT_POSSIBLE`;
+  ein Down-Blocker verhindert, dass das Ausrollen überhaupt läuft.
+* **Namensfrage**: Nach dem Up trägt der neue CHECK den Servernamen `<tabelle>_<spalte>_check`; war der alte CHECK so benannt
+  (Fälle 1, 2, 12), ist der Name derselbe — er wird durch das `DROP` frei. Hat der alte CHECK einen anderen Namen (Fall 7, 11),
+  entsteht trotzdem `<tabelle>_<spalte>_check`. Der Ist-Name allein reicht also nicht (Kandidat 1 greift nur für den
+  Standardnamen), der Standardname ist sicher, wenn ihn kein anderer Constraint trägt.
+* **Schemaweite Namensprüfung (gemessen):** Ein unbenannter `ADD CHECK` auf `t.e` neben einem `t_e_check` einer **anderen** Tabelle
+  `u` im selben Schema erhält den Namen `t_e_check1` (`t.t_e_check1`, `u.t_e_check`). PostgreSQL prüft den Standardnamen also
+  schemaweit, nicht je Tabelle; `taken` in `PostgresEnumCheckRollback.createdName` zählt deshalb die Constraints **aller** Tabellen der
+  Ist-Seite. Ein zu kleines `taken` führte zu `DROP` des falschen Namens. Der Integrationstest pinnt die Messung und den Blocker.
+* **Zusätzlich gefunden:** dieselbe Lücke in zwei Nachbarfällen (B: eine Textspalte erhält eine Werteliste → der Down löst den CHECK nicht;
+  C: eine Spalte verliert die Werteliste → der Down legt den CHECK nicht wieder an). Dieselbe Ursache, derselbe Mechanismus.
+* **Verworfen/offen:** Fall 10 (zwei Wertelisten-CHECKs) scheitert schon im Up mit Exit 5; er gehört nicht in diesen Slice.
+  Fall 11: der Up legt den ursprünglich `NOT VALID`en CHECK validiert neu an — Up-Verhalten, unverändert.
+
+## P1 Entscheidung
+
+* **Option (a) mit (b) als Rückfall** (Dauer-(c) im Sinn der Begriffsklärung oben). Die Werte der Ist-Seite liefert **nicht** `op.before`
+  (Modell/Mapper, Tag-Folge), sondern der Renderer aus `currentSchema` (`EnumCheckProjection.valuesOf`): reiner Adapter-Eingriff.
+  **Kein** Fingerabdruck-Tag, **kein** Hexagon-Eingriff, **kein** ADR (die Eigner-Bestätigung für „ADR nötig/nicht nötig“ steht aus;
+  nach Plan braucht Option (a) nur im Adapter keinen).
+* **Namensfrage: Kandidat 1 mit Rückfall (b); der Up-Text bleibt unberührt** (Kandidat 2 braucht die ausstehende Eigner-Bestätigung und
+  ändert Goldens und Bestandsdatenbanken). Der Down löst den CHECK `<tabelle>_<spalte>_check`, wenn kein **anderer** Constraint der Ist-Seite
+  (schemaweit) so heißt, der Name ohne Kürzung in 63 Byte passt und die Ist-Seite ein Katalog ist (Constraint-Namen bekannt). Das
+  `DROP` ist **ohne** `IF EXISTS`: ein falscher Name soll laut scheitern, nicht still durchlaufen (Kandidat 3 verworfen).
+  Sonst blockiert der Down mit `ROLLBACK_NOT_POSSIBLE` und der Diagnose `POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN`. Der alte CHECK
+  wird mit seinem Ist-Namen und den Werten aus `currentSchema` wieder angelegt (`ADD CONSTRAINT "<alt>" CHECK (… IN (…))`), damit der
+  Zustand vor dem Up auch bei benanntem CHECK (Fall 7) wiederkehrt.
+* **Datei gegen Datei** (Fall 5b, B, C): die Namen des Ziels sind unbekannt, der Up selbst löst dort nichts. Der Down blockiert, statt ein
+  `ADD` ohne `DROP` zu rendern. Erkennungsmerkmal „Ist-Seite ist ein Katalog“, nach Fällen: Steht in der Ist-Seite ein alter Wertevorrat-CHECK **mit Namen**, ist das der Beleg
+  und es wird nichts weiter geprüft. Ohne diesen Beleg (Fall B, Fall C aus einer Datei) entscheidet das neue Signal
+  `DdlDialectContext.Postgres.catalogRead`, das `SchemaMigrateRenderPipeline` setzt, wenn die Ist-Seite (`--target`) eine Datenbank ist
+  (`targetOp is CompareOperand.Database`); sonst blockiert der Down. Die Serverversion taugt dafür nicht: `--target-version` setzt sie
+  (`SchemaMigrateRunner.withTargetVersion`) auch bei Datei gegen Datei. Eine Textspalte ohne CHECK sieht in Datei und Katalog gleich aus;
+  ohne dieses Signal bliebe Fall B ein geratener Name. Die Ist-Seite ist `--target`, nicht `--source` (das ist die Soll-Datei). Das ändert Exit 0 → Exit 8 für `--generate-rollback` mit Wertelistenänderung im Datei-Modus; im
+  Bericht an den Eigner ausdrücklich genannt.
+* **`planFullyRollbackable`** bleibt unverändert (Transaktionalität des Up); das Handbuch benennt `downBlocked` als Down-Signal.
+* **Spec:** `ddl-generation-rules.md` §12 bekommt die Regel (Zielbild zuerst), dazu Handbuch §3.5 und `CHANGELOG`.
+* **Matrix:** kein neuer Workstream. Der Sweep vergleicht nur Exit-Codes und teilt eine dialektneutrale Fixture; ein neuer Workstream
+  brächte 20+ Carve-outs und eine Zelle, die den Fehler nicht unterscheiden kann. Die Zelle `G.2/*/rollback` ist bereits als
+  `permanent` mit `ownerTests` geführt; die neuen Tests (Renderer-Unit-Test, PostgreSQL-Integrationstest) stehen dort als weitere
+  `ownerTests`. Die Ausführung gegen die Datenbank belegt nur der Integrationstest.
+
+## P2/P3 Umsetzung
+
+* Code: `PostgresEnumCheckRollback.kt` (neu, Adapter), Aufruf aus `PostgresDiffTableOps.renderAlterColumnType` (nur Richtung `DOWN`);
+  `PostgresDiffRenderContext.currentSchema` ist nicht mehr `private`. Der Up-Pfad bleibt unverändert.
+* Tests: `PostgresEnumCheckRollbackTest` (Renderer, Reihenfolge `DROP` → `ADD`, Blocker-Fälle), `PostgresEnumRollbackIntegrationTest`
+  (PostgreSQL: Fälle 1, 2, 4, 7, B, C, 9, Blocker, Zeilen mit neuem Wert), `SqliteEnumRollbackIntegrationTest` (Gegenprobe). Rot ohne die
+  Änderung (gemessen vor Review-Runde 1: acht der neun PostgreSQL-Integrationsspecs und acht der neun Renderer-Tests); die Specs der Review-Runde (Katalog-Merkmal, Namenskollision) kamen danach hinzu; Fall 9 und die SQLite-Gegenprobe sind grün-Gegenproben.
+* Größenregeln: `make docker-check` (Detekt inkl. `ComplexCondition`, ein Treffer wurde durch eine Zwischenvariable behoben) und
+  `make solid-suppression-gate` sind grün, kein `@Suppress`.
+* Doku: Handbuch §3.5, `spec/ddl-generation-rules.md` §12, `CHANGELOG.md`.
+
+## Befund außerhalb des Slices: zwei Wertelisten-CHECKs an einer Spalte (Fall 10)
+
+Reproduktion (PostgreSQL 18): `CREATE TABLE t (id integer NOT NULL, e text NOT NULL CHECK ("e" IN ('a','b','c')),
+CONSTRAINT second CHECK ("e" IN ('a','b')), PRIMARY KEY (id))`; Datei mit `e: enum values [a, b, d]` (required).
+`schema migrate --execute --generate-rollback` plant `AlterColumnType` + 2× `DropConstraint` und endet mit **Exit 5**; die Datenbank bleibt
+unverändert (beide CHECKs stehen weiter), kein Rollback-Skript. Ursache nicht untersucht. Nicht Teil von #61; ob ein Issue entsteht,
+klärt der Eigner.
 
 ## Nicht-Scope
 

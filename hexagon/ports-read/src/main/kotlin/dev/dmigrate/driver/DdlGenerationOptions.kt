@@ -295,6 +295,13 @@ sealed interface DdlDialectContext {
          * `docs/planning/done/postgresql-default-schema-context.md`.
          */
         val defaultSchema: String? = null,
+        /**
+         * Ob die Ist-Seite (`--target`) aus einer Datenbank gelesen wurde, nicht aus einer Datei.
+         * Nur dann sind die Constraint-Namen der Ist-Seite die des Servers; der Rueckweg einer
+         * Wertelisten-Aenderung leitet daraus den Namen des vom Up angelegten CHECKs ab. Unabhaengig
+         * von [serverVersion]: `--target-version` setzt die Version auch bei Datei gegen Datei.
+         */
+        val catalogRead: Boolean = false,
     ) : DdlDialectContext
 
     /**

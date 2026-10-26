@@ -48,7 +48,7 @@ internal class PostgresDiffRenderContext(
     val migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
     val sourceFingerprint: String? = null,
     val targetFingerprint: String? = null,
-    private val currentSchema: SchemaDefinition? = null,
+    val currentSchema: SchemaDefinition? = null,
     private val desiredSchema: SchemaDefinition? = null,
 ) {
     private val statements = mutableListOf<MigrationDdlStatement>()

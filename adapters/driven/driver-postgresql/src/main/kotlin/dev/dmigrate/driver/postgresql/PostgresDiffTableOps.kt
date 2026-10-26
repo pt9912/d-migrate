@@ -222,17 +222,23 @@ internal object PostgresDiffTableOps {
             }
             expression?.let { " USING $it" }.orEmpty()
         }
+        val typeStatement = "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} " +
+            "TYPE $typeSql$usingClause;"
+        // Der Rueckweg stellt den Wertevorrat her, den der Up geaendert hat — sein
+        // CHECK-Namenswissen steht nicht im Soll-Schema, sondern in der Ist-Seite.
+        if (ctx.direction == PostgresRenderDirection.DOWN &&
+            PostgresEnumCheckRollback.render(op, ctx, table, column, typeStatement.takeUnless { typeUnchanged })
+        ) {
+            warnIfUnenforceableEnum(op, ctx, "$table.$column", targetType)
+            return
+        }
         // Der alte Wertevorrat zuerst: solange er steht, weist er Werte ab, die
         // der neue erlaubt — und die Spalte traegt danach zwei Aufzaehlungen,
         // von denen der Vergleich keine mehr eindeutig zuordnen kann.
         dropExistingEnumValueCheck(op, ctx, table, column)
         val newValues = EnumValueCheck.inlineValues(targetType)
         if (!typeUnchanged || newValues == null) {
-            ctx.emit(
-                op,
-                "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} " +
-                    "TYPE $typeSql$usingClause;",
-            )
+            ctx.emit(op, typeStatement)
         }
         newValues?.let { values ->
             ctx.emit(
