@@ -2198,11 +2198,15 @@ sie als normale View erzeugt (Warnung **W103**).
     `FULLTEXT`-Index neben einem Neubau derselben Tabelle sowie eine Änderung an
     einer **anderen** Tabelle neben dem Neubau blockieren `--execute` mit Exit `8`
     (`TRANSACTION_SCOPE_UNSUPPORTED`, die Datenbank bleibt unverändert).
-  - **`WITHOUT ROWID`:** ein Tabellenneubau erhält das Merkmal, wenn die Datenbank oder die Datei (`metadata:
-    { without_rowid: true }`) die Tabelle so führt; eine Datei ohne `metadata` macht aus der Tabelle keine
-    Rowid-Tabelle. `schema migrate` plant das Merkmal selbst nicht: es ändert eine bestehende Tabelle weder
-    hinzu noch weg. `schema generate` und das Anlegen einer neuen Tabelle schreiben `WITHOUT ROWID`, wenn die
-    Datei es verlangt. Eine Tabelle ohne `PRIMARY KEY` oder mit `AUTOINCREMENT` lehnt SQLite dabei selbst ab.
+  - **`WITHOUT ROWID`:** ein Tabellenneubau behält das Merkmal der **Datenbank**, im Plan wie im
+    erzeugten Rollback: eine Tabelle `WITHOUT ROWID` bleibt es, eine Rowid-Tabelle bleibt eine Rowid-Tabelle.
+    `schema migrate` plant das Merkmal selbst nicht: es ändert eine bestehende Tabelle weder hinzu noch weg,
+    und die Datei ändert es beim Neubau nicht. Führt die Datei `metadata: { without_rowid: true }` für eine
+    Tabelle, die in der Datenbank eine Rowid-Tabelle ist, läuft die Migration weiter (Exit `0`) und meldet
+    `W164` im Feld `diagnostics` des Reports (`--report`, auch mit `--plan-only`); eine fehlende oder
+    `false`-Angabe der Datei meldet nichts. `schema generate` und das Anlegen einer neuen Tabelle schreiben
+    `WITHOUT ROWID`, wenn die Datei es verlangt. Eine Tabelle ohne `PRIMARY KEY` oder mit `AUTOINCREMENT`
+    lehnt SQLite dabei selbst ab.
   - **Ausdrucks-Index:** ein Index über einen Ausdruck (`lower(a)`) erzeugt keine Operation, wenn Datei und Datenbank
     ihn gleich ausdrücken. `schema reverse` schreibt den Ausdruck ohne die eine äußere Klammer, die der Generator setzt;
     Klammern, die zum Ausdruck gehören (`(a) || (b)`), bleiben. Eine Datei mit `(lower(a))` gilt gegen die

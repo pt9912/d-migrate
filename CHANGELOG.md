@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **SQLite: ein Tabellenneubau behält das `WITHOUT ROWID` der Datenbank** (Issue #67). Führte die Datei
+  `metadata: { without_rowid: true }` für eine Tabelle, die in der Datenbank eine Rowid-Tabelle war,
+  wandelte der Neubau (`schema migrate`, auch das erzeugte Rollback-Skript) die Tabelle in
+  `WITHOUT ROWID` um; die Kopfwerte `rollbackComplete: true` und `postUpVerified: true` des Rollback-Artefakts
+  prüfen das Merkmal nicht. Betroffen sind die Versionen 1.11.0 und 1.11.1: ein Neubau bei Datei `true` gegen
+  eine Rowid-Datenbank und die daraus erzeugten Rollback-Artefakte. Erkennbar ist ein `down.sql`, dessen
+  `__dmg_rebuild`-Block `WITHOUT ROWID` anlegt, obwohl die Tabelle vorher eine Rowid-Tabelle war. Jetzt gilt
+  die Datenbank: der Neubau ändert das Merkmal nicht, in Up wie Down; die abweichende Datei meldet `W164`
+  (Exit `0`, nur Up). Ein `FULLTEXT`-Index auf einer solchen Tabelle wird als FTS5 aufgebaut statt mit
+  `W132` übersprungen. Abhilfe: einen noch nicht angewendeten Lauf samt Rollback-Artefakt neu erzeugen; bei
+  einem bereits angewendeten Lauf die Tabelle von Hand zurückbauen. Der Schema-Fingerprint ändert sich nicht.
+
 ## [1.11.1] - 2026-10-26
 
 ### Fixed
