@@ -1,6 +1,6 @@
 # SQLite: Tabellen-Neubau mit `FULLTEXT`-Index derselben Tabelle in einem `--execute`-Lauf
 
-> **Status:** Code, Tests und Doku (P1 bis P4) umgesetzt auf Branch `fix-neubau-fulltext-execute-p1-p4`; offen bis zur Abnahme: Eigner-Entscheidung zur Abweichung bei E3 (Exit 5 statt Exit 0 in den degradierten Fällen 8, 9), Integrationslauf, Review, Merge, Closure (Abschnitt Umsetzung). **Entschieden (Eigner, 2026-10-26):** E1 (Richtung (A)), E2 (Spatial ausgenommen, Nicht-Scope), E3, E4.
+> **Status:** Code, Tests und Doku (P1 bis P4) umgesetzt auf Branch `fix-neubau-fulltext-execute-p1-p4`; offen bis zur Abnahme: Review, Merge, Closure (Abschnitt Umsetzung). **Entschieden (Eigner, 2026-10-26):** E1 (Richtung (A)), E2 (Spatial ausgenommen, Nicht-Scope), E3 (in der Fassung unten, umformuliert nach Messung), E4.
 > **Anlass:** Fall „A-FT" aus der P0-Messtabelle von
 > [`sqlite-without-rowid-umwandlung-produktfrage.md`](./sqlite-without-rowid-umwandlung-produktfrage.md) (Issue #67): Neubau (z. B. wegen `unique: true`) plus neuer `FULLTEXT`-Index in einem Lauf endet mit
 > `--execute` mit Exit 8 (`TRANSACTION_SCOPE_UNSUPPORTED`), schon **vor** der #67-Änderung. #67 testet A-FT nur mit `--plan-only` und `--output`.
@@ -68,7 +68,7 @@ Der Schnitt ist kein Raten: P0 misst die Matrix unten, auch die Fälle, die **ni
 
 * **E1 Richtung: entschieden, (A) absorbieren.** (B), (C), (D) verworfen (siehe oben). Kein ADR, keine Spec-Änderung als Vorbedingung.
 * **E2 Spatial: entschieden (Eigner, 2026-10-26): ausgenommen, Nicht-Scope** (`isAbsorbedIndexOp` behält die Geometrie-Ausnahme; kein Handbuchsatz). Ursprüngliche Frage: Geometrie-Index mit im Scope? Hängt an P0: ist der Fall ohne `E052` erreichbar (mit gesetztem Spatial-Profil), und was zeigt er? Erreichbar → Empfehlung: im selben Muster mitnehmen **oder** ausdrücklich ausgenommen und im Handbuch benannt. Nicht erreichbar → Nicht-Scope, kein Satz im Handbuch.
-* **E3 Degradierter Fall (FTS5 nicht baubar, z. B. `WITHOUT ROWID`): entschieden, ja.** Der Neubau läuft mit `W132` (einmal) und ohne FTS5, **kein** Blocker (wie der Neubau mit unverändertem `FULLTEXT`).
+* **E3 Degradierter Fall (FTS5 nicht baubar, z. B. `WITHOUT ROWID`): entschieden, ja (Eigner, 2026-10-26, nach Messung umformuliert).** Der Neubau läuft mit `W132` (einmal) und ohne FTS5, ohne Scope-Blocker. Der Exit-Code folgt der bestehenden Drift-Prüfung: Exit 5 (`POST_EXECUTE_DRIFT`), weil die Datei einen `FULLTEXT`-Index verlangt, den die Tabelle nicht tragen kann. Eine Änderung der Drift-Prüfung für degradierte Indizes ist nicht Teil dieses Slice.
 * **E4 Slice-Zuschnitt: entschieden, eigener Slice**, keine Zusammenlegung mit #60/#67 (#60 hat den Plain-Teil geliefert, #67 behandelt ein anderes Merkmal).
 
 ## Arbeitspakete
@@ -139,11 +139,11 @@ Gemessen am Runtime-Image (`make docker-build`, `d-migrate:dev`) gegen echte SQL
 
 **Messbefund zu Fall 4 (geändert).** Vor der Änderung fehlerfrei, aber doppelt: der Neubau baut FTS5, die `simpleOp` räumt per `DROP ... IF EXISTS` ab und legt erneut an. Jetzt je Richtung ein Aufbau und ein Abräumen; der Skript-Test belegt es.
 
-**Abweichung von der Slice-Annahme E3 (Eigner-Entscheidung nötig).** In den degradierten Fällen 8 und 9 läuft der Neubau mit `W132` genau einmal, ohne FTS5 und ohne `TRANSACTION_SCOPE_UNSUPPORTED`, aber `--execute` endet mit **Exit 5** (`POST_EXECUTE_DRIFT`, BLOCKER) statt Exit 0, und der zweite Lauf zeigt eine Operation (den `AddIndex`). Die Ursache liegt nicht in dieser Änderung: dieselbe Datei gegen dieselbe Tabelle **ohne** Neubau ergibt ebenfalls Exit 5 und eine Operation im zweiten Lauf (gemessen), denn die Datei führt einen `FULLTEXT`-Index, den die Datenbank-Tabelle nicht tragen kann. Die Tests pinnen das Ist-Verhalten (Exit 5, `W132` einmal, kein FTS5, der Rückweg stellt den Katalog her; der zweite Lauf wird für 8 und 9 nicht auf 0 geprüft). Wer Exit 0 will, ändert die Drift-Prüfung für degradierte Indizes: eigener Posten, nicht Teil dieses Slice. Akzeptanzkriterium 2 gilt deshalb für die Fälle 1 bis 4 und 10 uneingeschränkt, für 8 und 9 mit dieser Einschränkung.
+**Messung zu E3 (Eigner hat Exit 5 akzeptiert, E3 entsprechend umformuliert).** In den degradierten Fällen 8 und 9 läuft der Neubau mit `W132` genau einmal, ohne FTS5 und ohne `TRANSACTION_SCOPE_UNSUPPORTED`, aber `--execute` endet mit **Exit 5** (`POST_EXECUTE_DRIFT`, BLOCKER) statt Exit 0, und der zweite Lauf zeigt eine Operation (den `AddIndex`). Die Ursache liegt nicht in dieser Änderung: dieselbe Datei gegen dieselbe Tabelle **ohne** Neubau ergibt ebenfalls Exit 5 und eine Operation im zweiten Lauf (gemessen), denn die Datei führt einen `FULLTEXT`-Index, den die Datenbank-Tabelle nicht tragen kann. Die Tests pinnen das Ist-Verhalten (Exit 5, `W132` einmal, kein FTS5, der Rückweg stellt den Katalog her; der zweite Lauf wird für 8 und 9 nicht auf 0 geprüft). Wer Exit 0 will, ändert die Drift-Prüfung für degradierte Indizes: eigener Posten, nicht Teil dieses Slice. Akzeptanzkriterium 2 gilt deshalb für die Fälle 1 bis 4 und 10 uneingeschränkt, für 8 und 9 mit dieser Einschränkung.
 
 **P3 Doku.** Handbuch §3.17 („Index neben einem Neubau"): `FULLTEXT` derselben Tabelle aus der Ausnahme genommen; `CHANGELOG.md` unter `[Unreleased]`; Verweis im #60-Slice zu 11a/11b.
 
-**Bis zur Abnahme fehlt (Closure-Sektion nach ADR 0004, noch nicht geschrieben):** Eigner-Entscheidung zu Exit 5 in den Fällen 8 und 9; Integrationslauf `:test:integration-sqlite:test` und vollständiger CI-Stand; Review; Merge; dann Move nach `done/` mit `## Closure`, `../done/`-Links und Status in der README-Zeile; der #67-Slice darf erst danach seinen Hinweis „nur `--plan-only`/`--output`" streichen.
+**Bis zur Abnahme fehlt (Closure-Sektion nach ADR 0004, noch nicht geschrieben):** Integrationslauf `:test:integration-sqlite:test` und vollständiger CI-Stand; Review; Merge; dann Move nach `done/` mit `## Closure`, `../done/`-Links und Status in der README-Zeile; der #67-Slice darf erst danach seinen Hinweis „nur `--plan-only`/`--output`" streichen.
 
 ## Rückwirkung auf Spec und Handbuch (getrennt)
 
