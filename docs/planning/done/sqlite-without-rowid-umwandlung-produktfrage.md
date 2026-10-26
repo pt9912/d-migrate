@@ -1,6 +1,6 @@
 # SQLite: ein Neubau behält das Merkmal der Datenbank, Abweichung der Datei wird gewarnt (Produktentscheidung zu Issue #67)
 
-> **Status:** Entschieden (Eigner, 2026-10-26): **Option C plus Warnung `W164`**. Umgesetzt (P0–P8, 2026-10-26); Rest: Eigner-Abnahme.
+> **Status: GELIEFERT (2026-10-26), siehe Closure unten.** Entschieden (Eigner, 2026-10-26): **Option C plus Warnung `W164`**. Umgesetzt P0–P8.
 > **Vorbedingung:** keine. **Reihenfolge:** **Schritt 0** Spec-Prosa (vor dem Code), (1) Struktur, Regel, Warnung, Tests, Ledger (P1–P4), Handbuch und `CHANGELOG.md` (P5) — **auf `main` geliefert**
 > (Commits `e0b3a8e5a`, `6f93b467f`, `01f24c921`); (2) **Rollback-Rest** (P6–P8: Messung, Rundläufe, Kopfwert-Doku). Der Rest war als eigener Slice geplant und ist **auf Eigner-Beschluss (E-R1, 2026-10-26)
 > in diesen Slice aufgegangen**; der frühere Slice `sqlite-rollback-without-rowid-vorher.md` ist gelöscht.
@@ -20,7 +20,7 @@ Ein Tabellenneubau behält `WITHOUT ROWID` genau dann, wenn die **Datenbank** di
 
 Handbuch §3.17 sagt zugleich: ein Neubau erhält das Merkmal, „wenn die Datenbank **oder die Datei** die Tabelle so führt" (Fall A: Umwandlung hin) **und** „`schema migrate` plant das Merkmal
 selbst nicht: es ändert eine bestehende Tabelle weder hinzu noch weg". Beides zugleich stimmt für Fall A nicht. Die Regel stammt aus
-[`sqlite-without-rowid-im-neubau.md`](sqlite-without-rowid-im-neubau.md) P1 (Datei oder Datenbank; als Folge in Kauf genommen); `spec/ddl-generation-rules.md` §3.5 trägt denselben Satz.
+[`sqlite-without-rowid-im-neubau.md`](../in-progress/sqlite-without-rowid-im-neubau.md) P1 (Datei oder Datenbank; als Folge in Kauf genommen); `spec/ddl-generation-rules.md` §3.5 trägt denselben Satz.
 Fall A hatte keinen Test — deshalb rutschte #67 durch.
 
 ## Entscheidung (Eigner, 2026-10-26): Option C plus Warnung
@@ -62,7 +62,7 @@ Fall A hatte keinen Test — deshalb rutschte #67 durch.
 
 ## Grenze: FULLTEXT (unabhängig von #67)
 
-Fall A mit `FULLTEXT`-Index und `--execute` endet unabhängig von #67 mit Exit 8 (`TRANSACTION_SCOPE_UNSUPPORTED`). Eigener Slice:
+Fall A mit `FULLTEXT`-Index und `--execute` endete unabhängig von #67 mit Exit 8 (`TRANSACTION_SCOPE_UNSUPPORTED`). Eigener Slice, inzwischen geliefert (A-FT läuft mit `--execute`):
 [`sqlite-neubau-mit-fulltext-index-execute.md`](./sqlite-neubau-mit-fulltext-index-execute.md). **Hier kein Rollback-Rundlauf für A-FT mit `--execute`** (ohne angewendeten Lauf nichts zurückzurollen); der Rückweg
 von A-FT gehört in den FULLTEXT-Slice.
 
@@ -115,7 +115,7 @@ Befunde:
 
 * `--plan-only` rendert die Up-DDL (`statementsTotal` 9, `statements: null` im Report): eine Warnung aus dem Renderer erreicht auch den Plan.
 * **Fundstelle der Warnung:** nur der Report (`--report`, `--report-format json|yaml`), Feld `diagnostics` (Einträge mit `code`, `severity`, `message`, `operationId`). `schema migrate` schreibt weder auf stdout noch auf stderr Diagnostics; `--output-format` gibt es bei `schema migrate` nicht (Usage-Fehler). Das `up.sql` trägt keine Diagnostics.
-* **Fall A-FT mit `--execute`** endet schon vor der Änderung mit Exit 8 (`TRANSACTION_SCOPE_UNSUPPORTED`: Neubau und `AddIndex` in einem Lauf) — unabhängig von #67. Der Fall wird deshalb mit `--plan-only` und `--output` getestet.
+* **Fall A-FT mit `--execute`** endet schon vor der Änderung mit Exit 8 (`TRANSACTION_SCOPE_UNSUPPORTED`: Neubau und `AddIndex` in einem Lauf) — unabhängig von #67. Der Fall wurde deshalb mit `--plan-only` und `--output` getestet (Stand der Messung); mit `--execute` läuft er seit dem FULLTEXT-Slice.
 
 ## P6 Messung Rundlauf (Stand `main` nach Lieferung 1, 2026-10-26)
 
@@ -208,3 +208,21 @@ Rückweg je Fall (P6/P7; `unique: true`, Neubau; Hinweg wie oben), A-FT ausdrüc
 ## Nicht-Scope
 
 Fingerabdruck v25 und eine Post-Rollback-Prüfung im Runner (zurückgestellt; bei Drift neuer Slice, siehe Regel 3); Rollback von A-FT mit `--execute` (FULLTEXT-Slice); `WITHOUT ROWID` per `schema migrate` gezielt hinzufügen/entfernen (eigener Slice, nur bei Bedarf).
+
+## Closure (2026-10-26)
+
+**Geliefert (P0 bis P8)**, begründet gegen Spec (`spec/ddl-generation-rules.md` §3.5, `spec/cli-spec.md` §4.5), Code und Tests, nicht gegen diesen Plan:
+
+* **Option C plus `W164`:** ein Neubau übernimmt das Merkmal `WITHOUT ROWID` nur aus der Datenbank (Up wie Down; `SqliteRebuildSides`, `SqliteRebuildPlan.withoutRowid` nur Datenbank-Seite); abweichende Datei (Fall A) warnt mit `W164`, nur Up, in `--plan-only` und `--execute` (Fundstelle: Report-Feld `diagnostics`). FTS5 ohne Neubau folgt der Datenbank-Seite (P3). Ledger-Eintrag `W164` mit Test, Spec und Handbuch §3.17 ohne Chronik, `CHANGELOG.md` mit Befund und Fix.
+* **Rollback-Rest (P6 bis P8):** CLI-Rundlauf je Fall A, B, C1, C2, E (`CliSchemaRollbackWithoutRowidSqliteTest`), Folgeplan gleich dem Plan vor dem Lauf; kein Drift in anderen Fällen (Regel 3 löste nicht aus, kein neuer Slice). Kopfwerte `rollbackComplete`/`postUpVerified` im Handbuch definiert (Option c), Spec unverändert. Rot-Nachweise (Mutationen) gesehen.
+* Review ohne HIGH- und MEDIUM-Befund. Lieferung 1 auf `main` (`e0b3a8e5a`, `6f93b467f`, `01f24c921`, Fix `20ac8c37a`); Rest P6 bis P8 ebenfalls auf `main` (u. a. `c4214569a`, `ec97075bb`, `b559627b7`).
+* Der Hinweis „Fall A-FT nur mit `--plan-only`/`--output`" entfällt: der FULLTEXT-Slice ist geliefert.
+
+**Nicht geliefert, ehrlich benannt (Folgeposten, nur bei Bedarf):**
+
+* **Fingerabdruck v25 (Nachprüfung des Merkmals):** zurückgestellt (Option c, Eigner). Er bräuchte einen ADR, ließe alte Artefakte mit Exit 8 `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` scheitern und birgt Driftrisiko bei C2. Der Fingerabdruck bleibt `schema-fingerprint-v24`; die Kopfwerte bleiben Vorbedingung, keine Nachprüfung des Merkmals.
+* **Post-Rollback-Prüfung im Runner** (`schema rollback` prüft nach der Ausführung nichts): eigener Slice, nur bei Bedarf.
+* **`WITHOUT ROWID` per `schema migrate` gezielt hinzufügen oder entfernen:** eigener Slice, nur bei Bedarf.
+* **Alte Rollback-Artefakte:** keine Laufzeitprüfung; der Befund steht nur im `CHANGELOG.md`.
+* **Spatial neben Neubau und Drift-Prüfung degradierter Indizes** (Exit 5 in den degradierten A-FT-Fällen): Posten aus dem FULLTEXT-Slice, hier nicht Scope.
+* Das GitHub-Issue #67 wurde durch diese Closure nicht kommentiert.

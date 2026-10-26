@@ -206,7 +206,7 @@ Die Matrix (`test/cross-dialect-matrix`) kennt das Paar Datei-`unique` / Datenba
 
 Abweichung von der Erwartung: der FULLTEXT-Fall (11a/11b) hat dieselbe Wurzel und dieselbe Doppelung wie Plain-Indizes; der Neubau
 räumt FTS5 selbst ab und legt es neu an. Dieser Slice absorbiert `FULLTEXT` nicht (Grenze von (a1) unverändert);
-erledigt in [`sqlite-neubau-mit-fulltext-index-execute.md`](./sqlite-neubau-mit-fulltext-index-execute.md): der Neubau übernimmt die
+erledigt in [`sqlite-neubau-mit-fulltext-index-execute.md`](../done/sqlite-neubau-mit-fulltext-index-execute.md): der Neubau übernimmt die
 `FULLTEXT`-Operationen derselben Tabelle, `--execute` endet mit Exit 0 (degradierte Fälle: siehe dort).
 
 ### P1 Entscheidung

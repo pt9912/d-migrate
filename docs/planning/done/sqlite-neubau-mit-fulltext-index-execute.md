@@ -1,12 +1,12 @@
 # SQLite: Tabellen-Neubau mit `FULLTEXT`-Index derselben Tabelle in einem `--execute`-Lauf
 
-> **Status:** Code, Tests und Doku (P1 bis P4) umgesetzt auf Branch `fix-neubau-fulltext-execute-p1-p4`; offen bis zur Abnahme: Review, Merge, Closure (Abschnitt Umsetzung). **Entschieden (Eigner, 2026-10-26):** E1 (Richtung (A)), E2 (Spatial ausgenommen, Nicht-Scope), E3 (in der Fassung unten, umformuliert nach Messung), E4.
+> **Status: GELIEFERT (2026-10-26), siehe Closure unten.** **Entschieden (Eigner, 2026-10-26):** E1 (Richtung (A)), E2 (Spatial ausgenommen, Nicht-Scope), E3 (in der Fassung unten, umformuliert nach Messung), E4.
 > **Anlass:** Fall „A-FT" aus der P0-Messtabelle von
 > [`sqlite-without-rowid-umwandlung-produktfrage.md`](./sqlite-without-rowid-umwandlung-produktfrage.md) (Issue #67): Neubau (z. B. wegen `unique: true`) plus neuer `FULLTEXT`-Index in einem Lauf endet mit
 > `--execute` mit Exit 8 (`TRANSACTION_SCOPE_UNSUPPORTED`), schon **vor** der #67-Änderung. #67 testet A-FT nur mit `--plan-only` und `--output`.
 > **Unabhängig von #67:** beide Slices lassen sich in jeder Reihenfolge liefern; keiner setzt den anderen voraus. (Berührungspunkt, kein Hindernis: beide fassen `SqliteRebuildPlan`/`SqliteRebuildRenderer` an; wer später landet, rebased.)
-> **Vorbedingung:** keine Eigner-Entscheidung, kein ADR, keine Spec vorab (siehe „Rückwirkung"). **Verwandt:** [`sqlite-neubau-allein-execute-bestandsdatei.md`](./sqlite-neubau-allein-execute-bestandsdatei.md) (#60, hat den Plain-/BTREE-Teil gelöst und `FULLTEXT` ausdrücklich als Folgeplan abgegrenzt),
-> [`sqlite-neubau-abhaengige-sichten.md`](./sqlite-neubau-abhaengige-sichten.md) (#50, Neubau neben **anderer** Tabelle/Sicht), [`sqlite-fulltext-rebuild-recreate.md`](../done/sqlite-fulltext-rebuild-recreate.md) (Neubau erhält FTS5).
+> **Vorbedingung:** keine Eigner-Entscheidung, kein ADR, keine Spec vorab (siehe „Rückwirkung"). **Verwandt:** [`sqlite-neubau-allein-execute-bestandsdatei.md`](../in-progress/sqlite-neubau-allein-execute-bestandsdatei.md) (#60, hat den Plain-/BTREE-Teil gelöst und `FULLTEXT` ausdrücklich als Folgeplan abgegrenzt),
+> [`sqlite-neubau-abhaengige-sichten.md`](../in-progress/sqlite-neubau-abhaengige-sichten.md) (#50, Neubau neben **anderer** Tabelle/Sicht), [`sqlite-fulltext-rebuild-recreate.md`](./sqlite-fulltext-rebuild-recreate.md) (Neubau erhält FTS5).
 > **Aktivierung** (Move nach `../in-progress/`) beim ersten Implementierungs-Commit; beim Move die `../in-progress/`-Links auf `./`, die Status-Spalte der README-Zeile nachziehen; nur Planning-Dateien, kein ADR-`consulted:`.
 > **Vorgabe für Spec und Handbuch:** nur der gültige Zustand, keine Chronik oder Forensik; Version und Herleitung nur im `CHANGELOG.md`.
 
@@ -143,7 +143,7 @@ Gemessen am Runtime-Image (`make docker-build`, `d-migrate:dev`) gegen echte SQL
 
 **P3 Doku.** Handbuch §3.17 („Index neben einem Neubau"): `FULLTEXT` derselben Tabelle aus der Ausnahme genommen; `CHANGELOG.md` unter `[Unreleased]`; Verweis im #60-Slice zu 11a/11b.
 
-**Bis zur Abnahme fehlt (Closure-Sektion nach ADR 0004, noch nicht geschrieben):** Integrationslauf `:test:integration-sqlite:test` und vollständiger CI-Stand; Review; Merge; dann Move nach `done/` mit `## Closure`, `../done/`-Links und Status in der README-Zeile; der #67-Slice darf erst danach seinen Hinweis „nur `--plan-only`/`--output`" streichen.
+Abnahme und Abschluss: siehe Closure am Ende.
 
 ## Rückwirkung auf Spec und Handbuch (getrennt)
 
@@ -170,3 +170,21 @@ Gemessen am Runtime-Image (`make docker-build`, `d-migrate:dev`) gegen echte SQL
 ## Nicht-Scope
 
 Neubau neben Änderung an **anderer** Tabelle, Sicht oder Trigger (#50); `Index`-Plain-Fälle (#60, geliefert); Zwei-Segment-Execute für alle Dialekte (verworfen, E1); `WITHOUT ROWID`-Semantik (#67); FTS5-Konfiguration/Tokenizer; andere Dialekte (`FULLTEXT` ist dort kein Virtual-Table-Thema).
+
+## Closure (2026-10-26)
+
+**Geliefert (P0 bis P4)**, gegen Lastenheft, Spec und Code begründet, nicht gegen diesen Plan:
+
+* `SqliteRebuildPlanner.isAbsorbedIndexOp` nimmt `FULLTEXT`-Indexoperationen der Neubau-Tabelle in den Neubau-Eimer auf; es entsteht kein zweiter Transaktions-Scope neben dem Neubau-Strom. Fälle 1 bis 4 und 10: `schema migrate --execute` Exit 0, je Richtung ein FTS5-Aufbau, `W132` einmal, `schema rollback --execute` stellt den `catalog()`-Snapshot inklusive FTS5-Tabelle und Triggern wieder her. Gegenproben 5, 6, 7 unverändert (Fall 7, fremde Tabelle, bleibt Exit 8 `TRANSACTION_SCOPE_UNSUPPORTED`, Zuständigkeit #50).
+* Rot-ohne-Änderung belegt (8 Tests in `driver-sqlite`, 11 im CLI), Pin-Tests umgeschrieben (kein Rot-Beleg). Handbuch §3.17 und `CHANGELOG.md` nachgezogen; `spec/` unverändert (keine Render-Regel betroffen). Fingerabdruck bleibt `schema-fingerprint-v24`, kein ADR.
+* Degradierte Fälle 8 und 9 (E3, nach Messung umformuliert): Neubau mit `W132` einmal, ohne FTS5, ohne Scope-Blocker; `--execute` endet mit Exit 5 (`POST_EXECUTE_DRIFT`), weil die Datei einen `FULLTEXT`-Index verlangt, den die Tabelle nicht tragen kann. Die Gegenprobe ohne Neubau (`degradedWithoutRebuild` in `CliSchemaMigrateRebuildIndexOpsSqliteTest`) zeigt dasselbe Verhalten: der Exit 5 kommt aus der Drift-Prüfung, nicht aus dem Neubau.
+* Review ohne HIGH-Befund; die Findings sind behoben. P0 bis P4 liegen auf `main` (Commits `97f6db137`, `a073efee2`, `951f789f3`); der Gegenprobe-Test `degradedWithoutRebuild` kam danach (`e89bb5813`).
+
+**Nicht geliefert, ehrlich benannt (Folgeposten, keine Vorbedingung):**
+
+* **Spatial-/Geometrie-Index neben Neubau (E2):** ausgenommen. Der Fall ist als „Neubau plus Geometrie-Index derselben Tabelle" nicht erreichbar, weil `SqliteRebuildRenderer.emitGeometryBlockerIfAny` jeden Neubau einer Tabelle mit `Geometry`-Spalte blockiert (`SPATIAL_METADATA_UNSUPPORTED`); eine Aufnahme wäre erst sinnvoll, wenn der Neubau die Geometrie-Registrierung mitnimmt (eigener Posten).
+* **Drift-Prüfung für degradierte Indizes:** Exit 5 in den Fällen 8 und 9 bleibt; wer dort Exit 0 will, ändert die Drift-Prüfung (eigener Posten, auch ohne Neubau wirksam).
+* **Neubau neben Änderung an anderer Tabelle, Sicht oder Trigger** bleibt #50.
+* Der Integrationslauf `:test:integration-sqlite:test` und der volle CI-Stand wurden für diese Closure nicht neu gefahren.
+
+**Folge für den #67-Slice:** der Hinweis „A-FT nur mit `--plan-only`/`--output`" ist dort gestrichen; A-FT läuft mit `--execute`.
