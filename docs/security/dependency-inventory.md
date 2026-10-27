@@ -40,7 +40,7 @@ also dieselben aufgelösten Versionen).
 | MCP-JSON-RPC-Parsing | `com.google.code.gson:gson` | 2.14.0 (≥2.11 → strukturelles Nesting-Limit; s. `JsonNestingGuard`) |
 | JSON/YAML-Deserialisierung (read-side) | `com.fasterxml.jackson.core:jackson-databind` | 2.21.2 |
 | Krypto (transitiv; Credential-Store nutzt JDK-`javax.crypto` AES-GCM) | `org.bouncycastle:bcprov-jdk18on` | 1.78.1 |
-| Unicode-Normalisierung (Payload-Fingerprint) | `com.ibm.icu:icu4j` | 76.1 |
+| Unicode-Normalisierung (Payload-Fingerprint) | `com.ibm.icu:icu4j` | 79.1 |
 | Parquet-I/O | `org.apache.parquet:parquet-*`, `org.apache.hadoop:hadoop-common` | 1.17.1 / 3.4.1 |
 | S3-Storage-Adapter | `software.amazon.awssdk:*` | 2.44.14 |
 | Logging | `ch.qos.logback:logback-classic` | 1.5.15 |
@@ -94,7 +94,7 @@ com.google.inject:guice:4.2.3
 com.google.j2objc:j2objc-annotations:1.1
 com.google.protobuf:protobuf-java:4.31.1
 com.google.re2j:re2j:1.1
-com.ibm.icu:icu4j:76.1
+com.ibm.icu:icu4j:79.1
 com.jcraft:jsch:0.1.55
 commons-beanutils:commons-beanutils:1.9.4
 commons-cli:commons-cli:1.5.0
