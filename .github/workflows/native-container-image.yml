@@ -1,0 +1,197 @@
+name: Native Container Image
+
+# Natives Container-Image (zusaetzliche Distributionsklasse neben dem JVM-Image aus build.yml):
+# dieselbe volle CLI als GraalVM-Binary im Runtime-Image (Entrypoint = Binary, /work, non-root,
+# mod_spatialite). build.yml besitzt das JVM-Image, native-image.yml die ROHEN Release-Binaries,
+# dieser Workflow das native Container-Image.
+#
+# BEWUSST ein eigener Workflow statt eines Jobs in build.yml: ein Tag laesst sich nicht erneut
+# ausloesen. Scheitert der native Compile (so geschehen bei v1.12.0: OutOfMemoryError), liesse sich
+# das Image sonst nur mit einer neuen Versionsnummer nachliefern. Per `workflow_dispatch` baut
+# dieser Workflow das Image fuer einen BESTEHENDEN Tag nach, ohne dass etwas Anderes des Releases
+# angefasst wird.
+#
+# Nur auf Tags bzw. per Dispatch: der native Compile im Docker (~5-8 min) ist zu schwer fuer jeden
+# Push. Ohne `publish` baut der Dispatch nur und fuehrt den Smoke-Test aus (Probelauf).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Bestehender Release-Tag, dessen natives Image gebaut wird (z. B. v1.12.0).'
+        type: string
+        required: true
+      publish:
+        description: 'Image nach GHCR und Docker Hub pushen. Aus = nur bauen und smoken.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  # Veroeffentlicht wird auf einem echten Tag-PUSH oder auf einem Dispatch mit publish=true. Der
+  # `event_name`-Teil ist der Riegel und nicht bloss Zierde: `inputs.publish` ist nur im Dispatch
+  # gesetzt, und ein Push soll nie von einem Input abhaengen. Gleiches Muster wie IS_RELEASE in
+  # build.yml, dort aus demselben Grund (ein Dispatch darf ein veroeffentlichtes Image nicht
+  # ungewollt ueberschreiben — hier ist das Ueberschreiben der Zweck, also nur mit publish=true).
+  PUBLISH: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+  RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+
+concurrency:
+  # Je Tag; ein laufender Publish wird nicht abgebrochen.
+  group: native-container-image-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  native-container-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Validate the release tag
+        # Vor dem Checkout: ein Tippfehler im Dispatch soll sofort und lesbar scheitern.
+        run: |
+          set -euo pipefail
+          if ! [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Tag '${RELEASE_TAG}' passt nicht auf ^v[0-9]+\.[0-9]+\.[0-9]+"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        # Der Tag-Ref selbst, nie ein Branch: bei Push ist es der ausloesende Tag, beim Dispatch
+        # der Input. Voller Verlauf samt aller Tags, weil `:native` gegen den hoechsten Stable-Tag
+        # entschieden wird. Existiert der Tag nicht, scheitert der Checkout.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve version and :native eligibility
+        id: resolve
+        run: |
+          set -euo pipefail
+          git rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null \
+            || { echo "::error::Tag '${RELEASE_TAG}' existiert nicht"; exit 1; }
+          VERSION="${RELEASE_TAG#v}"
+          # :native = bewegliches "latest native" (analog :latest). Bewegt wird es nur, wenn dieser
+          # Tag die HOECHSTE Stable-Version aller v*-Tags ist: Prereleases (Tag mit '-') fassen es nie
+          # an, und eine Nachlieferung fuer eine aeltere Version darf es nicht zurueckdrehen.
+          MOVE_NATIVE=false
+          case "${RELEASE_TAG}" in
+            *-*) echo "Prerelease ${RELEASE_TAG} — :native bleibt unberuehrt" ;;
+            *)
+              HIGHEST=$(git tag --list 'v*' --sort=-v:refname \
+                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+              if [ "${HIGHEST}" = "${RELEASE_TAG}" ]; then
+                MOVE_NATIVE=true
+              else
+                echo "${RELEASE_TAG} ist nicht die hoechste Stable-Version (${HIGHEST}) — :native bleibt unberuehrt"
+              fi ;;
+          esac
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "move_native=${MOVE_NATIVE}" >> "${GITHUB_OUTPUT}"
+          echo "::notice::Tag ${RELEASE_TAG}: publish=${PUBLISH}, :native bewegen=${MOVE_NATIVE}"
+
+      - name: Build the native runtime image
+        # Dieselbe Stage wie `make native-runtime-build` lokal: volle CLI nativ (GraalVM) im
+        # Runtime-Image. Single-Arch amd64 — gleich wie das JVM-Image (linux-arm64 = offene Frage 4
+        # im Native-Slice).
+        # NATIVE_MAX_RAM_PERCENTAGE=80: die Makefile-Vorgabe (50) drosselt fuer Entwicklermaschinen;
+        # auf dem Runner reichte sie fuer 1.12.0 nicht mehr (OutOfMemoryError im native-image-Heap).
+        # BUILDKIT_PROGRESS=plain + tee: die native-image-Ausgabe landet im Log und in einer Datei,
+        # aus der der Peak-RSS-Wert gezogen wird.
+        env:
+          BUILDKIT_PROGRESS: plain
+        run: |
+          set -euo pipefail
+          make native-runtime-build NATIVE_RUNTIME_TAG=d-migrate:native NATIVE_MAX_RAM_PERCENTAGE=80 \
+            2>&1 | tee native-container-build.log
+
+      - name: Native build memory (Peak RSS)
+        # `always()`: bei einem OOM ist die letzte Peak-RSS-Zeile der Befund. Kein Treffer ist kein
+        # Fehler (z. B. wenn der Bau vor native-image scheitert).
+        if: always()
+        run: |
+          if [ -f native-container-build.log ] && grep -q 'Peak RSS' native-container-build.log; then
+            grep 'Peak RSS' native-container-build.log | tee -a "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "Keine 'Peak RSS'-Zeile in der Build-Ausgabe."
+          fi
+
+      - name: Smoke-test the native runtime image
+        # Kein kaputtes Image publizieren: DB-frei gegen die volle CLI (analog native-image.yml).
+        run: |
+          set -euo pipefail
+          docker run --rm d-migrate:native --version
+          docker run --rm d-migrate:native --help >/dev/null
+          out=$(docker run --rm -v "$PWD":/work -w /work d-migrate:native \
+            schema validate --source examples/sample-db/calib-schema.yaml)
+          echo "${out}"
+          echo "${out}" | grep -q "Validation passed" \
+            || { echo "::error::native image validate smoke failed"; exit 1; }
+
+      - name: Login to GitHub Container Registry
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push native image to GHCR
+        if: env.PUBLISH == 'true'
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+          MOVE_NATIVE: ${{ steps.resolve.outputs.move_native }}
+        run: |
+          set -euo pipefail
+          docker tag d-migrate:native "ghcr.io/${{ github.repository }}:${VERSION}-native"
+          docker push "ghcr.io/${{ github.repository }}:${VERSION}-native"
+          if [ "${MOVE_NATIVE}" = "true" ]; then
+            docker tag d-migrate:native "ghcr.io/${{ github.repository }}:native"
+            docker push "ghcr.io/${{ github.repository }}:native"
+          fi
+
+      # Docker Hub — Spiegel wie beim JVM-Image (optionaler Zusatzkanal, gleiche Secret-Logik).
+      - name: Check for Docker Hub credentials
+        id: dockerhub
+        if: env.PUBLISH == 'true'
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "${DOCKERHUB_TOKEN}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_TOKEN nicht gesetzt — Docker-Hub-Push (nativ) uebersprungen."
+          fi
+
+      - name: Login to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true' && env.PUBLISH == 'true'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push native image to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true' && env.PUBLISH == 'true'
+        env:
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'pt9912/d-migrate' }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+          MOVE_NATIVE: ${{ steps.resolve.outputs.move_native }}
+        run: |
+          set -euo pipefail
+          docker tag d-migrate:native "${DOCKERHUB_IMAGE}:${VERSION}-native"
+          docker push "${DOCKERHUB_IMAGE}:${VERSION}-native"
+          if [ "${MOVE_NATIVE}" = "true" ]; then
+            docker tag d-migrate:native "${DOCKERHUB_IMAGE}:native"
+            docker push "${DOCKERHUB_IMAGE}:native"
+          fi

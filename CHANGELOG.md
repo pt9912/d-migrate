@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Natives Container-Image per eigenem Workflow, nachlieferbar.** Der Bau des nativen Images
+  (`:X.Y.Z-native`, `:native`) liegt jetzt in `.github/workflows/native-container-image.yml` und lässt sich per
+  `workflow_dispatch` (`tag`, `publish`) für einen bestehenden Tag nachliefern. `:native` bewegt sich nur für die
+  höchste Stable-Version. Der Compile läuft mit 80 % RAM (`NATIVE_MAX_RAM_PERCENTAGE`), nachdem 50 % beim
+  Tag-Build 1.12.0 zu einem OutOfMemoryError führten; der Peak-RSS-Wert steht im Log.
+
 ## [1.12.0] - 2026-10-27
 
 ### Changed

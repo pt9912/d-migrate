@@ -436,9 +436,10 @@ funktionsfähig, und `packaging/dockerhub/overview.md` trägt noch den
 Fehler wäre sonst erst am Tag aufgeschlagen — mit einem halb veröffentlichten
 Release als Ausgangslage.
 
-Ungeprobt bleibt der Push selbst, weil er die Registry verändert, und der
-`native-image`-Job wegen des ~8-minütigen nativen Compiles. Dessen beide Logins
-sind Wort für Wort dieselben wie im `docker`-Job.
+Ungeprobt bleibt der Push selbst, weil er die Registry verändert, und das
+native Container-Image wegen des ~8-minütigen nativen Compiles — das baut der
+eigene Workflow `native-container-image.yml` ([4.3.3](#433-natives-container-image)),
+dessen Logins Wort für Wort dieselben sind wie im `docker`-Job.
 
 > **Nicht auf einem Tag-Ref dispatchen.** Nötig ist es nie — der Probelauf
 > gehört vor den Tag. Die Push-Schritte verlangen zusätzlich `event_name == 'push'`
@@ -553,8 +554,8 @@ git push origin vX.Y.Z
    (plus `:latest` bei Stable) — s. [4.3.1](#431-docker-hub-spiegel). Fehlt das
    Secret `DOCKERHUB_TOKEN`, werden diese Schritte still übersprungen und der
    Tag-Build bleibt grün.
-9. Parallel dazu baut der Job `native-image` das **native Container-Image** und
-   pusht `…:X.Y.Z-native` (+ `:native` bei Stable) nach GHCR und Docker Hub — s.
+9. Parallel dazu baut der eigene Workflow `native-container-image.yml` das
+   **native Container-Image** und pusht `…:X.Y.Z-native` (+ `:native` bei Stable) nach GHCR und Docker Hub — s.
    [4.3.3](#433-natives-container-image).
 
 Auf den grünen Tag-Build warten, **bevor** der GitHub-Release veröffentlicht
@@ -666,22 +667,42 @@ Zusätzlich zum JVM-OCI-Image (oben) und den rohen Native-Binaries
 ([4.3.2](#432-native-image-binaries)) publiziert der Tag-Build ein **natives
 Container-Image**: dieselbe volle CLI als GraalVM-Binary, verpackt in ein
 Runtime-Image (Entrypoint = Binary, Workdir `/work`, non-root, `mod_spatialite`).
-Gebaut vom Job `native-image` in
-[`build.yml`](../../.github/workflows/build.yml) über `make native-runtime-build`
+Gebaut vom Workflow
+[`native-container-image.yml`](../../.github/workflows/native-container-image.yml)
+über `make native-runtime-build`
 (Stage `native-runtime` in
 [`docker/native-image.Dockerfile`](../../docker/native-image.Dockerfile)).
 
 - **Tags:** `ghcr.io/pt9912/d-migrate:X.Y.Z-native` (versioniert) plus das
-  bewegliche `:native` (nur bei **Stable** — Prereleases fassen es nicht an,
-  dieselbe Regel wie `:latest`). Docker-Hub-Spiegel
+  bewegliche `:native`. `:native` bewegt sich nur, wenn der Tag die **höchste
+  Stable-Version** aller `v*`-Tags ist: Prereleases fassen es nie an, und eine
+  Nachlieferung für eine ältere Version dreht es nicht zurück. Docker-Hub-Spiegel
   `pt9912/d-migrate:X.Y.Z-native` unter derselben `DOCKERHUB_TOKEN`-Bedingung wie
   das JVM-Image ([4.3.1](#431-docker-hub-spiegel)).
 - **Architektur:** nur `linux/amd64` — wie das JVM-Image.
 - **Vor dem Push** wird das Image DB-frei gesmoked (`--version`, `--help`,
   `schema validate --source`); ein kaputtes Image blockiert den Push, nicht den
   Release.
-- **Nur auf Tags:** der native Compile im Docker (~5–8 min) läuft nicht bei jedem
-  Push; auf `main` verifiziert `native-image.yml` (Dispatch) den Bau.
+- **Speicher:** der Compile läuft mit `NATIVE_MAX_RAM_PERCENTAGE=80` (die
+  Makefile-Vorgabe 50 reichte auf dem Runner nicht); der Peak-RSS-Wert der
+  `native-image`-Ausgabe steht im Log und in der Step-Summary.
+- **Trigger:** Push eines `v*`-Tags (baut, smoked, veröffentlicht) oder
+  `workflow_dispatch` mit den Eingaben `tag` und `publish` (Default `false` =
+  nur bauen und smoken). Der Compile (~5–8 min) läuft nicht bei jedem Push. Der
+  Publish-Riegel prüft `event_name`, nicht allein den Ref.
+
+**Nachliefern für einen bestehenden Tag** (z. B. wenn der native Compile im
+Tag-Build scheiterte; ein Tag lässt sich nicht erneut auslösen, und es braucht
+keine neue Versionsnummer). Erst ohne `publish` probebauen, dann veröffentlichen:
+
+```bash
+gh workflow run native-container-image.yml -f tag=vX.Y.Z
+gh workflow run native-container-image.yml -f tag=vX.Y.Z -f publish=true
+```
+
+Der Workflow checkt den Tag aus (er muss existieren und auf
+`^v[0-9]+\.[0-9]+\.[0-9]+` passen) und lässt `:native` unberührt, wenn eine
+höhere Stable-Version existiert.
 
 Das native Image ist eine **zusätzliche** Distributionsklasse — es ersetzt weder
 das JVM-OCI-Image noch die rohen Binaries.
