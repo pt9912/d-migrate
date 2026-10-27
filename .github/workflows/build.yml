@@ -355,7 +355,9 @@ jobs:
         # Dieselbe Stage wie `make native-runtime-build` lokal: volle CLI nativ (GraalVM) im
         # Runtime-Image (Entrypoint = Binary, /work, non-root, mod_spatialite). Single-Arch amd64 —
         # gleich wie das JVM-Image oben (linux-arm64 = offene Frage 4 im Native-Slice).
-        run: make native-runtime-build NATIVE_RUNTIME_TAG=d-migrate:native
+        # NATIVE_MAX_RAM_PERCENTAGE=80: die Makefile-Vorgabe (50) drosselt fuer Entwicklermaschinen; auf dem
+        # Runner reichte sie fuer 1.12.0 nicht mehr (OutOfMemoryError im native-image-Heap, v1.12.0).
+        run: make native-runtime-build NATIVE_RUNTIME_TAG=d-migrate:native NATIVE_MAX_RAM_PERCENTAGE=80
 
       - name: Smoke-test the native runtime image
         # Kein kaputtes Image publizieren: DB-frei gegen die volle CLI (analog native-image.yml).
