@@ -1,6 +1,6 @@
 # PostgreSQL: eine Spalte vom Domain-Typ (`type: enum` + `ref_type`) plant bei jedem Lauf `AlterColumnType` und blockiert mit Exit 8 (Issue #68)
 
-> **Status: Alle Eigner-Fragen entschieden (2026-10-26): Option B′ und E3, E7–E12 nach Empfehlung; E3 (a2) ist nach P1b bestätigt (Datenbank-Hashes bitgleich, siehe „P2a, P2a-R und P1b Ergebnis“). Erledigt: Schritt 0a und 0b (Spec), P1a (Messung auf `main`), P2a (Reader, einseitiger Vergleich, Abdruck), P2a-R (Rollback-Verdrahtung), P1b (Hash nachher), P2b (Validierung, E7), P2c-0 bis P2c-4 (Leser), P3b (Tests Leser, Cross-Dialekt, MCP-Stichprobe, Grenzen) und P5 (Handbuch §3.21, Anhang F.3/F.9, CHANGELOG). Offen: unabhängiger Review und Abnahme; die Closure-Sektion und der Move nach `done/` folgen erst danach.** Der Plan liegt auf Anweisung des Eigners
+> **Status: GELIEFERT (2026-10-27), siehe Closure unten.** Alle Eigner-Fragen entschieden (2026-10-26): Option B′ und E3 (a2, in P1b bestätigt), E7–E12 nach Empfehlung (E7 mit Abweichung für Identity, siehe „P2b Ergebnis“). Erledigt: Schritt 0a/0b (Spec), P1a, P2a, P2a-R, P1b, P2b, P2c-0 bis P2c-4, P3b, P5, unabhängiger Review mit Nachreview (Befunde behoben, siehe „Review-Befunde“). Der Plan liegt auf Anweisung des Eigners
 > schon in `in-progress/` (ADR 0004 sieht den Move erst mit dem ersten Implementierungs-Commit vor); P2a ist der erste Implementierungs-Commit.
 > **Vorbedingung:** E1, E2, E4–E6 entschieden (siehe „Entscheidung“). **Offen:** nur die Bestätigung von E3 (a2) durch P1a/P1b (Rückfall (a1)); sonst keine Eigner-Frage. **Reihenfolge:** Schritt 0a Spec (Reverse/Verweis, erledigt) → P1a (Messung auf `main`, erledigt) → **vorläufige** Entscheidung E3/E7/E9 → Schritt 0b Spec → P2a → P1b (Hash nachher, E3 bestätigt, ADR) → P2b → P2c → P3a/P3b → P5.
 > **Plan-Review Runde 3 eingearbeitet (2026-10-26):** `postUpFingerprint`-Befund korrigiert, E3 in a1/a2/b/c, Akzeptanz nach Weg, E12, Schneidung von P2c/P3.
@@ -220,7 +220,7 @@ Ohne den Fix am Transfer-Preflight haette der Reader-Umbau `data transfer` von P
 | 8 | nach Umbau rot | erfuellt mit Einschraenkung | Seed (Zahlen unter CHECK), Import-Preflight, Transfer-Verifikation und -Preflight (PG -> PG und PG -> SQLite gemessen; PG -> MySQL **nicht** gemessen), Parquet numerisch; `CompareValueText` bewusst unveraendert |
 | 9 | Gate | erfuellt | `DomainColumnCrossDialectTest`, `cross-dialect-matrix` gruen |
 | 10 | Gate | erfuellt | Spec (Schritt 0a/0b), Handbuch (P5) |
-| 11 | Gate | erfuellt | `docs-check`, `doc-immutable`, `solid-suppression-gate`, `docker-check` je Modul und ohne `MODULES`, Integration PostgreSQL, SQLite, Matrix, e2e-cli |
+| 11 | Gate | erfuellt, mit Einschraenkung | `docs-check`, `doc-immutable`, `solid-suppression-gate`, `docker-check` je Modul und ohne `MODULES`, Integration PostgreSQL, SQLite, Matrix, e2e-cli liefen gruen; nach den letzten Doku- und Test-Commits (`922e48b61`, `2d6c56f12`) wurden SQLite, Matrix und e2e-cli nicht neu gefahren (siehe Closure) |
 
 ## Review-Befunde (2026-10-26, nach P5)
 
@@ -391,3 +391,28 @@ Art je Kriterium: **Rot** (scheitert auf `main`; vor dem Fix einmal absichtlich 
 * Messskript wie im Issue gegen ein `make docker-build`-Image (nicht das veröffentlichte); Ergebnis je Fall in die P0-Tabelle.
 * Der Testfall je Kriterium ist als Einzelzeile benennbar (Klasse, Methode) und im ImpPlan nachzutragen, sobald P3 beginnt.
 * Done-ness wird gegen Lastenheft, Spec (`spec/neutral-model-spec.md`, `spec/schema-reference.md`, `spec/ddl-generation-rules.md`) und ADR begründet, nicht gegen diesen Plan.
+
+## Closure (2026-10-27)
+
+**Geliefert**, begründet gegen Spec (`spec/neutral-model-spec.md` §13.2/§13.3, `spec/schema-reference.md`, `spec/ddl-generation-rules.md` §6.3), Code und Tests, nicht gegen diesen Plan:
+
+* **Option B′:** der PostgreSQL-Reader nennt eine Spalte vom Domain-Typ `type: enum` + `ref_type: <Domain>` (nur bei Domain im gelesenen Schema, in `custom_types` und mit aufloesbarem, gleichem Basistyp); `schema migrate` plant fuer die unveraenderte Domain-Spalte nichts (Exit 0), `schema compare` bleibt strikt (E5), eine Altdatei (Basistyp) bleibt bei Exit 0 (E2), eine Datei mit `ref_type` gegen eine Basistyp-Spalte bleibt Exit 8. Rundlauf `reverse` → `generate` erhaelt die Domain-Spalte.
+* **Abdruck (E3 a2):** kein Bump, `schema-fingerprint-v24`, kein ADR; Datenbank- und Altdatei-Hashes bitgleich zu `main` (P1b, `measure.sh`, `measure-edge-hash.sh`). Rollback-Verdrahtung schemagebunden (P2a-R), Rundlauf mit ref- und Altdatei.
+* **Validierung und Leser:** E009/E017 loesen die Domain auf den Basistyp auf; `data seed` (Zahlen unter dem CHECK), Import-Preflight, Transfer-Preflight und `--verify` (PG → PG und PG → SQLite gemessen), Parquet unveraendert numerisch.
+* Doku: Handbuch §3.21, Anhang F.3/F.9, `CHANGELOG.md` unter `[Unreleased]`; Review und Nachreview ohne offenen Befund, je mit Rot-Beleg.
+
+**Einschraenkungen, ehrlich benannt:**
+
+* **`data transfer` PostgreSQL → MySQL ist nicht gemessen.** Gemessen sind PG → PG und PG → SQLite; fuer MySQL steht nur die Herleitung aus dem Code.
+* **Erweiterungs-Domain** (Rueckfall auf den Basistyp nach E4) ist nur am Code belegt, nicht eigens gemessen.
+* **Overlay-Befund `STALE_TARGET_FINGERPRINT`** (Datei-Hash einer ref-Datei von `main` in einem Overlay) ist nur am Code belegt, nicht gemessen.
+* **Nach den letzten Doku- und Test-Commits** (`922e48b61`, `2d6c56f12`) wurden SQLite-Integration, Cross-Dialekt-Matrix und e2e-cli nicht neu gefahren; der letzte gruene Lauf liegt davor. Die Commits aendern keinen Produktionscode.
+
+**Nicht Scope und Folgeposten (nur bei Bedarf):**
+
+* **E11, Guard fuer Plan-Artefakte:** nicht gebaut; `fingerprintAlgorithm` wird bei Plan-Artefakten weiter nicht geprueft. Bei (a2) ohne Bump kein Anlass; wird ein Bump noetig, eigener Slice.
+* **E130 (Identity) bewusst nicht aufgeloest:** PostgreSQL erlaubt keine Identity an einer Domain-Spalte; Spec und Handbuch sagen das (Abweichung von der Empfehlung E7).
+* **Seed versteht nur** Schranken, Laengen, Wertelisten und `IS NOT NULL`; jeder andere CHECK (Regex, Funktionen) ist ein `SeedPreflightException` (Exit 3) mit Hinweis auf `--rules`.
+* **Domain ueber Domain** und Domains ueber Typen ohne neutrales Gegenstueck (`real`, `bit(n)`, `numeric` ohne `precision`, `varchar(n)[]`, `inet`, `interval`) bleiben bei der inneren Domain bzw. beim Basistyp, wie auf `main` (E9).
+* **Release:** Minor 1.12.0 ist nur als Vermerk im `CHANGELOG.md` festgehalten; kein Release durch diesen Slice.
+* Das GitHub-Issue #68 wurde durch diese Closure nicht kommentiert.
