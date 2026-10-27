@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.11.1** (stabil, [veröffentlicht 2026-10-26](https://github.com/pt9912/d-migrate/releases/tag/v1.11.1)).
+**1.12.0** (stabil, [veröffentlicht 2026-10-27](https://github.com/pt9912/d-migrate/releases/tag/v1.12.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,23 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.11.1** (2026-10-26) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Zwei Folge-Fixes zu 1.11.0.**
+- **Aktuelles Stable** · **1.12.0** (2026-10-27) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Eine PostgreSQL-Domain-Spalte
+  ist nicht mehr bei jedem `schema migrate` eine Änderung (Issue #68).** Eine
+  Spalte vom Domain-Typ plante ein `AlterColumnType` und endete mit Exit 8
+  (`PG_USING_OVERLAY_MISSING`), und `schema reverse` verlor die Domain an der
+  Spalte. `schema reverse` schreibt jetzt `type: enum` mit `ref_type: <Domain>`
+  (neues `reverse`-Format; eine ältere Datei mit dem Basistyp bleibt bei Exit 0),
+  und `schema migrate` plant für die unveränderte Spalte nichts. `schema validate`
+  prüft `default` und Fremdschlüssel einer Domain-Spalte gegen den Basistyp,
+  `data seed` erzeugt Werte des Basistyps unter dem `CHECK` der Domain, und
+  `data import --schema` sowie `data transfer` behandeln die Spalte als Basistyp.
+  Der Fingerabdruck-Tag bleibt `schema-fingerprint-v24`. Außerdem auf SQLite: ein
+  Tabellenneubau behält das `WITHOUT ROWID` der Datenbank (`W164` bei abweichender
+  Datei), und ein Neubau neben einem `FULLTEXT`-Index derselben Tabelle läuft mit
+  `--execute` statt mit Exit 8. Abhängigkeits-Updates, darunter `icu4j` 79.1
+  (Unicode-Normalisierung des Fingerabdrucks; Tests grün).
+  1.11.1 (2026-10-26) — **Zwei Folge-Fixes zu 1.11.0.**
   Auf SQLite behalten ein Tabellenneubau und `schema generate` `WITHOUT ROWID`
   (der Neubau ließ es fallen, und `schema generate` schrieb es nie). Auf
   PostgreSQL lässt eine Tabelle mit zwei Wertelisten-`CHECK`s an einer Spalte

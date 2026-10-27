@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.11.1**
-(stable, [released 2026-10-26](https://github.com/pt9912/d-migrate/releases/tag/v1.11.1)).
+d-migrate is a working production tool at version **1.12.0**
+(stable, [released 2026-10-27](https://github.com/pt9912/d-migrate/releases/tag/v1.12.0)).
 
 The current capabilities:
 
@@ -161,8 +161,23 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.11.1** (2026-10-26) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **Two follow-up fixes to
+- **Current stable** · **1.12.0** (2026-10-27) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **A PostgreSQL domain column
+  is no longer a change on every `schema migrate` (Issue #68).** A column of a
+  domain type used to plan an `AlterColumnType` and stop with exit 8
+  (`PG_USING_OVERLAY_MISSING`), and `schema reverse` lost the domain at the
+  column. `schema reverse` now writes `type: enum` with `ref_type: <domain>` (a
+  new `reverse` format; an older file with the base type still exits 0), and
+  `schema migrate` plans nothing for the unchanged column. `schema validate`
+  checks `default` and foreign keys of a domain column against the base type,
+  `data seed` produces values of the base type under the domain's `CHECK`, and
+  `data import --schema` and `data transfer` treat the column as its base type.
+  The fingerprint tag stays `schema-fingerprint-v24`. Also on SQLite: a table
+  rebuild keeps the `WITHOUT ROWID` of the database (`W164` for a differing
+  file), and a rebuild next to a `FULLTEXT` index of the same table runs with
+  `--execute` instead of exit 8. Dependency updates, among them `icu4j` 79.1
+  (Unicode normalisation of the fingerprint; tests green).
+  1.11.1 (2026-10-26) — **Two follow-up fixes to
   1.11.0.** On SQLite, a table rebuild and `schema generate` keep `WITHOUT
   ROWID` (the rebuild used to drop it, and `schema generate` never wrote it). On
   PostgreSQL, a table with two value-list `CHECK`s on one column no longer makes

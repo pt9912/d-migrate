@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-10-27
+
+### Changed
+
+- **Abhängigkeits-Updates (Dependabot).** Kotlin-Plugin `2.4.20` → `2.4.21` und `org.graalvm.buildtools.native`
+  `1.1.14` → `1.1.16` (Gruppe `jvm-minor-patch`), `docker/login-action` `4.6.0` → `4.7.0` (CI-Workflows,
+  Action-Pin) sowie `com.ibm.icu:icu4j` `76.1` → `79.1`. Über `icu4j` läuft die Unicode-Normalisierung des
+  Fingerabdrucks (Payload-Fingerprint); die Tests sind mit der neuen Version grün, der Algorithmus-Tag
+  (`schema-fingerprint-v24`) und die Abdrücke bleiben unverändert. Das Abhängigkeitsinventar
+  (`docs/security/dependency-inventory.md`) führt `icu4j 79.1`.
+
 ### Fixed
 
 - **PostgreSQL: eine Spalte vom Domain-Typ plante bei jedem `schema migrate` ein `AlterColumnType` und blockierte mit
