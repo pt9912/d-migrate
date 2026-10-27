@@ -74,7 +74,7 @@ class DomainColumnCrossDialectTest : FunSpec({
         }
     }
 
-    test("mysql: eine Domain ueber timestamptz meldet W100 wie eine gewoehnliche Spalte") {
+    test("auf mysql meldet eine Domain ueber timestamptz W100 wie eine gewoehnliche Spalte") {
         val w100 = generate(MysqlDdlGenerator()).notes.filter { it.code == "W100" }.map { it.objectName.orEmpty() }
         withClue("$w100") { w100.any { it.endsWith("c_tz") } shouldBe true }
     }
