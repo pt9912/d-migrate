@@ -13,7 +13,7 @@ plugins {
     // GraalVM Native Image (docs/planning/done/graalvm-native-image-distribution.md).
     // Nur `nativeCompile`/`nativeRun` brauchen eine GraalVM-Toolchain; der normale Build (JDK 21) ist
     // unberührt. Bis Phase D (GraalVM in CI) wird `nativeCompile` nur lokal ausgeführt.
-    id("org.graalvm.buildtools.native") version "1.1.16"
+    id("org.graalvm.buildtools.native") version "1.1.18"
 }
 
 application {
@@ -221,7 +221,7 @@ dependencies {
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
     // .d-migrate.yaml-Loader (LF-012 / LN-038 — minimaler NamedConnectionResolver)
     implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
-    testImplementation("com.google.code.gson:gson:2.14.0")
+    testImplementation("com.google.code.gson:gson:2.15.0")
     // Test-only ports-common Fakes (z. B. FakeUnicodeTextService in
     // OutputFormatterTest). Bewusst test-scope — kein testFixtures-/kotest-Leak
     // in den Distributions-Shadow-Jar (Befund 17).
