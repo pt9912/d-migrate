@@ -55,7 +55,7 @@ jobs:
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
       - name: Resolve and submit dependency graph
-        uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        uses: gradle/actions/dependency-submission@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         # Gemeldet wird, was ausgeliefert wird: die Distribution entsteht aus
         # `:adapters:driving:cli:installDist`, also aus `runtimeClasspath`.
         # Ohne Filter meldet die Action JEDEN aufloesbaren Klassenpfad — Test-
