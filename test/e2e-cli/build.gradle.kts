@@ -64,6 +64,6 @@ dependencies {
     // Integration-test harnesses build JSON-RPC payloads with Gson and
     // validate tool runtime outputs against McpToolSchemas (JSON Schema
     // 2020-12).
-    testImplementation("com.google.code.gson:gson:2.14.0")
+    testImplementation("com.google.code.gson:gson:2.15.0")
     testImplementation("com.networknt:json-schema-validator:1.5.4")
 }
