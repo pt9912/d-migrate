@@ -177,8 +177,9 @@ sie für niemanden, der ein ZIP herunterlädt. Für das Runtime-Image prüft es
 Wichtig:
 
 - `adapters/driving/cli/build/release` ist nur der lokale Preflight-Ordner <!-- d-check:ignore (Build-Ausgabe, entsteht zur Build-Zeit; ADR 0011) -->
-- für den eigentlichen GitHub-Release werden später ausschließlich die Dateien
-  aus dem grünen Workflow-Artefakt `release-assets` verwendet
+- die Dateien am GitHub-Release baut `release-homebrew.yml` beim Tag-Push selbst,
+  siehe [4.4](#44-release-assets-aus-dem-grünen-tag-build-beziehen) und
+  [4.5](#45-github-release-erstellen)
 
 ### 3.3 Smoke-Test der CLI gegen die Fixture-Schemas
 
@@ -557,6 +558,9 @@ git push origin vX.Y.Z
 9. Parallel dazu baut der eigene Workflow `native-container-image.yml` das
    **native Container-Image** und pusht `…:X.Y.Z-native` (+ `:native` bei Stable) nach GHCR und Docker Hub — s.
    [4.3.3](#433-natives-container-image).
+10. Ebenfalls parallel legt `release-homebrew.yml` den GitHub-Release mit eigenen,
+    neu gebauten Assets an und aktualisiert den Homebrew-Tap; der Job `verify-homebrew`
+    installiert danach aus dem Tap. Siehe [4.5](#45-github-release-erstellen).
 
 Auf den grünen Tag-Build warten, **bevor** der GitHub-Release veröffentlicht
 wird:
@@ -714,6 +718,14 @@ docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z-native --help
 
 ### 4.4 Release-Assets aus dem grünen Tag-Build beziehen
 
+**Veröffentlicht werden diese Dateien nicht.** Die Assets am GitHub-Release baut
+[`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) beim Tag-Push selbst
+(`make release-assets`). Das Workflow-Artefakt `release-assets` aus
+[`build.yml`](../../.github/workflows/build.yml) ist ein zweiter, eigener Bau desselben Tags.
+Der Build ist nicht byte-reproduzierbar: Beide Fassungen sind in sich konsistent und passen
+jeweils zu ihrer eigenen `.sha256`, sie sind aber nicht byte-gleich. Das Artefakt dient zum
+lokalen Prüfen; der Fallback in [4.5](#45-github-release-erstellen) braucht es nicht.
+
 ```bash
 # Tag-Run anhand des Refs identifizieren (filtert Branch-/PR-Runs heraus):
 TAG="vX.Y.Z"
@@ -732,12 +744,24 @@ Wichtig:
 
 - `adapters/driving/cli/build/release` aus Abschnitt 3.2 bleibt lokaler Preflight und ist nicht die <!-- d-check:ignore (Build-Ausgabe, entsteht zur Build-Zeit; ADR 0011) -->
   Publish-Quelle
-- `gh release create` und `gh release upload` arbeiten nur mit
-  `./release-assets/*`
+- `./release-assets/*` wird **nicht** an den Release hochgeladen, siehe 4.5
 
 ### 4.5 GitHub-Release erstellen
 
-CHANGELOG-Inhalt für die Release-Notes extrahieren und veröffentlichen:
+Den Release legt [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)
+beim Tag-Push an (Job `publish`). Er lädt die eigenen Assets hoch, dazu
+`d-migrate-X.Y.Z-homebrew.tar.gz`, setzt automatisch erzeugte Notes und
+schreibt die Formula in den Tap. Die Formula pinnt die `sha256` dieses Tarballs.
+Von Hand bleibt nur, die Notes durch die CHANGELOG-Sektion zu ersetzen.
+
+**Kein `gh release upload --clobber`.** Damit würden Dateien ersetzt, die schon
+ausgeliefert sind: mit ihrer veröffentlichten `.sha256` und von
+`verify-homebrew` geprüft. Die neuen Bytes kämen aus einem anderen Bau
+(siehe 4.4). Wer die Dateien schon heruntergeladen und ihre Prüfsumme notiert
+hat, fände dann eine andere vor. Außerdem stammten `.tar` und
+Homebrew-Tarball danach aus zwei verschiedenen Builds.
+
+CHANGELOG-Inhalt für die Release-Notes extrahieren:
 
 ```bash
 # CHANGELOG-Sektion für X.Y.Z extrahieren (alles bis zur nächsten ##-Sektion).
@@ -764,25 +788,27 @@ if [ "$LINES" -lt 5 ]; then
 fi
 ```
 
-**Wichtig: Zuerst prüfen, ob der Release bereits existiert.** Der
-[`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)-Workflow erstellt den GitHub-Release automatisch beim
-Tag-Push. `gh release create` schlägt fehl, wenn der Release schon da ist.
+Notes setzen und die veröffentlichten Assets gegen ihre eigene Prüfsumme prüfen:
 
 ```bash
-# Prüfen, ob der Release bereits existiert:
-if gh release view vX.Y.Z >/dev/null 2>&1; then
-  echo "Release vX.Y.Z existiert bereits — Notes aktualisieren und Assets hochladen"
-  gh release edit vX.Y.Z --notes-file /tmp/release-notes.md
-  gh release upload vX.Y.Z ./release-assets/* --clobber
-else
-  echo "Release vX.Y.Z existiert noch nicht — neu erstellen"
-  gh release create vX.Y.Z \
-    --target main \
-    --title "vX.Y.Z" \
-    --notes-file /tmp/release-notes.md \
-    ./release-assets/*
-fi
+gh release view vX.Y.Z >/dev/null || { echo "Release fehlt — siehe unten"; exit 1; }
+gh release edit vX.Y.Z --notes-file /tmp/release-notes.md
+
+# Geprüft wird, was veröffentlicht ist, nicht das build.yml-Artefakt:
+CHK="$(mktemp -d)"
+gh release download vX.Y.Z -D "${CHK}" \
+  -p 'd-migrate-X.Y.Z.sha256' -p 'd-migrate-X.Y.Z.zip' -p 'd-migrate-X.Y.Z.tar' \
+  -p 'd-migrate-X.Y.Z-all.jar' -p 'THIRD-PARTY-NOTICES.md'
+(cd "${CHK}" && sha256sum -c d-migrate-X.Y.Z.sha256)   # erwartet: jede Zeile OK
 ```
+
+**Release fehlt** (Job `publish` von `release-homebrew.yml` ist rot): Den Job mit
+`gh run rerun <run-id> --failed` neu starten, **nicht** von Hand `gh release create` mit
+`./release-assets/*` anlegen. Einem so angelegten Release fehlt der Homebrew-Tarball, und
+der Tap bliebe auf der alten Version. Ein erneuter Lauf baut neu. Existiert der Release
+inzwischen, ersetzt er die Assets per `--clobber`. Das ist in Ordnung: Assets, `.sha256`,
+Homebrew-Tarball und die `sha256` der Formula kommen dann wieder aus einem einzigen Bau.
+Danach die Notes wie oben setzen.
 
 ### 4.6 Verifikation des Releases
 
@@ -1006,9 +1032,9 @@ Für jeden Release abhaken:
 - [ ] [`native-image.yml`](../../.github/workflows/native-image.yml) für den Tag: **Linux-Leg + `attach-release` grün** (Gate, Frage 6 = Hybrid); Windows best-effort (rotes Leg = kein Asset, Release bleibt gültig)
 
 **Veröffentlichung**
-- [ ] `release-assets` aus dem grünen Tag-Build heruntergeladen
-- [ ] Geprüft ob Release bereits existiert (`gh release view vX.Y.Z`), dann `edit`+`upload --clobber` statt `create`
-- [ ] Release enthält ZIP, TAR, Fat JAR und SHA256
+- [ ] Release von `release-homebrew.yml` angelegt (`gh release view vX.Y.Z`); fehlt er, Job `publish` neu starten, nicht von Hand anlegen ([4.5](#45-github-release-erstellen))
+- [ ] Notes per `gh release edit --notes-file` aus dem CHANGELOG gesetzt; **kein** `upload --clobber`
+- [ ] Release enthält ZIP, TAR, Fat JAR, SHA256 und den Homebrew-Tarball; `sha256sum -c` gegen die veröffentlichten Dateien ok
 - [ ] Release enthält das `linux-x64`-Native-Binary mit `.sha256` (**Pflicht/Gate**); `windows-x64.exe` best-effort (mit `.sha256`, sofern sein Leg grün war). Kein `macos-arm64` — [ADR 0044](../adr/0044-kein-macos-native-binary.md)
 - [ ] Native-Binary der eigenen Plattform lokal gesmoked (`schema validate`)
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
