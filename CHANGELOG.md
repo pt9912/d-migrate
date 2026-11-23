@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.2] - 2026-11-23
+
 ### Changed
 
 - **Abhängigkeits-Update (Dependabot #65).** `com.networknt:json-schema-validator` `1.5.4` → `3.0.9`, nur

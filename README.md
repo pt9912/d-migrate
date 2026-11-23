@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.12.1**
-(stable, [released 2026-11-23](https://github.com/pt9912/d-migrate/releases/tag/v1.12.1)).
+d-migrate is a working production tool at version **1.12.2**
+(stable, [released 2026-11-23](https://github.com/pt9912/d-migrate/releases/tag/v1.12.2)).
 
 The current capabilities:
 
@@ -161,8 +161,17 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.12.1** (2026-11-23) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **A named value-list `CHECK`
+- **Current stable** · **1.12.2** (2026-11-23) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **PostgreSQL: `CHECK`s with
+  the same name on different tables are no longer swapped (Issue #77).** The
+  reader gave every table the expressions of all `CHECK`s with that name, so
+  `schema compare` reported another table's expression and `schema migrate
+  --target db:` planned `DROP`/`ADD CONSTRAINT` on every run (exit 0, no
+  diagnostic). Also: `schema migrate` writes the tool version into its rollback
+  and plan artefacts instead of `d-migrate (dev)` (Issue #78), and the Jackson and
+  Guava copies shaded into the Parquet path are lifted to fixed versions
+  (parquet-java 1.18.2, hadoop-shaded-guava 1.6.0).
+  1.12.1 (2026-11-23) — **A named value-list `CHECK`
   on a text column no longer gets lost in `schema migrate` (Issue #76).** When
   the schema kept a column's allowed values as its own `CHECK` (`a_state IN
   (…)`) instead of an `enum`, a changed list was planned as a column change

@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.12.1** (stabil, [veröffentlicht 2026-11-23](https://github.com/pt9912/d-migrate/releases/tag/v1.12.1)).
+**1.12.2** (stabil, [veröffentlicht 2026-11-23](https://github.com/pt9912/d-migrate/releases/tag/v1.12.2)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,17 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.12.1** (2026-11-23) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Ein benannter
+- **Aktuelles Stable** · **1.12.2** (2026-11-23) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **PostgreSQL: gleichnamige
+  `CHECK`s verschiedener Tabellen werden nicht mehr vertauscht (Issue #77).** Der
+  Reader gab jeder Tabelle die Ausdrücke aller `CHECK`s dieses Namens, so dass
+  `schema compare` den Ausdruck einer anderen Tabelle meldete und `schema migrate
+  --target db:` bei jedem Lauf `DROP`/`ADD CONSTRAINT` plante (Exit 0, keine
+  Diagnose). Außerdem: `schema migrate` schreibt die Werkzeugversion in seine
+  Rücknahme- und Plan-Artefakte statt `d-migrate (dev)` (Issue #78), und die im
+  Parquet-Pfad geshadeten Kopien von Jackson und Guava sind auf behobene Versionen
+  gehoben (parquet-java 1.18.2, hadoop-shaded-guava 1.6.0).
+  1.12.1 (2026-11-23) — **Ein benannter
   Wertelisten-`CHECK` an einer Textspalte geht in `schema migrate` nicht mehr
   verloren (Issue #76).** Führte das Schema die erlaubten Werte einer Spalte als
   eigenen `CHECK` (`a_state IN (…)`) statt als `enum`, wurde eine geänderte Liste
