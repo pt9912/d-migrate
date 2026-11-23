@@ -160,7 +160,7 @@ internal object MysqlDiffOtherOps {
         if (!cap.known) {
             ctx.skip(
                 op,
-                "MySQL CHECK rendering is blocked: ${cap.rationale}. Set --mysql-server-version " +
+                "MySQL CHECK rendering is blocked: ${cap.rationale}. Set --target-version " +
                     "or run against a live MySQL ≥ 8.0.16 / MariaDB ≥ 10.2.1 target.",
                 code = PlannerBlockerClassifier.MYSQL_CHECK_ENFORCEMENT_UNKNOWN_CODE,
             )

@@ -85,7 +85,7 @@ fixtures:
 | G.2        | all 3    | carved  | Rollback artefact build/parse roundtrip |
 | G.3        | all 3    | carved  | Execution-status report shape |
 | A.1        | all 3    | carved  | Locking / transactional-DDL hints |
-| F.5        | PG/SQLite | carved | MySQL needs `--mysql-server-version` |
+| F.5        | PG/SQLite | carved | MySQL needs `--target-version` |
 | D.3        | PG       | MySQL/SQLite | Materialized View (PG renders; MySQL/SQLite blocked) |
 | E.2        | MySQL    | carved  | PG/SQLite need per-dialect trigger bodies |
 

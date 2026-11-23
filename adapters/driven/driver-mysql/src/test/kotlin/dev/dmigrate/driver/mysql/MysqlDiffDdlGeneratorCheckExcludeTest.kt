@@ -128,6 +128,16 @@ class MysqlDiffDdlGeneratorCheckExcludeTest : FunSpec({
         r.statements.single().sql shouldContainStr "DROP CHECK `chk_age_nonneg`"
     }
 
+    test("the blocker names the CLI option that exists: --target-version") {
+        // Die Meldung empfahl lange `--mysql-server-version` — einen Schalter, den die CLI nicht
+        // kennt. Wer dem Rat folgte, scheiterte mit Exit 2 statt mit einem Plan.
+        val message = planAndUp(addCheckDiff, serverVersion = null).diagnostics.single {
+            it.code == PlannerBlockerClassifier.MYSQL_CHECK_ENFORCEMENT_UNKNOWN_CODE
+        }.message
+        message shouldContainStr "--target-version"
+        (message.contains("--mysql-server-version")) shouldBe false
+    }
+
     test("CHECK DROP without server version: blocked with MYSQL_CHECK_ENFORCEMENT_UNKNOWN") {
         val r = planAndUp(dropCheckDiff, serverVersion = null)
         r.isBlocked shouldBe true

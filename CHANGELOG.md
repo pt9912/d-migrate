@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Jetzt bleibt der CHECK in diesen Fällen ein gewöhnlicher Constraint: `DROP CONSTRAINT` und `ADD CONSTRAINT` unter
   seinem Namen, Rückweg spiegelbildlich. Ein `enum` im Soll und ein unveränderter Wertevorrat verhalten sich wie
   bisher; der Fingerabdruck ist unverändert.
+- **MySQL: die Diagnose `MYSQL_CHECK_ENFORCEMENT_UNKNOWN` empfahl einen Schalter, den es nicht gibt.** Ohne bekannte
+  Serverversion (etwa Datei gegen Datei) blockiert `schema migrate` eine CHECK-Operation und riet zu
+  `--mysql-server-version`; die CLI lehnte ihn mit Exit `2` ab. Die Meldung nennt jetzt `--target-version`.
 
 ## [1.12.0] - 2026-10-27
 
