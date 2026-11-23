@@ -152,7 +152,7 @@ class PostgresMetadataQueriesTest : FunSpec({
     // ── listCheckConstraints ───────────────────────
 
     test("listCheckConstraints maps to ConstraintProjection") {
-        every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns listOf(
+        every { jdbc.queryList(match { it.contains("contype = 'c'") }, any(), any()) } returns listOf(
             mapOf("constraint_name" to "chk_age", "check_clause" to "(age > 0)"),
         )
         val result = PostgresMetadataQueries.listCheckConstraints(jdbc, "public", "users")

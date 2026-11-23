@@ -87,6 +87,31 @@ class PostgresProfilingIntegrationTest : FunSpec({
         }
     }
 
+    // Ein FK-Name ist in PostgreSQL nur je Tabelle eindeutig. Der Join ueber
+    // information_schema lief ohne Tabelle: `fk_parent` an `child_b.q_id`
+    // markierte `child_a.q_id` mit (Geschwister von Issue #77).
+    test("listColumns: gleichnamige FKs zweier Tabellen markieren nur die eigene Spalte") {
+        pool().use { p ->
+            p.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute("CREATE TABLE fk_parent_t (id INTEGER PRIMARY KEY)")
+                    stmt.execute(
+                        "CREATE TABLE child_a (id INTEGER PRIMARY KEY, p_id INTEGER, q_id INTEGER, " +
+                            "CONSTRAINT fk_parent FOREIGN KEY (p_id) REFERENCES fk_parent_t (id))",
+                    )
+                    stmt.execute(
+                        "CREATE TABLE child_b (id INTEGER PRIMARY KEY, p_id INTEGER, q_id INTEGER, " +
+                            "CONSTRAINT fk_parent FOREIGN KEY (q_id) REFERENCES fk_parent_t (id))",
+                    )
+                }
+            }
+            val a = introspection.listColumns(p, "child_a").associate { it.name to it.isForeignKey }
+            val b = introspection.listColumns(p, "child_b").associate { it.name to it.isForeignKey }
+            a shouldBe mapOf("id" to false, "p_id" to true, "q_id" to false)
+            b shouldBe mapOf("id" to false, "p_id" to false, "q_id" to true)
+        }
+    }
+
     test("rowCount") {
         pool().use { p -> data.rowCount(p, "users") shouldBe 5 }
     }

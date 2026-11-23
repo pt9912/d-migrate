@@ -247,15 +247,23 @@ internal object PostgresTableMetadataQueries {
     fun listCheckConstraints(session: JdbcOperations, schemaName: String, table: String): List<ConstraintProjection> {
         return session.queryList(
             """
-            SELECT tc.constraint_name, cc.check_clause
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.check_constraints cc
-              ON tc.constraint_name = cc.constraint_name
-              AND tc.constraint_schema = cc.constraint_schema
-            WHERE tc.constraint_type = 'CHECK'
-              AND tc.table_schema = ? AND tc.table_name = ?
-              AND tc.constraint_name NOT LIKE '%_not_null'
-            ORDER BY tc.constraint_name
+            -- Ueber `pg_constraint.conrelid`, nicht ueber information_schema:
+            -- `check_constraints` fuehrt keine Tabelle, und ein CHECK-Name ist
+            -- nur je Tabelle eindeutig. Der Join ueber den Namen gab jeder
+            -- Tabelle die Ausdruecke aller gleichnamigen CHECKs im Schema
+            -- (Issue #77). Der Text ist derselbe wie `check_clause`:
+            -- `pg_get_expr` ueber `conbin`, ohne `CHECK` und ohne die
+            -- aeussere Klammer, die `pg_get_constraintdef` zusaetzlich setzt.
+            -- NOT-NULL-Constraints (PG 18: `contype = 'n'`) fallen ueber
+            -- `contype = 'c'` heraus.
+            SELECT c.conname AS constraint_name,
+                   pg_get_expr(c.conbin, c.conrelid) AS check_clause
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE c.contype = 'c'
+              AND n.nspname = ? AND t.relname = ?
+            ORDER BY c.conname
             """.trimIndent(), schemaName, table,
         ).map { row ->
             ConstraintProjection(
