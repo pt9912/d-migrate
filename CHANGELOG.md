@@ -15,6 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `McpOutputSchemaValidationScenarioTest` sind deshalb umgestellt (Issue #69). Das Auslieferungsartefakt
   ist unverändert.
 
+### Fixed
+
+- **PostgreSQL: gleichnamige CHECKs verschiedener Tabellen wurden vertauscht (Issue #77).** PostgreSQL verlangt
+  eindeutige CHECK-Namen nur je Tabelle. Der Reader verband `information_schema.table_constraints` und
+  `check_constraints` aber nur über Name und Schema. So bekam jede Tabelle die Ausdrücke aller gleichnamigen
+  CHECKs. `schema compare` meldete dann an der einen Tabelle den Ausdruck der anderen. `schema migrate --target db:`
+  plante bei jedem Lauf `DROP`/`ADD CONSTRAINT`, ohne Diagnose und mit Exit 0. Der Reader liest jetzt aus
+  `pg_constraint` über die Tabelle (`conrelid`), und der gelesene Ausdruck bleibt derselbe Text. Derselbe Fehler
+  steckte im Profiling: Eine Spalte galt als Fremdschlüssel, wenn eine andere Tabelle einen gleichnamigen
+  Fremdschlüssel auf eine gleichnamige Spalte hatte.
+- **`schema migrate` trägt die Werkzeugversion in seine Artefakte ein (Issue #78).** Das Rücknahme-Artefakt
+  (`--generate-rollback`) nannte als `createdByVersion` den Platzhalter `d-migrate (dev)`, auch im veröffentlichten
+  Image. Das Plan-Artefakt (`--plan-artefact`, `dMigrateVersion`) und Inline-Renames (`--rename-table`,
+  `--rename-column`) trugen ihn ebenfalls. Jetzt steht dort die Version, die `--version` meldet.
+
 ## [1.12.1] - 2026-11-23
 
 ### Changed
