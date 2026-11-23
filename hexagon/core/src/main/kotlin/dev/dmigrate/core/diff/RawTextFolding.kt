@@ -3,6 +3,7 @@ package dev.dmigrate.core.diff
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
 
 /**
@@ -56,11 +57,26 @@ internal class RawTextFolding(
         ) {
             return desired.copy(expression = current.expression)
         }
+        // ADR 0067: derselbe Wertevorrat in einer anderen Form (`IN` gegen
+        // `= ANY (ARRAY[...])` gegen OR-Kette, beliebige Reihenfolge) ist in
+        // `schema compare` keine Aenderung. Nur dort; `schema migrate` faltet den
+        // Wertevorrat zielbewusst (ADR 0055).
+        if (canonicalizeRawExpressions && sameValueListCheck(current, desired, columns)) {
+            return desired.copy(expression = current.expression)
+        }
         if (!unchanged("constraint", path, EXPRESSION, null, desired.expression, current.expression)) {
             return desired
         }
         return desired.copy(expression = current.expression)
     }
+
+    private fun sameValueListCheck(
+        current: ConstraintDefinition,
+        desired: ConstraintDefinition,
+        columns: SideColumns,
+    ): Boolean =
+        current.type == ConstraintType.CHECK && desired.type == ConstraintType.CHECK &&
+            ConstraintDiffContract.sameValueList(current.expression, desired.expression, columns)
 
     /**
      * Praedikat und Ausdrucks-Schluessel eines Index.

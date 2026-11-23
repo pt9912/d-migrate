@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DECIMAL(12,4)` → `DECIMAL(14,4)`. Erweitert sich die Spalte, ohne dass Nach- oder Vorkommastellen weniger
   werden (`s' ≥ s` und `p' − s' ≥ p − s`), entsteht jetzt `ALTER COLUMN … TYPE DECIMAL(p',s')` ohne `USING`. Eine
   Verengung braucht weiter ein Overlay `using-expression`.
+- **`schema compare`: Ein Wertelisten-`CHECK` mit gleichem Wertevorrat ist keine Änderung mehr (Issue #80,
+  ADR 0067).** PostgreSQL gibt `a_state IN ('OFF','ON')` als `(a_state = ANY (ARRAY['OFF'::text,
+  'ON'::text]))` zurück. `schema compare` meldete deshalb jede Tabelle mit Werteliste als geändert, auch direkt
+  nach dem Anlegen aus derselben Datei, während `schema migrate` nichts plante. Jetzt gelten `IN`-Liste,
+  `= ANY (ARRAY[…])`, die einelementige `=`-Form und eine OR-Kette als gleich, wenn sie für dieselbe Textspalte
+  dieselben Werte aufzählen, in beliebiger Reihenfolge. Casts zählen weiter, wenn sie nicht auf `text` oder
+  `character varying` ohne Länge gehen; eine `char(n)`-Spalte bleibt beim Textvergleich. Die Form, die
+  PostgreSQL an einer `varchar`-Spalte zurückgibt (`… = ANY ((ARRAY[…])::text[])`), wird noch nicht erkannt.
+  ADR 0067 übersteuert ADR 0056 in diesem einen Punkt.
 
 ## [1.12.2] - 2026-11-23
 

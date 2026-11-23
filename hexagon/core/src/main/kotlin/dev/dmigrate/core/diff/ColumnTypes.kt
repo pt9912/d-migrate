@@ -20,6 +20,9 @@ internal class ColumnTypes(private val columns: Map<String, NeutralType>) {
 
     val isEmpty: Boolean get() = columns.isEmpty()
 
+    /** Die Spaltennamen, wie die Tabelle sie fuehrt. */
+    val names: Set<String> get() = columns.keys
+
     /** Der Typ der Spalte [name] — `null`, wenn der Name keine eindeutige Spalte ist. */
     fun typeOf(name: String): NeutralType? = when {
         SqlKeywords.isKeyword(name) -> null

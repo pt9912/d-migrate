@@ -813,8 +813,24 @@ Laenge, `price::integer`), eine Dezimalzahl auf Gleitkomma
 (`'abc'::varchar(2)`), als Array, auf eine andere Typfamilie (`'…'::date` gegen
 eine `datetime`-Spalte, `'…'::bpchar` gegen eine Textspalte, `'…'::text` gegen
 `char(n)`) und an einer Spalte, deren Vergleich vom Zieltyp abweicht (`citext`);
-und **zwei Formen desselben Praedikats**, etwa `status = ANY (ARRAY['A','B'])`
-gegen `status IN ('A','B')`.
+und **zwei Formen desselben Praedikats**, etwa umgestellte Konjunktionen — mit
+einer Ausnahme:
+
+**Wertelisten-CHECK**: Zaehlen zwei CHECKs gleichen Namens den Wertevorrat
+**derselben** Spalte auf, gelten sie als gleich, wenn die Wertemengen gleich sind —
+unabhaengig von Form und Reihenfolge. Als Werteliste erkannt werden
+`status IN ('A','B')`, `status = ANY (ARRAY['A'::text, 'B'::text])` (auch mit Cast an
+der Spalte), die einelementige Form `status = 'A'` und eine OR-Kette von Gleichheiten
+(`[status]='B' OR [status]='A'`). Die Spalte muss auf beiden Seiten eine
+Textspalte sein, und jeder Cast in beiden Ausdruecken muss auf `text` oder
+`character varying` ohne Laenge gehen; eine `char(n)`-Spalte (`::bpchar`) und ein
+Cast mit Laenge bleiben beim Textvergleich. Ein anderer Wertevorrat, eine andere
+Spalte, `NOT IN`, eine Verknuepfung mit `AND` und ein Vergleich mit etwas anderem
+als String-Literalen bleiben Unterschiede. Nicht erkannt wird die Form, die
+PostgreSQL an einer `varchar`-Spalte zurueckgibt
+(`((b)::text = ANY ((ARRAY['x'::character varying, …])::text[]))`); sie bleibt ein
+Unterschied. Wie bei der Schreibweise traegt ein
+gemeldeter Fund die unveraenderten Ausdruecke.
 
 **Nicht festgelegt** ist die Gross-/Kleinschreibung von **Schluesselwoertern**
 (`sum` gegen `SUM`, `is null` gegen `IS NULL`) und ob eine ausgeschriebene

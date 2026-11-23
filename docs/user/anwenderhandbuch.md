@@ -708,8 +708,18 @@ nützlich in Skripten.
   ausdrücken kann (MySQL, SQLite), beim Erzeugen `W163`. Prüfen Sie, ob die
   Spalte auf beiden Seiten dieselbe ist — dann ist der Fund ein
   Schreibweise-Unterschied und kein Schema-Unterschied.
-- **Was trotzdem gemeldet wird:** eine anders formulierte Bedingung
-  (`status IN ('A','B')` gegen `status = ANY (ARRAY['A','B'])`), die Groß-
+- **Ein `CHECK` mit Werteliste gilt als gleich, wenn die Werte gleich sind.**
+  PostgreSQL gibt `status IN ('A','B')` als `(status = ANY (ARRAY['A'::text,
+  'B'::text]))` zurück, SQL Server als umsortierte Kette `status='B' OR
+  status='A'`. Zählen beide Seiten für dieselbe Spalte dieselben Werte auf, meldet
+  `schema compare` nichts, gleich in welcher Reihenfolge. Ein anderer Wert, ein
+  fehlender oder ein zusätzlicher bleibt ein Fund. Unter PostgreSQL gilt das für
+  Spalten vom Typ `text` ohne Länge. An einer Spalte mit `max_length` (`varchar`)
+  gibt PostgreSQL die Liste in einer Form zurück, die d-migrate noch nicht als
+  Werteliste erkennt, und an einer `char`-Spalte vergleicht PostgreSQL mit
+  Auffüllen. Dort meldet `schema compare` den Unterschied weiter.
+- **Was trotzdem gemeldet wird:** eine anders formulierte Bedingung, die keine
+  reine Werteliste ist (etwa umgestellte `AND`-Glieder oder `NOT IN`), die Groß-
   und Kleinschreibung von Schlüsselwörtern (`like` gegen `LIKE`), ein Cast an
   einer Textspalte ohne Länge (`(name)::text` bei `varchar` ohne Länge — der
   Reverse kann sie nicht von `text` unterscheiden) und der Cast einer
@@ -3326,9 +3336,11 @@ die **Dialekt-Schreibweise** gleich: bei einem CHECK-Ausdruck und einem
 Index-Prädikat Quoting, Leerraum, überflüssige Klammern und Casts, die an
 einem Vergleich nur den Typ der Spalte wiederholen (`(status)::text = 'x'::text`
 gegen `status = 'x'`); beim Rumpf einer Sicht nur Quoting, Leerraum und
-abschließende Semikola. Was
-eine andere Aussage sein könnte — eine umgeschriebene Bedingung, andere
-Literale, die Schreibweise von Schlüsselwörtern —, bleibt ein Unterschied.
+abschließende Semikola. Einen `CHECK` mit Werteliste wertet es als gleich, wenn
+er für dieselbe Spalte dieselben Werte aufzählt, gleich in welcher Form und
+Reihenfolge. Was eine andere Aussage sein könnte — eine sonst umgeschriebene
+Bedingung, andere Literale, die Schreibweise von Schlüsselwörtern —, bleibt ein
+Unterschied.
 Findet `schema compare` nichts, heißt das deshalb nicht, dass
 `schema migrate` nichts plant.
 
