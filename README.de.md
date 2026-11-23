@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.12.0** (stabil, [veröffentlicht 2026-10-27](https://github.com/pt9912/d-migrate/releases/tag/v1.12.0)).
+**1.12.1** (stabil, [veröffentlicht 2026-11-23](https://github.com/pt9912/d-migrate/releases/tag/v1.12.1)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,19 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.12.0** (2026-10-27) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Eine PostgreSQL-Domain-Spalte
+- **Aktuelles Stable** · **1.12.1** (2026-11-23) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Ein benannter
+  Wertelisten-`CHECK` an einer Textspalte geht in `schema migrate` nicht mehr
+  verloren (Issue #76).** Führte das Schema die erlaubten Werte einer Spalte als
+  eigenen `CHECK` (`a_state IN (…)`) statt als `enum`, wurde eine geänderte Liste
+  als Spaltenänderung ohne Werte geplant: Exit 0, keine Diagnose, und PostgreSQL
+  sowie Oracle lösten den `CHECK`, ohne den neuen anzulegen, während MySQL und
+  SQL Server den alten stehen ließen. Der `CHECK` ist dort jetzt ein gewöhnlicher
+  Constraint, in allen Dialekten unter seinem Namen gelöst und angelegt, mit
+  passendem Rollback. Außerdem: die MySQL-Diagnose
+  `MYSQL_CHECK_ENFORCEMENT_UNKNOWN` nennt `--target-version` statt eines
+  Schalters, den es nicht gibt, und Abhängigkeits-Updates.
+  1.12.0 (2026-10-27) — **Eine PostgreSQL-Domain-Spalte
   ist nicht mehr bei jedem `schema migrate` eine Änderung (Issue #68).** Eine
   Spalte vom Domain-Typ plante ein `AlterColumnType` und endete mit Exit 8
   (`PG_USING_OVERLAY_MISSING`), und `schema reverse` verlor die Domain an der

@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-11-23
+
 ### Changed
 
+- **Abhängigkeits-Updates (Dependabot).** `com.google.code.gson:gson` `2.14.0` → `2.15.0` (nur die Test-Pins in
+  `adapters/driving/cli` und `test/e2e-cli`; zur Laufzeit bleibt gson transitiv bei `2.14.0`, das
+  Abhängigkeitsinventar ist unverändert) und `org.graalvm.buildtools.native` `1.1.16` → `1.1.18` (Gruppe
+  `jvm-minor-patch`); die CI-Action-Pins `docker/login-action` `4.8.0`, `actions/setup-java` `6.2.0`,
+  `gradle/actions` `6.4.1` und `graalvm/setup-graalvm` `1.6.8`; das Basisimage der beiden Coverage-Stages im
+  `Dockerfile` von `python:3.13-slim` auf `python:3.15-slim`.
 - **Natives Container-Image per eigenem Workflow, nachlieferbar.** Der Bau des nativen Images
   (`:X.Y.Z-native`, `:native`) liegt jetzt in `.github/workflows/native-container-image.yml` und lässt sich per
   `workflow_dispatch` (`tag`, `publish`) für einen bestehenden Tag nachliefern. `:native` bewegt sich nur für die

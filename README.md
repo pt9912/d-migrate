@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.12.0**
-(stable, [released 2026-10-27](https://github.com/pt9912/d-migrate/releases/tag/v1.12.0)).
+d-migrate is a working production tool at version **1.12.1**
+(stable, [released 2026-11-23](https://github.com/pt9912/d-migrate/releases/tag/v1.12.1)).
 
 The current capabilities:
 
@@ -161,8 +161,18 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.12.0** (2026-10-27) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **A PostgreSQL domain column
+- **Current stable** · **1.12.1** (2026-11-23) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **A named value-list `CHECK`
+  on a text column no longer gets lost in `schema migrate` (Issue #76).** When
+  the schema kept a column's allowed values as its own `CHECK` (`a_state IN
+  (…)`) instead of an `enum`, a changed list was planned as a column change
+  without values: exit 0, no diagnostic, and PostgreSQL and Oracle dropped the
+  `CHECK` without adding the new one, while MySQL and SQL Server kept the old
+  one. The `CHECK` is now an ordinary constraint there, dropped and added under
+  its name in all dialects, with a matching rollback. Also: the MySQL diagnostic
+  `MYSQL_CHECK_ENFORCEMENT_UNKNOWN` names `--target-version` instead of an option
+  that does not exist, and dependency updates.
+  1.12.0 (2026-10-27) — **A PostgreSQL domain column
   is no longer a change on every `schema migrate` (Issue #68).** A column of a
   domain type used to plan an `AlterColumnType` and stop with exit 8
   (`PG_USING_OVERLAY_MISSING`), and `schema reverse` lost the domain at the
