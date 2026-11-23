@@ -438,7 +438,7 @@ Fehler wäre sonst erst am Tag aufgeschlagen — mit einem halb veröffentlichte
 Release als Ausgangslage.
 
 Ungeprobt bleibt der Push selbst, weil er die Registry verändert, und das
-native Container-Image wegen des ~8-minütigen nativen Compiles — das baut der
+native Container-Image, weil es das native Release-Binary braucht. Das baut der
 eigene Workflow `native-container-image.yml` ([4.3.3](#433-natives-container-image)),
 dessen Logins Wort für Wort dieselben sind wie im `docker`-Job.
 
@@ -555,8 +555,9 @@ git push origin vX.Y.Z
    (plus `:latest` bei Stable) — s. [4.3.1](#431-docker-hub-spiegel). Fehlt das
    Secret `DOCKERHUB_TOKEN`, werden diese Schritte still übersprungen und der
    Tag-Build bleibt grün.
-9. Parallel dazu baut der eigene Workflow `native-container-image.yml` das
-   **native Container-Image** und pusht `…:X.Y.Z-native` (+ `:native` bei Stable) nach GHCR und Docker Hub — s.
+9. Nach `native-image.yml` (das `linux-x64`-Binary hängt am Release) verpackt
+   `native-container-image.yml` genau dieses Binary als **natives Container-Image**
+   und pusht `…:X.Y.Z-native` (+ `:native` bei Stable) nach GHCR und Docker Hub — s.
    [4.3.3](#433-natives-container-image).
 10. Ebenfalls parallel legt `release-homebrew.yml` den GitHub-Release mit eigenen,
     neu gebauten Assets an und aktualisiert den Homebrew-Tap; der Job `verify-homebrew`
@@ -673,9 +674,14 @@ Container-Image**: dieselbe volle CLI als GraalVM-Binary, verpackt in ein
 Runtime-Image (Entrypoint = Binary, Workdir `/work`, non-root, `mod_spatialite`).
 Gebaut vom Workflow
 [`native-container-image.yml`](../../.github/workflows/native-container-image.yml)
-über `make native-runtime-build`
-(Stage `native-runtime` in
+über `make native-runtime-from-binary`
+(Stage `native-runtime-prebuilt` in
 [`docker/native-image.Dockerfile`](../../docker/native-image.Dockerfile)).
+**Kompiliert wird dabei nichts:** Verpackt wird das `linux-x64`-Release-Asset, das
+[`native-image.yml`](../../.github/workflows/native-image.yml) gebaut, gesmoked
+und angehängt hat, nach `sha256sum -c` gegen seine veröffentlichte Prüfsumme. Im
+Image steckt also byte-genau das Binary vom Release. Der lokale Weg
+`make native-runtime-build` (Stage `native-runtime`) kompiliert weiterhin selbst.
 
 - **Tags:** `ghcr.io/pt9912/d-migrate:X.Y.Z-native` (versioniert) plus das
   bewegliche `:native`. `:native` bewegt sich nur, wenn der Tag die **höchste
@@ -687,17 +693,21 @@ Gebaut vom Workflow
 - **Vor dem Push** wird das Image DB-frei gesmoked (`--version`, `--help`,
   `schema validate --source`); ein kaputtes Image blockiert den Push, nicht den
   Release.
-- **Speicher:** der Compile läuft mit `NATIVE_MAX_RAM_PERCENTAGE=80` (die
-  Makefile-Vorgabe 50 reichte auf dem Runner nicht); der Peak-RSS-Wert der
-  `native-image`-Ausgabe steht im Log und in der Step-Summary.
-- **Trigger:** Push eines `v*`-Tags (baut, smoked, veröffentlicht) oder
-  `workflow_dispatch` mit den Eingaben `tag` und `publish` (Default `false` =
-  nur bauen und smoken). Der Compile (~5–8 min) läuft nicht bei jedem Push. Der
-  Publish-Riegel prüft `event_name`, nicht allein den Ref.
+- **Speicher:** Den einzigen Compile fährt `native-image.yml`. Dessen Step-Summary
+  setzt den Peak-RSS-Wert ins Verhältnis zur Heap-Grenze des Builders und warnt ab
+  90 %. Gemessen an v1.12.2: Linux 86 %, Windows 80 %.
+- **Trigger:** Am Tag-Push ruft `native-image.yml` diesen Workflow als Job
+  `native-container-image` auf, sobald `attach-release` grün ist (veröffentlicht).
+  Ein rotes Windows-Leg verhindert das Image nicht. Außerdem per
+  `workflow_dispatch` mit den Eingaben `tag` und `publish` (Default `false` = nur
+  bauen und smoken).
 
-**Nachliefern für einen bestehenden Tag** (z. B. wenn der native Compile im
-Tag-Build scheiterte; ein Tag lässt sich nicht erneut auslösen, und es braucht
-keine neue Versionsnummer). Erst ohne `publish` probebauen, dann veröffentlichen:
+**Nachliefern für einen bestehenden Tag** (z. B. wenn der Push in eine Registry
+scheiterte; ein Tag lässt sich nicht erneut auslösen, und es braucht keine neue
+Versionsnummer). Erst ohne `publish` probebauen, dann veröffentlichen.
+Scheiterte dagegen der native **Compile**, fehlt das Asset: Dann den roten Lauf
+von `native-image.yml` neu starten (`gh run rerun <run-id> --failed`). Er hängt
+das Binary an und ruft das Image danach selbst auf.
 
 ```bash
 gh workflow run native-container-image.yml -f tag=vX.Y.Z
@@ -705,8 +715,8 @@ gh workflow run native-container-image.yml -f tag=vX.Y.Z -f publish=true
 ```
 
 Der Workflow checkt den Tag aus (er muss existieren und auf
-`^v[0-9]+\.[0-9]+\.[0-9]+` passen) und lässt `:native` unberührt, wenn eine
-höhere Stable-Version existiert.
+`^v[0-9]+\.[0-9]+\.[0-9]+` passen), braucht das `linux-x64`-Asset am Release und
+lässt `:native` unberührt, wenn eine höhere Stable-Version existiert.
 
 Das native Image ist eine **zusätzliche** Distributionsklasse — es ersetzt weder
 das JVM-OCI-Image noch die rohen Binaries.

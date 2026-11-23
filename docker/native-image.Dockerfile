@@ -152,17 +152,13 @@ ENTRYPOINT ["cat", "/tmp/agent-out.tar"]
 # runtime, aber ohne die JRE, die ein natives Binary nicht braucht. Der GraalVM-25-Build (Oracle
 # Linux 9, glibc 2.34) laeuft vorwaertskompatibel auf Noble (glibc 2.39). NATIVE_ENTRYPOINT bleibt
 # `full` (ARG-Default oben) = die volle CLI, nicht der reduzierte core-NativeMain.
-FROM ubuntu:24.04 AS native-runtime
+FROM ubuntu:24.04 AS native-runtime-base
 
 # mod_spatialite wie die JVM-runtime-Stage: die Spatial-Smokes (`?spatialite=true`) laden die
 # Extension zur Laufzeit ueber den Standard-Library-Pfad. Ohne das Paket schlaegt VA4 fehl.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libsqlite3-mod-spatialite \
     && rm -rf /var/lib/apt/lists/*
-
-# Das native Binary aus der native-build-Stage. /usr/local/bin liegt auf dem Default-PATH, also
-# loest ENTRYPOINT ["d-migrate"] es genauso auf wie die JVM-runtime (dort via /opt/d-migrate/bin).
-COPY --from=native-build /src/adapters/driving/cli/build/native/nativeCompile/d-migrate /usr/local/bin/d-migrate
 
 # non-root, uid 10001 wie die JVM-runtime; /work gehoert diesem User. Bind-Mount-Schreibzugriff
 # regelt der Aufrufer per `--user $(id -u):$(id -g)` (Sample-DB: SAMPLE_DB_DMIGRATE_USER).
@@ -171,6 +167,32 @@ RUN useradd --no-create-home --uid 10001 dmigrate \
 
 WORKDIR /work
 VOLUME ["/work"]
+
+# ---- native-runtime: kompiliert das Binary selbst (lokaler Weg, `make native-runtime-build`) ----
+FROM native-runtime-base AS native-runtime
+
+# Das native Binary aus der native-build-Stage. /usr/local/bin liegt auf dem Default-PATH, also
+# loest ENTRYPOINT ["d-migrate"] es genauso auf wie die JVM-runtime (dort via /opt/d-migrate/bin).
+COPY --from=native-build /src/adapters/driving/cli/build/native/nativeCompile/d-migrate /usr/local/bin/d-migrate
+
+USER dmigrate
+ENTRYPOINT ["d-migrate"]
+CMD ["--help"]
+
+# ---- native-runtime-prebuilt: verpackt ein FERTIGES Binary, ohne zu kompilieren ----------------
+#
+# Fuer das veroeffentlichte native Container-Image (`native-container-image.yml`): dort ist das
+# Binary das `linux-x64`-Release-Asset, das `native-image.yml` gebaut, gesmoked und angehaengt hat.
+# Ein zweiter Compile kostete ~10 min und ~10 GB Spitzenspeicher (Issue #70) und lieferte ein
+# Binary, das nicht dasselbe war wie das geprueft veroeffentlichte.
+#
+# Das Binary kommt ueber den benannten Build-Kontext `prebuilt` (ein Verzeichnis mit der Datei
+# `d-migrate`): `docker build --build-context prebuilt=<dir> --target native-runtime-prebuilt`.
+# Ohne den Kontext versucht Docker, ein Image `prebuilt` (docker.io/library) zu ziehen, und der
+# Bau scheitert; `make native-runtime-from-binary` setzt ihn deshalb immer.
+FROM native-runtime-base AS native-runtime-prebuilt
+
+COPY --from=prebuilt --chmod=0755 d-migrate /usr/local/bin/d-migrate
 
 USER dmigrate
 ENTRYPOINT ["d-migrate"]

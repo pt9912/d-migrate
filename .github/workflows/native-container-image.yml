@@ -5,19 +5,29 @@ name: Native Container Image
 # mod_spatialite). build.yml besitzt das JVM-Image, native-image.yml die ROHEN Release-Binaries,
 # dieser Workflow das native Container-Image.
 #
-# BEWUSST ein eigener Workflow statt eines Jobs in build.yml: ein Tag laesst sich nicht erneut
-# ausloesen. Scheitert der native Compile (so geschehen bei v1.12.0: OutOfMemoryError), liesse sich
-# das Image sonst nur mit einer neuen Versionsnummer nachliefern. Per `workflow_dispatch` baut
-# dieser Workflow das Image fuer einen BESTEHENDEN Tag nach, ohne dass etwas Anderes des Releases
-# angefasst wird.
+# KEIN eigener Compile (Issue #70): verpackt wird das `linux-x64`-Release-Asset, das
+# native-image.yml gebaut, gesmoked und angehaengt hat. Ein zweiter Compile kostete ~10 min und
+# ~10 GB Spitzenspeicher je Release und lieferte ein Binary, das nicht dasselbe war wie das
+# veroeffentlichte. Das Image entsteht in Sekunden (Stage native-runtime-prebuilt).
 #
-# Nur auf Tags bzw. per Dispatch: der native Compile im Docker (~5-8 min) ist zu schwer fuer jeden
-# Push. Ohne `publish` baut der Dispatch nur und fuehrt den Smoke-Test aus (Probelauf).
+# Zwei Einstiege, ein Code-Pfad:
+#   - `workflow_call` aus native-image.yml, nachdem attach-release das Asset angehaengt hat
+#     (Tag-Push; veroeffentlicht).
+#   - `workflow_dispatch` fuer einen BESTEHENDEN Tag: ein Tag laesst sich nicht erneut ausloesen.
+#     Ohne `publish` nur bauen und smoken (Probelauf). Scheitert dagegen der native Compile selbst,
+#     ist der Weg ein Rerun von native-image.yml — ohne Asset gibt es hier nichts zu verpacken.
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release-Tag, dessen linux-x64-Asset verpackt wird.'
+        type: string
+        required: true
+      publish:
+        description: 'Image nach GHCR und Docker Hub pushen.'
+        type: boolean
+        default: true
   workflow_dispatch:
     inputs:
       tag:
@@ -33,23 +43,21 @@ permissions:
   contents: read
 
 env:
-  # Veroeffentlicht wird auf einem echten Tag-PUSH oder auf einem Dispatch mit publish=true. Der
-  # `event_name`-Teil ist der Riegel und nicht bloss Zierde: `inputs.publish` ist nur im Dispatch
-  # gesetzt, und ein Push soll nie von einem Input abhaengen. Gleiches Muster wie IS_RELEASE in
-  # build.yml, dort aus demselben Grund (ein Dispatch darf ein veroeffentlichtes Image nicht
-  # ungewollt ueberschreiben — hier ist das Ueberschreiben der Zweck, also nur mit publish=true).
-  PUBLISH: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
-  RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  # Beide Einstiege setzen `inputs.publish` ausdruecklich: der Aufruf aus native-image.yml mit
+  # true (nur am Tag-Push), der Dispatch mit Default false. Ein Dispatch ueberschreibt ein
+  # veroeffentlichtes Image also nur mit publish=true.
+  PUBLISH: ${{ inputs.publish }}
+  RELEASE_TAG: ${{ inputs.tag }}
 
 concurrency:
   # Je Tag; ein laufender Publish wird nicht abgebrochen.
-  group: native-container-image-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  group: native-container-image-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   native-container-image:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -65,8 +73,8 @@ jobs:
           fi
 
       - name: Checkout repository
-        # Der Tag-Ref selbst, nie ein Branch: bei Push ist es der ausloesende Tag, beim Dispatch
-        # der Input. Voller Verlauf samt aller Tags, weil `:native` gegen den hoechsten Stable-Tag
+        # Der Tag-Ref selbst, nie ein Branch: beim Aufruf aus native-image.yml der ausloesende Tag,
+        # beim Dispatch der Input. Voller Verlauf samt aller Tags, weil `:native` gegen den hoechsten Stable-Tag
         # entschieden wird. Existiert der Tag nicht, scheitert der Checkout.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -100,31 +108,26 @@ jobs:
           echo "move_native=${MOVE_NATIVE}" >> "${GITHUB_OUTPUT}"
           echo "::notice::Tag ${RELEASE_TAG}: publish=${PUBLISH}, :native bewegen=${MOVE_NATIVE}"
 
-      - name: Build the native runtime image
-        # Dieselbe Stage wie `make native-runtime-build` lokal: volle CLI nativ (GraalVM) im
-        # Runtime-Image. Single-Arch amd64 — gleich wie das JVM-Image (linux-arm64 = offene Frage 4
-        # im Native-Slice).
-        # NATIVE_MAX_RAM_PERCENTAGE=80: die Makefile-Vorgabe (50) drosselt fuer Entwicklermaschinen;
-        # auf dem Runner reichte sie fuer 1.12.0 nicht mehr (OutOfMemoryError im native-image-Heap).
-        # BUILDKIT_PROGRESS=plain + tee: die native-image-Ausgabe landet im Log und in einer Datei,
-        # aus der der Peak-RSS-Wert gezogen wird.
+      - name: Download the linux-x64 release asset
+        # Genau die Datei, die am Release haengt, samt ihrer veroeffentlichten Pruefsumme. Fehlt das
+        # Asset (Linux-Leg von native-image.yml rot), scheitert der Lauf hier.
         env:
-          BUILDKIT_PROGRESS: plain
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.resolve.outputs.version }}
         run: |
           set -euo pipefail
-          make native-runtime-build NATIVE_RUNTIME_TAG=d-migrate:native NATIVE_MAX_RAM_PERCENTAGE=80 \
-            2>&1 | tee native-container-build.log
+          ASSET="d-migrate-${VERSION}-linux-x64"
+          mkdir -p native-asset
+          gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" -D native-asset \
+            -p "${ASSET}" -p "${ASSET}.sha256"
+          (cd native-asset && sha256sum -c "${ASSET}.sha256")
+          echo "NATIVE_BINARY=native-asset/${ASSET}" >> "${GITHUB_ENV}"
 
-      - name: Native build memory (Peak RSS)
-        # `always()`: bei einem OOM ist die letzte Peak-RSS-Zeile der Befund. Kein Treffer ist kein
-        # Fehler (z. B. wenn der Bau vor native-image scheitert).
-        if: always()
-        run: |
-          if [ -f native-container-build.log ] && grep -q 'Peak RSS' native-container-build.log; then
-            grep 'Peak RSS' native-container-build.log | tee -a "${GITHUB_STEP_SUMMARY}"
-          else
-            echo "Keine 'Peak RSS'-Zeile in der Build-Ausgabe."
-          fi
+      - name: Build the native runtime image from the release binary
+        # Stage native-runtime-prebuilt: dasselbe Gerüst wie die kompilierende Stage
+        # native-runtime (ubuntu:24.04, mod_spatialite, uid 10001, /work), nur ohne Compile.
+        # Single-Arch amd64 — gleich wie das JVM-Image.
+        run: make native-runtime-from-binary NATIVE_BINARY="${NATIVE_BINARY}" NATIVE_RUNTIME_TAG=d-migrate:native
 
       - name: Smoke-test the native runtime image
         # Kein kaputtes Image publizieren: DB-frei gegen die volle CLI (analog native-image.yml).

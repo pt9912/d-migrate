@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Natives Container-Image ohne zweiten Compile (Issue #70).** `:X.Y.Z-native` und `:native` verpacken jetzt
+  das `linux-x64`-Release-Binary, das `native-image.yml` gebaut, gesmoked und angehängt hat. Vorher kompilierte
+  `native-container-image.yml` dasselbe Programm ein zweites Mal, mit rund 10 Minuten und 10 GB Spitzenspeicher.
+  Im Image steckt jetzt byte-genau das veröffentlichte Binary, geprüft gegen seine `.sha256`. `native-image.yml`
+  ruft den Workflow am Tag nach `attach-release` auf. Die Step-Summary des nativen Baus nennt den Anteil der
+  Spitzen-RSS an der Heap-Grenze und warnt ab 90 %. Neu ist außerdem `make native-runtime-from-binary
+  NATIVE_BINARY=…`.
+
 ## [1.12.2] - 2026-11-23
 
 ### Changed

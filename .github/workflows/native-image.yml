@@ -210,6 +210,32 @@ jobs:
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Native build memory headroom (Issue #70)
+        # Setzt Peak RSS ins Verhaeltnis zur Heap-Grenze des Builders (`X GB of memory`, aus
+        # MaxRAMPercentage). Ein OutOfMemoryError trat bei v1.12.0 auf, als die Grenze unter dem
+        # Bedarf lag. Gemessen an v1.12.2: Linux 10,21 von 11,92 GB (86 %), Windows 9,81 von
+        # 12,21 GB (80 %). Die Schwelle liegt deshalb ueber dem heutigen Stand: sie meldet eine
+        # VERSCHLECHTERUNG, keine Dauerlage. Warnung, kein Fehler: ein knapper Bau ist kein
+        # kaputter Bau.
+        if: always()
+        env:
+          WARN_PERCENT: '90'
+        run: |
+          [ -f native-build.log ] || { echo "native-build.log fehlt"; exit 0; }
+          limit=$(grep -oE '[0-9]+(\.[0-9]+)?GB of memory' native-build.log | head -1 | grep -oE '^[0-9.]+')
+          peak=$(grep -oE 'Peak RSS: [0-9]+(\.[0-9]+)?GB' native-build.log | tail -1 | grep -oE '[0-9.]+')
+          if [ -z "${limit}" ] || [ -z "${peak}" ]; then
+            echo "Keine Grenze/Peak-RSS im Log (limit='${limit}', peak='${peak}')."
+            exit 0
+          fi
+          pct=$(awk -v p="${peak}" -v l="${limit}" 'BEGIN { printf "%d", (p / l) * 100 + 0.5 }')
+          line="Peak RSS ${peak} GB von ${limit} GB Heap-Grenze = ${pct} % (Warnschwelle ${WARN_PERCENT} %)"
+          echo "${line}"
+          echo "${line}" >> "${GITHUB_STEP_SUMMARY}"
+          if [ "${pct}" -ge "${WARN_PERCENT}" ]; then
+            echo "::warning title=Native-Speicher (${{ matrix.os }})::${line} — Issue #70: Strategie fuer Wachstum."
+          fi
+
       - name: Smoke-test the native binary
         # Gate fuer JEDEN Bau: smoked das GESTAGTE Binary, also exakt das Artefakt, das ans Release
         # geht. macOS/Windows sind lokal nicht verifizierbar — dieser Step ist dort die einzige
@@ -368,3 +394,23 @@ jobs:
           gh release upload "${GITHUB_REF_NAME}" dist/* --clobber --repo "${GITHUB_REPOSITORY}"
           gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets \
             --jq '.assets[].name'
+
+  # Das native Container-Image verpackt GENAU das Linux-Binary, das oben gebaut, gesmoked und ans
+  # Release gehaengt wurde — ohne zweiten Compile (Issue #70: ~10 min und ~10 GB Spitzenspeicher je
+  # Release gespart). Nur am echten Tag-Push; ein Dispatch dieses Workflows haengt nichts an und
+  # baut daher auch kein Image.
+  #
+  # `needs.attach-release.result` statt des impliziten `success()`: `success()` wertet die ganze
+  # needs-Kette aus, ein rotes Windows-Leg (best-effort) wuerde das Image sonst mit verhindern,
+  # obwohl das Linux-Asset am Release haengt.
+  native-container-image:
+    needs: attach-release
+    if: ${{ !cancelled() && needs.attach-release.result == 'success' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/native-container-image.yml
+    with:
+      tag: ${{ github.ref_name }}
+      publish: true
+    secrets: inherit

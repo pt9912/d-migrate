@@ -63,6 +63,27 @@ native-runtime-build: ## Native: lauffaehiges Runtime-Image bauen (Entrypoint = 
 	  --build-arg NATIVE_PARALLELISM=$(NATIVE_PARALLELISM) \
 	  -t $(NATIVE_RUNTIME_TAG) .
 
+# Runtime-Image aus einem FERTIGEN Binary, ohne Compile (Issue #70). So baut
+# native-container-image.yml das veroeffentlichte Image aus dem linux-x64-Release-Asset:
+#   make native-runtime-from-binary NATIVE_BINARY=path/to/d-migrate-X.Y.Z-linux-x64
+# Das Binary wird unter dem Namen `d-migrate` nach NATIVE_PREBUILT_DIR kopiert (ueberschreibt die
+# Datei vom letzten Lauf); das Verzeichnis ist der benannte Build-Kontext `prebuilt` der Stage
+# native-runtime-prebuilt. GRADLE_IMAGE wird nur durchgereicht, weil die Datei es fuer ihr erstes
+# FROM verlangt; gebraucht wird es dort nicht.
+NATIVE_BINARY ?=
+NATIVE_PREBUILT_DIR ?= build/native-prebuilt
+
+.PHONY: native-runtime-from-binary
+native-runtime-from-binary: ## Native: Runtime-Image aus einem fertigen Binary (NATIVE_BINARY=...), ohne Compile.
+	@test -n "$(NATIVE_BINARY)" || { echo "NATIVE_BINARY=<pfad zum linux-x64-Binary> fehlt" >&2; exit 2; }
+	@test -f "$(NATIVE_BINARY)" || { echo "NATIVE_BINARY '$(NATIVE_BINARY)' existiert nicht" >&2; exit 2; }
+	mkdir -p "$(NATIVE_PREBUILT_DIR)"
+	cp -f "$(NATIVE_BINARY)" "$(NATIVE_PREBUILT_DIR)/d-migrate"
+	$(DOCKER) build -f docker/native-image.Dockerfile --target native-runtime-prebuilt \
+	  --build-arg GRADLE_IMAGE=$(GRADLE_IMAGE) \
+	  --build-context prebuilt="$(NATIVE_PREBUILT_DIR)" \
+	  -t $(NATIVE_RUNTIME_TAG) .
+
 # Direkt an den Bestimmungsort im QUELLBAUM — kein Zwischenlager.
 #
 # Die Agent-Ausgabe ist keine Build-Ausgabe, sondern committeter Quellcode: native-image liest sie
