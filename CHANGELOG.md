@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `McpOutputSchemaValidationScenarioTest` sind deshalb umgestellt (Issue #69). Das Auslieferungsartefakt
   ist unverändert.
 
+### Security
+
+- **Nächtlicher Image-Scan wieder grün: geshadetes Jackson und Guava im Parquet-Pfad gehoben.**
+  - Jackson: `parquet-java` steigt von `1.17.1` auf `1.18.2`. `parquet-jackson` bringt Jackson als relokierte
+    Kopie mit, kein eigener Pin erreicht sie. Diese Kopie steigt damit von `2.21.3` auf `2.22.4` und behebt acht
+    HIGH-Befunde (u. a. CVE-2026-54512, CVE-2026-68497, CVE-2026-91777). Ihre befristeten, pfadgebundenen
+    Ausnahmen in `.trivyignore.yaml` waren am 2026-11-15 abgelaufen. Sie sind gelöscht statt verlängert.
+  - Guava: `hadoop-shaded-guava` steigt per Constraint von `1.3.0` auf `1.6.0`, also von Guava `32.0.1` auf
+    `33.7.2` (CVE-2026-102554). Hadoop 3.4.1 löst sonst auf `1.3.0` auf.
+
 ### Fixed
 
 - **PostgreSQL: gleichnamige CHECKs verschiedener Tabellen wurden vertauscht (Issue #77).** PostgreSQL verlangt

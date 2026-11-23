@@ -193,6 +193,14 @@ dependencies {
             version { require("3.18.0") }
             because("CVE-2025-48924 — hadoop-common 3.4.1 loest sonst auf 3.14.0 auf.")
         }
+        // Hadoops Eigengebrauch von Guava, relokiert nach
+        // org.apache.hadoop.thirdparty.com.google.common. Der Paketpraefix ist
+        // ueber die hadoop-thirdparty-Versionen gleich; 1.6.0 ist die erste mit
+        // Guava 33.7.2. Hadoop selbst pinnt bis 3.5.0 hoechstens 1.5.0.
+        implementation("org.apache.hadoop.thirdparty:hadoop-shaded-guava") {
+            version { require("1.6.0") }
+            because("CVE-2026-102554 (Guava 32.0.1) — hadoop-common 3.4.1 loest sonst auf 1.3.0 auf.")
+        }
     }
 }
 
