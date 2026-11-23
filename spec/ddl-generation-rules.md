@@ -534,6 +534,22 @@ ALTER TABLE `orders` MODIFY COLUMN `email` VARCHAR(254) NOT NULL;
 -- Dieser Workaround wird automatisch generiert mit Warnung.
 ```
 
+**PostgreSQL: Typwechsel ohne `USING`.** Ohne `USING` rendert PostgreSQL einen Typwechsel nur,
+wenn er keinen Wert verlieren kann:
+
+| Vorher | Nachher | Bedingung |
+|---|---|---|
+| `text` | `text` | keine Verengung: das Ziel hat keine Länge, oder seine Länge ist mindestens so groß |
+| `smallint` | `integer`, `biginteger` | — |
+| `integer` | `biginteger` | — |
+| `decimal(p, s)` | `decimal(p', s')` | `s' ≥ s` und `p' − s' ≥ p − s`: weder Nach- noch Vorkommastellen werden weniger |
+
+Jeder andere Typwechsel braucht ein Overlay `using-expression`. Fehlt es, blockiert der Plan mit
+`PG_USING_OVERLAY_MISSING` (Exit 8). Das gilt auch für eine Verengung, etwa `decimal(12,4)` →
+`decimal(12,2)`, denn sie kann runden oder überlaufen. Der Rückweg einer Erweiterung ist eine
+Verengung. Er wird wie der Hinweg ohne `USING` gerendert und scheitert erst zur Laufzeit, wenn
+ein inzwischen geschriebener Wert nicht mehr passt.
+
 #### DROP COLUMN
 
 ```sql

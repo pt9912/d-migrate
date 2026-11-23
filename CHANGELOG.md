@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Spitzen-RSS an der Heap-Grenze und warnt ab 90 %. Neu ist außerdem `make native-runtime-from-binary
   NATIVE_BINARY=…`.
 
+### Fixed
+
+- **PostgreSQL: Verlustfreie Erweiterung einer `decimal`-Spalte blockiert nicht mehr (Issue #79).** `schema
+  migrate` blockierte jede Änderung von `precision` oder `scale` mit Exit 8 (`PG_USING_OVERLAY_MISSING`), auch
+  `DECIMAL(12,4)` → `DECIMAL(14,4)`. Erweitert sich die Spalte, ohne dass Nach- oder Vorkommastellen weniger
+  werden (`s' ≥ s` und `p' − s' ≥ p − s`), entsteht jetzt `ALTER COLUMN … TYPE DECIMAL(p',s')` ohne `USING`. Eine
+  Verengung braucht weiter ein Overlay `using-expression`.
+
 ## [1.12.2] - 2026-11-23
 
 ### Changed

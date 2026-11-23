@@ -232,6 +232,13 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
             before is NeutralType.SmallInt && after is NeutralType.Integer -> true
             before is NeutralType.SmallInt && after is NeutralType.BigInteger -> true
             before is NeutralType.Integer && after is NeutralType.BigInteger -> true
+            // Issue #79: eine Erweiterung verliert keinen Wert, wenn weder Nachkomma-
+            // (`scale`) noch Vorkommastellen (`precision - scale`) schrumpfen. PostgreSQL
+            // castet `numeric(p,s)` auf `numeric(p',s')` ohne `USING`. Jede Verengung
+            // bleibt beim Overlay: dort koennte ein Wert gerundet werden oder ueberlaufen.
+            before is NeutralType.Decimal && after is NeutralType.Decimal ->
+                after.scale >= before.scale &&
+                    after.precision - after.scale >= before.precision - before.scale
             else -> false
         }
     }
