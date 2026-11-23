@@ -1,7 +1,9 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.ColumnDiff
+import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.TargetProjection
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
@@ -129,16 +131,76 @@ class PostgresEnumCheckRollbackTest : FunSpec({
         sqls(r) shouldBe listOf("ALTER TABLE \"t\" DROP CONSTRAINT \"t_e_check\";")
     }
 
-    test("an enum column that loses its value list gets the dropped CHECK back") {
+    // ── Issue #76: der Wertevorrat steht im Soll nur in einem CHECK ──────
+    //
+    // Hier entscheidet der Vergleich, welche Operation den CHECK fuehrt; ein von Hand gebauter Diff
+    // wuerde genau das ueberspringen. Darum laufen diese Faelle durch den zielbewussten Vergleich.
+
+    val targetAware = SchemaComparator(TargetProjection(type = { it }))
+
+    fun migrateBothWays(current: SchemaDefinition, desired: SchemaDefinition, options: DdlGenerationOptions) =
+        planner.plan(current, desired, targetAware.compare(current, desired)).let { plan ->
+            gen.generateUp(plan, options) to gen.generateDown(plan, options)
+        }
+
+    test("a text column that loses its value CHECK: a DropConstraint, and the Down adds it back") {
         val live = schema(NeutralType.Text(), listOf(check("t_e_check", "a", "b")))
-        val file = schema(NeutralType.Text())
-        val r = gen.generateDown(
-            planner.plan(live, file, typeChange(NeutralType.Text(), NeutralType.Text())),
-            liveOptions,
+        val (up, down) = migrateBothWays(live, schema(NeutralType.Text()), liveOptions)
+
+        sqls(up) shouldBe listOf("ALTER TABLE \"t\" DROP CONSTRAINT \"t_e_check\";")
+        sqls(down) shouldBe listOf(
+            "ALTER TABLE \"t\" ADD CONSTRAINT \"t_e_check\" CHECK ((e = ANY (ARRAY['a'::text, 'b'::text])));",
         )
-        sqls(r) shouldBe listOf(
-            "ALTER TABLE \"t\" ADD CONSTRAINT \"t_e_check\" CHECK (\"e\" IN ('a', 'b'));",
+    }
+
+    test("#76: a changed list in a named CHECK is dropped and added again under its name") {
+        val live = schema(NeutralType.Text(), listOf(check("ck_e", "a", "b")))
+        val file = schema(
+            NeutralType.Text(),
+            listOf(ConstraintDefinition("ck_e", ConstraintType.CHECK, expression = "e IN ('a', 'b', 'c')")),
         )
+        val (up, down) = migrateBothWays(live, file, liveOptions)
+
+        sqls(up) shouldBe listOf(
+            "ALTER TABLE \"t\" DROP CONSTRAINT \"ck_e\";",
+            "ALTER TABLE \"t\" ADD CONSTRAINT \"ck_e\" CHECK (e IN ('a', 'b', 'c'));",
+        )
+        sqls(down) shouldBe listOf(
+            "ALTER TABLE \"t\" DROP CONSTRAINT \"ck_e\";",
+            "ALTER TABLE \"t\" ADD CONSTRAINT \"ck_e\" CHECK ((e = ANY (ARRAY['a'::text, 'b'::text])));",
+        )
+        up.isBlocked shouldBe false
+        down.isBlocked shouldBe false
+    }
+
+    test("#76: with a new length too, the column change leaves the CHECK to its own operation") {
+        // Loeste die Typaenderung den CHECK ebenfalls, stuende er zweimal im Skript — und die zweite
+        // Anweisung scheiterte an einem Constraint, den es nicht mehr gibt.
+        val live = schema(NeutralType.Text(5), listOf(check("ck_e", "a", "b")))
+        val file = schema(
+            NeutralType.Text(10),
+            listOf(ConstraintDefinition("ck_e", ConstraintType.CHECK, expression = "e IN ('a', 'b', 'c')")),
+        )
+        val (up, down) = migrateBothWays(live, file, liveOptions)
+
+        sqls(up).count { "DROP CONSTRAINT" in it } shouldBe 1
+        sqls(up).count { "ADD CONSTRAINT \"ck_e\"" in it } shouldBe 1
+        sqls(up).count { "TYPE VARCHAR(10)" in it } shouldBe 1
+        sqls(down).count { "DROP CONSTRAINT" in it } shouldBe 1
+        sqls(down).count { "ADD CONSTRAINT \"ck_e\"" in it } shouldBe 1
+        down.isBlocked shouldBe false
+    }
+
+    test("#76: the same list in a new length plans the type change alone, the CHECK stays") {
+        val live = schema(NeutralType.Text(5), listOf(check("ck_e", "a", "b")))
+        val file = schema(
+            NeutralType.Text(10),
+            listOf(ConstraintDefinition("ck_e", ConstraintType.CHECK, expression = "e IN ('a', 'b')")),
+        )
+        val (up, down) = migrateBothWays(live, file, liveOptions)
+
+        sqls(up) shouldBe listOf("ALTER TABLE \"t\" ALTER COLUMN \"e\" TYPE VARCHAR(10);")
+        sqls(down) shouldBe listOf("ALTER TABLE \"t\" ALTER COLUMN \"e\" TYPE VARCHAR(5);")
     }
 
     test("the default name is taken by another constraint: the Down blocks instead of guessing") {

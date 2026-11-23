@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   höchste Stable-Version. Der Compile läuft mit 80 % RAM (`NATIVE_MAX_RAM_PERCENTAGE`), nachdem 50 % beim
   Tag-Build 1.12.0 zu einem OutOfMemoryError führten; der Peak-RSS-Wert steht im Log.
 
+### Fixed
+
+- **`schema migrate`: ein benannter `IN`-CHECK an einer Textspalte ging bei geänderter Werteliste still verloren**
+  (Issue #76). Führte das Soll den Wertevorrat einer `text`-Spalte als eigenen CHECK
+  (`a_state IN ('ACTIVE', 'DISABLED', 'LOCKED')`) statt als `enum`, plante der Vergleich eine Spaltenänderung ohne
+  Werteliste. Exit `0`, keine Diagnose, aber je Dialekt falsches SQL: PostgreSQL und Oracle lösten den CHECK und legten
+  keinen neuen an (die Spalte nahm danach jeden Text an; der PostgreSQL-Rückweg legte den alten wieder an, Oracle löste
+  ihn ein zweites Mal), MySQL und SQL Server ließen den alten CHECK stehen. Ebenso gingen ein neu hinzukommender
+  solcher CHECK und eine neue Spalte mit ihm verloren. SQLite war nicht betroffen (Tabellen-Neubau). Seit 1.3.0.
+  Jetzt bleibt der CHECK in diesen Fällen ein gewöhnlicher Constraint: `DROP CONSTRAINT` und `ADD CONSTRAINT` unter
+  seinem Namen, Rückweg spiegelbildlich. Ein `enum` im Soll und ein unveränderter Wertevorrat verhalten sich wie
+  bisher; der Fingerabdruck ist unverändert.
+
 ## [1.12.0] - 2026-10-27
 
 ### Changed

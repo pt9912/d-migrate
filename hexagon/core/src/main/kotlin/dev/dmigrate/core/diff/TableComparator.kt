@@ -76,8 +76,9 @@ internal class TableComparator(
         right: TableDefinition,
         customTypes: CustomTypeContext = CustomTypeContext(),
     ): TableDiff? {
-        val leftNorm = normalizeConstraints(left)
-        val rightNorm = normalizeConstraints(right)
+        val vocabularies = enumVocabularies(left, right, customTypes)
+        val leftNorm = normalizeConstraints(left, vocabularies.foldedLeft)
+        val rightNorm = normalizeConstraints(right, vocabularies.foldedRight)
 
         // Der EFFEKTIVE PK (v3-Regel) — und zwar in BEIDEN Modi.
         //
@@ -103,7 +104,7 @@ internal class TableComparator(
             pkRight = rightPk,
         )
 
-        val columnDiffs = compareColumns(name, left, right, absorbedColumns, enumVocabularies(left, right, customTypes))
+        val columnDiffs = compareColumns(name, left, right, absorbedColumns, vocabularies)
         val pkDiff = when {
             targetProjection != null && EffectivePrimaryKey.of(left) == EffectivePrimaryKey.of(right) -> null
             left.primaryKey == right.primaryKey -> null
@@ -249,6 +250,9 @@ internal class TableComparator(
     private data class EnumVocabularies(
         val left: Map<String, List<String>>,
         val right: Map<String, List<String>>,
+        /** Die Wertevorrat-CHECKs, die je Seite zur Spalte zaehlen statt zum Constraint-Block ([EnumCheckFolding]). */
+        val foldedLeft: Set<ConstraintDefinition> = emptySet(),
+        val foldedRight: Set<ConstraintDefinition> = emptySet(),
         /** Die Domain-Spalten, projiziert ueber ihren Basistyp ([DomainColumnTypes]); je Seite. */
         val domainLeft: Map<String, NeutralType> = emptyMap(),
         val domainRight: Map<String, NeutralType> = emptyMap(),
@@ -262,13 +266,16 @@ internal class TableComparator(
         if (targetProjection == null) return EnumVocabularies(emptyMap(), emptyMap())
         val resolve = targetProjection.resolvesRefTypeVocabulary
         val project = targetProjection.typeWithCustomTypes
+        val checks = EnumCheckFolding.of(
+            left, right,
+            if (resolve) resolvedAgainst(left, customTypes.left, right) else left,
+            if (resolve) resolvedAgainst(right, customTypes.right, left) else right,
+        )
         return EnumVocabularies(
-            EnumCheckProjection.vocabulary(
-                if (resolve) resolvedAgainst(left, customTypes.left, right) else left,
-            ),
-            EnumCheckProjection.vocabulary(
-                if (resolve) resolvedAgainst(right, customTypes.right, left) else right,
-            ),
+            checks.vocabularyLeft,
+            checks.vocabularyRight,
+            checks.foldedLeft,
+            checks.foldedRight,
             project?.let { DomainColumnTypes.projected(left, customTypes.left, right, it) } ?: emptyMap(),
             if (targetProjection.domainProjectionCurrentOnly) {
                 emptyMap()
@@ -448,7 +455,10 @@ internal class TableComparator(
         val onDelete: ReferentialAction?, val onUpdate: ReferentialAction?,
     )
 
-    private fun normalizeConstraints(table: TableDefinition): NormalizedConstraints {
+    private fun normalizeConstraints(
+        table: TableDefinition,
+        foldedEnumChecks: Set<ConstraintDefinition>,
+    ): NormalizedConstraints {
         val singleUnique = mutableSetOf<String>()
         val singleFk = mutableMapOf<String, ForeignKeySignature>()
         val multi = mutableMapOf<String, ConstraintDefinition>()
@@ -470,9 +480,9 @@ internal class TableComparator(
         // Datenbank landet. Er gehoert zur Spalte, nicht in den
         // Constraint-Block: sonst meldete der Vergleich gegen ein
         // `enum`-Soll eine Constraint-Kante, und der Plan loeste die
-        // Werte-Durchsetzung, die er gerade angelegt hat.
-        val foldedEnumChecks =
-            if (targetProjection == null) emptySet() else EnumCheckProjection.foldable(table).keys
+        // Werte-Durchsetzung, die er gerade angelegt hat. Welche das sind,
+        // entscheidet [EnumCheckFolding] fuer beide Seiten zusammen; im
+        // strikten Modus keiner.
 
         for (constraint in table.constraints) {
             when {

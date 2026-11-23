@@ -51,12 +51,16 @@ internal object PostgresEnumCheckRollback {
         // geloest und den neuen CHECK unter einem Namen angelegt, den der Renderer nicht kennt (der
         // Standardname war beim Anlegen noch belegt, wenn er unter den alten stand). Die inversen
         // DropConstraints legen die alten ohnehin wieder an, `findState` sah nur den ersten.
-        if (ctx.currentSchema?.tables?.get(table)?.constraints.orEmpty().count { isValueCheck(it, column) } > 1) {
+        //
+        // Gehoeren die CHECKs nicht der Spaltenaenderung, hat der Up keinen davon geloest: eine eigene
+        // Constraint-Operation fuehrt sie, und deren Gegenrichtung stellt sie wieder her.
+        val owned = ctx.ownsEnumValueChecks(table, column)
+        if (owned && ctx.currentSchema?.tables?.get(table)?.constraints.orEmpty().count { isValueCheck(it, column) } > 1) {
             blockUnknownName(op, ctx, "$table.$column")
             return true
         }
         val createdByUp = EnumValueCheck.inlineValues(op.after)
-        val droppedByUp = findState(ctx.currentSchema, table, column)
+        val droppedByUp = if (owned) findState(ctx.currentSchema, table, column) else null
         val restore = droppedByUp?.values ?: EnumValueCheck.inlineValues(op.before)
         if (createdByUp == null && restore == null) return false
 

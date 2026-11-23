@@ -6,6 +6,7 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.diff.EnumCheckFolding
 import dev.dmigrate.core.diff.EnumCheckProjection
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.ColumnDefinition
@@ -333,14 +334,23 @@ internal class PostgresDiffRenderContext(
      * unbenannten Constraint selbst, haengt bei Kollision eine Ziffer an und
      * kuerzt lange Namen (live gemessen). Ein erratener Name traefe genau die
      * Faelle nicht, in denen es darauf ankommt.
+     *
+     * Leer auch, wenn der CHECK nicht der Spaltenaenderung gehoert
+     * ([EnumCheckFolding.ownsValueChecks]): dann loest und legt ihn eine eigene
+     * Constraint-Operation an, oder sein Wertevorrat bleibt, wie er ist.
      */
     fun enumValueCheckNames(table: String, column: String): List<String> {
+        if (!ownsEnumValueChecks(table, column)) return emptyList()
         val schema = if (direction == PostgresRenderDirection.UP) currentSchema else desiredSchema
         val definition = schema?.tables?.get(table) ?: return emptyList()
         return definition.constraints.filter {
             it.type == ConstraintType.CHECK && EnumCheckProjection.valuesOf(it.expression, column) != null
         }.map { it.name }
     }
+
+    /** Ob die Wertevorrat-CHECKs von [column] der Spaltenaenderung gehoeren; siehe [EnumCheckFolding.ownsValueChecks]. */
+    fun ownsEnumValueChecks(table: String, column: String): Boolean =
+        EnumCheckFolding.ownsValueChecks(desiredSchema?.tables?.get(table), column)
 
     /** Columns of [table] on the side this render direction reads (UP=desired, DOWN=current). */
     private fun columnsFor(table: String): Map<String, ColumnDefinition> {

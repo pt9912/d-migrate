@@ -565,6 +565,28 @@ ALTER TABLE `orders` DROP FOREIGN KEY `fk_orders_product`;
 -- Workaround: Tabellen-Rebuild (Rename → Create mit neuen Constraints → Copy → Drop)
 ```
 
+#### Wertevorrat einer Spalte: Spaltenänderung oder Constraint
+
+Ein CHECK, der den Wertevorrat genau einer Spalte aufzählt (`spalte IN ('a', 'b')`, ebenso die
+zurückgelesenen Formen `= ANY (ARRAY[…])` und `spalte='a' OR spalte='b'`), und ein `enum` mit
+derselben Werteliste am Spaltentyp sagen dasselbe. `schema migrate` vergleicht beide Darstellungen
+deshalb als **Wertevorrat der Spalte**; wer welche Anweisung schreibt, entscheidet die Soll-Seite:
+
+- **Das Soll führt die Spalte als `enum`.** Eine geänderte Werteliste ist eine Spaltenänderung. Sie
+  löst den bisherigen Wertevorrat-CHECK der Ist-Seite und schreibt den neuen mit (je Dialekt wie in
+  den Abschnitten zu PostgreSQL, MSSQL und Oracle beschrieben).
+- **Das Soll führt die Spalte als Textspalte mit eigenem CHECK.** Unterscheidet sich der Wertevorrat
+  von dem der Ist-Seite, bleibt der CHECK ein gewöhnlicher Constraint: der Plan löst den alten unter
+  seinem Namen und legt den neuen unter seinem Namen an (`DROP CONSTRAINT` + `ADD CONSTRAINT`).
+  Dasselbe gilt, wenn eine Textspalte einen solchen CHECK erst erhält oder verliert, und für eine neu
+  hinzukommende Spalte mit ihrem CHECK. Eine Spaltenänderung derselben Spalte (etwa eine neue Länge)
+  fasst den CHECK dann nicht an.
+- **Gleicher Wertevorrat** in beiden Darstellungen ist keine Änderung, gleich in welcher Schreibweise
+  er vorliegt; ein zweiter Lauf gegen ein migriertes Ziel plant nichts.
+
+`schema compare` vergleicht streng: dort bleibt der Unterschied zwischen `enum` und Textspalte mit
+CHECK sichtbar.
+
 ### 3.7 SQLite ALTER TABLE Einschränkungen
 
 SQLite hat die restriktivsten `ALTER TABLE`-Fähigkeiten. Der DDL-Generator muss diese Einschränkungen kennen:

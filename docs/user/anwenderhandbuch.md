@@ -1699,6 +1699,14 @@ zweite Hinweis unten.
   Feld `planFullyRollbackable` im Report meint dabei nur, dass die Anweisungen des
   Ausrollens transaktional sind, nicht, dass der Down möglich ist; maßgeblich ist
   `downBlocked`.
+- **Werteliste als eigener, benannter `CHECK` an einer Textspalte.** Führt Ihr Schema
+  die Werteliste nicht als `enum`, sondern als `CHECK` neben einer `text`-Spalte
+  (`a_state IN ('ACTIVE', 'DISABLED')`), behandelt `schema migrate` eine geänderte Liste
+  wie jeden anderen geänderten `CHECK`: Das Ausrollen löst ihn unter seinem Namen und legt
+  ihn unter demselben Namen mit der neuen Liste an, der Rollback tut dasselbe mit der alten.
+  Das gilt in allen Dialekten, ebenso für einen solchen `CHECK`, der neu hinzukommt oder
+  entfällt. Weil der Name im Schema steht, muss d-migrate ihn nicht ableiten, und der
+  Rollback wird auch Datei gegen Datei nicht blockiert.
 - **Mehrere Wertelisten-`CHECK`s an einer Spalte auf PostgreSQL.** Trägt eine Spalte
   zwei oder mehr `CHECK`s mit einer Werteliste (`"e" IN (…)`), führt `schema migrate`
   gegen die Datenbank beide ab und legt einen einzigen neuen `CHECK` mit der Werteliste

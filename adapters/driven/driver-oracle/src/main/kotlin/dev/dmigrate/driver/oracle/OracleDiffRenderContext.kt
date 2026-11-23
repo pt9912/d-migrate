@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.core.diff.EnumCheckFolding
 import dev.dmigrate.core.diff.EnumCheckProjection
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.ColumnDefinition
@@ -218,9 +219,16 @@ internal class OracleDiffRenderContext(
      * das zurueckgelesene Schema, nicht der Spaltentyp — dort steht der
      * Wertevorrat als eigener Constraint, waehrend die Spalte nur `VARCHAR2`
      * ist.
+     *
+     * `null` auch, wenn der CHECK nicht der Spaltenaenderung gehoert
+     * ([EnumCheckFolding.ownsValueChecks]): dann loest und legt ihn eine eigene
+     * Constraint-Operation an, oder sein Wertevorrat bleibt, wie er ist — ein
+     * zweites `DROP` hier endete in ORA-02443.
      */
     fun enumValueCheckName(table: String, column: String): String? =
-        schemaOppositeOfDirection()?.tables?.get(table)?.constraints
+        schemaOppositeOfDirection()?.tables?.get(table)
+            ?.takeIf { EnumCheckFolding.ownsValueChecks(desiredSchema?.tables?.get(table), column) }
+            ?.constraints
             ?.firstOrNull {
                 it.type == ConstraintType.CHECK && EnumCheckProjection.valuesOf(it.expression, column) != null
             }?.name
