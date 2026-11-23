@@ -20,6 +20,7 @@ import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.driver.BodyEmbedding
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DialectCapabilities
@@ -152,7 +153,14 @@ class SchemaMigrateRunner(
     private val typeCanonicalizerFor: (DatabaseDialect) -> (NeutralType) -> NeutralType =
         ::registryTypeCanonicalizer,
     private val clock: java.time.Clock = java.time.Clock.systemUTC(),
-    private val createdByVersion: String = "d-migrate (dev)",
+    /**
+     * Producer version written into the rollback artefact
+     * (`createdByVersion`), the plan artefact (`dMigrateVersion`) and the
+     * inline rename overlay. Defaults to the running tool's version, the
+     * one `--version` reports (issue #78): the CLI wiring does not pass it,
+     * so a fixed placeholder here ended up in every published artefact.
+     */
+    private val createdByVersion: String = VersionInfo.PRODUCT_VERSION,
     /**
      * Atomic-Preserve Service-Mode Sub-Slice A: server-side default
      * for the atomic-preserve lock-timeout budget (milliseconds).
