@@ -1,18 +1,18 @@
 package dev.dmigrate.cli.integration
 
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import com.networknt.schema.JsonSchema
-import com.networknt.schema.JsonSchemaFactory
-import com.networknt.schema.SpecVersion
+import com.networknt.schema.Schema
+import com.networknt.schema.SchemaRegistry
+import com.networknt.schema.SpecificationVersion
 import dev.dmigrate.mcp.protocol.ToolMetadata
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 import kotlin.io.path.deleteRecursively
 
 
@@ -200,6 +200,7 @@ class McpOutputSchemaValidationScenarioTest : FunSpec({
 // --- LF-017 / LF-024 / LN-030 / LN-031(A) helpers ----------------------------------------------------------
 
 private val gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()
+// Jackson 3 (`tools.jackson.*`): json-schema-validator 3.x validates Jackson 3 trees.
 private val jackson = ObjectMapper()
 
 /**
@@ -208,9 +209,9 @@ private val jackson = ObjectMapper()
  * `outputSchema` field are skipped — the four LF-017 / LF-024 / LN-030 / LN-031(A) tools all
  * publish one.
  */
-private fun collectOutputSchemas(harness: McpClientHarness): Map<String, JsonSchema> {
+private fun collectOutputSchemas(harness: McpClientHarness): Map<String, Schema> {
     val tools = harness.toolsList().tools
-    val factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012)
+    val factory = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
     return tools.associateBy(ToolMetadata::name) { tool ->
         val schemaJson = gson.toJson(tool.outputSchema)
         val node: JsonNode = jackson.readTree(schemaJson)
@@ -225,7 +226,7 @@ private fun collectOutputSchemas(harness: McpClientHarness): Map<String, JsonSch
 private fun assertValidAgainstOutputSchema(
     transportName: String,
     toolName: String,
-    schemas: Map<String, JsonSchema>,
+    schemas: Map<String, Schema>,
     payload: JsonObject,
 ) {
     val schema = schemas[toolName]

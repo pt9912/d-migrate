@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Abhängigkeits-Update (Dependabot #65).** `com.networknt:json-schema-validator` `1.5.4` → `3.0.9`, nur
+  `testImplementation` in `adapters/driven/formats` und `test/e2e-cli`. 3.x baut auf Jackson 3
+  (`tools.jackson.*`) und benennt seine API um. `SchemaJsonContractTest` und
+  `McpOutputSchemaValidationScenarioTest` sind deshalb umgestellt (Issue #69). Das Auslieferungsartefakt
+  ist unverändert.
+
 ## [1.12.1] - 2026-11-23
 
 ### Changed

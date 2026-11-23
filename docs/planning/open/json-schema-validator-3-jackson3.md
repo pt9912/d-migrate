@@ -1,6 +1,8 @@
 # Tracker: json-schema-validator 3.x zieht Jackson 3 nach
 
-> **Status:** Tracker / Vorabklärung (2026-08-28)
+> **Status:** **Geschlossen (2026-11-23).** Mit Dependabot-PR #65 (3.0.9) und
+> Issue #69 umgestellt; siehe [Abschluss](#abschluss-2026-11-23). Ursprünglich
+> Tracker / Vorabklärung (2026-08-28).
 > **Trigger:** Dependabot-PR #32 (`com.networknt:json-schema-validator`
 > 1.5.4 → 3.0.7) bricht die Kompilierung in zwei Modulen. Der PR wurde
 > geschlossen, der Befund hier festgehalten.
@@ -64,3 +66,27 @@ Ganzes nimmt — nicht an einen Testabhängigkeits-Bump.
 Innerhalb der Jackson-2-Linie ist **1.5.6** die neueste Version (Stand
 2026-08-28). Ein Bump 1.5.4 → 1.5.6 liefe ohne jede Codeänderung durch.
 Dependabot schlägt ihn nicht vor, weil es immer die höchste Version nimmt.
+
+## Abschluss (2026-11-23)
+
+Umgestellt mit Dependabot-PR #65 (1.5.4 → 3.0.9) und Issue #69. Beide Testdateien
+nutzen jetzt `Schema`, `SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)`
+und `tools.jackson.databind.*`. Die Tabelle oben nannte `Dialects` als Ersatz für
+`SpecVersion.VersionFlag`. Für die Wahl des Standard-Dialekts ist es in 3.0.9 das
+Enum `SpecificationVersion`.
+
+**Der Einwand aus „Warum nicht jetzt" galt nicht mehr.** Jackson 3 liegt längst im
+Auslieferungsartefakt, nicht erst auf dem Test-Klassenpfad: Flyway 13 bringt es mit,
+`adapters/driven/persistence-jdbc/build.gradle.kts` hebt es per Constraint auf 3.1.7
+(CVE-2026-68497). Gemessen am `make release-assets`-ZIP: 183 Jars, dieselbe Liste wie
+in v1.12.1, darunter je eine Jackson-2- und eine Jackson-3-Linie. Der Validator bleibt
+`testImplementation` und ändert daran nichts. Jackson 2 und 3 liegen in getrennten
+Paketen (`com.fasterxml.jackson.*` / `tools.jackson.*`) konfliktfrei nebeneinander.
+Jackson 3 hängt weiter an `jackson-annotations` aus der 2.x-Linie.
+
+**Falle beim Umbau:** In Jackson 3 hat `JsonNode` eine eigene Methode
+`map(Function)`. Sie wendet die Funktion auf den Knoten selbst an und verdeckt Kotlins
+`Iterable.map`. `arrayNode.map { it.asString() }` kompiliert deshalb weiterhin, wirft
+aber zur Laufzeit (`ArrayNode` lässt sich nicht in einen String umwandeln).
+Über die Elemente geht es mit `values()`.
+

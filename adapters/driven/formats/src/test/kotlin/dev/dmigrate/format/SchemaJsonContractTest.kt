@@ -1,16 +1,16 @@
 package dev.dmigrate.format
 
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.node.ObjectNode
-import com.networknt.schema.JsonSchema
-import com.networknt.schema.JsonSchemaFactory
-import com.networknt.schema.SpecVersion
+import com.networknt.schema.Schema
+import com.networknt.schema.SchemaRegistry
+import com.networknt.schema.SpecificationVersion
 import dev.dmigrate.core.model.IndexType
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
+import tools.jackson.databind.node.ObjectNode
 import java.io.File
 
 /**
@@ -29,6 +29,11 @@ import java.io.File
  * `neutral-model-spec.md` dokumentierte Elementgruppe nutzt, gegen das echte
  * `spec/schema.json` aus dem Repo. Schlaegt er fehl, ist das Schema erneut
  * hinter Spec/Code zurueckgefallen.
+ *
+ * Der Validator (json-schema-validator 3.x) arbeitet auf Jackson 3
+ * (`tools.jackson.*`); deshalb liest der Test mit Jackson 3, auch wenn der
+ * Produktionscode Jackson 2 nutzt. Beide liegen in getrennten Packages
+ * nebeneinander auf dem Test-Classpath.
  */
 class SchemaJsonContractTest : FunSpec({
 
@@ -43,13 +48,13 @@ class SchemaJsonContractTest : FunSpec({
         File(System.getProperty("user.dir"))
     }
 
-    val schema: JsonSchema = run {
+    val schema: Schema = run {
         val schemaFile = File(repoRoot, "spec/schema.json")
         check(schemaFile.exists()) {
             "spec/schema.json nicht gefunden unter ${schemaFile.absolutePath}"
         }
         val node = mapper.readTree(schemaFile)
-        JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012).getSchema(node)
+        SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12).getSchema(node)
     }
 
     fun loadFixture(): JsonNode {
@@ -81,8 +86,12 @@ class SchemaJsonContractTest : FunSpec({
             .findParents("enum")
             .asSequence()
             .map { it.path("enum") }
-            .first { node -> node.any { it.asText() == "btree" } }
-            .map { it.asText() }
+            .first { node -> node.values().any { it.asString() == "btree" } }
+            // `values()` ist Pflicht: Jackson 3 gibt `JsonNode` ein eigenes
+            // `map(Function)`, das die Funktion auf den Knoten selbst anwendet
+            // und Kotlins `Iterable.map` verdeckt.
+            .values()
+            .map { it.asString() }
             .toSet()
         declared shouldBe IndexType.entries.map { it.name.lowercase() }.toSet()
     }
