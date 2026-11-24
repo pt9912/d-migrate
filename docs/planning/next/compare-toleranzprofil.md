@@ -1,5 +1,25 @@
 # `schema compare`: Toleranzprofil — offene Grenzfragen per Konfiguration steuern
 
+> **Status-Update 2026-11-24 — K3 für CHECKs entschieden, ohne Profil.**
+> [ADR 0067](../../adr/0067-schema-compare-wertelisten-check-gleicher-wertevorrat.md) (Issue #80,
+> Eigner-Entscheidung 2026-11-23) setzt in `schema compare` einen Wertelisten-**CHECK** mit gleichem
+> Wertevorrat derselben Textspalte gleich, und zwar **als Default**, nicht als Toleranz. Grund: Unter
+> PostgreSQL war der Vergleich Datei gegen Datenbank für jede Tabelle mit Werteliste dauerhaft
+> `DIFFERENT`, während `schema migrate` nichts plante. Das Profil gibt es noch nicht. Folgen für diesen
+> Plan:
+> - **K3 schrumpft** auf das, was ADR 0067 nicht abdeckt: das **Index-Prädikat** (`ix_order_open`) und
+>   die PostgreSQL-Rückform an einer `varchar`-Spalte. Letztere ist eigener Slice:
+>   [`postgres-varchar-werteliste-erkennung.md`](postgres-varchar-werteliste-erkennung.md).
+> - **Die Semantik-Risiken aus K3 sind für CHECKs abgefangen**, nicht übergangen: Die Regel greift nur an
+>   Textspalten und nur bei Casts auf `text` oder `character varying` ohne Länge. `::bpchar` (`char(n)`),
+>   `citext` (im Modell `enum` mit `ref_type`) und Casts mit Typmodifikator bleiben Funde, je mit Test in
+>   `CompareValueListCheckTest`.
+> - **Statusänderung an ADR 0055 und ADR 0056 entfällt für den CHECK-Teil.** ADR 0067 übersteuert ADR 0056
+>   nur in diesem einen Punkt; dessen übrige Entscheidungen gelten weiter, ein `superseded by` hieße das
+>   Gegenteil. ADR 0055 ist nicht betroffen: Sein „`schema compare` bleibt streng" gilt der Darstellung
+>   (`enum` am Spaltentyp gegen CHECK), und die bleibt ein Fund. ADR 0067 vergleicht nur CHECK gegen CHECK.
+>   Für einen verbleibenden K3 am Index-Prädikat stellt sich die Frage nach den Statusänderungen neu.
+
 > **Status:** Entwurf mit Scope (2026-09-17). Grundlage ist der Eigner-Auftrag vom
 > 2026-09-17: Die Grenzfragen, die der aktive Compare-Slice offen lässt, sollen
 > **nicht einmal für alle** entschieden werden. Stattdessen sollen sie über eine

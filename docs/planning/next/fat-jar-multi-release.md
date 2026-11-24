@@ -49,14 +49,31 @@ heute lädt.
   Aufruf mit Hostname, damit der Punkt am Artefakt geprüft wird.
 - **P4 — CHANGELOG** unter `Fixed`, mit den betroffenen Versionen.
 
-## Akzeptanzkriterien
+## Akzeptanz (DoD)
 
-1. `java -jar d-migrate-X.Y.Z-all.jar schema compare --source file:… --target db:postgresql://…@<host>:…`
-   läuft gegen eine erreichbare Datenbank ohne `ServiceConfigurationError`.
-2. Der neue Smoke ist grün und scheitert nachweislich ohne das Attribut.
-3. Die übrigen Tests und `make release-assets` sind grün; die Jar-Liste der ZIP-Distribution ist
-   unverändert.
-4. `releasing.md` prüft das Fat-JAR mit einer Verbindung, nicht nur mit `--help`.
+**Fachlich:**
+* `java -jar d-migrate-X.Y.Z-all.jar schema compare --source file:… --target db:postgresql://…@<host>:…`
+  läuft gegen eine erreichbare Datenbank durch, ohne `ServiceConfigurationError`. Dasselbe gilt für einen
+  Befehl, der schreibt (`data transfer` oder `schema migrate --execute`).
+* Das Manifest des Fat-JARs trägt `Multi-Release: true` (`unzip -p …-all.jar META-INF/MANIFEST.MF`).
+* Kein Merge-Konflikt unter `META-INF/versions/` (P1): Jede Datei dort stammt aus genau einem Jar, oder
+  der Konflikt ist benannt und aufgelöst.
+
+**Rot-Beleg:** Der neue Smoke aus P2 scheitert ohne das Attribut mit genau dieser Meldung und ist mit
+dem Attribut grün. Den Fehlschlag einmal sehen, dann zurücknehmen und die Rücknahme an der Ausgabe
+prüfen.
+
+**Artefakt:** `make release-assets` ist grün, und `sha256sum -c` stimmt. Die Jar-Liste der
+ZIP-Distribution ist gegenüber dem Stand davor unverändert (Liste vergleichen, nicht zählen).
+
+**Gates:**
+* `make docker-check MODULES=":adapters:driving:cli"`. Liegt der Smoke in `test/e2e-cli`, zusätzlich
+  `make integration INTEGRATION_TASKS=":test:e2e-cli:test"`.
+* `make solid-suppression-gate`, `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD`.
+* Auf dem Push sind „Build & Test“ und „Integration Tests“ grün.
+
+**Doku:** `releasing.md` (3.2, 4.4, 4.6 und die Checkliste) prüft das Fat-JAR mit einer Verbindung über
+einen Hostnamen. Der CHANGELOG nennt unter `Fixed` die betroffenen Versionen.
 
 ## Offene Frage
 

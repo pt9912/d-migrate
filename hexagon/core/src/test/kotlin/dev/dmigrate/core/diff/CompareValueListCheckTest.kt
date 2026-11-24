@@ -98,6 +98,24 @@ class CompareValueListCheckTest : FunSpec({
             .tablesChanged.isNotEmpty() shouldBe true
     }
 
+    test("an einer citext-Spalte (`enum` mit `ref_type`) aendert `::text` den Vergleich und bleibt ein Fund") {
+        // `citext = text` vergleicht mit Gross-/Kleinschreibung, `citext IN (...)` ohne.
+        fun citextSchema(expression: String) = SchemaDefinition(
+            name = "repro", version = "1.0.0",
+            tables = mapOf(
+                "t" to TableDefinition(
+                    columns = mapOf("c" to ColumnDefinition(NeutralType.Enum(refType = "citext"))),
+                    constraints = listOf(
+                        ConstraintDefinition(name = "ck_c", type = ConstraintType.CHECK, expression = expression),
+                    ),
+                ),
+            ),
+        )
+        SchemaComparator(canonicalizeRawExpressions = true)
+            .compare(citextSchema("c IN ('a', 'b')"), citextSchema("(c = ANY (ARRAY['a'::text, 'b'::text]))"))
+            .tablesChanged.isNotEmpty() shouldBe true
+    }
+
     test("dieselben Werte an einer anderen Spalte bleiben eine Aenderung") {
         changed(file, "(b_state = ANY (ARRAY['OFF'::text, 'ON'::text]))", extraColumn = "b_state") shouldBe true
     }

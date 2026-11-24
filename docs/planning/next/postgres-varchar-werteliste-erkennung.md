@@ -61,12 +61,33 @@ Versionen ist es nicht nachgemessen.
   („an einer Spalte mit `max_length` … meldet `schema compare` den Unterschied weiter") entfernen;
   `spec/ddl-generation-rules.md` 3.6 nennt die erkannten Formen.
 
-## Akzeptanzkriterien
+## Akzeptanz (DoD)
 
-1. Datei mit `varchar`-Spalte und Wertelisten-CHECK → `schema generate` → `schema migrate --target db:`
-   plant 0 Anweisungen, auch beim zweiten Lauf.
-2. `schema compare` Datei gegen diese Datenbank → `IDENTICAL`; ein anderer Wertevorrat bleibt
-   `DIFFERENT`.
-3. `char(n)` bleibt beim Textvergleich (aufgefüllter Vergleich, ADR 0067).
-4. Die neue Erkennung ist durch eine Gegenprobe belegt; der Fingerabdruck-Tag ist gehoben, falls die
-   Nutzlast sich ändert.
+**Fachlich, gemessen gegen PostgreSQL 18:**
+* Datei mit `varchar`-Spalte (mit und ohne `max_length`) und Wertelisten-CHECK → `schema generate` →
+  Datenbank anlegen. Dann plant `schema migrate --target db:` 0 Anweisungen, auch beim zweiten Lauf.
+* `schema compare` Datei gegen diese Datenbank → `IDENTICAL`. Ein anderer Wertevorrat bleibt `DIFFERENT`
+  und trägt beide Originalausdrücke.
+* Eine geänderte Liste an einer Tabelle ersetzt nur deren CHECK; danach konvergiert der Lauf (0 Anweisungen).
+* Gegenproben bleiben Funde, je mit Test: `char(n)` (`::bpchar`, aufgefüllter Vergleich), ein Array-Cast
+  auf einen anderen Typ und ein Cast mit Typmodifikator.
+* Die Reproduktion aus diesem Plan läuft über die gebaute CLI (ZIP-Distribution oder Image), nicht nur
+  über den Runner im Test.
+
+**Rot-Beleg:** Die neuen Unit- und Live-Specs scheitern ohne P1 und sind mit P1 grün. Den Fehlschlag
+einmal sehen, die Rücknahme an der Ausgabe prüfen.
+
+**Fingerabdruck:** Entweder belegt ein Test, dass die kanonische Nutzlast gleich bleibt, oder der
+Algorithmus-Tag ist gehoben (`MigrationFingerprint.ALGORITHM`). Dann nennt der CHANGELOG, welche
+gespeicherten Plan- und Rücknahme-Artefakte das betrifft. Ein nötiger ADR ist accepted.
+
+**Gates:**
+* `make docker-check MODULES=":hexagon:core :hexagon:application :adapters:driven:driver-postgresql :adapters:driving:cli"`.
+  Ändert sich eine geteilte Signatur im Hexagon, einmal `make docker-test` ohne `MODULES=`.
+* `make integration INTEGRATION_TASKS=":test:integration-postgresql:test"`.
+* `make solid-suppression-gate`, `make docs-check`, `make doc-immutable RANGE=origin/main..HEAD`.
+* Auf dem Push sind „Build & Test“, „Integration Tests“ und „MCP-E2E Compare-Matrix“ grün.
+
+**Doku:** Die varchar-Grenze ist aus `spec/cli-spec.md` und dem Anwenderhandbuch entfernt.
+`spec/ddl-generation-rules.md` nennt die erkannten Rückformen. ADR 0067 ist eingefroren; die Aufhebung
+seiner Grenze steht im neuen ADR oder im CHANGELOG.
