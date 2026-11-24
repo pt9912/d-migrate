@@ -713,11 +713,12 @@ nützlich in Skripten.
   'B'::text]))` zurück, SQL Server als umsortierte Kette `status='B' OR
   status='A'`. Zählen beide Seiten für dieselbe Spalte dieselben Werte auf, meldet
   `schema compare` nichts, gleich in welcher Reihenfolge. Ein anderer Wert, ein
-  fehlender oder ein zusätzlicher bleibt ein Fund. Unter PostgreSQL gilt das für
-  Spalten vom Typ `text` ohne Länge. An einer Spalte mit `max_length` (`varchar`)
-  gibt PostgreSQL die Liste in einer Form zurück, die d-migrate noch nicht als
-  Werteliste erkennt, und an einer `char`-Spalte vergleicht PostgreSQL mit
-  Auffüllen. Dort meldet `schema compare` den Unterschied weiter.
+  fehlender oder ein zusätzlicher bleibt ein Fund. Das gilt auch an einer Spalte mit
+  `max_length`, die PostgreSQL als `varchar` führt und als `(spalte)::text = ANY
+  ((ARRAY[…])::text[])` zurückgibt. An einer `char`-Spalte vergleicht PostgreSQL mit
+  Auffüllen; dort meldet `schema compare` den Unterschied weiter. Schreiben Sie eine
+  Werteliste am besten gar nicht als rohen `CHECK`, sondern als `type: enum, values:
+  [...]`: Dann vergleicht d-migrate den Wertevorrat und nicht SQL-Text.
 - **Was trotzdem gemeldet wird:** eine anders formulierte Bedingung, die keine
   reine Werteliste ist (etwa umgestellte `AND`-Glieder oder `NOT IN`), die Groß-
   und Kleinschreibung von Schlüsselwörtern (`like` gegen `LIKE`), ein Cast an

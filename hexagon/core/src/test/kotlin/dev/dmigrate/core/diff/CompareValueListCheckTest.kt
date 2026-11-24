@@ -45,6 +45,9 @@ class CompareValueListCheckTest : FunSpec({
     val sameVocabulary = listOf(
         "PostgreSQL-Rueckform (Issue #80)" to "(a_state = ANY (ARRAY['OFF'::text, 'ON'::text]))",
         "andere Reihenfolge" to "a_state IN ('ON', 'OFF')",
+        // Gemessen an PostgreSQL 18: so kommt `IN` an einer varchar-Spalte zurueck (ADR 0068).
+        "PostgreSQL-Rueckform an einer varchar-Spalte" to
+            "((a_state)::text = ANY ((ARRAY['OFF'::character varying, 'ON'::character varying])::text[]))",
         "SQL-Server-OR-Kette, umsortiert" to "([a_state]='ON' OR [a_state]='OFF')",
     )
     for ((label, db) in sameVocabulary) {
@@ -69,11 +72,7 @@ class CompareValueListCheckTest : FunSpec({
         "mit AND verknuepft ist keine Werteliste" to "a_state IN ('OFF', 'ON') AND a_state <> ''",
         "Cast auf character (= char(1)) aendert den Wert" to "a_state IN ('OFF'::character, 'ON'::character)",
         "Cast mit Laenge kann kuerzen" to "a_state IN ('OFF'::character varying(2), 'ON'::character varying(2))",
-        // Gemessen an PostgreSQL 18: so kommt `IN` an einer varchar-Spalte zurueck. Die
-        // Werteliste-Erkennung kennt die Array-Form mit `::text[]` nicht; das ist ihre Grenze,
-        // nicht die dieser Regel (ADR 0067).
-        "varchar-Rueckform ausserhalb der Erkennung" to
-            "((a_state)::text = ANY ((ARRAY['OFF'::character varying, 'ON'::character varying])::text[]))",
+        "Array-Cast auf einen anderen Typ" to "(a_state = ANY ((ARRAY['OFF', 'ON'])::bpchar[]))",
     )
     for ((label, db) in different) {
         test("bleibt eine Aenderung: $label") {

@@ -826,10 +826,11 @@ Textspalte sein, und jeder Cast in beiden Ausdruecken muss auf `text` oder
 `character varying` ohne Laenge gehen; eine `char(n)`-Spalte (`::bpchar`) und ein
 Cast mit Laenge bleiben beim Textvergleich. Ein anderer Wertevorrat, eine andere
 Spalte, `NOT IN`, eine Verknuepfung mit `AND` und ein Vergleich mit etwas anderem
-als String-Literalen bleiben Unterschiede. Nicht erkannt wird die Form, die
+als String-Literalen bleiben Unterschiede. Erkannt wird auch die Form, die
 PostgreSQL an einer `varchar`-Spalte zurueckgibt
-(`((b)::text = ANY ((ARRAY['x'::character varying, …])::text[]))`); sie bleibt ein
-Unterschied. Wie bei der Schreibweise traegt ein
+(`((b)::text = ANY ((ARRAY['x'::character varying, …])::text[]))`): ein Cast auf
+`text[]`, `character varying[]` oder `varchar[]` um das Array zaehlt wie ein Cast
+auf `text`. Wie bei der Schreibweise traegt ein
 gemeldeter Fund die unveraenderten Ausdruecke.
 
 **Nicht festgelegt** ist die Gross-/Kleinschreibung von **Schluesselwoertern**

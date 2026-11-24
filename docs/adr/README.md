@@ -121,3 +121,4 @@ argumentiert werden.
 | 0065 | [Der Basistyp einer Domain trägt Länge und Array aus dem Katalog — Neutralform mit Klammer und `[]`, `schema-fingerprint-v23`](0065-domain-basistyp-mit-laenge-und-array-aus-dem-katalog.md) | accepted |
 | 0066 | [`DEFAULT`, `NOT NULL` und Kollation einer Domain im Modell — nur PostgreSQL wertet aus, `schema-fingerprint-v24`](0066-domain-default-not-null-kollation-im-modell.md) | accepted |
 | 0067 | [`schema compare`: ein Wertelisten-CHECK mit gleichem Wertevorrat ist keine Änderung](0067-schema-compare-wertelisten-check-gleicher-wertevorrat.md) | accepted |
+| 0068 | [Die Werteliste-Erkennung liest auch `(ARRAY[…])::text[]` — `schema-fingerprint-v25`](0068-werteliste-erkennung-array-cast-auf-text-array.md) | accepted |

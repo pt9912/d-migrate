@@ -153,11 +153,31 @@ object EnumCheckProjection {
         if (!afterColumn.startsWith("=")) return null
         val afterAny = stripLeadingKeyword(afterColumn.substring(1).trimStart(), "ANY") ?: return null
         if (!afterAny.startsWith("(") || !afterAny.endsWith(")")) return null
-        val inner = afterAny.substring(1, afterAny.length - 1).trim()
+        val inner = withoutTextArrayCast(afterAny.substring(1, afterAny.length - 1).trim()) ?: return null
         val afterArray = stripLeadingKeyword(inner, "ARRAY") ?: return null
         if (!afterArray.startsWith("[") || !afterArray.endsWith("]")) return null
         return parseStringList(afterArray.substring(1, afterArray.length - 1))
     }
+
+    /**
+     * `(ARRAY[…])::text[]` → `ARRAY[…]`, ebenso eine blosse Klammer um das Array (ADR 0068).
+     *
+     * So gibt PostgreSQL eine Liste an einer `varchar`-Spalte zurueck: Die Elemente sind
+     * `character varying`, das Array wird fuer den Vergleich mit `(spalte)::text` auf `text[]`
+     * gecastet. Nur ein Text-Array ohne Typmodifikator zaehlt; jeder andere Cast liefert `null`,
+     * dann ist der Ausdruck keine Werteliste.
+     */
+    private fun withoutTextArrayCast(text: String): String? {
+        if (!text.startsWith("(")) return text
+        val closing = matchingParen(text) ?: return null
+        val cast = text.substring(closing + 1).trim()
+        if (cast.isEmpty()) return text.substring(1, closing).trim()
+        val type = cast.removePrefix("::").trim().lowercase()
+        if (!cast.startsWith("::") || type !in TEXT_ARRAY_TYPES) return null
+        return text.substring(1, closing).trim()
+    }
+
+    private val TEXT_ARRAY_TYPES = setOf("text[]", "character varying[]", "varchar[]")
 
     /**
      * `spalte='a' OR spalte='b'` — die Form, in der SQL Server dieselbe

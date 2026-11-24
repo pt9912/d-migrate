@@ -7,9 +7,10 @@
 > PostgreSQL war der Vergleich Datei gegen Datenbank für jede Tabelle mit Werteliste dauerhaft
 > `DIFFERENT`, während `schema migrate` nichts plante. Das Profil gibt es noch nicht. Folgen für diesen
 > Plan:
-> - **K3 schrumpft** auf das, was ADR 0067 nicht abdeckt: das **Index-Prädikat** (`ix_order_open`) und
->   die PostgreSQL-Rückform an einer `varchar`-Spalte. Letztere ist eigener Slice:
->   [`postgres-varchar-werteliste-erkennung.md`](postgres-varchar-werteliste-erkennung.md).
+> - **K3 schrumpft** auf das, was ADR 0067 nicht abdeckt: das **Index-Prädikat** (`ix_order_open`). Die
+>   PostgreSQL-Rückform an einer `varchar`-Spalte deckt seit
+>   [ADR 0068](../../adr/0068-werteliste-erkennung-array-cast-auf-text-array.md) die Erkennung selbst ab
+>   (Slice [`postgres-varchar-werteliste-erkennung.md`](../in-progress/postgres-varchar-werteliste-erkennung.md)).
 > - **Die Semantik-Risiken aus K3 sind für CHECKs abgefangen**, nicht übergangen: Die Regel greift nur an
 >   Textspalten und nur bei Casts auf `text` oder `character varying` ohne Länge. `::bpchar` (`char(n)`),
 >   `citext` (im Modell `enum` mit `ref_type`) und Casts mit Typmodifikator bleiben Funde, je mit Test in

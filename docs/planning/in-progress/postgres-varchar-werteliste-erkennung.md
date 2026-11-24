@@ -1,6 +1,6 @@
 # PostgreSQL: Werteliste an einer `varchar`-Spalte wird nicht erkannt — `schema migrate` plant bei jedem Lauf DROP/ADD
 
-- **Status**: Draft mit Scope (2026-11-24). Aktiv beim ersten Implementierungs-Commit.
+- **Status**: In Arbeit (2026-11-24). P0-P4 umgesetzt, siehe „Stand" am Ende; offen ist die Abnahme gegen die DoD.
 - **Ziel**: `EnumCheckProjection` erkennt die Form, in der PostgreSQL einen `IN`-CHECK an einer
   `varchar`-Spalte zurückgibt. Danach plant `schema migrate --target db:` gegen eine Datenbank, die aus
   derselben Datei entstand, 0 Anweisungen, und `schema compare` meldet den gleichen Wertevorrat nicht
@@ -91,3 +91,31 @@ gespeicherten Plan- und Rücknahme-Artefakte das betrifft. Ein nötiger ADR ist 
 **Doku:** Die varchar-Grenze ist aus `spec/cli-spec.md` und dem Anwenderhandbuch entfernt.
 `spec/ddl-generation-rules.md` nennt die erkannten Rückformen. ADR 0067 ist eingefroren; die Aufhebung
 seiner Grenze steht im neuen ADR oder im CHANGELOG.
+
+## Stand (2026-11-24)
+
+- **Gate:** [ADR 0068](../../adr/0068-werteliste-erkennung-array-cast-auf-text-array.md) (Folge-ADR zu ADR 0055,
+  Eigner-Entscheidung 2026-11-24). Fingerabdruck `schema-fingerprint-v25`.
+- **P0:** Gemessen an PostgreSQL 18: `varchar(20)` und `varchar` geben die `::text[]`-Form zurück, `text` ohne
+  Länge (Neutralform `text` ohne `max_length`) rendert d-migrate als `TEXT` mit der schon erkannten Form. Die
+  Form kommt nur unter PostgreSQL vor. Die Compare-Matrix zeigt sie an `ck_cm_customer_segment`.
+- **P1:** `EnumCheckProjection.anyArrayValues` übergeht `(ARRAY[…])::text[]`, `::character varying[]` und
+  `::varchar[]` (ohne Typmodifikator) sowie eine bloße Klammer um das Array. Andere Array-Casts (`::integer[]`,
+  `::bpchar[]`, `::varchar(1)[]`) bleiben unerkannt.
+- **P2:** `MigrationFingerprint.ALGORITHM` = `schema-fingerprint-v25`, KDoc-Eintrag v25; sechs Test-Pins
+  nachgezogen. Keine Fixture trägt `v24`.
+- **P3:** `EnumCheckProjectionTest` (Rückform, die beiden anderen Text-Array-Casts, Gegenproben),
+  `CompareValueListCheckTest` (varchar-Rückform gleich, `::bpchar[]` bleibt Fund),
+  `PostgresVarcharValueListIntegrationTest` (live: angelegt, zweiter `--execute` plant nichts, `schema compare`
+  ohne CHECK-Fund, geänderte Liste ersetzt den CHECK unter seinem Namen und konvergiert; `text` als Kontrolle).
+  Rot-Beleg: Ohne P1 scheitern die 4 neuen Unit-Specs. Das Integrationsmodul ist grün.
+- **Compare-Matrix:** MySQL→PostgreSQL verliert `ck_cm_customer_segment`. Gemessen mit `schema compare` an den
+  Reverse-Dateien des CI-Laufs, alter Build 2 Änderungen, neuer Build 1. Die Zellen mit PostgreSQL als Quelle
+  bleiben `TABLE_CONSTRAINT_REMOVED`: Der Generator lässt den CHECK mit `::`-Casts für andere Dialekte weg.
+- **P4:** Die Grenze ist aus `spec/cli-spec.md` und dem Anwenderhandbuch entfernt.
+  `spec/ddl-generation-rules.md` nennt die Rückform. ADR 0067 bleibt eingefroren; die Aufhebung steht in ADR 0068.
+- **CLI-Repro** (ZIP-Distribution, PostgreSQL 18, Datei aus dem Befund): `schema migrate` plant 0 Anweisungen
+  (vorher 2), `schema compare` → `IDENTICAL`. Eine geänderte Liste ersetzt `ck_a_state` unter seinem Namen,
+  danach wieder 0.
+- **Offen:** CI auf dem Push.
+

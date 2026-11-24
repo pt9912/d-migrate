@@ -584,7 +584,8 @@ ALTER TABLE `orders` DROP FOREIGN KEY `fk_orders_product`;
 #### Wertevorrat einer Spalte: Spaltenänderung oder Constraint
 
 Ein CHECK, der den Wertevorrat genau einer Spalte aufzählt (`spalte IN ('a', 'b')`, ebenso die
-zurückgelesenen Formen `= ANY (ARRAY[…])` und `spalte='a' OR spalte='b'`), und ein `enum` mit
+zurückgelesenen Formen `= ANY (ARRAY[…])`, an einer `varchar`-Spalte `(spalte)::text = ANY ((ARRAY[…])::text[])`,
+und `spalte='a' OR spalte='b'`), und ein `enum` mit
 derselben Werteliste am Spaltentyp sagen dasselbe. `schema migrate` vergleicht beide Darstellungen
 deshalb als **Wertevorrat der Spalte**; wer welche Anweisung schreibt, entscheidet die Soll-Seite:
 

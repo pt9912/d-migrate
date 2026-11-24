@@ -130,6 +130,25 @@ class EnumCheckProjectionTest : FunSpec({
             listOf("a")
     }
 
+    // ADR 0068: so gibt PostgreSQL 18 `b IN ('OFF','ON')` an einer varchar-Spalte zurueck (gemessen).
+    test("varchar-Spalte: der Cast auf text[] um das Array wird uebergangen") {
+        EnumCheckProjection.valuesOf(
+            "((b)::text = ANY ((ARRAY['OFF'::character varying, 'ON'::character varying])::text[]))", "b",
+        ) shouldBe listOf("OFF", "ON")
+    }
+
+    test("auch character varying[] und varchar[] um das Array zaehlen als Text-Array") {
+        EnumCheckProjection.valuesOf("(b = ANY ((ARRAY['x', 'y'])::character varying[]))", "b") shouldBe listOf("x", "y")
+        EnumCheckProjection.valuesOf("(b = ANY ((ARRAY['x', 'y'])::varchar[]))", "b") shouldBe listOf("x", "y")
+    }
+
+    test("ein anderer Array-Cast ist keine Werteliste") {
+        EnumCheckProjection.valuesOf("(b = ANY ((ARRAY['1', '2'])::integer[]))", "b") shouldBe null
+        EnumCheckProjection.valuesOf("(b = ANY ((ARRAY['a', 'b'])::bpchar[]))", "b") shouldBe null
+        EnumCheckProjection.valuesOf("(b = ANY ((ARRAY['a', 'b'])::varchar(1)[]))", "b") shouldBe null
+        EnumCheckProjection.valuesOf("(b = ANY ((ARRAY['a', 'b'])))", "b") shouldBe listOf("a", "b")
+    }
+
     test("die ANY-ARRAY-Form ueber eine andere Spalte zaehlt nicht") {
         EnumCheckProjection.valuesOf("((other = ANY (ARRAY['red'::text])))", "mood") shouldBe null
     }

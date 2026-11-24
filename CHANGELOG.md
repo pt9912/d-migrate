@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DECIMAL(12,4)` → `DECIMAL(14,4)`. Erweitert sich die Spalte, ohne dass Nach- oder Vorkommastellen weniger
   werden (`s' ≥ s` und `p' − s' ≥ p − s`), entsteht jetzt `ALTER COLUMN … TYPE DECIMAL(p',s')` ohne `USING`. Eine
   Verengung braucht weiter ein Overlay `using-expression`.
+- **PostgreSQL: Werteliste an einer `varchar`-Spalte wird erkannt; `schema migrate` plant nicht mehr bei jedem Lauf
+  `DROP`/`ADD` (ADR 0068).** PostgreSQL gibt `b IN ('OFF','ON')` an einer `varchar`-Spalte als `((b)::text = ANY
+  ((ARRAY['OFF'::character varying, 'ON'::character varying])::text[]))` zurück. Diese Form kannte die
+  Werteliste-Erkennung nicht. `schema migrate --target db:` plante deshalb gegen eine Datenbank, die aus derselben
+  Datei entstand, bei jedem Lauf `DROP CONSTRAINT` und `ADD CONSTRAINT` (Exit 0), und `schema compare` meldete den
+  gleichen Wertevorrat als Änderung. Jetzt zählt ein Cast auf `text[]`, `character varying[]` oder `varchar[]` um
+  das Array wie ein Cast auf `text`. **Der Fingerabdruck-Tag steigt auf `schema-fingerprint-v25`.** Plan- und
+  Rücknahme-Artefakte aus einer früheren Version scheitern an der Algorithmus-Prüfung und sind neu zu erzeugen.
 - **PostgreSQL: Geänderte Werteliste einer Inline-Enum blockiert Datei gegen Datei, statt den alten CHECK
   stehen zu lassen (Issue #81).** `schema migrate --target file:` legte für eine erweiterte oder verkürzte
   `values`-Liste nur den neuen CHECK an. Den alten konnte es nicht lösen, weil eine Datei dessen Katalognamen nicht
@@ -43,8 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `= ANY (ARRAY[…])`, die einelementige `=`-Form und eine OR-Kette als gleich, wenn sie für dieselbe Textspalte
   dieselben Werte aufzählen, in beliebiger Reihenfolge. Casts zählen weiter, wenn sie nicht auf `text` oder
   `character varying` ohne Länge gehen; eine `char(n)`-Spalte bleibt beim Textvergleich. Die Form, die
-  PostgreSQL an einer `varchar`-Spalte zurückgibt (`… = ANY ((ARRAY[…])::text[])`), wird noch nicht erkannt.
-  ADR 0067 übersteuert ADR 0056 in diesem einen Punkt.
+  PostgreSQL an einer `varchar`-Spalte zurückgibt, erkennt seit ADR 0068 auch die Werteliste-Erkennung (siehe
+  unten). ADR 0067 übersteuert ADR 0056 in diesem einen Punkt.
 
 ## [1.12.2] - 2026-11-23
 

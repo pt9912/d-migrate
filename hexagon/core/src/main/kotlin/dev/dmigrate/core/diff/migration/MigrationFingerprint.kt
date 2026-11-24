@@ -240,8 +240,14 @@ object MigrationFingerprint {
      * rechnet er nicht mehr in die Spalte ein --, damit ein Schema mit Domain-`NOT NULL` anders
      * hasht. Andere Dialekte hashen benannte Typen nicht (`projectsCustomTypes`) und sehen von den
      * Feldern nichts.
+     *
+     * v25: **die Werteliste an einer `varchar`-Spalte** (ADR 0068). PostgreSQL gibt sie als
+     * `((spalte)::text = ANY ((ARRAY[...])::text[]))` zurueck; die Erkennung uebergeht jetzt den Cast
+     * um das Array. Ein gelesenes Schema mit solchem CHECK fuehrt ihn als Wertevorrat der Spalte statt
+     * als rohen Text und hasht damit anders; alle anderen Schemas hashen bis auf den Algorithmus-Tag
+     * wie zuvor.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v24"
+    const val ALGORITHM: String = "schema-fingerprint-v25"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
