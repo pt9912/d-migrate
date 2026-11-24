@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.12.2** (stabil, [veröffentlicht 2026-11-23](https://github.com/pt9912/d-migrate/releases/tag/v1.12.2)).
+**1.13.0** (stabil, [veröffentlicht 2026-11-24](https://github.com/pt9912/d-migrate/releases/tag/v1.13.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,23 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.12.2** (2026-11-23) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **PostgreSQL: gleichnamige
+- **Aktuelles Stable** · **1.13.0** (2026-11-24) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **`schema compare` und
+  `schema migrate` sind sich bei Wertelisten-`CHECK`s einig.** Ein `CHECK`, der
+  dieselben Werte in anderer Schreibweise aufzählt (`IN`, PostgreSQLs `= ANY
+  (ARRAY[…])`, auch mit `::text[]` an einer `varchar`-Spalte, die `OR`-Kette von SQL
+  Server), ist keine Änderung mehr (ADR 0067, ADR 0068). Vorher plante `schema
+  migrate` an einer `varchar`-Spalte bei jedem Lauf `DROP`/`ADD`. Eine geänderte
+  Werteliste einer Inline-Enum endet unter PostgreSQL Datei gegen Datei mit Exit 8,
+  statt den alten `CHECK` stehen zu lassen (Issue #81). Eine verlustfreie
+  `decimal`-Erweiterung braucht kein `USING`-Overlay mehr (Issue #79). Ein
+  ungequoteter YAML-Wert, den YAML als etwas anderes liest (`[OFF, ON]` → `false,
+  true`), bricht mit Pfad und Abhilfe ab, statt sich still zu ändern. Das Fat-JAR
+  erreicht Datenbanken wieder über einen Hostnamen, und das native Image verpackt
+  das veröffentlichte Binary, statt zweimal zu kompilieren. **Der
+  Fingerabdruck-Tag steigt auf `schema-fingerprint-v25`:** Plan- und
+  Rücknahme-Artefakte aus früheren Versionen sind neu zu erzeugen.
+  1.12.2 (2026-11-23) — **PostgreSQL: gleichnamige
   `CHECK`s verschiedener Tabellen werden nicht mehr vertauscht (Issue #77).** Der
   Reader gab jeder Tabelle die Ausdrücke aller `CHECK`s dieses Namens, so dass
   `schema compare` den Ausdruck einer anderen Tabelle meldete und `schema migrate

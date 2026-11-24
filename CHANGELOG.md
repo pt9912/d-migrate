@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-11-24
+
 ### Changed
 
 - **Natives Container-Image ohne zweiten Compile (Issue #70).** `:X.Y.Z-native` und `:native` verpacken jetzt

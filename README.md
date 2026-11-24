@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.12.2**
-(stable, [released 2026-11-23](https://github.com/pt9912/d-migrate/releases/tag/v1.12.2)).
+d-migrate is a working production tool at version **1.13.0**
+(stable, [released 2026-11-24](https://github.com/pt9912/d-migrate/releases/tag/v1.13.0)).
 
 The current capabilities:
 
@@ -161,8 +161,22 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.12.2** (2026-11-23) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **PostgreSQL: `CHECK`s with
+- **Current stable** · **1.13.0** (2026-11-24) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **`schema compare` and
+  `schema migrate` agree on value-list `CHECK`s.** A `CHECK` that lists the same
+  values in another notation (`IN`, PostgreSQL's `= ANY (ARRAY[…])`, also with
+  `::text[]` at a `varchar` column, SQL Server's `OR` chain) is no longer a change
+  (ADR 0067, ADR 0068); before, `schema migrate` planned `DROP`/`ADD` on every run at
+  a `varchar` column. A changed inline-enum value list on PostgreSQL file against
+  file now stops with exit 8 instead of leaving the old `CHECK` in place (Issue #81),
+  a lossless `decimal` widening needs no `USING` overlay (Issue #79), and an
+  unquoted YAML value that YAML reads as something else (`[OFF, ON]` → `false,
+  true`) now fails with path and fix instead of changing silently. The fat JAR
+  reaches databases by hostname again, and the native image packs the released
+  binary instead of compiling twice. **The fingerprint tag rises to
+  `schema-fingerprint-v25`:** plan and rollback artefacts from earlier versions
+  must be regenerated.
+  1.12.2 (2026-11-23) — **PostgreSQL: `CHECK`s with
   the same name on different tables are no longer swapped (Issue #77).** The
   reader gave every table the expressions of all `CHECK`s with that name, so
   `schema compare` reported another table's expression and `schema migrate
