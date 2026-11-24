@@ -212,6 +212,7 @@ internal object PostgresDiffTableOps {
         // Dann gibt es keinen Cast, fuer den eine `USING`-Angabe noetig waere —
         // und nichts, was eine `TYPE`-Anweisung zu tun haette.
         val typeUnchanged = typeSql == declaredTypeSql(sourceType, ctx)
+        if (PostgresEnumCheckUpName.blocks(op, ctx, table, column, sourceType)) return
         val usingClause = if (typeUnchanged) {
             ""
         } else {

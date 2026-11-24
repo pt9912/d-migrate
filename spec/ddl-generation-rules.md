@@ -2326,6 +2326,14 @@ Katalogseite, ist der Name belegt oder
 würde gekürzt, rendert der Down kein `DROP` mit erratenem Namen, sondern blockiert mit
 `ROLLBACK_NOT_POSSIBLE` (Diagnose `POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN`).
 
+Den Katalognamen des **alten** CHECKs braucht schon der Up. Er steht in der Ist-Seite als
+benannter Wertevorrat-CHECK (aus einer Datenbank gelesen), oder die Ist-Seite ist ein Katalog.
+Führt die Ist-Seite den Wertevorrat nur inline am Spaltentyp, also eine Datei (auch mit
+`--target-version`), rendert der Up kein `DROP` mit erratenem Namen und legt den neuen CHECK auch
+nicht allein an. Der alte bliebe stehen und wiese neue Werte weiter ab. Er blockiert mit
+`MANUAL_ACTION_REQUIRED` (Diagnose `POSTGRES_ENUM_CHECK_NAME_UNKNOWN`). Eine Textspalte, die erst
+einen Wertevorrat erhält, hat keinen alten CHECK und ist davon nicht betroffen.
+
 Führt die Spalte **mehrere** Wertevorrat-CHECKs, meldet der Vergleich keinen davon als Werteliste
 des Spaltentyps, sondern jeden als eigenen Abgang (`DropConstraint`). Der Up löst sie dann über
 diese Operationen, jeden Namen genau einmal, und legt den neuen CHECK unbenannt an; die

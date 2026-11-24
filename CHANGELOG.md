@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DECIMAL(12,4)` → `DECIMAL(14,4)`. Erweitert sich die Spalte, ohne dass Nach- oder Vorkommastellen weniger
   werden (`s' ≥ s` und `p' − s' ≥ p − s`), entsteht jetzt `ALTER COLUMN … TYPE DECIMAL(p',s')` ohne `USING`. Eine
   Verengung braucht weiter ein Overlay `using-expression`.
+- **PostgreSQL: Geänderte Werteliste einer Inline-Enum blockiert Datei gegen Datei, statt den alten CHECK
+  stehen zu lassen (Issue #81).** `schema migrate --target file:` legte für eine erweiterte oder verkürzte
+  `values`-Liste nur den neuen CHECK an. Den alten konnte es nicht lösen, weil eine Datei dessen Katalognamen nicht
+  kennt. Die Datenbank trug danach zwei CHECKs, und der alte wies neue Werte ab, bei Exit 0 ohne Diagnose. Jetzt
+  blockiert der Up dort mit `POSTGRES_ENUM_CHECK_NAME_UNKNOWN` (Exit 8), so wie der Down in derselben Lage. Gegen
+  die Datenbank (`--target db:`) löst er den alten CHECK unter seinem Katalognamen und legt den neuen an.
 - **Das Fat-JAR (`d-migrate-X.Y.Z-all.jar`) erreicht Datenbanken über einen Hostnamen.** Bis 1.12.2 brach jeder
   Befehl, der einen Namen auflöst, sofort mit `ServiceConfigurationError … DnsjavaInetAddressResolverProvider not
   found` ab (Exit 1). Gemessen an den veröffentlichten JARs von 1.12.1 und 1.12.2. Ursache: `dnsjava` ist ein
