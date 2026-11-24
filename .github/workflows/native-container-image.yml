@@ -73,12 +73,15 @@ jobs:
           fi
 
       - name: Checkout repository
-        # Der Tag-Ref selbst, nie ein Branch: beim Aufruf aus native-image.yml der ausloesende Tag,
-        # beim Dispatch der Input. Voller Verlauf samt aller Tags, weil `:native` gegen den hoechsten Stable-Tag
-        # entschieden wird. Existiert der Tag nicht, scheitert der Checkout.
+        # Der Stand DIESES Workflows, nicht der Tag: gebraucht werden nur Dockerfile, Makefile und
+        # das Smoke-Schema, denn das Binary kommt fertig vom Release. Ein aelterer Tag kennt die
+        # Stage native-runtime-prebuilt und `make native-runtime-from-binary` nicht; eine
+        # Nachlieferung fuer ihn scheiterte sonst an "No rule to make target" (so geschehen beim
+        # ersten Probelauf fuer v1.12.2). Beim Aufruf aus native-image.yml ist der Stand ohnehin der
+        # Tag-Commit. Alle Tags werden geholt, weil `:native` gegen den hoechsten Stable-Tag
+        # entschieden wird und der naechste Schritt prueft, dass der Tag existiert.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
           fetch-depth: 0
           fetch-tags: true
 

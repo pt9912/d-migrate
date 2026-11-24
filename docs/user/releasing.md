@@ -714,9 +714,11 @@ gh workflow run native-container-image.yml -f tag=vX.Y.Z
 gh workflow run native-container-image.yml -f tag=vX.Y.Z -f publish=true
 ```
 
-Der Workflow checkt den Tag aus (er muss existieren und auf
-`^v[0-9]+\.[0-9]+\.[0-9]+` passen), braucht das `linux-x64`-Asset am Release und
-lässt `:native` unberührt, wenn eine höhere Stable-Version existiert.
+Der Tag muss existieren und auf `^v[0-9]+\.[0-9]+\.[0-9]+` passen, und am Release
+muss das `linux-x64`-Asset hängen. Ausgecheckt wird der Stand des Workflows,
+nicht der Tag. Er braucht nur Dockerfile und Makefile, und ein älterer Tag kennt
+das Verpacken eines fertigen Binarys noch nicht. `:native` bleibt unberührt, wenn
+eine höhere Stable-Version existiert.
 
 Das native Image ist eine **zusätzliche** Distributionsklasse — es ersetzt weder
 das JVM-OCI-Image noch die rohen Binaries.
