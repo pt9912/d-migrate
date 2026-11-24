@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DECIMAL(12,4)` → `DECIMAL(14,4)`. Erweitert sich die Spalte, ohne dass Nach- oder Vorkommastellen weniger
   werden (`s' ≥ s` und `p' − s' ≥ p − s`), entsteht jetzt `ALTER COLUMN … TYPE DECIMAL(p',s')` ohne `USING`. Eine
   Verengung braucht weiter ein Overlay `using-expression`.
+- **Das Fat-JAR (`d-migrate-X.Y.Z-all.jar`) erreicht Datenbanken über einen Hostnamen.** Bis 1.12.2 brach jeder
+  Befehl, der einen Namen auflöst, sofort mit `ServiceConfigurationError … DnsjavaInetAddressResolverProvider not
+  found` ab (Exit 1). Gemessen an den veröffentlichten JARs von 1.12.1 und 1.12.2. Ursache: `dnsjava` ist ein
+  Multi-Release-Jar, und dem Manifest des Fat-JARs fehlte `Multi-Release: true`. ZIP, TAR, Docker-Image und
+  Homebrew waren nicht betroffen. `assembleReleaseAssets` prüft das jetzt mit einer Verbindung über `localhost`
+  (`smokeReleaseJar`).
 - **`schema compare`: Ein Wertelisten-`CHECK` mit gleichem Wertevorrat ist keine Änderung mehr (Issue #80,
   ADR 0067).** PostgreSQL gibt `a_state IN ('OFF','ON')` als `(a_state = ANY (ARRAY['OFF'::text,
   'ON'::text]))` zurück. `schema compare` meldete deshalb jede Tabelle mit Werteliste als geändert, auch direkt

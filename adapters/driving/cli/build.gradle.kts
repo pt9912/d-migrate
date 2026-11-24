@@ -270,6 +270,13 @@ tasks.named<ShadowJar>("shadowJar") {
     isZip64 = true
     manifest {
         attributes["Main-Class"] = application.mainClass.get()
+        // Mehrere Abhaengigkeiten sind Multi-Release-Jars. dnsjava (ueber hadoop-common) meldet
+        // seinen InetAddressResolverProvider in META-INF/services, die Klasse liegt aber nur unter
+        // META-INF/versions/18/. Ohne dieses Attribut liest die JVM das Verzeichnis nicht, und
+        // jede Namensaufloesung scheitert mit ServiceConfigurationError: das Fat-JAR erreicht dann
+        // keine Datenbank ueber einen Hostnamen. `smokeReleaseJar` unten prueft genau das. Die
+        // ZIP-Distribution traegt die Jars mit ihren eigenen Manifesten und ist nicht betroffen.
+        attributes["Multi-Release"] = "true"
     }
 }
 
@@ -340,10 +347,40 @@ val verifyThirdPartyNotices = tasks.register("verifyThirdPartyNotices") {
     }
 }
 
+// Startet das Fat-JAR mit einer Verbindung ueber einen HOSTNAMEN, ohne dass dort eine Datenbank
+// laeuft. Erwartet ist der gewoehnliche Verbindungsfehler (Exit 4). Ein `--help` loest keinen Namen
+// auf und konnte deshalb nicht bemerken, dass das Fat-JAR an dieser Stelle mit
+// ServiceConfigurationError abbrach (Exit 1, siehe Multi-Release oben).
+val smokeReleaseJar = tasks.register("smokeReleaseJar") {
+    group = "verification"
+    description = "Fail if the fat JAR cannot resolve a hostname (expects a plain connection error, exit 4)."
+    val jar = tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile }
+    val scratch = layout.buildDirectory.dir("tmp/smokeReleaseJar")
+    inputs.file(jar)
+    doLast {
+        val java = File(System.getProperty("java.home"), "bin/java").absolutePath
+        val output = scratch.get().asFile.apply { mkdirs() }.resolve("never-written.yaml")
+        val process = ProcessBuilder(
+            java, "-jar", jar.get().asFile.absolutePath,
+            "schema", "reverse",
+            "--source", "postgresql://smoke:smoke@localhost:1/smoke",
+            "--output", output.absolutePath,
+        ).redirectErrorStream(true).start()
+        val log = process.inputStream.bufferedReader().readText()
+        val exit = process.waitFor()
+        if ("ServiceConfigurationError" in log || exit != 4) {
+            throw GradleException(
+                "Fat-JAR-Smoke: erwartet Exit 4 (Verbindungsfehler), bekommen Exit $exit:\n" +
+                    log.lineSequence().filterNot { it.trimStart().startsWith("at ") }.take(5).joinToString("\n"),
+            )
+        }
+    }
+}
+
 tasks.register("assembleReleaseAssets") {
     group = "distribution"
     description = "Build ZIP, TAR, fat JAR, and SHA256 into build/release."
-    dependsOn(writeReleaseChecksums, verifyThirdPartyNotices)
+    dependsOn(writeReleaseChecksums, verifyThirdPartyNotices, smokeReleaseJar)
 }
 
 

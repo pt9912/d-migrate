@@ -1,6 +1,6 @@
 # Fat-JAR: `Multi-Release` fehlt — keine Datenbankverbindung über einen Hostnamen
 
-- **Status**: Draft mit Scope (2026-11-24). Aktiv beim ersten Implementierungs-Commit.
+- **Status**: In Arbeit (2026-11-24). P1-P4 umgesetzt, siehe „Stand" am Ende; offen ist die Abnahme gegen die DoD.
 - **Ziel**: `java -jar d-migrate-X.Y.Z-all.jar` verbindet sich wie ZIP, TAR, Docker und
   Homebrew mit einer Datenbank, die über einen Hostnamen angesprochen wird. Die Release-Prüfung
   belegt das an jedem Release, nicht nur `--help`.
@@ -80,3 +80,21 @@ einen Hostnamen. Der CHANGELOG nennt unter `Fixed` die betroffenen Versionen.
 - Soll das Fat-JAR weiter ausgeliefert werden? Es ist der einzige Weg ohne Launcher-Skript, aber die
   Distributionsklasse, die die Release-Prüfung am wenigsten abdeckt. Diese Frage entscheidet der Eigner;
   der Plan setzt voraus, dass es bleibt.
+
+## Stand (2026-11-24)
+
+- **P1:** `attributes["Multi-Release"] = "true"` am `shadowJar` (`adapters/driving/cli/build.gradle.kts`).
+  Geprüft: Unter `META-INF/versions/` liefern mehrere Jars nur `module-info.class` doppelt, sonst ist jede
+  Datei eindeutig. Auf dem Klassenpfad hat `module-info.class` keine Wirkung.
+- **P2:** Der Task `smokeReleaseJar` hängt an `assembleReleaseAssets`. Er startet das Fat-JAR mit
+  `schema reverse --source postgresql://smoke:smoke@localhost:1/smoke` und erwartet Exit 4 ohne
+  `ServiceConfigurationError`. Er läuft damit bei `make release-assets`, im Release-Preflight und an jedem
+  Tag (`build.yml`, `release-homebrew.yml`). Ein eigener Server ist nicht nötig. Rot-Beleg: Ohne das
+  Attribut scheitert `make release-assets` an diesem Task mit genau der Meldung aus dem Befund (Exit 1).
+  Mit dem Attribut ist er grün.
+- **Gegen eine echte Datenbank** (PostgreSQL 18, gebautes JAR): `schema compare` meldet `IDENTICAL`, und
+  `schema migrate --execute` schreibt den geänderten CHECK.
+- **Artefakt:** `make release-assets` ist grün, `sha256sum -c` stimmt. Die Jar-Liste der ZIP gleicht der
+  von v1.12.2 (Liste verglichen).
+- **P3/P4:** `releasing.md` 3.2, 4.4 und Checkliste geprüft und ergänzt; CHANGELOG unter `Fixed`.
+

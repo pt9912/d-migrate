@@ -158,6 +158,10 @@ make release-assets 2>&1 | tee /tmp/release-assets.log
 ls -1 adapters/driving/cli/build/release
 cat adapters/driving/cli/build/release/*.sha256
 java -jar adapters/driving/cli/build/release/*-all.jar --help
+# Mit Hostname: ohne Datenbank dort ist Exit 4 (Verbindungsfehler) richtig,
+# ein ServiceConfigurationError (Exit 1) ist der Defekt
+java -jar adapters/driving/cli/build/release/*-all.jar schema reverse \
+  --source postgresql://smoke:smoke@localhost:1/smoke --output /tmp/never.yaml; echo "exit=$?"
 ```
 
 `make release-assets` baut das `release-assets`-Stage-Image
@@ -173,6 +177,12 @@ Bundle enthält `ojdbc11` unter den Oracle Free Use Terms and Conditions, und
 die Pflicht trifft die Weiterverbreitung — eine Datei im Repository erfüllt
 sie für niemanden, der ein ZIP herunterlädt. Für das Runtime-Image prüft es
 `make docker-smoke`.
+
+Außerdem startet `assembleReleaseAssets` das Fat-JAR mit einer Verbindung
+über einen Hostnamen (`smokeReleaseJar`) und erwartet den gewöhnlichen
+Verbindungsfehler, Exit 4. `--help` löst keinen Namen auf. Deshalb blieb
+unbemerkt, dass das Fat-JAR bis 1.12.2 bei jeder Namensauflösung mit
+`ServiceConfigurationError` abbrach. Seinem Manifest fehlte `Multi-Release: true`.
 
 Wichtig:
 
@@ -750,6 +760,8 @@ gh run download "${RUN_ID}" -n release-assets -D ./release-assets
 ls -1 ./release-assets
 cat ./release-assets/d-migrate-X.Y.Z.sha256
 java -jar ./release-assets/d-migrate-X.Y.Z-all.jar --help
+java -jar ./release-assets/d-migrate-X.Y.Z-all.jar schema reverse \
+  --source postgresql://smoke:smoke@localhost:1/smoke --output /tmp/never.yaml; echo "exit=$?"   # erwartet 4
 ```
 
 Wichtig:
@@ -826,7 +838,9 @@ Danach die Notes wie oben setzen.
 
 - [ ] GitHub-Release ist sichtbar unter `https://github.com/pt9912/d-migrate/releases/tag/vX.Y.Z`
 - [ ] GitHub-Release enthält ZIP, TAR, Fat JAR und SHA256
-- [ ] Fat JAR startet mit `java -jar d-migrate-X.Y.Z-all.jar --help`
+- [ ] Fat JAR startet mit `java -jar d-migrate-X.Y.Z-all.jar --help` und löst einen Hostnamen auf
+      (`schema reverse --source postgresql://smoke:smoke@localhost:1/smoke …` endet mit Exit 4, nicht mit
+      `ServiceConfigurationError`)
 - [ ] Launcher-Distribution startet mit `bin/d-migrate --help`
 - [ ] Image existiert: `docker pull ghcr.io/pt9912/d-migrate:X.Y.Z`
 - [ ] Image-Smoke-Test:
@@ -1011,7 +1025,7 @@ Für jeden Release abhaken:
 - [ ] `docker build --target runtime -t d-migrate:pre-release .` grün (alle Tests + Smoke-Image; **nicht** `make docker-build`, s. §3.1)
 - [ ] lokaler Asset-Preflight für `assembleReleaseAssets` grün
 - [ ] `adapters/driving/cli/build/release` enthält ZIP, TAR, Fat JAR und SHA256 <!-- d-check:ignore (Build-Ausgabe, entsteht zur Build-Zeit; ADR 0011) -->
-- [ ] Fat JAR aus dem lokalen Preflight startet mit `--help`
+- [ ] Fat JAR aus dem lokalen Preflight startet mit `--help` und löst einen Hostnamen auf (Exit 4 ohne Datenbank, s. 3.2)
 - [ ] Smoke-Tests gegen Fixture-Schemas grün (generate, compare file/file)
 - [ ] DB-basierte Smoke-Tests grün (reverse, compare file/db + db/db, transfer)
 - [ ] CHANGELOG `[Unreleased]` reviewed
