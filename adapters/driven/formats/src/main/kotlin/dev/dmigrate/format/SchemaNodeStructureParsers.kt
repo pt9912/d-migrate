@@ -126,13 +126,13 @@ private fun parseObjectDefault(node: JsonNode): DefaultValue {
         )
     }
     return when (val fieldName = fields.first()) {
-        "sequence_nextval" -> DefaultValue.SequenceNextVal(node.get("sequence_nextval").asText())
+        "sequence_nextval" -> DefaultValue.SequenceNextVal(node.get("sequence_nextval").asSchemaText())
         // Die eindeutige Form eines Funktions-Defaults. Der skalare Weg raet
         // bewusst nicht: `default: "newid()"` waere von einem Text-Default
         // nicht zu unterscheiden.
-        "function" -> DefaultValue.FunctionCall(node.get("function").asText())
+        "function" -> DefaultValue.FunctionCall(node.get("function").asSchemaText())
         "nextval" -> {
-            val seqName = node.get("nextval")?.asText() ?: "<name>"
+            val seqName = node.get("nextval")?.asSchemaText() ?: "<name>"
             throw IllegalArgumentException(
                 "Legacy default form '{ nextval: $seqName }' is not supported since 0.9.3. " +
                     "Use '{ sequence_nextval: $seqName }' instead. " +
@@ -203,7 +203,7 @@ private fun parseIncludeColumns(node: JsonNode?): List<String> {
     if (node == null || !node.isArray) return emptyList()
     return node.map { columnNode ->
         require(columnNode.isTextual) { "Index 'include_columns' must be a list of column names" }
-        columnNode.asText()
+        columnNode.asSchemaText()
     }
 }
 
@@ -211,7 +211,7 @@ private fun parseIndexColumns(node: JsonNode?): List<IndexColumn> {
     if (node == null || !node.isArray) return emptyList()
     return node.map { columnNode ->
         when {
-            columnNode.isTextual -> IndexColumn(columnNode.asText())
+            columnNode.isTextual -> IndexColumn(columnNode.asSchemaText())
             // Ein Ausdruck traegt keinen Spaltennamen; `expression` und `name`
             // schliessen einander aus.
             columnNode.isObject && columnNode.has("expression") -> {

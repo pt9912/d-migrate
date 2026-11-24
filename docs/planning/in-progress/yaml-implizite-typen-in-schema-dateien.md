@@ -1,6 +1,6 @@
 # Schema-YAML: implizite YAML-1.1-Typen verändern Werte still (`values: [OFF, ON]` → `'false', 'true'`)
 
-- **Status**: Draft mit Scope (2026-11-24). Aktiv beim ersten Implementierungs-Commit.
+- **Status**: In Arbeit (2026-11-24). Richtung **A** (Eigner, 2026-11-24); P0–P4 umgesetzt, siehe „Stand" am Ende.
 - **Ziel**: Ein Wert, den das Schema als Text meint, kommt als genau dieser Text an — oder `schema validate`
   bricht laut ab und nennt Feld und Abhilfe. Kein Wert wird still umgedeutet.
 - **Herkunft**: Nebenbefund aus Issue #81 (Konsument). Gemessen 2026-11-24 am Arbeitsstand `1.13.0-SNAPSHOT`.
@@ -83,3 +83,28 @@ Rücknahme an der Ausgabe prüfen.
 
 **Doku:** `spec/schema-reference.md` beschreibt die Regel für Textwerte, das Handbuch zeigt sie am `enum`-Beispiel,
 der CHANGELOG nennt die Änderung. Falls B: ADR accepted, Fingerabdruck-Tag geprüft.
+
+## Stand (2026-11-24)
+
+- **P1:** Richtung A, laut statt still (Eigner-Freigabe 2026-11-24). Keine Datei ändert ihre Bedeutung, kein ADR
+  nötig, kein Fingerabdruck berührt (die Nutzlast entsteht erst nach dem Lesen).
+- **P2:** `YamlSchemaCodec.read` liest den Baum wie bisher mit Jackson, samt der Prüfung auf doppelte Schlüssel.
+  `YamlWrittenScalars.mark` vergleicht danach im Token-Strom je typisiertem Skalar den geschriebenen Text
+  (`JsonParser.getText()`, gemessen: liefert ihn auch für `VALUE_FALSE`, `VALUE_NUMBER_INT` usw.) mit dem Text des
+  Knotens. Bei Abweichung, und bei jedem `null` in einer Liste, ersetzt eine Unterklasse des Knotens ihn. Sie trägt
+  geschriebenen Text und Pfad. Typisierte Felder sehen den Knoten unverändert. Textfelder lesen über
+  `asSchemaText()` (alle `asText()`-Stellen der Schema-Parser) und brechen dort ab. Die Meldung erscheint als
+  Parse-Fehler (Exit 7), etwa: `tables.t.columns.a_state.values[0]: YAML liest `OFF` als Boolean (`false`), nicht
+  als Text. Setzen Sie den Wert in Anfuehrungszeichen: "OFF".`
+- **P3:** `YamlSchemaCodecWrittenScalarTest`: 12 verlustbehaftete Werte (darunter Long und BigInteger) scheitern
+  mit Pfad und Abhilfe. `version: 1.10` scheitert, `version: 1.0`, `[1, 2, 10, 99999999999]`, `[Y, n, maybe,
+  2024-01-01]` und gequotete Werte bleiben, `required: yes` bleibt `true`. Rot-Beleg: Ohne die Markierung
+  scheitern genau die 13 verlustbehafteten Specs. Der Property-Test (`YamlSchemaCodecPropertySpec`) fand
+  dabei einen NPE für ein Dokument, das nur ein Skalar ist; behoben. Kein Repo-Fixture trägt einen betroffenen
+  Wert (alle getrackten YAML-Dateien durchsucht).
+- **P4:** `spec/schema-reference.md` („Textwerte in YAML"), Anwenderhandbuch (Hinweis am Schema-Beispiel),
+  CHANGELOG.
+- **Nicht im Umfang:** Andere YAML-Leser (`.d-migrate.yaml`, Overlays, `data import --format yaml`) nutzen eigene
+  Mapper und sind nicht gemessen. Die Meldung E009 für `default: ON` an einer Textspalte bleibt, wie sie ist;
+  sie ist laut, nennt aber nicht die Ursache.
+

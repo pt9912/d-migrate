@@ -41,7 +41,7 @@ internal fun parseFunctions(node: JsonNode?): Map<String, FunctionDefinition> =
     }
 
 private fun JsonNode.toStringListOrNull(): List<String>? =
-    if (isArray) map { it.asText() } else null
+    if (isArray) map { it.asSchemaText() } else null
 
 private fun String.toRoutineSecurity(): RoutineSecurity =
     RoutineSecurity.valueOf(uppercase())
@@ -94,7 +94,7 @@ private fun parseViewColumns(node: JsonNode?): List<ViewColumnDefinition>? {
                 type = childNode.optionalText("type"),
             )
         } else {
-            ViewColumnDefinition(name = childNode.asText())
+            ViewColumnDefinition(name = childNode.asSchemaText())
         }
     }
 }
@@ -123,9 +123,9 @@ internal fun parseTriggers(node: JsonNode?): Map<String, TriggerDefinition> =
 private fun parseTriggerEvents(node: JsonNode): Set<TriggerEvent> {
     val eventNode = node["event"] ?: throw IllegalArgumentException("Missing required field: event")
     val events = if (eventNode.isArray) {
-        eventNode.map { it.asText().toTriggerEvent() }
+        eventNode.map { it.asSchemaText().toTriggerEvent() }
     } else {
-        listOf(eventNode.asText().toTriggerEvent())
+        listOf(eventNode.asSchemaText().toTriggerEvent())
     }
     require(events.isNotEmpty()) { "Trigger field 'event' must list at least one event" }
     return events.toSet()
@@ -178,11 +178,11 @@ private fun parseDependencies(node: JsonNode?): DependencyInfo? {
         // the planner's `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE`
         // block effective.
         projectionComplete = node["projection_complete"]?.asBoolean(true) ?: true,
-        tableProjectionStatus = node["table_projection_status"]?.asText()
+        tableProjectionStatus = node["table_projection_status"]?.asSchemaText()
             ?.toDependencyProjectionStatus() ?: DependencyProjectionStatus.COMPLETE,
-        columnProjectionStatus = node["column_projection_status"]?.asText()
+        columnProjectionStatus = node["column_projection_status"]?.asSchemaText()
             ?.toDependencyProjectionStatus() ?: DependencyProjectionStatus.COMPLETE,
-        routineProjectionStatus = node["routine_projection_status"]?.asText()
+        routineProjectionStatus = node["routine_projection_status"]?.asSchemaText()
             ?.toDependencyProjectionStatus() ?: DependencyProjectionStatus.COMPLETE,
         projectionSources = node["projection_sources"]?.toStringList() ?: emptyList(),
         projectionErrorClass = node.optionalText("projection_error_class"),

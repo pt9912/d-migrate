@@ -29,9 +29,12 @@ class YamlSchemaCodec : SchemaCodec {
     )
 
     override fun read(input: InputStream): SchemaDefinition {
-        val root = readMapper.readTree(input)
+        // Zweimal gelesen: einmal von Jackson zum Baum (mit der Pruefung auf doppelte Schluessel), einmal als
+        // Token-Strom, der den geschriebenen Text jedes typisierten Skalars liefert (YamlWrittenScalars).
+        val bytes = input.readBytes()
+        val root = readMapper.readTree(bytes)?.takeUnless { it.isMissingNode }
             ?: throw IllegalArgumentException("Empty YAML document")
-        return SchemaNodeParser.parse(root)
+        return SchemaNodeParser.parse(YamlWrittenScalars.mark(root, readMapper.factory.createParser(bytes)))
     }
 
     override fun write(output: OutputStream, schema: SchemaDefinition) {

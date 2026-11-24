@@ -28,6 +28,17 @@ triggers: {}                   # Trigger
 sequences: {}                  # Sequenzen
 ```
 
+### Textwerte in YAML
+
+Ein Feld, das Text erwartet (Namen, `version`, `values`, `ref_type`, Ausdrücke …), liest den Wert als
+genau den Text, der in der Datei steht. Liest YAML einen ungequoteten Wert als Wahrheitswert, Zahl
+oder leer und ergibt sich daraus ein anderer Text (`OFF` → `false`, `010` → `8`, `1.10` → `1.1`,
+`1e3` → `1000.0`, `~` → `null`), ist die Datei ungültig. Das Lesen bricht ab und nennt Pfad,
+geschriebenen Wert und Abhilfe (in Anführungszeichen setzen). Ein Eintrag `null` in einer Liste ist
+ebenfalls ungültig. Liest sich der Wert unverändert zurück (`1`, `10`, `1.0`), ist er erlaubt. Felder
+mit Typ (`required`, `precision`, …) lesen den Wert nach seinem Typ; `required: yes` bleibt `true`.
+JSON kennt die Mehrdeutigkeit nicht.
+
 ---
 
 ## Typsystem

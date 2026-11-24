@@ -234,6 +234,14 @@ prüfen.
        primary_key: [id]
    ```
 
+   **Werte, die YAML als etwas anderes liest, in Anführungszeichen setzen.** YAML liest
+   `ON`, `OFF`, `yes`, `no`, `true` und `false` ohne Anführungszeichen als Wahrheitswert. `010`
+   ist eine Oktalzahl, `1.10` die Zahl `1.1`, und `~` steht für leer. Schreiben Sie solche Werte
+   als `values: ["OFF", "ON"]` oder `version: "1.10"`. Ohne Anführungszeichen bricht d-migrate
+   das Lesen ab und nennt Feld, gelesenen Wert und Abhilfe. Werte, die sich unverändert
+   zurücklesen (`values: [1, 2]`, `version: 1.0`), bleiben erlaubt. Bis 1.12.2 wurden die
+   übrigen still umgedeutet, aus `[OFF, ON]` wurde `'false', 'true'`.
+
 2. Prüfen Sie das Schema:
 
    ```bash

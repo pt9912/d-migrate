@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DECIMAL(12,4)` → `DECIMAL(14,4)`. Erweitert sich die Spalte, ohne dass Nach- oder Vorkommastellen weniger
   werden (`s' ≥ s` und `p' − s' ≥ p − s`), entsteht jetzt `ALTER COLUMN … TYPE DECIMAL(p',s')` ohne `USING`. Eine
   Verengung braucht weiter ein Overlay `using-expression`.
+- **Schema-YAML: Ein ungequoteter Wert, den YAML als etwas anderes liest, ändert ein Textfeld nicht mehr still.**
+  Der YAML-1.1-Resolver las `values: [OFF, ON, yes, no]` als `'false', 'true', 'true', 'false'`, `010` als `'8'`,
+  `1.10` als `'1.1'` und `~` als `'null'`. `schema validate` meldete nichts, und die Datenbank lehnte danach
+  `'OFF'` ab. Jetzt bricht das Lesen eines Textfelds mit einem solchen Wert ab und nennt Pfad, geschriebenen Wert
+  und Abhilfe (`"OFF"`). Werte, die sich unverändert zurücklesen (`[1, 2]`, `version: 1.0`), und typisierte Felder
+  (`required: yes`) sind nicht betroffen. Eine Datei, die bisher still falsch gelesen wurde, scheitert jetzt
+  laut. Nebenbefund aus Issue #81.
 - **PostgreSQL: Werteliste an einer `varchar`-Spalte wird erkannt; `schema migrate` plant nicht mehr bei jedem Lauf
   `DROP`/`ADD` (ADR 0068).** PostgreSQL gibt `b IN ('OFF','ON')` an einer `varchar`-Spalte als `((b)::text = ANY
   ((ARRAY['OFF'::character varying, 'ON'::character varying])::text[]))` zurück. Diese Form kannte die
