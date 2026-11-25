@@ -19,6 +19,10 @@ import dev.dmigrate.driver.postgresContext
  * (der Reader liefert `TEXT` plus CHECK), der alte CHECK steht deshalb nur in
  * der Ist-Seite des Plans.
  *
+ * Traegt die Inline-Enum einen `values_constraint` (ADR 0069), steht der Name im Schema: Der Down loest den vom Up
+ * angelegten CHECK unter diesem Namen und stellt den alten unter seinem Namen her, ohne zu raten. Die folgende
+ * Regel gilt fuer den Fall ohne Namen.
+ *
  * Der Servername des vom Up angelegten CHECKs ist beim Rendern nicht bekannt:
  * PostgreSQL vergibt `<tabelle>_<spalte>_check`, haengt bei Kollision eine Ziffer
  * an und kuerzt lange Namen. Der Name wird deshalb nur dort abgeleitet, wo er
@@ -69,8 +73,13 @@ internal object PostgresEnumCheckRollback {
         // mit Namen in der Ist-Seite ist der Beleg; sonst muss die Ist-Seite aus einer Datenbank gelesen
         // sein. `--target-version` setzt die Serverversion auch bei Datei gegen Datei und taugt dafuer nicht.
         val catalog = ctx.options.postgresContext?.catalogRead == true
-        val dropName = createdByUp?.let { createdName(ctx.currentSchema, table, column, droppedByUp) }
-        val nameUnknown = (droppedByUp == null && !catalog) || (createdByUp != null && dropName == null)
+        // `values_constraint` (ADR 0069): steht der Name am Typ, kennt der Renderer ihn, nichts wird geraten.
+        val oldName = EnumValueCheck.explicitName(op.before)
+        val dropName = createdByUp?.let {
+            EnumValueCheck.explicitName(op.after) ?: createdName(ctx.currentSchema, table, column, droppedByUp)
+        }
+        val nameUnknown = (droppedByUp == null && !catalog && oldName == null) ||
+            (createdByUp != null && dropName == null)
         if (nameUnknown) {
             blockUnknownName(op, ctx, "$table.$column")
             return true
@@ -79,7 +88,8 @@ internal object PostgresEnumCheckRollback {
         typeStatement?.let { ctx.emit(op, it) }
         restore?.let { values ->
             val clause = EnumValueCheck.clause(column, values, ctx.sql::quote)
-            val named = droppedByUp?.let { "CONSTRAINT ${ctx.sql.quote(it.name)} " }.orEmpty()
+            val restoreName = droppedByUp?.name ?: oldName
+            val named = restoreName?.let { "CONSTRAINT ${ctx.sql.quote(it)} " }.orEmpty()
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $named$clause;")
         }
         return true

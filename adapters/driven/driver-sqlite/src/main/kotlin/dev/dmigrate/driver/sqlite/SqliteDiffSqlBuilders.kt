@@ -104,7 +104,7 @@ internal class SqliteDiffSqlBuilders {
         // `schema generate` schreibt. Ohne ihn traegt das Ziel den Vorrat
         // nirgends, und der Vergleich meldet nach jedem Lauf Drift.
         EnumValueCheck.inlineValues(col.type)?.let {
-            parts += EnumValueCheck.namedClause(table, name, it, ::quote)
+            parts += EnumValueCheck.namedClause(table, name, it, ::quote, col.type)
         }
         // Unbenannt, wie `schema generate` ihn schreibt: ein benannter CHECK
         // kaeme vom Reverse zurueck, das Soll (`ref_type`) kennt ihn nicht.

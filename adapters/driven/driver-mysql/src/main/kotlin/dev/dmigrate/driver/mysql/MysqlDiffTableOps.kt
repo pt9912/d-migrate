@@ -129,6 +129,7 @@ internal object MysqlDiffTableOps {
         for ((colName, col) in op.table.columns.inOrdinalOrder()) {
             warnIfDegradingEnum(op, ctx, colName, col)
             MysqlArrayDegradation.warnIfArray(op, ctx, colName, col)
+            MysqlEnumCheckNameIgnored.warnIfNamed(op, ctx, colName, col)
             MysqlIdentityModeDegradation.warnIfAlways(op, ctx, colName, col)
         }
         for (idx in op.table.indices) {
@@ -239,6 +240,7 @@ internal object MysqlDiffTableOps {
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
         warnIfDegradingEnum(op, ctx, column, op.column)
         MysqlArrayDegradation.warnIfArray(op, ctx, column, op.column)
+        MysqlEnumCheckNameIgnored.warnIfNamed(op, ctx, column, op.column)
         MysqlIdentityModeDegradation.warnIfAlways(op, ctx, column, op.column)
         if (seqDefault != null) {
             MysqlDiffSequenceOps.emitSupportTriggerForColumn(
@@ -321,6 +323,7 @@ internal object MysqlDiffTableOps {
         val line = ctx.sql.columnLine(column, effective)
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN $line;")
         MysqlArrayDegradation.warnIfArray(op, ctx, column, effective)
+        MysqlEnumCheckNameIgnored.warnIfNamed(op, ctx, column, effective)
         MysqlIdentityModeDegradation.warnIfAlways(op, ctx, column, effective)
     }
 
@@ -376,6 +379,7 @@ internal object MysqlDiffTableOps {
         val line = ctx.sql.columnLine(column, effective)
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY COLUMN $line;")
         MysqlArrayDegradation.warnIfArray(op, ctx, column, effective)
+        MysqlEnumCheckNameIgnored.warnIfNamed(op, ctx, column, effective)
     }
 
     /**
@@ -436,6 +440,7 @@ internal object MysqlDiffTableOps {
         // entsteht dabei genauso wie beim `ADD COLUMN`. Einmal je Operation,
         // nicht je Anweisung — der Tausch schreibt fuenf davon.
         MysqlArrayDegradation.warnIfArray(op, ctx, column, declaration)
+        MysqlEnumCheckNameIgnored.warnIfNamed(op, ctx, column, declaration)
         if (becomingComputed) {
             ctx.emit(op, "ALTER TABLE $quotedTable DROP COLUMN ${ctx.sql.quote(column)};", swapRisk(dataLossPossible = true))
             ctx.emit(

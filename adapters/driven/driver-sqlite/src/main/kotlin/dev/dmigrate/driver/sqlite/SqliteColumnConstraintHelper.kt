@@ -205,7 +205,7 @@ internal class SqliteColumnConstraintHelper(
         if (col.required) parts += "NOT NULL"
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
         if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
-        parts += EnumValueCheck.namedClause(tableName, colName, type.values!!, quoteIdentifier)
+        parts += EnumValueCheck.namedClause(tableName, colName, type.values!!, quoteIdentifier, type)
         if (col.references != null && (tableName to colName) !in deferredFks) parts += inlineForeignKey(col.references!!)
         return parts.joinToString(" ")
     }

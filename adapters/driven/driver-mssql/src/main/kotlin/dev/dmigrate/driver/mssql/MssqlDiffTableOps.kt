@@ -391,10 +391,8 @@ internal object MssqlDiffTableOps {
         val deps = dependenciesFor(ctx, table, column, forDrop = false)
         val recreates = MssqlDiffColumnDependencies.recreateStatements(op, ctx, deps) ?: return null
         val checks = generatedChecks(ctx, table, column, target, ctx.schemaForDirection())
-        val bearingChecks = generatedChecks(
-            ctx, table, column, ctx.schemaBeforeChange()?.tables?.get(table)?.columns?.get(column),
-            ctx.schemaBeforeChange(),
-        )
+        val bearingColumn = ctx.schemaBeforeChange()?.tables?.get(table)?.columns?.get(column)
+        val bearingChecks = generatedChecks(ctx, table, column, bearingColumn, ctx.schemaBeforeChange())
         val out = mutableListOf<String>()
         // Ein Volltext-Index auf der Spalte macht die Typaenderung zu einem
         // eigenen Vorgang: er muss weichen (ausserhalb der Transaktion), die
@@ -415,7 +413,9 @@ internal object MssqlDiffTableOps {
         }
         out += MssqlDiffColumnDependencies.dropStatements(ctx, deps)
         if (bearingChecks.isNotEmpty() || checks.isNotEmpty()) {
-            out += ctx.sql.dropConstraintSql(table, MssqlConstraintNames.check(table, column))
+            out += ctx.sql.dropConstraintSql(
+                table, MssqlConstraintNames.valueCheck(table, column, bearingColumn, ctx.schemaBeforeChange()),
+            )
         }
         out += ctx.sql.dropDefaultConstraintSql(table, column)
         // Nicht `toSql(type)`: der Mapper kennt nur den neutralen Typ und macht
@@ -517,10 +517,12 @@ internal object MssqlDiffTableOps {
         // steht in keiner Modell-Liste. `DROP COLUMN` scheitert an ihm ebenso
         // (Msg 5074) — wiederhergestellt wird hier nichts.
         val bearing = ctx.schemaOppositeOfDirection()
-        if (generatedChecks(ctx, table, column, bearing?.tables?.get(table)?.columns?.get(column), bearing)
-                .isNotEmpty()
-        ) {
-            ctx.emit(op, ctx.sql.dropConstraintSql(table, MssqlConstraintNames.check(table, column)))
+        val bearingColumn = bearing?.tables?.get(table)?.columns?.get(column)
+        if (generatedChecks(ctx, table, column, bearingColumn, bearing).isNotEmpty()) {
+            ctx.emit(
+                op,
+                ctx.sql.dropConstraintSql(table, MssqlConstraintNames.valueCheck(table, column, bearingColumn, bearing)),
+            )
         }
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")

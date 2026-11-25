@@ -92,7 +92,7 @@ internal class PostgresColumnConstraintHelper(
                 if (col.required) parts += "NOT NULL"
                 if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
                 if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
-                parts += EnumValueCheck.clause(colName, enumValues, quoteIdentifier)
+                parts += EnumValueCheck.clauseNamedIfSet(type, colName, enumValues, quoteIdentifier)
                 return parts.joinToString(" ")
             }
         }

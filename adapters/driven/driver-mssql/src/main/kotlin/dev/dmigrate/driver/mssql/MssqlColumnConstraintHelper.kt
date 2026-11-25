@@ -19,6 +19,7 @@ import dev.dmigrate.driver.RawSqlExpressionPortability
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.metadata.ComputedColumnClause
+import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.SkippedObject
 
 /**
@@ -407,7 +408,9 @@ internal class MssqlColumnConstraintHelper(
         body = "",
     )
 
-    private fun checkName(ctx: ColumnContext): String = MssqlConstraintNames.check(ctx.tableName, ctx.colName)
+    /** Der gesetzte `values_constraint` einer Inline-Enum (ADR 0069), sonst die Konvention. */
+    private fun checkName(ctx: ColumnContext): String =
+        EnumValueCheck.explicitName(ctx.col.type) ?: MssqlConstraintNames.check(ctx.tableName, ctx.colName)
 
     /**
      * W138: SQL Server zählt NULL in UNIQUE-Constraints als Wert — höchstens

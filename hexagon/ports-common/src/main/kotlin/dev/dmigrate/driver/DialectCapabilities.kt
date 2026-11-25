@@ -380,6 +380,13 @@ data class DialectCapabilities(
      * keine Domain.
      */
     val readsDomainColumnsAsRefType: Boolean = false,
+    /**
+     * Ob der Dialekt den Wertevorrat einer **Inline**-Enum als benannten CHECK durchsetzt und den Namen zurueckgibt
+     * (`values_constraint`, ADR 0069). PostgreSQL, SQLite, SQL Server und Oracle tun es; MySQL rendert einen nativen
+     * `ENUM` ohne CHECK, der Name hat dort kein Gegenstueck und bleibt im Vergleich ohne Wirkung (und `W165`
+     * beim Erzeugen).
+     */
+    val namesInlineEnumCheck: Boolean = false,
 ) {
     companion object {
         /**

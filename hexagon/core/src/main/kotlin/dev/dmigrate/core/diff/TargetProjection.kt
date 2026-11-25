@@ -150,4 +150,11 @@ data class TargetProjection(
      * sonst projizieren beide Seiten.
      */
     val domainProjectionCurrentOnly: Boolean = false,
+    /**
+     * Ob der Name des CHECKs einer Inline-Enum (`values_constraint`, ADR 0069) verglichen wird. Setzt die
+     * **Soll**-Seite einen Namen und die Ist-Seite fuehrt den CHECK unter einem anderen, ist das eine Typaenderung
+     * (der Up loest den alten CHECK und legt den neuen unter dem Namen an). Ohne gesetzten Namen zaehlt der Name
+     * nicht, wie bisher. MySQL fuehrt keinen CHECK; dort bleibt der Name ohne Wirkung.
+     */
+    val comparesValuesConstraintName: Boolean = false,
 )

@@ -385,3 +385,16 @@ entries:
         path_type: test
       - source: "adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaMigrateWithoutRowidSqliteTest.kt"
         path_type: test
+
+  # W165 — `values_constraint` an einer Inline-Enum, die MySQL als natives `ENUM` ohne CHECK rendert (ADR 0069): der
+  # Name hat dort kein Gegenstueck und bleibt ohne Wirkung. Generate und Migrate melden ihn.
+  - code: W165
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlEnumCheckNameIgnoredTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlEnumCheckNameIgnored.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlEnumCheckNameIgnoredTest.kt"
+        path_type: test

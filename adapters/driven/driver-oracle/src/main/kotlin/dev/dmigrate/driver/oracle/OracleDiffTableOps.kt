@@ -15,6 +15,7 @@ import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.metadata.ComputedColumnClause
+import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -321,7 +322,16 @@ internal object OracleDiffTableOps {
             ?.takeIf { it.isNotEmpty() }
         // Der alte Wertevorrat zuerst: sein CHECK belegt den Namen, den der
         // neue tragen soll, und er wiese Werte ab, die der neue erlaubt.
-        ctx.enumValueCheckName(table, column)?.let { name ->
+        //
+        // Den Namen liefert, in dieser Reihenfolge: die gelesene CHECK-Zeile der Ist-Seite (Datenbank), der
+        // `values_constraint` der Inline-Enum (ADR 0069) und, fuer eine Inline-Enum ohne Namen, die Konvention. Oracle
+        // vergibt keine Namen selbst: ein CHECK, den `schema generate` aus einer Datei angelegt hat, heisst
+        // `ck_<tabelle>_<spalte>`, und ohne diesen Schritt legte der Up den neuen neben den alten.
+        val dropName = ctx.enumValueCheckName(table, column)
+            ?: EnumValueCheck.explicitName(sourceType)
+            ?: OracleColumnConstraintHelper.enumCheckName(table, column)
+                .takeIf { EnumValueCheck.inlineValues(sourceType) != null }
+        dropName?.let { name ->
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT ${ctx.sql.quote(name)};")
         }
         // Eine wertebasierte Enum-Spalte ist so breit wie ihr laengster Wert —
@@ -330,7 +340,7 @@ internal object OracleDiffTableOps {
         val typeSql = targetValues?.let { "VARCHAR2(${OracleTypeMapper.enumWidth(it)})" } ?: ctx.sql.toSql(targetType)
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} MODIFY ${ctx.sql.quote(column)} $typeSql;")
         targetValues?.let { values ->
-            ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD ${columnHelper.enumCheckClause(table, column, values)};")
+            ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD ${columnHelper.enumCheckClause(table, column, values, targetType)};")
         }
         // Uebrig bleibt der Fall, in dem es nichts durchzusetzen gibt: ein Enum
         // ohne Werte, oder ein `refType` auf eine DOMAIN (die als CLOB dasteht).

@@ -261,6 +261,13 @@ fun capabilityResolvesRefTypeVocabulary(dialect: DatabaseDialect): Boolean =
     DialectCapabilities.forDialect(dialect).resolvesRefTypeVocabulary
 
 /**
+ * Ob der Dialekt den CHECK einer Inline-Enum unter einem Namen fuehrt (`values_constraint`, ADR 0069). Dann
+ * vergleicht der ziel-bewusste Vergleich den gesetzten Namen; MySQL (natives `ENUM`) ignoriert ihn.
+ */
+fun capabilityNamesInlineEnumCheck(dialect: DatabaseDialect): Boolean =
+    DialectCapabilities.forDialect(dialect).namesInlineEnumCheck
+
+/**
  * Ob der Reverse des Dialekts eine Domain-Spalte als `ref_type` zurueckgibt (PostgreSQL). Dann projiziert der
  * Vergleich nur die Datenbank-Seite ueber den Basistyp; der Abdruck faltet beide Seiten.
  */

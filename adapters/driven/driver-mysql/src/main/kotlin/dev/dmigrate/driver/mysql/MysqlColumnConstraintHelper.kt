@@ -30,6 +30,7 @@ internal class MysqlColumnConstraintHelper(
         // eine berechnete Array-Spalte verliert ihre Elementart genauso wie
         // eine gewoehnliche. Die Note entsteht deshalb vor der Auswahl.
         MysqlArrayDegradation.noteFor(tableName, colName, col.type)?.let { notes += it }
+        MysqlEnumCheckNameIgnored.noteFor(tableName, colName, col.type)?.let { notes += it }
         // `mode: always` hat auf MySQL keine Entsprechung — gemeldet dort, wo
         // die Spalte wirklich als AUTO_INCREMENT entsteht. Welche Typen das
         // sind, entscheidet das Praedikat selbst; hier stand die Pruefung

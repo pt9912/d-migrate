@@ -60,6 +60,8 @@ object PostgresCapabilities : DialectReadCapabilityProvider {
             rendersAutoIncrementAsIdentity = false,
             // Eine Spalte vom Typ einer Domain nennt die Domain; der Reverse liest sie als `ref_type`.
             readsDomainColumnsAsRefType = true,
+            // Der CHECK einer Inline-Enum steht im Katalog unter seinem Namen (ADR 0069).
+            namesInlineEnumCheck = true,
         )
     }
 

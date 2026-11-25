@@ -13,6 +13,7 @@ import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.metadata.ComputedColumnClause
+import dev.dmigrate.driver.metadata.EnumValueCheck
 import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
@@ -199,7 +200,7 @@ internal class OracleColumnConstraintHelper(
     private fun boundedEnumColumn(ctx: ColumnContext, values: List<String>): String {
         val parts = mutableListOf(quoteIdentifier(ctx.colName), "VARCHAR2(${OracleTypeMapper.enumWidth(values)})")
         parts += nullabilityDefaultUnique(ctx, lob = false)
-        if (ctx.inlineNamedConstraints) parts += enumCheckClause(ctx.tableName, ctx.colName, values)
+        if (ctx.inlineNamedConstraints) parts += enumCheckClause(ctx.tableName, ctx.colName, values, ctx.col.type)
         return parts.joinToString(" ")
     }
 
@@ -236,7 +237,7 @@ internal class OracleColumnConstraintHelper(
                     "UNIQUE (${quoteIdentifier(colName)})",
             )
         }
-        enumValuesOf(col.type, schema)?.let { add(enumCheckClause(tableName, colName, it)) }
+        enumValuesOf(col.type, schema)?.let { add(enumCheckClause(tableName, colName, it, col.type)) }
     }
 
     /**
@@ -247,12 +248,18 @@ internal class OracleColumnConstraintHelper(
      * berechneten beide den Namen getrennt, droppte der Fan-out einen
      * Constraint, den es unter diesem Namen nicht gibt.
      */
-    fun enumCheckClause(tableName: String, colName: String, values: List<String>): String {
+    fun enumCheckClause(
+        tableName: String,
+        colName: String,
+        values: List<String>,
+        type: NeutralType? = null,
+    ): String {
         // `toDefaultSql` ignoriert den Typ fuer String-Literale; ihn hier
         // durchzureichen taeuschte eine Abhaengigkeit vor, die es nicht gibt.
         val allowed = values.joinToString(", ") { typeMapper.toDefaultSql(DefaultValue.StringLiteral(it), NeutralType.Text()) }
-        return "CONSTRAINT ${quoteIdentifier(enumCheckName(tableName, colName))} " +
-            "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
+        // `values_constraint` (ADR 0069), sonst die Konvention.
+        val name = type?.let(EnumValueCheck::explicitName) ?: enumCheckName(tableName, colName)
+        return "CONSTRAINT ${quoteIdentifier(name)} CHECK (${quoteIdentifier(colName)} IN ($allowed))"
     }
 
     // ── Plain columns ────────────────────────────

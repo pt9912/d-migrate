@@ -41,6 +41,8 @@ internal object PostgresEnumCheckUpName {
         // eigener Typ, eine Textspalte hat keinen.
         if (EnumValueCheck.inlineValues(sourceType) == null) return false
         if (ctx.enumValueCheckNames(table, column).isNotEmpty()) return false
+        // `values_constraint` (ADR 0069): der Name steht in der Datei, der Up loest den alten CHECK unter ihm.
+        if (EnumValueCheck.explicitName(sourceType) != null) return false
         if (ctx.options.postgresContext?.catalogRead == true) return false
         ctx.skip(
             op,
@@ -48,7 +50,8 @@ internal object PostgresEnumCheckUpName {
                 "it carries the values inline, without the name of the CHECK the database holds. The up " +
                 "direction cannot drop the old CHECK, and adding the new one alone would leave the old one in " +
                 "place (it keeps rejecting the new values). Run schema migrate against the database " +
-                "(--target db:...): there the name of the existing CHECK is read from the catalog.",
+                "(--target db:...), where the name of the existing CHECK is read from the catalog, or name the CHECK " +
+                "in the schema (values_constraint) so that it is known here.",
             code = CODE,
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))

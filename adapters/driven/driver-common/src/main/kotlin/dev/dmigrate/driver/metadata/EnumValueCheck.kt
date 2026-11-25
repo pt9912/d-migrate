@@ -27,11 +27,25 @@ object EnumValueCheck {
     fun inlineValues(type: NeutralType): List<String>? =
         (type as? NeutralType.Enum)?.takeIf { it.refType == null }?.values?.takeIf { it.isNotEmpty() }
 
+    /**
+     * Der ausdruecklich gesetzte Name des Wertevorrat-CHECKs (`values_constraint`, ADR 0069) — sonst `null`.
+     * Nur eine Inline-Enum traegt ihn; ein `refType`-Enum hat keinen CHECK.
+     */
+    fun explicitName(type: NeutralType): String? =
+        (type as? NeutralType.Enum)?.takeIf { it.refType == null }?.valuesConstraintName
+
     /** `CHECK (<spalte> IN ('a', 'b'))`, mit dem Quoting des Dialekts. */
     fun clause(column: String, values: List<String>, quote: (String) -> String): String {
         val allowed = values.joinToString(", ") { "'${it.replace("'", "''")}'" }
         return "CHECK (${quote(column)} IN ($allowed))"
     }
+
+    /**
+     * [clause] unter dem ausdruecklich gesetzten Namen des Typs, wo er einen traegt — sonst unbenannt. Fuer PostgreSQL:
+     * dort vergibt sonst der Server den Namen.
+     */
+    fun clauseNamedIfSet(type: NeutralType, column: String, values: List<String>, quote: (String) -> String): String =
+        explicitName(type)?.let { "CONSTRAINT ${quote(it)} " }.orEmpty() + clause(column, values, quote)
 
     /**
      * Der Constraint-Name fuer den Wertevorrat einer Spalte.
@@ -43,7 +57,16 @@ object EnumValueCheck {
      */
     fun name(table: String, column: String): String = "ck_${table}_$column"
 
-    /** [clause] mit vorangestelltem [name]. */
-    fun namedClause(table: String, column: String, values: List<String>, quote: (String) -> String): String =
-        "CONSTRAINT ${quote(name(table, column))} " + clause(column, values, quote)
+    /** Der Name des CHECKs: der gesetzte `values_constraint` des Typs, sonst die Konvention [name]. */
+    fun name(table: String, column: String, type: NeutralType): String = explicitName(type) ?: name(table, column)
+
+    /** [clause] mit vorangestelltem Namen: der gesetzte `values_constraint` von [type], sonst die Konvention. */
+    fun namedClause(
+        table: String,
+        column: String,
+        values: List<String>,
+        quote: (String) -> String,
+        type: NeutralType? = null,
+    ): String = "CONSTRAINT ${quote(type?.let { name(table, column, it) } ?: name(table, column))} " +
+        clause(column, values, quote)
 }

@@ -35,6 +35,7 @@ object SqliteCapabilities : DialectReadCapabilityProvider {
         supportsSchemaParameter = false,
         carriesFullTextConfiguration = false,
         resolvesRefTypeVocabulary = true,
+        namesInlineEnumCheck = true,
     )
 
         private val SEQUENCE = SequenceCapability(

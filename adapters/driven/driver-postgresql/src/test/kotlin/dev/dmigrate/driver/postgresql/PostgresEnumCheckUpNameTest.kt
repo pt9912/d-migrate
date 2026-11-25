@@ -20,6 +20,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain as shouldContainText
 
 /**
  * Issue #81: Datei gegen Datei kennt der Up den Namen des alten Wertevorrat-CHECKs einer
@@ -119,5 +120,99 @@ class PostgresEnumCheckUpNameTest : FunSpec({
 
         withClue(r.diagnostics.toString()) { r.isBlocked shouldBe false }
         r.statements.map { it.sql } shouldBe listOf("ALTER TABLE \"t_a\" ADD CHECK (\"state\" IN ('ACTIVE', 'DISABLED'));")
+    }
+
+    // ── `values_constraint` (ADR 0069): der Name steht im Schema, nichts wird geraten ──
+
+    fun named(name: String?, vararg v: String) = NeutralType.Enum(values = v.toList(), valuesConstraintName = name)
+
+    test("CREATE TABLE: die Inline-Enum mit Namen rendert CONSTRAINT <name> CHECK, ohne Namen unbenannt") {
+        val generator = PostgresDdlGenerator()
+        fun ddl(type: NeutralType) = generator.generate(schema(type)).render()
+
+        ddl(named("ck_a_state", "ACTIVE", "DISABLED")) shouldContainText
+            "CONSTRAINT \"ck_a_state\" CHECK (\"state\" IN ('ACTIVE', 'DISABLED'))"
+        ddl(named(null, "ACTIVE", "DISABLED")) shouldContainText "\"state\" TEXT CHECK (\"state\" IN ('ACTIVE', 'DISABLED'))"
+    }
+
+    test("CreateTable ueber den Diff-Pfad: die benannte Inline-Enum traegt ihren Namen") {
+        val type = named("ck_a_state", "ACTIVE", "DISABLED")
+        val table = schema(type).tables.getValue("t_a")
+        val diff = SchemaDiff(tablesAdded = listOf(dev.dmigrate.core.diff.NamedTable("t_a", table)))
+
+        val r = gen.generateUp(planner.plan(schema(type), schema(type), diff), fileOptions)
+
+        r.statements.joinToString("\n") { it.sql } shouldContainText
+            "CONSTRAINT \"ck_a_state\" CHECK (\"state\" IN ('ACTIVE', 'DISABLED'))"
+    }
+
+    test("Datei gegen Datei: benannte Enum, erweiterte Liste: der Up loest den alten CHECK unter seinem Namen") {
+        val before = named("ck_a_state", "ACTIVE", "DISABLED")
+        val after = named("ck_a_state", "ACTIVE", "DISABLED", "LOCKED")
+
+        val r = up(schema(before), schema(after), before, after, fileOptions)
+
+        withClue(r.diagnostics.toString()) { r.isBlocked shouldBe false }
+        r.statements.map { it.sql } shouldBe listOf(
+            "ALTER TABLE \"t_a\" DROP CONSTRAINT IF EXISTS \"ck_a_state\";",
+            "ALTER TABLE \"t_a\" ADD CONSTRAINT \"ck_a_state\" CHECK (\"state\" IN ('ACTIVE', 'DISABLED', 'LOCKED'));",
+        )
+    }
+
+    test("nur der Name aendert sich: der alte CHECK geht, der neue kommt unter dem neuen Namen") {
+        val before = named("ck_old", "ACTIVE", "DISABLED")
+        val after = named("ck_new", "ACTIVE", "DISABLED")
+
+        val r = up(schema(before), schema(after), before, after, fileOptions)
+
+        withClue(r.diagnostics.toString()) { r.isBlocked shouldBe false }
+        r.statements.map { it.sql } shouldBe listOf(
+            "ALTER TABLE \"t_a\" DROP CONSTRAINT IF EXISTS \"ck_old\";",
+            "ALTER TABLE \"t_a\" ADD CONSTRAINT \"ck_new\" CHECK (\"state\" IN ('ACTIVE', 'DISABLED'));",
+        )
+    }
+
+    test("gegen die Datenbank: die Soll-Enum benennt den CHECK, der Katalogname der Ist-Seite wird geloest") {
+        val live = schema(
+            NeutralType.Text(),
+            listOf(
+                ConstraintDefinition(
+                    name = "t_a_state_check", type = ConstraintType.CHECK,
+                    expression = "(state = ANY (ARRAY['ACTIVE'::text, 'DISABLED'::text]))",
+                ),
+            ),
+        )
+        val after = named("ck_a_state", "ACTIVE", "DISABLED")
+
+        val r = up(live, schema(after), NeutralType.Text(), after, liveOptions)
+
+        withClue(r.diagnostics.toString()) { r.isBlocked shouldBe false }
+        r.statements.map { it.sql } shouldBe listOf(
+            "ALTER TABLE \"t_a\" DROP CONSTRAINT IF EXISTS \"t_a_state_check\";",
+            "ALTER TABLE \"t_a\" ADD CONSTRAINT \"ck_a_state\" CHECK (\"state\" IN ('ACTIVE', 'DISABLED'));",
+        )
+    }
+
+    test("Down, benannt: der vom Up angelegte CHECK wird unter seinem Namen geloest, der alte unter seinem hergestellt") {
+        val before = named("ck_a_state", "ACTIVE", "DISABLED")
+        val after = named("ck_a_state", "ACTIVE", "DISABLED", "LOCKED")
+
+        val r = gen.generateDown(planner.plan(schema(before), schema(after), change(before, after)), fileOptions)
+
+        withClue(r.diagnostics.toString()) { r.isBlocked shouldBe false }
+        r.statements.map { it.sql } shouldBe listOf(
+            "ALTER TABLE \"t_a\" DROP CONSTRAINT \"ck_a_state\";",
+            "ALTER TABLE \"t_a\" ADD CONSTRAINT \"ck_a_state\" CHECK (\"state\" IN ('ACTIVE', 'DISABLED'));",
+        )
+    }
+
+    test("Down, unbenannt, Datei gegen Datei: weiter blockiert, wie vor ADR 0069") {
+        val before = enumOf("ACTIVE", "DISABLED")
+        val after = enumOf("ACTIVE", "DISABLED", "LOCKED")
+
+        val r = gen.generateDown(planner.plan(schema(before), schema(after), change(before, after)), fileOptions)
+
+        r.isBlocked shouldBe true
+        r.diagnostics.map { it.code } shouldContain "POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN"
     }
 })

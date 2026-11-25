@@ -66,7 +66,7 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
         // Der Wertevorrat eines Inline-Enums wird durchgesetzt, wie ihn auch
         // `schema generate` schreibt. Ohne ihn traegt das Ziel den Vorrat
         // nirgends, und der Vergleich meldet nach jedem Lauf Drift.
-        EnumValueCheck.inlineValues(col.type)?.let { parts += EnumValueCheck.clause(name, it, ::quote) }
+        EnumValueCheck.inlineValues(col.type)?.let { parts += EnumValueCheck.clauseNamedIfSet(col.type, name, it, ::quote) }
         col.references?.let { ref ->
             val onDelete = ref.onDelete?.let { " ON DELETE ${referentialActionSql(it)}" } ?: ""
             val onUpdate = ref.onUpdate?.let { " ON UPDATE ${referentialActionSql(it)}" } ?: ""

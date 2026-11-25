@@ -656,6 +656,7 @@ class SchemaMigrateRunner(
                 ?.takeUnless { capabilityReadsDomainColumnsAsRefType(prep.effectiveDialect) && !targetIsDatabase },
             domainProjectionCurrentOnly = capabilityReadsDomainColumnsAsRefType(prep.effectiveDialect),
             comparesDomainTraits = capabilityProjectsCustomTypes(prep.effectiveDialect),
+            comparesValuesConstraintName = capabilityNamesInlineEnumCheck(prep.effectiveDialect),
         )
         val authorship = OverlayRawTextAuthorship.of(mergedOverlays)
         val serverForm = (prep.targetOp as? CompareOperand.Database)?.let { db ->

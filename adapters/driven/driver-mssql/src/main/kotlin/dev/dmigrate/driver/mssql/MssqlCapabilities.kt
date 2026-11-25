@@ -61,6 +61,7 @@ object MssqlCapabilities : DialectReadCapabilityProvider {
         carriesFullTextConfiguration = false,
         namesPartitions = false,
         supportsListPartitioning = false,
+        namesInlineEnumCheck = true,
     )
 
         // Die Defaults spiegeln Renderer-Realitaet (KDoc oben): der MSSQL-

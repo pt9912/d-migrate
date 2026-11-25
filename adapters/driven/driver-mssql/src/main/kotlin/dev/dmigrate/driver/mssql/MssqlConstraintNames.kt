@@ -1,5 +1,11 @@
 package dev.dmigrate.driver.mssql
 
+import dev.dmigrate.core.diff.EnumCheckProjection
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.metadata.EnumValueCheck
+
 /**
  * Namenskonvention fuer die Constraints, die d-migrate in SQL Server anlegt.
  *
@@ -25,6 +31,19 @@ internal object MssqlConstraintNames {
     fun unique(table: String, column: String): String = "uq_${table}_$column"
 
     fun check(table: String, column: String): String = "ck_${table}_$column"
+
+    /**
+     * Der Name des CHECKs, der den Wertevorrat von [column] auf der Seite durchsetzt, die ihn gerade traegt
+     * ([bearing], gelesen aus [schema]) — der Name, unter dem er **geloest** werden muss. In dieser Reihenfolge: der
+     * `values_constraint` der Inline-Enum (ADR 0069), der Name der gelesenen CHECK-Zeile, die den Wertevorrat der
+     * Spalte aufzaehlt (eine Datenbank, die ihn nicht nach der Konvention benannt hat), sonst die Konvention.
+     */
+    fun valueCheck(table: String, column: String, bearing: ColumnDefinition?, schema: SchemaDefinition?): String =
+        bearing?.type?.let(EnumValueCheck::explicitName)
+            ?: schema?.tables?.get(table)?.constraints?.firstOrNull {
+                it.type == ConstraintType.CHECK && EnumCheckProjection.valuesOf(it.expression, column) != null
+            }?.name
+            ?: check(table, column)
 
     fun primaryKey(table: String): String = "pk_$table"
 

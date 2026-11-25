@@ -236,7 +236,7 @@ internal object PostgresDiffTableOps {
         // Der alte Wertevorrat zuerst: solange er steht, weist er Werte ab, die
         // der neue erlaubt — und die Spalte traegt danach zwei Aufzaehlungen,
         // von denen der Vergleich keine mehr eindeutig zuordnen kann.
-        dropExistingEnumValueCheck(op, ctx, table, column)
+        dropExistingEnumValueCheck(op, ctx, table, column, sourceType)
         val newValues = EnumValueCheck.inlineValues(targetType)
         if (!typeUnchanged || newValues == null) {
             ctx.emit(op, typeStatement)
@@ -244,7 +244,8 @@ internal object PostgresDiffTableOps {
         newValues?.let { values ->
             ctx.emit(
                 op,
-                "ALTER TABLE ${ctx.sql.quote(table)} ADD ${EnumValueCheck.clause(column, values, ctx.sql::quote)};",
+                "ALTER TABLE ${ctx.sql.quote(table)} ADD " +
+                    "${EnumValueCheck.clauseNamedIfSet(targetType, column, values, ctx.sql::quote)};",
             )
         }
         warnIfUnenforceableEnum(op, ctx, "$table.$column", targetType)
@@ -268,8 +269,12 @@ internal object PostgresDiffTableOps {
         ctx: PostgresDiffRenderContext,
         table: String,
         column: String,
+        sourceType: NeutralType,
     ) {
-        val name = ctx.enumValueCheckNames(table, column).singleOrNull() ?: return
+        val known = ctx.enumValueCheckNames(table, column)
+        // Steht der CHECK als Zeile in der Ist-Seite (Datenbank), gilt sein Katalogname. Sonst, bei einer Datei, der
+        // `values_constraint` der Ist-Enum (ADR 0069): der Name steht im Schema, nichts wird geraten.
+        val name = known.singleOrNull() ?: EnumValueCheck.explicitName(sourceType)?.takeIf { known.isEmpty() } ?: return
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT IF EXISTS ${ctx.sql.quote(name)};")
     }
 

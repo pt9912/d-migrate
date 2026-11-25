@@ -256,6 +256,12 @@ internal class TableComparator(
         /** Die Domain-Spalten, projiziert ueber ihren Basistyp ([DomainColumnTypes]); je Seite. */
         val domainLeft: Map<String, NeutralType> = emptyMap(),
         val domainRight: Map<String, NeutralType> = emptyMap(),
+        /**
+         * Der Name des Wertevorrat-CHECKs je Spalte der **Ist**-Seite (ADR 0069): der Name einer gefalteten
+         * CHECK-Zeile oder der `values_constraint` einer Inline-Enum. Nur, wo das Ziel den Namen fuehrt
+         * ([TargetProjection.comparesValuesConstraintName]); sonst leer.
+         */
+        val checkNameLeft: Map<String, String> = emptyMap(),
     )
 
     private fun enumVocabularies(
@@ -272,15 +278,20 @@ internal class TableComparator(
             if (resolve) resolvedAgainst(right, customTypes.right, left) else right,
         )
         return EnumVocabularies(
-            checks.vocabularyLeft,
-            checks.vocabularyRight,
-            checks.foldedLeft,
-            checks.foldedRight,
-            project?.let { DomainColumnTypes.projected(left, customTypes.left, right, it) } ?: emptyMap(),
-            if (targetProjection.domainProjectionCurrentOnly) {
+            left = checks.vocabularyLeft,
+            right = checks.vocabularyRight,
+            foldedLeft = checks.foldedLeft,
+            foldedRight = checks.foldedRight,
+            domainLeft = project?.let { DomainColumnTypes.projected(left, customTypes.left, right, it) } ?: emptyMap(),
+            domainRight = if (targetProjection.domainProjectionCurrentOnly) {
                 emptyMap()
             } else {
                 project?.let { DomainColumnTypes.projected(right, customTypes.right, left, it) } ?: emptyMap()
+            },
+            checkNameLeft = if (targetProjection.comparesValuesConstraintName) {
+                EnumCheckNames.current(left, checks.foldedLeft)
+            } else {
+                emptyMap()
             },
         )
     }
@@ -337,6 +348,7 @@ internal class TableComparator(
                 absorbed,
                 vocabularies.left[name] to vocabularies.right[name],
                 vocabularies.domainLeft[name] to vocabularies.domainRight[name],
+                vocabularies.checkNameLeft[name],
             )
         }
         return ColumnDiffs(added, removed, changed)
@@ -348,6 +360,7 @@ internal class TableComparator(
         absorbed: AbsorbedColumns,
         vocabulary: Pair<List<String>?, List<String>?>,
         domainTypes: Pair<NeutralType?, NeutralType?>,
+        checkNameLeft: String?,
     ): ColumnDiff? {
         val left = pair.left
         val right = pair.right
@@ -362,6 +375,10 @@ internal class TableComparator(
         // die Migration liesse den alten Wertevorrat stehen.
         val typeDiff = when {
             vocabulary.first != vocabulary.second -> ValueChange(left.type, right.type)
+            // ADR 0069: gleicher Wertevorrat, aber die Soll-Seite benennt den CHECK anders als die Ist-Seite.
+            targetProjection?.comparesValuesConstraintName == true && vocabulary.second != null &&
+                EnumCheckNames.renamed(checkNameLeft, right.type) ->
+                ValueChange(left.type, right.type)
             canon != null &&
                 (domainTypes.first ?: canon(left.type)) == (domainTypes.second ?: canon(right.type)) -> null
             else -> diffValueChangeOrNull(left.type, right.type)

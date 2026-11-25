@@ -68,6 +68,7 @@ object OracleCapabilities : DialectReadCapabilityProvider {
             carriesPartitionHashModulus = false,
             separatesDateFromDateTime = false,
             batchSeparator = null,
+            namesInlineEnumCheck = true,
         )
     }
 
