@@ -81,8 +81,24 @@ an der Ausgabe prüfen.
 
 ## Nicht im Umfang
 
-- **C**, also die Konvention `ck_<tabelle>_<spalte>` auch auf PostgreSQL. Es ändert das DDL jedes PostgreSQL-Schemas
-  mit Inline-Enum und ist eine eigene Entscheidung (ADR 0069, Option C).
+- **C**, also die Konvention `ck_<tabelle>_<spalte>` auch auf PostgreSQL: **abgelehnt** (Eigner, 2026-11-25, auf
+  Empfehlung; ADR 0069 nennt C als getrennte Entscheidung). Gründe:
+  1. C tauscht eine sichere Blockade gegen einen möglichen stillen Fehler. Heute blockiert der Up für eine unbenannte
+     Inline-Enum Datei gegen Datei, weil er den Namen des alten CHECKs nicht kennt. Mit C nähme er
+     `ck_<tabelle>_<spalte>` an. Jede Datenbank, die ein früheres d-migrate angelegt hat, trägt aber
+     `<tabelle>_<spalte>_check` vom Server: Das Skript löste einen CHECK, den es nicht gibt, und legte den neuen
+     daneben, derselbe Defekt wie #81, nur unsichtbar. Sicher wäre C nur, wenn jede Datenbank vom neuen Stand stammt,
+     und das kann d-migrate nicht prüfen.
+  2. C ändert das DDL jedes PostgreSQL-Schemas mit Inline-Enum (Golden-Master, archivierte Skripte, Flyway- und
+     Liquibase-Exporte; ein neu exportierter, schon angewendeter Flyway-Eintrag riskiert einen Prüfsummenfehler,
+     nicht gemessen).
+  3. Die Namensgrenze bleibt: PostgreSQL kürzt Bezeichner auf 63 Byte (`PostgresEnumCheckRollback.MAX_IDENTIFIER_BYTES`),
+     ein langer `ck_<tabelle>_<spalte>` würde still gekürzt und stimmte nicht mehr mit dem berechneten Namen überein.
+  4. C liefert nicht, was der Konsument braucht, nämlich einen selbst gewählten Namen. Den liefert `values_constraint`,
+     ausdrücklich und prüfbar.
+
+  Stattdessen bleibt die Blockade für die unbenannte Enum; ihre Meldung nennt den Ausweg (`values_constraint` setzen
+  oder gegen die Datenbank migrieren). Ein Opt-in (`ddl.postgresql.…`) wird nicht gebaut, solange es niemand fordert.
 - Der **Reverse** macht aus einem benannten CHECK keine `enum`-Spalte. Er liefert weiter Text plus CHECK.
 - Das **Umbenennen** eines Constraints als eigene Operation. Es bleibt Abbau und Aufbau.
 
