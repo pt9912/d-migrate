@@ -88,7 +88,7 @@ help:
 		'  make gates            Run Docker check, coverage and docs gates' \
 		'  make ci               Run Docker build, coverage and docs gates' \
 		'  make ci-build         Run CI build tasks inside the Docker build stage' \
-		'  make release-assets   Build ZIP, TAR, fat JAR and SHA256 assets' \
+		'  make release-assets   Build ZIP, TAR and SHA256 assets' \
 		'  make docker-resolve-deps  Warm Gradle dependencies in Docker' \
 		'  make docker-oci-build Build the publishable OCI image (runtime stage)' \
 		'  make docker-build     Build the runtime Docker image' \

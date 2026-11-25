@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Das Fat-JAR (`d-migrate-X.Y.Z-all.jar`) wird nicht mehr ausgeliefert.** Es konnte nur PostgreSQL: Beim Bau des
+  Fat-JARs bleibt von jeder `META-INF/services`-Datei nur eine übrig. 13 solcher Dateien kommen aus mehreren Jars,
+  darunter `DatabaseDriver`, `java.sql.Driver`, die Dialekt-Fähigkeiten, die Jackson-Module und die Flyway-Plugins.
+  Mit dem Fat-JAR scheiterte `schema reverse` gegen SQLite, MySQL, Oracle und SQL Server mit `Failed to get driver
+  instance`, und `schema generate --target mysql` (nur Datei, ohne Datenbank) brach mit `No
+  DialectReadCapabilityProvider` ab. Bis 1.12.2 kam hinzu, dass jede Namensauflösung abbrach (dem Manifest fehlte
+  `Multi-Release: true`, behoben in 1.13.0). **Auch in 1.13.0 funktioniert das Fat-JAR nur mit PostgreSQL.** Die
+  ZIP/TAR-Distribution (`bin/d-migrate`, JVM 21) leistet dasselbe, ist kleiner und läuft mit allen fünf Dialekten.
+  Wer das JAR bezogen hat, nimmt die ZIP oder TAR vom selben Release. Das Container-Image, Homebrew und die
+  nativen Binaries sind nicht betroffen.
+
+### Changed
+
+- **Der Release-Preflight prüft die ZIP gegen alle fünf Dialekte.** `assembleReleaseAssets` startet die
+  ausgelieferte Distribution (`smokeReleaseZip`): `schema generate` je Ziel prüft das Dialekt-Register, `schema
+  reverse` gegen eine unerreichbare Quelle je Dialekt prüft den JDBC-Treiber und die Namensauflösung und muss mit
+  dem gewöhnlichen Verbindungsfehler (Exit 4) enden. Ein `--help` hatte beides nie geprüft.
+
 ## [1.13.0] - 2026-11-24
 
 ### Changed

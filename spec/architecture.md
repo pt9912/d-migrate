@@ -414,7 +414,7 @@ Dadurch können neue Treiber (Oracle, MSSQL) als separate JARs hinzugefügt werd
 
 Wichtig für Distribution und Deployment:
 
-- **JVM/Fat-JAR und Docker**: Dynamisches Nachladen separater Treiber-JARs wird direkt unterstützt.
+- **JVM-Distribution und Docker**: Dynamisches Nachladen separater Treiber-JARs wird direkt unterstützt.
 - **GraalVM Native Image**: Unterstützte Treiber werden zur Build-Zeit eingebunden. Zusätzliche Treiber erfordern ein neues Native-Build-Profil oder den Wechsel auf die JVM-Distribution.
 
 ### 3.3 Streaming-Pipeline
@@ -1204,7 +1204,6 @@ Distribution-Formate:
 
 1. GitHub Release Assets
    → ZIP/TAR mit launcherbasiertem `bin/d-migrate`
-   → Fat JAR für `java -jar d-migrate-<version>-all.jar`
    → Kanonischer Build: `:adapters:driving:cli:assembleReleaseAssets`
    → Distribution: GitHub Releases
 
@@ -1376,8 +1375,8 @@ Entwickler-Maschine                    CI/CD-Pipeline
 │                    │                │  GitHub Actions      │
 │  d-migrate (CLI)   │                │                     │
 │  ┌──────────────┐  │                │  ┌───────────────┐  │
-│  │ Launcher oder│  │                │  │ Testcontainers│  │
-│  │ Fat JAR      │  │                │  │ ┌───────────┐ │  │
+│  │ Launcher     │  │                │  │ Testcontainers│  │
+│  │ (ZIP/TAR)    │  │                │  │ ┌───────────┐ │  │
 │  └──────┬───────┘  │                │  │ │ PostgreSQL│ │  │
 │         │          │                │  │ │ MySQL     │ │  │
 │         ▼          │                │  │ │ SQLite    │ │  │

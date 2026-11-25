@@ -186,8 +186,8 @@ Die vollständige Release-History steht in
   statt den alten `CHECK` stehen zu lassen (Issue #81). Eine verlustfreie
   `decimal`-Erweiterung braucht kein `USING`-Overlay mehr (Issue #79). Ein
   ungequoteter YAML-Wert, den YAML als etwas anderes liest (`[OFF, ON]` → `false,
-  true`), bricht mit Pfad und Abhilfe ab, statt sich still zu ändern. Das Fat-JAR
-  erreicht Datenbanken wieder über einen Hostnamen, und das native Image verpackt
+  true`), bricht mit Pfad und Abhilfe ab, statt sich still zu ändern. Das native
+  Image verpackt
   das veröffentlichte Binary, statt zweimal zu kompilieren. **Der
   Fingerabdruck-Tag steigt auf `schema-fingerprint-v25`:** Plan- und
   Rücknahme-Artefakte aus früheren Versionen sind neu zu erzeugen.
@@ -387,7 +387,7 @@ make semgrep           # hermetischer semgrep-Scan mit gepinnten Regeln
 make integration       # Testcontainers-Integrationssuite
 make docker-full-gates # docker-gates plus Docker-gestützte Integrationstests
 make docker-oci-build  # das zu publizierende OCI-Image bauen (runtime-Stage)
-make release-assets    # ZIP, TAR, Fat JAR, SHA256 Release-Assets bauen
+make release-assets    # ZIP, TAR, SHA256 Release-Assets bauen
 ```
 
 Gezielte Modul-Läufe:
@@ -449,7 +449,7 @@ docker run --rm --user "$(id -u):$(id -g)" -v $(pwd):/work \
 
 ### GitHub Release Assets
 
-Veröffentlichte Releases liefern ZIP, TAR, ein Fat JAR und **native
+Veröffentlichte Releases liefern ZIP, TAR und **native
 Binaries**, die kein Java brauchen, auf der
 [Releases-Seite](https://github.com/pt9912/d-migrate/releases).
 
@@ -457,9 +457,6 @@ Binaries**, die kein Java brauchen, auf der
 # Launcher-basierte Distribution
 tar -xf d-migrate-<version>.tar
 ./d-migrate-<version>/bin/d-migrate --help
-
-# Oder Fat JAR direkt ausführen
-java -jar d-migrate-<version>-all.jar --help
 
 # Oder das native Binary — ohne JVM, startet in ~15 ms
 chmod +x d-migrate-<version>-linux-x64
@@ -564,7 +561,7 @@ JDK-Installation auszuführen.
   `docker run --rm -p 8080:8080 d-migrate:coverage`.
 - **`coverage-json`**: Kover-JSON nach stdout via `ENTRYPOINT`.
 - **`coverage-verify`**: hartes `koverVerify` (≥ 90 % pro Modul).
-- **`release-assets`**: ZIP / TAR / Fat JAR / SHA256 (Target von
+- **`release-assets`**: ZIP / TAR / SHA256 (Target von
   `make release-assets`).
 - **`runtime`** (Default): das **publizierte** Image — schlankes
   `eclipse-temurin:21-jre-noble`, non-root (`uid 10001`), mit

@@ -1,4 +1,3 @@
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.gradle.api.GradleException
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.Tar
@@ -9,7 +8,6 @@ import java.util.zip.ZipFile
 
 plugins {
     application
-    id("com.github.johnrengelman.shadow") version "8.1.1"
     // GraalVM Native Image (docs/planning/done/graalvm-native-image-distribution.md).
     // Nur `nativeCompile`/`nativeRun` brauchen eine GraalVM-Toolchain; der normale Build (JDK 21) ist
     // unberührt. Bis Phase D (GraalVM in CI) wird `nativeCompile` nur lokal ausgeführt.
@@ -22,7 +20,7 @@ application {
 }
 
 // Native-Image-Entrypoint: die VOLLE CLI `dev.dmigrate.cli.MainKt` — derselbe Einstieg wie der
-// JVM-Fat-JAR (application.mainClass oben). Bis Phase F.1 gab es hier einen `-PnativeEntrypoint`-
+// JVM-Distribution (application.mainClass oben). Bis Phase F.1 gab es hier einen `-PnativeEntrypoint`-
 // Schalter (core = reduzierter NativeMain, full = MainKt); F.1 hat ihn zurueckgebaut, seither ist
 // `full` der einzige Bau (docs/planning/done/graalvm-native-image-distribution.md).
 
@@ -94,7 +92,7 @@ graalvmNative {
             // Ohne diese Registrierung stirbt JEDES Subkommando in Phase F.0 an
             // MissingResourceException, noch im Clikt-Dispatch — der Blocker maskiert alle weiteren.
             // Belegt durch Messlauf 29722018906 (identisch auf Linux/macOS/Windows).
-            // Vorlaeufig als buildArg: haelt das Fat-JAR unberuehrt. Die dauerhafte Form
+            // Vorlaeufig als buildArg: haelt den JVM-Build unberuehrt. Die dauerhafte Form
             // (committetes reachability-metadata vs. buildArg) entscheidet Phase F.2.
             // Experimentelle -H:-Optionen freischalten. Ohne das warnt der Builder ("must be enabled
             // via -H:+UnlockExperimentalVMOptions in the future") und wendet sie moeglicherweise
@@ -141,7 +139,6 @@ graalvmNative {
 val releaseVersion = project.version.toString()
 val releaseZipName = "d-migrate-$releaseVersion.zip"
 val releaseTarName = "d-migrate-$releaseVersion.tar"
-val releaseJarName = "d-migrate-$releaseVersion-all.jar"
 val releaseShaName = "d-migrate-$releaseVersion.sha256"
 val releaseDir = layout.buildDirectory.dir("release")
 
@@ -203,7 +200,7 @@ dependencies {
     // AP 6.21 + LF-012 / LN-011 / LN-017 / LN-027: default (in-memory) metadata stores;
     // `server.state.*` opt-in switches server-state Job/Quota/Idempotency metadata to JDBC.
     // Befund 17: bezogen aus dem echten Adapter-Modul (kein testFixtures-/kotest-Leak
-    // in den Distributions-Shadow-Jar).
+    // in die Distribution).
     implementation(project(":adapters:driven:persistence-memory"))
     implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}") {
         // JNA aus dem nativen Binary heraushalten (Akzeptanzkriterium "JNA unerreichbar"): clikt zieht
@@ -224,7 +221,7 @@ dependencies {
     testImplementation("com.google.code.gson:gson:2.15.0")
     // Test-only ports-common Fakes (z. B. FakeUnicodeTextService in
     // OutputFormatterTest). Bewusst test-scope — kein testFixtures-/kotest-Leak
-    // in den Distributions-Shadow-Jar (Befund 17).
+    // in die Distribution (Befund 17).
     testImplementation(testFixtures(project(":hexagon:ports-common")))
 
     // Testcontainers-, Gson- und JSON-Schema-Validator-Test-Dependencies
@@ -239,8 +236,8 @@ dependencies {
  * `ojdbc11` steht unter den Oracle Free Use Terms and Conditions; die Pflicht
  * trifft die **Weiterverbreitung**, nicht das Repository. Die Datei nur im
  * Repo zu fuehren erfuellt sie fuer niemanden, der ein ZIP herunterlaedt oder
- * das Image zieht — sie gehoert deshalb in die Distribution, in den Fat-JAR,
- * neben die Release-Assets und ins Runtime-Image (Dockerfile).
+ * das Image zieht — sie gehoert deshalb in die Distribution, neben die
+ * Release-Assets und ins Runtime-Image (Dockerfile).
  */
 val thirdPartyNotices = rootProject.file("THIRD-PARTY-NOTICES.md")
 
@@ -260,34 +257,13 @@ tasks.named<Tar>("distTar") {
     archiveFileName.set(releaseTarName)
 }
 
-tasks.named<ShadowJar>("shadowJar") {
-    archiveFileName.set(releaseJarName)
-    from(thirdPartyNotices)
-    // Parquet/Hadoop-Transitive bringen den Fat-Jar ueber das 65535-
-    // Entries-Limit des klassischen ZIP-Headers. Zip64 ist von JDK 7+
-    // out-of-the-box lesbar; kein Kompat-Risiko fuer unsere
-    // Java-17-Min-Baseline.
-    isZip64 = true
-    manifest {
-        attributes["Main-Class"] = application.mainClass.get()
-        // Mehrere Abhaengigkeiten sind Multi-Release-Jars. dnsjava (ueber hadoop-common) meldet
-        // seinen InetAddressResolverProvider in META-INF/services, die Klasse liegt aber nur unter
-        // META-INF/versions/18/. Ohne dieses Attribut liest die JVM das Verzeichnis nicht, und
-        // jede Namensaufloesung scheitert mit ServiceConfigurationError: das Fat-JAR erreicht dann
-        // keine Datenbank ueber einen Hostnamen. `smokeReleaseJar` unten prueft genau das. Die
-        // ZIP-Distribution traegt die Jars mit ihren eigenen Manifesten und ist nicht betroffen.
-        attributes["Multi-Release"] = "true"
-    }
-}
-
 val stageReleaseAssets = tasks.register<Sync>("stageReleaseAssets") {
     group = "distribution"
     description = "Collect canonical release assets in build/release."
-    dependsOn("distZip", "distTar", "shadowJar")
+    dependsOn("distZip", "distTar")
     into(releaseDir)
     from(tasks.named<Zip>("distZip").flatMap { it.archiveFile })
     from(tasks.named<Tar>("distTar").flatMap { it.archiveFile })
-    from(tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile })
     from(thirdPartyNotices)
 }
 
@@ -318,7 +294,7 @@ val writeReleaseChecksums = tasks.register("writeReleaseChecksums") {
  * hinausginge.
  *
  * Die Pflicht trifft die Weiterverbreitung, und verbreitet wird hier: ZIP,
- * TAR, Fat-JAR und das Runtime-Image (dort prueft es `make docker-smoke`).
+ * TAR und das Runtime-Image (dort prueft es `make docker-smoke`).
  * Ohne diese Pruefung faellt ein entfernter `from(...)`-Aufruf erst jemandem
  * auf, der das Artefakt schon geladen hat.
  */
@@ -333,7 +309,7 @@ val verifyThirdPartyNotices = tasks.register("verifyThirdPartyNotices") {
             throw GradleException("$notice is missing next to the release assets in ${directory.absolutePath}")
         }
         val archives = directory.listFiles()
-            ?.filter { it.isFile && (it.name.endsWith(".jar") || it.name.endsWith(".zip")) }
+            ?.filter { it.isFile && it.name.endsWith(".zip") }
             ?: emptyList()
         if (archives.isEmpty()) {
             throw GradleException("No release archives found in ${directory.absolutePath}")
@@ -347,40 +323,85 @@ val verifyThirdPartyNotices = tasks.register("verifyThirdPartyNotices") {
     }
 }
 
-// Startet das Fat-JAR mit einer Verbindung ueber einen HOSTNAMEN, ohne dass dort eine Datenbank
-// laeuft. Erwartet ist der gewoehnliche Verbindungsfehler (Exit 4). Ein `--help` loest keinen Namen
-// auf und konnte deshalb nicht bemerken, dass das Fat-JAR an dieser Stelle mit
-// ServiceConfigurationError abbrach (Exit 1, siehe Multi-Release oben).
-val smokeReleaseJar = tasks.register("smokeReleaseJar") {
+// Startet die ausgelieferte ZIP-Distribution gegen alle fuenf Dialekte, ohne dass dort ein Server laeuft:
+// `schema generate` je Ziel (Dialekt-Register) und `schema reverse` gegen eine unerreichbare Quelle (JDBC-Treiber
+// und Namensaufloesung; erwartet ist der gewoehnliche Verbindungsfehler, Exit 4). Ein `--help` loest weder einen
+// Namen auf noch laedt es einen Treiber: ein Artefakt, dem ein Treiber fehlt oder das keinen Hostnamen
+// aufloesen kann, bestuende es. Das war bei dem inzwischen entfernten Fat-JAR der Fall (nur PostgreSQL registriert, jede
+// Namensaufloesung brach ab) und fiel drei Releases lang nicht auf.
+val smokeReleaseZip = tasks.register("smokeReleaseZip") {
     group = "verification"
-    description = "Fail if the fat JAR cannot resolve a hostname (expects a plain connection error, exit 4)."
-    val jar = tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile }
-    val scratch = layout.buildDirectory.dir("tmp/smokeReleaseJar")
-    inputs.file(jar)
+    description = "Fail if the release ZIP cannot reach a driver for each dialect (expects a plain connection error, exit 4)."
+    val zip = tasks.named<Zip>("distZip").flatMap { it.archiveFile }
+    val scratch = layout.buildDirectory.dir("tmp/smokeReleaseZip")
+    inputs.file(zip)
     doLast {
-        val java = File(System.getProperty("java.home"), "bin/java").absolutePath
-        val output = scratch.get().asFile.apply { mkdirs() }.resolve("never-written.yaml")
-        val process = ProcessBuilder(
-            java, "-jar", jar.get().asFile.absolutePath,
-            "schema", "reverse",
-            "--source", "postgresql://smoke:smoke@localhost:1/smoke",
-            "--output", output.absolutePath,
-        ).redirectErrorStream(true).start()
-        val log = process.inputStream.bufferedReader().readText()
-        val exit = process.waitFor()
-        if ("ServiceConfigurationError" in log || exit != 4) {
-            throw GradleException(
-                "Fat-JAR-Smoke: erwartet Exit 4 (Verbindungsfehler), bekommen Exit $exit:\n" +
-                    log.lineSequence().filterNot { it.trimStart().startsWith("at ") }.take(5).joinToString("\n"),
+        val dir = scratch.get().asFile.apply { deleteRecursively(); mkdirs() }
+        ZipFile(zip.get().asFile).use { archive ->
+            for (entry in archive.entries().asSequence()) {
+                val target = dir.resolve(entry.name)
+                if (entry.isDirectory) {
+                    target.mkdirs()
+                } else {
+                    target.parentFile.mkdirs()
+                    archive.getInputStream(entry).use { input -> target.outputStream().use { input.copyTo(it) } }
+                    // Das Startskript verliert beim Entpacken ueber die Java-API sein Ausfuehrungsbit.
+                    if (entry.name.contains("/bin/")) target.setExecutable(true)
+                }
+            }
+        }
+        val launcher = dir.listFiles { f -> f.isDirectory }?.singleOrNull()?.resolve("bin/d-migrate")
+            ?: throw GradleException("Release-ZIP-Smoke: kein bin/d-migrate unter ${dir.absolutePath}")
+        val sources = listOf(
+            "postgresql://smoke:smoke@localhost:1/smoke",
+            "mysql://smoke:smoke@localhost:1/smoke",
+            "oracle://smoke:smoke@localhost:1/smoke",
+            "sqlserver://smoke:smoke@localhost:1/smoke",
+            "sqlite://${dir.absolutePath}/no/such/dir/smoke.db",
+        )
+        // Das Dialekt-Register (ServiceLoader ueber die driver-*-Module) braucht keine Verbindung: `schema
+        // generate` je Ziel scheitert ohne den Treiber des Dialekts schon beim Lesen der Faehigkeiten.
+        val schemaFile = dir.resolve("smoke-schema.yaml").apply {
+            writeText(
+                "schema_format: \"1.0\"\nname: smoke\nversion: \"1.0\"\ntables:\n  t:\n" +
+                    "    columns:\n      id: { type: integer, required: true }\n    primary_key: [id]\n",
             )
+        }
+        for (target in listOf("postgresql", "mysql", "sqlite", "mssql", "oracle")) {
+            val process = ProcessBuilder(
+                launcher.absolutePath, "schema", "generate", "--source", schemaFile.absolutePath, "--target", target,
+            ).redirectErrorStream(true).start()
+            val log = process.inputStream.bufferedReader().readText()
+            val exit = process.waitFor()
+            if (exit != 0) {
+                throw GradleException(
+                    "Release-ZIP-Smoke generate --target $target: erwartet Exit 0, bekommen Exit $exit:\n" +
+                        log.lineSequence().filterNot { it.trimStart().startsWith("at ") }.take(5).joinToString("\n"),
+                )
+            }
+        }
+        for (source in sources) {
+            val process = ProcessBuilder(
+                launcher.absolutePath, "schema", "reverse", "--source", source,
+                "--output", dir.resolve("never-written.yaml").absolutePath,
+            ).redirectErrorStream(true).start()
+            val log = process.inputStream.bufferedReader().readText()
+            val exit = process.waitFor()
+            if (exit != 4 || "Failed to get driver instance" in log || "ServiceConfigurationError" in log) {
+                throw GradleException(
+                    "Release-ZIP-Smoke ${source.substringBefore("://")}: erwartet Exit 4 (gewoehnlicher " +
+                        "Verbindungsfehler, ohne fehlenden Treiber), bekommen Exit $exit:\n" +
+                        log.lineSequence().filterNot { it.trimStart().startsWith("at ") }.take(5).joinToString("\n"),
+                )
+            }
         }
     }
 }
 
 tasks.register("assembleReleaseAssets") {
     group = "distribution"
-    description = "Build ZIP, TAR, fat JAR, and SHA256 into build/release."
-    dependsOn(writeReleaseChecksums, verifyThirdPartyNotices, smokeReleaseJar)
+    description = "Build ZIP, TAR, and SHA256 into build/release."
+    dependsOn(writeReleaseChecksums, verifyThirdPartyNotices, smokeReleaseZip)
 }
 
 

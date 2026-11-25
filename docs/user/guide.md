@@ -19,15 +19,12 @@ Optionsvertrag steht in der [CLI-Spezifikation](../../spec/cli-spec.md).
 ## Option A: GitHub Release Assets
 
 Für veröffentlichte Releases stehen launcher-basierte Distributionen als ZIP/TAR
-sowie ein Fat JAR auf der GitHub-Releases-Seite bereit.
+auf der GitHub-Releases-Seite bereit.
 
 ```bash
 # Launcher-basierte Distribution entpacken
 tar -xf d-migrate-<version>.tar
 ./d-migrate-<version>/bin/d-migrate --help
-
-# Alternativ das Fat JAR direkt starten
-java -jar d-migrate-<version>-all.jar --help
 ```
 
 Hinweis:

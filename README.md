@@ -171,8 +171,8 @@ The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
   file now stops with exit 8 instead of leaving the old `CHECK` in place (Issue #81),
   a lossless `decimal` widening needs no `USING` overlay (Issue #79), and an
   unquoted YAML value that YAML reads as something else (`[OFF, ON]` → `false,
-  true`) now fails with path and fix instead of changing silently. The fat JAR
-  reaches databases by hostname again, and the native image packs the released
+  true`) now fails with path and fix instead of changing silently. The native
+  image packs the released
   binary instead of compiling twice. **The fingerprint tag rises to
   `schema-fingerprint-v25`:** plan and rollback artefacts from earlier versions
   must be regenerated.
@@ -360,7 +360,7 @@ make semgrep           # hermetic semgrep scan with pinned rules
 make integration       # Testcontainers integration suite
 make docker-full-gates # docker-gates plus Docker-backed integration tests
 make docker-oci-build  # build the publishable OCI image (runtime stage)
-make release-assets    # build ZIP, TAR, fat JAR, SHA256 release assets
+make release-assets    # build ZIP, TAR, SHA256 release assets
 ```
 
 Targeted module runs:
@@ -420,7 +420,7 @@ docker run --rm --user "$(id -u):$(id -g)" -v $(pwd):/work \
 
 ### GitHub Release assets
 
-Published releases ship ZIP, TAR, a fat JAR and **native binaries**
+Published releases ship ZIP, TAR and **native binaries**
 that need no Java, on the
 [Releases page](https://github.com/pt9912/d-migrate/releases).
 
@@ -428,9 +428,6 @@ that need no Java, on the
 # Launcher-based distribution
 tar -xf d-migrate-<version>.tar
 ./d-migrate-<version>/bin/d-migrate --help
-
-# Or run the fat JAR directly
-java -jar d-migrate-<version>-all.jar --help
 
 # Or the native binary — no JVM required, starts in ~15 ms
 chmod +x d-migrate-<version>-linux-x64
@@ -534,7 +531,7 @@ simplest way to run the full build without installing a local JDK.
   `docker run --rm -p 8080:8080 d-migrate:coverage`.
 - **`coverage-json`**: Kover JSON to stdout via `ENTRYPOINT`.
 - **`coverage-verify`**: hard `koverVerify` (≥ 90 % per module).
-- **`release-assets`**: ZIP / TAR / fat JAR / SHA256 (target of
+- **`release-assets`**: ZIP / TAR / SHA256 (target of
   `make release-assets`).
 - **`runtime`** (default): the image that gets **published** — slim
   `eclipse-temurin:21-jre-noble`, non-root (`uid 10001`), `mod_spatialite`

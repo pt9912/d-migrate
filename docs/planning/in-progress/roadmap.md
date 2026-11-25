@@ -139,7 +139,7 @@ implementation-plan-0.4.0.md §6.12.
 | CLI     | Fortschrittsanzeige für lange Operationen                       | [`LN-017`](../../../spec/lastenheft-d-migrate.md#ln-017) |
 | Docs    | Anwenderhandbuch (Basis)                                        | —                                                        |
 | Docs    | CLI-Referenz                                                    | —                                                        |
-| Build   | GitHub Releases (Fat JAR)                                       | —                                                        |
+| Build   | GitHub Releases (ZIP/TAR)                                       | —                                                        |
 | Build   | Homebrew-Formula (Basis)                                        | —                                                        |
 | QA      | Code-Coverage >= 80%                                            | [`LN-045`](../../../spec/lastenheft-d-migrate.md#ln-045) |
 
@@ -1110,7 +1110,7 @@ DB-Kombinationen, Cutover-Readiness, Betriebs-/Failure-Recovery-Doku.
 
 | Risiko                              | Auswirkung                                 | Mitigation                                                          |
 | ----------------------------------- | ------------------------------------------ | ------------------------------------------------------------------- |
-| GraalVM Native Image Kompatibilität | Verzögerung bei Single-Binary-Distribution | Fat JAR als Fallback, Native Image schrittweise einführen           |
+| GraalVM Native Image Kompatibilität | Verzögerung bei Single-Binary-Distribution | ZIP/TAR (JVM) als Fallback, Native Image schrittweise einführen           |
 | JDBC-Treiber-Qualität für SQLite    | Einschränkungen bei erweiterten Features   | SQLite-spezifische Workarounds, direkte C-Anbindung als Option      |
 | KI-API-Kosten und Verfügbarkeit     | Abhängigkeit von externen Diensten         | Lokale Modelle (Ollama) als Default, regelbasierter Fallback        |
 | Community-Aufbau                    | Langsame Adoption                          | Early-Adopter-Programm, Konferenz-Talks, Blog-Posts                 |

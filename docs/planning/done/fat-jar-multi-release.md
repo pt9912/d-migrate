@@ -1,6 +1,6 @@
 # Fat-JAR: `Multi-Release` fehlt — keine Datenbankverbindung über einen Hostnamen
 
-- **Status**: In Arbeit (2026-11-24). P1-P4 umgesetzt, siehe „Stand" am Ende; offen ist die Abnahme gegen die DoD.
+- **Status**: **DONE / abgebrochen zugunsten des Entfernens** (2026-11-25). Das Fat-JAR wird nicht mehr ausgeliefert; siehe „Closure" unten.
 - **Ziel**: `java -jar d-migrate-X.Y.Z-all.jar` verbindet sich wie ZIP, TAR, Docker und
   Homebrew mit einer Datenbank, die über einen Hostnamen angesprochen wird. Die Release-Prüfung
   belegt das an jedem Release, nicht nur `--help`.
@@ -77,9 +77,7 @@ einen Hostnamen. Der CHANGELOG nennt unter `Fixed` die betroffenen Versionen.
 
 ## Offene Frage
 
-- Soll das Fat-JAR weiter ausgeliefert werden? Es ist der einzige Weg ohne Launcher-Skript, aber die
-  Distributionsklasse, die die Release-Prüfung am wenigsten abdeckt. Diese Frage entscheidet der Eigner;
-  der Plan setzt voraus, dass es bleibt.
+- Soll das Fat-JAR weiter ausgeliefert werden? (Beantwortet in der Closure unten: nein.)
 
 ## Stand (2026-11-24)
 
@@ -97,4 +95,46 @@ einen Hostnamen. Der CHANGELOG nennt unter `Fixed` die betroffenen Versionen.
 - **Artefakt:** `make release-assets` ist grün, `sha256sum -c` stimmt. Die Jar-Liste der ZIP gleicht der
   von v1.12.2 (Liste verglichen).
 - **P3/P4:** `releasing.md` 3.2, 4.4 und Checkliste geprüft und ergänzt; CHANGELOG unter `Fixed`.
+
+## Closure (2026-11-25)
+
+**Entscheidung (Eigner, auf Empfehlung): Das Fat-JAR wird nicht mehr ausgeliefert, ab 1.14.0.**
+
+Der Befund dieses Slice war nur die Spitze. Beim Beantworten der offenen Frage zeigte sich, dass das Fat-JAR
+**nur PostgreSQL** konnte, nicht nur keinen Hostnamen auflösen. Gemessen am Arbeitsstand `1.13.0`:
+
+| Aufruf | ZIP-Distribution | Fat-JAR |
+| --- | --- | --- |
+| `schema reverse` gegen SQLite | Exit 0 | `Failed to get driver instance`, Exit 4 |
+| `schema reverse` gegen MySQL, Oracle, SQL Server | Verbindungsfehler wie erwartet | `Failed to get driver instance` |
+| `schema generate --target mysql` (nur Datei) | läuft | `IllegalStateException: No DialectReadCapabilityProvider for MYSQL` |
+
+**Ursache:** Das Shadow-Plugin war ohne `mergeServiceFiles()` konfiguriert; von jeder `META-INF/services`-Datei
+blieb nur eine. 13 Service-Dateien kommen aus mehreren Jars (`DatabaseDriver`, `java.sql.Driver`,
+`DialectCapabilityProvider`, `DialectReadCapabilityProvider`, die Jackson-Module, die Flyway-Plugins u. a.); bei
+den Treibern gewann PostgreSQL.
+
+**Gründe fürs Entfernen:**
+1. Es bietet nichts, was die ZIP/TAR nicht auch bietet: beide brauchen JVM 21, die ZIP ist kleiner (111 gegen 119 MB)
+   und läuft vollständig.
+2. Es nutzte niemand: 1–3 Downloads je Release, kein einziges Issue in all den Releases, obwohl vier von fünf
+   Dialekten nicht liefen.
+3. Reparieren (`mergeServiceFiles()` plus `Multi-Release`) ist möglich, aber der Kanal bleibt anfällig: Jede
+   Bibliothek mit eigener Service- oder Resource-Datei kann das JAR wieder still beschädigen.
+
+**Geliefert:**
+- `shadowJar`, das Shadow-Plugin und `smokeReleaseJar` sind aus `adapters/driving/cli/build.gradle.kts`
+  entfernt, das JAR aus `stageReleaseAssets`. Das `Multi-Release`-Attribut aus 1.13.0 entfällt damit mit.
+- **Der Smoke blieb, für die ZIP:** `smokeReleaseZip` hängt an `assembleReleaseAssets`. `schema generate` je Ziel
+  (fünf Dialekte, ohne Datenbank) prüft das Dialekt-Register, `schema reverse` gegen eine unerreichbare Quelle je
+  Dialekt prüft den JDBC-Treiber und die Namensauflösung (erwartet Exit 4, ohne `Failed to get driver
+  instance`). Rot-Beleg: Ohne das Dialekt-Modul `driver-mysql` scheitert `generate --target mysql`; ohne
+  `mssql-jdbc` scheitert der `reverse`-Aufruf gegen SQL Server; mit falschem Erwartungswert scheitert er sofort.
+  Ein Fehlen nur des `driver-mysql`-Moduls bemerkt `reverse` allein nicht (der Verbindungsaufbau läuft vorher am
+  JDBC-Treiber): deshalb beide Aufrufe.
+- Doku: README (de/en), `guide.md`, `administrationshandbuch.md`, `spec/architecture.md`, `releasing.md` (3.2, 4.4,
+  4.5, 4.6, Checkliste) und die Roadmap ohne Fat-JAR; CHANGELOG unter `Removed` und `Changed`. Die ADRs 0044 und 0052
+  nennen das Fat-JAR im eingefrorenen Kern und bleiben unverändert.
+- **Offen, nicht Teil dieses Slice:** Die Release-Notes und das README-Statusblock von 1.13.0 behaupten, das Fat-JAR
+  erreiche Datenbanken wieder über einen Hostnamen. Das stimmt nur für PostgreSQL.
 
