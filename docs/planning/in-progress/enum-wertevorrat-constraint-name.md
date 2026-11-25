@@ -1,14 +1,12 @@
 # Inline-Enum: Name für den Wertevorrat-CHECK (`values_constraint`)
 
-- **Status**: Draft mit Scope (2026-11-25). **Wartet auf die Eigner-Entscheidung** im
-  [ADR 0069](../../adr/0069-name-des-wertevorrat-checks-einer-inline-enum.md) (`proposed`): A (Feld an der Spalte),
-  B (dokumentieren) oder C (Konvention auch für PostgreSQL). Dieser Plan beschreibt A. Fällt die Wahl auf B,
-  schrumpft er auf P5 (Doku).
+- **Status**: In Arbeit (2026-11-25). [ADR 0069](../../adr/0069-name-des-wertevorrat-checks-einer-inline-enum.md) ist
+  `accepted` (Option A, Eigner). P0–P5 umgesetzt, siehe „Stand" am Ende; offen ist die Abnahme gegen die DoD.
 - **Ziel**: Wer den Namen des CHECKs braucht, der den Wertevorrat einer Spalte durchsetzt, schreibt
   `type: enum, values: [...], values_constraint: <name>` statt eines rohen `CHECK … IN (…)`. Der Name bleibt auf
   PostgreSQL, SQLite, SQL Server und Oracle stabil. Datei gegen Datei kennt der Up den Namen des alten CHECKs.
 - **Herkunft**: Nebenbefund aus Issue #76 und #81; Anlass: Das Modell kann den Namen heute nicht ausdrücken.
-- **Vorbedingungen**: ADR 0069 `accepted`. Der Fingerabdruck steigt auf `schema-fingerprint-v26`.
+- **Vorbedingungen**: ADR 0069 `accepted`. Der Fingerabdruck bleibt unverändert (der Name steht nicht darin).
 
 ## Ausgangslage (gemessen 2026-11-25)
 
@@ -28,21 +26,24 @@ Vorbilder im Modell: `ColumnDefinition.uniqueConstraintName` (YAML `unique_const
   (PostgreSQL, SQLite, SQL Server, Oracle)? Bleibt der Name in der Ist-Seite stehen, und erkennt
   `EnumCheckFolding` den CHECK weiter (die Faltung ist formbasiert, nicht namensbasiert)? Gilt das auch für den
   Namen über 63 Byte (PostgreSQL kürzt) und für einen Namen, den ein anderer Constraint belegt?
-- **P1 — Modell und Datei.** `ColumnDefinition.valuesConstraintName: String?`; `SchemaNodeParser` und
-  `SchemaNodeBuilder` lesen und schreiben `values_constraint` (nur wenn gesetzt); `spec/schema.json` und
-  `spec/schema-reference.md`. Validierung: an einer Spalte ohne Inline-Enum (anderer Typ, `ref_type`) ein Fehler mit
-  neuem Code im Code-Ledger.
+- **P1 — Modell und Datei.** `NeutralType.Enum.valuesConstraintName: String?` (am Typ, nicht an der Spalte: so läuft
+  eine Namensänderung über die vorhandene Typänderung); `SchemaNodeParser` und `SchemaNodeBuilder` lesen und schreiben
+  `values_constraint` (nur wenn gesetzt); `spec/schema.json` und `spec/schema-reference.md`. Validierung `E126` im
+  Code-Ledger: an einer Spalte ohne Inline-Enum (anderer Typ, `ref_type`, leerer Name).
 - **P2 — Erzeugen.** PostgreSQL, SQLite, SQL Server und Oracle benutzen den Namen in `CREATE TABLE` und in
   `ADD COLUMN`/`ALTER`; ohne Feld bleibt das Ergebnis byte-gleich (Golden-Master unverändert). MySQL ignoriert das
-  Feld mit einer Warnung (neuer W-Code).
+  Feld mit `W165`.
 - **P3 — Up und Down.** Steht der Name in der Ist-Seite, löst der Up den alten CHECK unter diesem Namen. Dann
   entfällt für eine benannte Inline-Enum `POSTGRES_ENUM_CHECK_NAME_UNKNOWN` (#81) auch Datei gegen Datei. Der Down
   legt den neuen CHECK unter dem Namen an, den der Up vergeben hat, und löst ihn deshalb ohne Raten. Der unbenannte
   Fall bleibt blockiert; die Diagnose nennt als Ausweg `values_constraint` zu setzen.
 - **P4 — Vergleich und Fingerabdruck.** Setzt die Soll-Seite einen Namen und die Ist-Seite führt den CHECK unter
   anderem Namen, plant `schema migrate` `DROP` und `ADD`. Ohne gesetzten Namen bleibt der Name ohne Wirkung wie
-  heute. `schema compare` meldet den Namensunterschied als Fund. Der Name steht in der kanonischen Nutzlast nur,
-  wenn gesetzt; `MigrationFingerprint.ALGORITHM` = `schema-fingerprint-v26` mit KDoc-Eintrag.
+  heute. `schema compare` (strikt) meldet den Namensunterschied als Fund, denn die Typen sind verschieden. **Der Name
+  steht nicht im Fingerabdruck**: Er ist eine Funktion eines Schemas, die gelesene Datenbankseite trägt den vom Server
+  vergebenen Namen, und im Hash unterschieden sich beide nach jedem `--execute`. Die Zielprojektion bekommt dafür die
+  Fähigkeit `comparesValuesConstraintName` (`DialectCapabilities.namesInlineEnumCheck`: PostgreSQL, SQLite,
+  SQL Server, Oracle; nicht MySQL).
 - **P5 — Doku.** `spec/ddl-generation-rules.md` (Namen je Dialekt, Verhalten von Up und Down),
   `spec/schema-reference.md`, das Anwenderhandbuch („Werteliste mit festem Namen" statt des rohen CHECK am Beispiel)
   und der CHANGELOG samt Hinweis auf den neuen Algorithmus-Tag.
@@ -64,9 +65,8 @@ Vorbilder im Modell: `ColumnDefinition.uniqueConstraintName` (YAML `unique_const
 **Rot-Beleg:** Je Dialekt scheitert der neue Test ohne die Änderung; den Fehlschlag einmal sehen und die Rücknahme
 an der Ausgabe prüfen.
 
-**Fingerabdruck:** Ein Schema ohne das Feld hasht bis auf den Algorithmus-Tag wie zuvor (Test gegen den bisherigen
-Hash-Aufbau); mit Feld hasht es anders. `v26` ist in den Test-Pins nachgezogen, der CHANGELOG nennt die Folge für
-gespeicherte Artefakte.
+**Fingerabdruck:** Ein Test belegt, dass zwei Enums, die sich nur im Namen unterscheiden, gleich hashen. Der Tag bleibt
+`schema-fingerprint-v25`; gespeicherte Artefakte bleiben gültig.
 
 **Gates:**
 * `make docker-check MODULES=":hexagon:core :hexagon:application :adapters:driven:formats :adapters:driven:driver-postgresql :adapters:driven:driver-sqlite :adapters:driven:driver-mssql :adapters:driven:driver-oracle :adapters:driving:cli"`.
@@ -85,3 +85,28 @@ gespeicherte Artefakte.
   mit Inline-Enum und ist eine eigene Entscheidung (ADR 0069, Option C).
 - Der **Reverse** macht aus einem benannten CHECK keine `enum`-Spalte. Er liefert weiter Text plus CHECK.
 - Das **Umbenennen** eines Constraints als eigene Operation. Es bleibt Abbau und Aufbau.
+
+## Stand (2026-11-25)
+
+- **Abweichungen vom ADR-Entwurf** (im ADR festgehalten): Das Feld steht am Typ (`NeutralType.Enum`), nicht an der
+  Spalte; der Name steht nicht im Fingerabdruck, daher kein `v26`.
+- **P1:** `NeutralType.Enum.valuesConstraintName`, Parser/Builder, `E126` (`SchemaColumnValidationRules.validateEnumType`,
+  mit eigener Funktion wegen Detekt), `spec/schema.json`. Dabei fiel auf, dass `schema.json` auch `unique_constraint`
+  nicht kannte, obwohl der Reverse es schreibt und das Spaltenobjekt keine weiteren Felder erlaubt; ergänzt, mit
+  Rot-Beleg (ohne beide Felder scheitert der Vertragstest).
+- **P2:** PostgreSQL (zwei Render-Pfade: `PostgresColumnConstraintHelper` und `PostgresDiffSqlBuilders.columnLine`; der
+  zweite fiel erst im Live-Test auf), SQLite, SQL Server, Oracle; MySQL `W165` (`MysqlEnumCheckNameIgnored`).
+- **P3:** PostgreSQL-Up löst den alten CHECK unter dem `values_constraint` der Ist-Seite, `PostgresEnumCheckUpName`
+  blockiert nicht mehr, der Down (`PostgresEnumCheckRollback`) kennt beide Namen. SQL Server löst unter dem Namen der
+  tragenden Seite (`MssqlConstraintNames.valueCheck`: gesetzter Name, sonst Name der gelesenen CHECK-Zeile, sonst
+  Konvention). Oracle ebenso, dazu die Konvention für eine Inline-Enum ohne Namen Datei gegen Datei (vorher legte der
+  Up den neuen CHECK neben den alten).
+- **P4:** `EnumCheckNames` (Namen der Ist-Seite, `renamed`), `TargetProjection.comparesValuesConstraintName`,
+  `DialectCapabilities.namesInlineEnumCheck`. Ohne die Fähigkeit (MySQL) bleibt der Name ohne Wirkung.
+- **Tests:** `SchemaComparatorValuesConstraintNameTest` (8 Fälle, darunter Fingerabdruck), `SchemaValidatorTest` (E126),
+  `YamlSchemaCodecValuesConstraintTest` (YAML/JSON-Rundlauf), je Dialekt ein Test (PostgreSQL erweitert, SQLite,
+  SQL Server, Oracle, MySQL), `CliSchemaMigrateEnumCheckNameTest` (die Repro aus #81, benannt und unbenannt, E126),
+  `PostgresEnumCheckNameIntegrationTest` (live: 5 Fälle). Rot-Belege: ohne die Vergleichsregel scheitern 3 Specs, ohne
+  den Namen im Up 2 PostgreSQL-Specs, ohne die Felder in `schema.json` der Vertragstest.
+- **Offen:** Integrationsläufe der vier anderen Dialekte, Gesamtlauf, CI.
+

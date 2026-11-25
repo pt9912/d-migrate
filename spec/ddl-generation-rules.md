@@ -390,7 +390,9 @@ Besonderheiten:
 - `json` → `JSONB` (binäres JSON, performanter)
 - `enum` mit `ref_type` → separater `CREATE TYPE` (vor der Tabelle)
 - `enum` inline → `TEXT` + `CHECK` Constraint; unbenannt, damit `CREATE TABLE`
-  und der ALTER-Pfad denselben Constraint erzeugen (PostgreSQL vergibt den Namen)
+  und der ALTER-Pfad denselben Constraint erzeugen (PostgreSQL vergibt den Namen).
+  Mit `values_constraint` benannt: `CONSTRAINT "<name>" CHECK (…)`, im `CREATE TABLE`
+  wie im ALTER-Pfad
 - `datetime` mit `timezone: true` → `TIMESTAMP WITH TIME ZONE`
 
 ### 3.4 MySQL
@@ -424,7 +426,8 @@ Besonderheiten:
   Array-Eigenschaft, ein Reverse liest `json` ohne Elementart zurück. Der
   Verlust wird auf beiden Render-Pfaden gemeldet, `schema generate` als Note
   und `schema migrate` als Diagnose, an jeder Stelle, die die Spalte schreibt
-- `enum` → inline `ENUM(...)` (kein separater Type)
+- `enum` → inline `ENUM(...)` (kein separater Type). Ein `values_constraint` hat kein
+  Gegenstück (kein CHECK): `W165`, der Name bleibt ohne Wirkung
 - `datetime` mit `timezone: true` → `DATETIME` + Warnung W100 (kein TZ-Support)
 - Immer `ENGINE=InnoDB` (FK-Support)
 - Immer `DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
@@ -489,9 +492,9 @@ Besonderheiten:
   Tabellen-Neubau
 - `datetime`, `date`, `time` → `TEXT` (ISO 8601 Format)
 - `decimal` → `REAL` + Warnung W200 (Präzisionsverlust)
-- `enum` → `TEXT` + benannter `CHECK` Constraint (`ck_<tabelle>_<spalte>`): ein
-  unbenannter Constraint kommt aus `sqlite_master` nicht als Constraint zurueck,
-  und was nicht zurueckkommt, kann der Vergleich nicht sehen
+- `enum` → `TEXT` + benannter `CHECK` Constraint (`ck_<tabelle>_<spalte>`, oder der
+  `values_constraint`): ein unbenannter Constraint kommt aus `sqlite_master` nicht als
+  Constraint zurueck, und was nicht zurueckkommt, kann der Vergleich nicht sehen
 - Foreign Keys inline oder als `CONSTRAINT`
 - Kein `ALTER TABLE ADD COLUMN ... REFERENCES` (FK müssen inline sein)
 
@@ -689,7 +692,8 @@ Besonderheiten:
   `sysdatetimeoffset()` zurück auf `current_timestamp`)
 - `uuid` → `UNIQUEIDENTIFIER` (`gen_uuid` → `NEWID()`)
 - `enum` → `NVARCHAR(<längster Wert>)` + benannter `CHECK`
-  (`ck_<table>_<column>`), kein separater Typ (auch bei `ref_type`)
+  (`ck_<table>_<column>`, oder der `values_constraint`), kein separater Typ (auch
+  bei `ref_type`)
 - **Benannte Spalten-Constraints**: `DEFAULT` → `df_<table>_<column>`,
   `UNIQUE` → `uq_<table>_<column>`, `PRIMARY KEY` → `pk_<table>`. SQL Server
   vergäbe sonst Zufallsnamen (`DF__orders__3213E83F`), die ein Diff-Pfad nicht
@@ -753,7 +757,7 @@ Besonderheiten:
 - `uuid` → `VARCHAR2(36)` (`gen_uuid` → `RAWTOHEX(SYS_GUID())`, W150 INFO:
   32 Hex-Zeichen ohne Bindestriche)
 - `enum` → `VARCHAR2(<längster Wert>)` + benannter `CHECK`
-  (`ck_<table>_<column>`), kein separater Typ; `ref_type` auf eine
+  (`ck_<table>_<column>`, oder der `values_constraint`), kein separater Typ; `ref_type` auf eine
   `DOMAIN` faltet auf `CLOB` + `action_required` E053 (keine
   Basistyp-Auflösung). Der ALTER-Pfad schreibt dieselbe Form: erst den
   bestehenden Wertevorrat-`CHECK` lösen (Oracle kennt kein
@@ -2313,6 +2317,16 @@ Für jedes Up-Statement wird ein inverses Down-Statement erzeugt:
 | `ALTER TABLE ADD CONSTRAINT "k"` | `ALTER TABLE DROP CONSTRAINT "k"` |
 | `ALTER TABLE ALTER COLUMN "c" TYPE t` | `ALTER TABLE ALTER COLUMN "c" TYPE <alter_typ>` |
 
+**Name des Wertevorrat-CHECKs (`values_constraint`).** Eine Inline-Enum kann den Namen ihres CHECKs setzen. Dann
+steht er im Schema, und nichts wird geraten: Der Up löst den alten CHECK unter dem Namen der Ist-Seite (ihrem
+`values_constraint`, sonst dem Katalognamen der gelesenen CHECK-Zeile, sonst — wo der Dialekt selbst benennt — der
+Konvention) und legt den neuen unter dem Namen der Soll-Seite an. Der Down löst den vom Up angelegten CHECK unter
+dessen Namen und stellt den alten unter seinem her; er blockiert für eine benannte Enum nie wegen eines
+unbekannten Namens. Setzt die Soll-Seite einen Namen und die Ist-Seite führt den CHECK unter einem anderen, ist
+das eine Änderung der Spalte (`DROP` und `ADD`); ohne gesetzten Namen zählt der Name nicht. Auf Oracle kennt der
+Up den Namen auch ohne `values_constraint`: Oracle vergibt keine Namen selbst, ein aus einer Datei angelegter
+CHECK heißt `ck_<tabelle>_<spalte>`.
+
 **Wertevorrat-CHECK einer Inline-Enum (PostgreSQL).** Ändert sich der Wertevorrat einer
 Inline-Enum-Spalte, löst der Up den alten CHECK unter seinem Katalognamen und legt den neuen
 unbenannt an. Der Down kehrt das um: er löst den vom Up angelegten CHECK
@@ -2333,7 +2347,8 @@ Führt die Ist-Seite den Wertevorrat nur inline am Spaltentyp, also eine Datei (
 `--target-version`), rendert der Up kein `DROP` mit erratenem Namen und legt den neuen CHECK auch
 nicht allein an. Der alte bliebe stehen und wiese neue Werte weiter ab. Er blockiert mit
 `MANUAL_ACTION_REQUIRED` (Diagnose `POSTGRES_ENUM_CHECK_NAME_UNKNOWN`). Eine Textspalte, die erst
-einen Wertevorrat erhält, hat keinen alten CHECK und ist davon nicht betroffen.
+einen Wertevorrat erhält, hat keinen alten CHECK und ist davon nicht betroffen. Setzt die Enum einen
+`values_constraint`, entfällt die Blockade: der Name steht in der Datei.
 
 Führt die Spalte **mehrere** Wertevorrat-CHECKs, meldet der Vergleich keinen davon als Werteliste
 des Spaltentyps, sondern jeden als eigenen Abgang (`DropConstraint`). Der Up löst sie dann über

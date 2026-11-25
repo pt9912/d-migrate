@@ -449,6 +449,23 @@ Faehigkeit `namesSingleColumnConstraints` des Zieldialekts; SQLite legt einen
 UNIQUE-Constraint als `sqlite_autoindex_…` ab und fuehrt keinen Namen, den ein
 Soll-Schema treffen koennte.
 
+**Der Name des Wertevorrat-CHECKs einer Inline-Enum.** Eine Inline-Enum (`type: enum` mit `values`) wird je Dialekt
+durchgesetzt: PostgreSQL, SQLite, SQL Server und Oracle rendern Text plus CHECK, MySQL ein natives `ENUM`.
+`values_constraint` benennt den CHECK, wo der Name gebraucht wird (Anwendungen lesen ihn in der Fehlerbehandlung einer
+verletzten Bedingung):
+
+```yaml
+state: { type: enum, values: [ACTIVE, DISABLED], values_constraint: ck_a_state }
+```
+
+Das Feld ist optional und gilt nur einer Inline-Enum mit `values`; an einem `ref_type`, ohne Werte oder mit leerem
+Namen ist es `E126`. Fehlt es, benennt der Dialekt den CHECK selbst (PostgreSQL: der Server; die anderen
+`ck_<tabelle>_<spalte>`), und ein Vergleich macht ueber den Namen keine Aussage. Setzt das Soll einen Namen und die
+Datenbank fuehrt den CHECK unter einem anderen, ist das eine Aenderung: der alte CHECK wird geloest und der neue unter
+dem Namen angelegt. MySQL kennt keinen CHECK; dort bleibt der Name ohne Wirkung und wird als `W165` gemeldet. Der
+Fingerabdruck sieht den Namen nicht. Der Reverse macht aus einem benannten CHECK keine Enum; er liefert Text plus
+CHECK.
+
 Dasselbe gilt fuer `references.constraint` beim einspaltigen Fremdschluessel.
 
 Jede Spalte traegt optional ein `ordinal` (1-basierte physische Position der Quelle).

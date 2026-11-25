@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`values_constraint`: der Name des CHECKs einer Inline-Enum (ADR 0069).** `state: { type: enum, values: [ACTIVE,
+  DISABLED], values_constraint: ck_state }` benennt den CHECK, der den Wertevorrat durchsetzt. Wer bisher einen festen
+  Namen brauchte, musste einen rohen `CHECK … IN (…)` schreiben, also SQL-Text, den der Vergleich gegen die
+  Umschreibung des Servers halten muss (Quelle der Issues #76, #77, #80 und #81). PostgreSQL, SQLite, SQL Server und
+  Oracle legen den CHECK unter dem Namen an; MySQL rendert ein natives `ENUM` ohne CHECK und meldet `W165`. Eine
+  geänderte Liste oder ein geänderter Name löst den alten CHECK unter seinem Namen und legt den neuen an. **Das gilt
+  auch Datei gegen Datei, wo der Up bisher den Namen des alten CHECKs nicht kannte** (Issue #81, auf PostgreSQL
+  `POSTGRES_ENUM_CHECK_NAME_UNKNOWN`): für eine benannte Enum entfällt die Blockade, ebenso im Down. An einem
+  `ref_type`, ohne Werte oder mit leerem Namen ist das Feld `E126`. Der Fingerabdruck sieht den Namen nicht, bestehende
+  Artefakte bleiben gültig.
+- **`spec/schema.json` kennt `unique_constraint`.** Das Feld schreibt `schema reverse` für jede Spalte mit benanntem
+  UNIQUE-Constraint, im JSON-Schema fehlte es aber, und das Spaltenobjekt lässt keine weiteren Felder zu: Eine
+  zurückgelesene Datei war damit gegen das Schema ungültig.
+
+### Fixed
+
+- **Oracle: Der Up löst den CHECK einer Inline-Enum auch Datei gegen Datei.** Eine geänderte Werteliste einer
+  Inline-Enum ohne `values_constraint` legte den neuen CHECK neben den alten, denn der Up kannte den Namen des alten
+  nicht (nur eine gelesene CHECK-Zeile lieferte ihn). Oracle vergibt keine Namen selbst; ein aus einer Datei angelegter
+  CHECK heißt `ck_<tabelle>_<spalte>`, und der Up löst ihn jetzt unter diesem Namen.
+- **SQL Server: Der Up löst den alten Wertevorrat-CHECK unter dem Namen, den die Datenbank führt**, nicht nur unter der
+  Konvention `ck_<tabelle>_<spalte>`. Ein CHECK mit anderem Namen blieb neben dem neuen stehen.
+
 ### Removed
 
 - **Das Fat-JAR (`d-migrate-X.Y.Z-all.jar`) wird nicht mehr ausgeliefert.** Es konnte nur PostgreSQL: Beim Bau des

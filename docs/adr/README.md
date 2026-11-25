@@ -122,4 +122,4 @@ argumentiert werden.
 | 0066 | [`DEFAULT`, `NOT NULL` und Kollation einer Domain im Modell — nur PostgreSQL wertet aus, `schema-fingerprint-v24`](0066-domain-default-not-null-kollation-im-modell.md) | accepted |
 | 0067 | [`schema compare`: ein Wertelisten-CHECK mit gleichem Wertevorrat ist keine Änderung](0067-schema-compare-wertelisten-check-gleicher-wertevorrat.md) | accepted |
 | 0068 | [Die Werteliste-Erkennung liest auch `(ARRAY[…])::text[]` — `schema-fingerprint-v25`](0068-werteliste-erkennung-array-cast-auf-text-array.md) | accepted |
-| 0069 | [Name des Wertevorrat-CHECKs einer Inline-Enum — ein Feld an der Spalte](0069-name-des-wertevorrat-checks-einer-inline-enum.md) | proposed |
+| 0069 | [Name des Wertevorrat-CHECKs einer Inline-Enum — `values_constraint` am Enum](0069-name-des-wertevorrat-checks-einer-inline-enum.md) | accepted |

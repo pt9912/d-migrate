@@ -1718,15 +1718,26 @@ zweite Hinweis unten.
   Feld `planFullyRollbackable` im Report meint dabei nur, dass die Anweisungen des
   Ausrollens transaktional sind, nicht, dass der Down möglich ist; maßgeblich ist
   `downBlocked`.
+- **Feste Namen für den CHECK einer Enum: `values_constraint`.** Brauchen Sie den Namen des
+  CHECKs, der die Werteliste durchsetzt (Ihre Anwendung liest ihn in der Fehlerbehandlung),
+  schreiben Sie ihn an die Enum und nicht als eigenen `CHECK … IN (…)`:
+  `state: { type: enum, values: [ACTIVE, DISABLED], values_constraint: ck_state }`. Das Schema
+  bleibt neutral, und d-migrate vergleicht den Wertevorrat statt SQL-Text. PostgreSQL, SQLite,
+  SQL Server und Oracle legen den CHECK unter diesem Namen an. MySQL hat nur ein natives `ENUM`
+  ohne CHECK und meldet `W165`. Ohne `values_constraint` benennt der Dialekt den CHECK selbst.
+  Ändern Sie die Liste oder den Namen, löst `schema migrate` den alten CHECK unter seinem Namen
+  und legt den neuen an, auch **Datei gegen Datei**. Der Name gilt nur einer Enum mit `values`;
+  an einem `ref_type` ist er `E126`.
 - **Werteliste einer Enum-Spalte ändern, Datei gegen Datei (PostgreSQL): Exit 8.** Das
   Ausrollen muss den alten CHECK unter dem Namen lösen, den die Datenbank für ihn führt.
   Eine Datei kennt diesen Namen nicht, sie führt die Werte nur an der Spalte. `schema
   migrate --target file:…` blockiert deshalb mit `POSTGRES_ENUM_CHECK_NAME_UNKNOWN`
   (Exit 8) und schreibt kein Skript. Bis 1.12.2 entstand hier still ein Skript, das nur den
   neuen CHECK anlegte. Der alte blieb stehen und wies die neuen Werte weiter ab.
-  `--target-version` hilft nicht. Vergleichen Sie gegen die Datenbank (`--target
-  db:…`): Dort liest d-migrate den Namen aus dem Katalog, löst den alten CHECK und legt
-  den neuen an.
+  `--target-version` hilft nicht. Setzen Sie `values_constraint` an der Enum: dann steht der
+  Name in der Datei, und der Lauf blockiert nicht. Oder vergleichen Sie gegen die Datenbank
+  (`--target db:…`): Dort liest d-migrate den Namen aus dem Katalog, löst den alten CHECK
+  und legt den neuen an.
 - **Werteliste als eigener, benannter `CHECK` an einer Textspalte.** Führt Ihr Schema
   die Werteliste nicht als `enum`, sondern als `CHECK` neben einer `text`-Spalte
   (`a_state IN ('ACTIVE', 'DISABLED')`), behandelt `schema migrate` eine geänderte Liste

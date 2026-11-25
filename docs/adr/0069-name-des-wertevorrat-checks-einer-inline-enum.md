@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-25
 decision-makers: pt9912
 consulted: docs/adr/0048-enum-wertevorrat-im-fingerprint.md, docs/adr/0055-enum-wertevorrat-im-zielbewussten-vergleich.md, docs/adr/0067-schema-compare-wertelisten-check-gleicher-wertevorrat.md, docs/adr/0068-werteliste-erkennung-array-cast-auf-text-array.md, docs/planning/next/enum-wertevorrat-constraint-name.md
@@ -8,10 +8,11 @@ informed: hexagon/core (ColumnDefinition, SchemaComparator, MigrationFingerprint
 
 # Name des Wertevorrat-CHECKs einer Inline-Enum — ein Feld an der Spalte
 
-> **Status: proposed (2026-11-25).** Eine Inline-Enum (`type: enum, values: [...]`) bekommt optional einen Namen für
-> den CHECK, der ihren Wertevorrat durchsetzt. Ohne den Namen schreiben Konsumenten, die einen festen Namen
-> brauchen, einen rohen `CHECK … IN (…)` als Constraint. Der ist SQL-Text und damit nicht neutral. Die Entscheidung
-> liegt beim Eigner; dieser ADR legt Optionen, Folgen und eine Empfehlung vor.
+> **Status: accepted (2026-11-25).** Eine Inline-Enum (`type: enum, values: [...]`) bekommt optional einen Namen für
+> den CHECK, der ihren Wertevorrat durchsetzt: `values_constraint: <name>`. Ohne den Namen schreiben Konsumenten,
+> die einen festen Namen brauchen, einen rohen `CHECK … IN (…)` als Constraint. Der ist SQL-Text und damit nicht
+> neutral. Der Eigner hat **Option A** gewählt (2026-11-25). Die Umsetzung weicht an zwei Stellen vom Entwurf ab,
+> beide im Abschnitt „Entscheidung".
 
 ## Kontext und Problemstellung
 
@@ -43,9 +44,10 @@ Zieldialekts".
 
 ## Betrachtete Optionen
 
-### A — ein Feld an der Spalte (empfohlen)
+### A — ein Feld neben `type: enum` (gewählt)
 
-`ColumnDefinition.valuesConstraintName: String?`, in der Datei `values_constraint: <name>` neben `type: enum`.
+In der Datei `values_constraint: <name>` neben `type: enum`. Ursprünglich als
+`ColumnDefinition.valuesConstraintName` entworfen; umgesetzt wird es am Typ (siehe „Entscheidung").
 
 - **Erzeugen.** PostgreSQL, SQLite, SQL Server und Oracle schreiben `CONSTRAINT <name> CHECK (…)`, wenn das Feld
   gesetzt ist; sonst bleibt alles, wie es ist (PostgreSQL unbenannt, die anderen `ck_<tabelle>_<spalte>`).
@@ -55,8 +57,6 @@ Zieldialekts".
 - **Vergleich.** Ist der Name nur auf der Soll-Seite gesetzt und die Datenbank führt den CHECK unter anderem Namen,
   ist das eine Änderung (Abbau und Aufbau, wie bei `unique`: Umbenennen ist kein In-place-Befehl). Ist er nicht
   gesetzt, ändert sich nichts gegenüber heute: Der Name zählt nicht.
-- **Fingerabdruck.** Der Name steht in der kanonischen Nutzlast nur, wenn gesetzt (Muster von `DomainTraits`,
-  ADR 0066). Bestehende Schemas hashen bis auf den Algorithmus-Tag wie zuvor. Der Tag steigt auf `v26`.
 - **Reverse.** Unverändert: Er liefert eine Textspalte mit benanntem CHECK. Der Reader kann nicht wissen, dass der
   Autor eine Aufzählung meinte. Die Folgen daraus (Faltung beim Vergleich, ADR 0055) bleiben.
 
@@ -83,34 +83,45 @@ drei Dialekte. Der Name wäre bekannt und stabil, die Blockaden aus #81 und #61 
 - Löst nicht, was der Konsument will: einen **selbst gewählten** Namen.
 - Kürzung auf 63 Byte und Kollisionen bleiben für lange Tabellen- und Spaltennamen.
 
-## Empfehlung
+## Entscheidung
 
-**A**, in zwei Schritten, mit C als getrennter, späterer Entscheidung:
+**A.** Die offenen Fragen aus dem Entwurf sind so entschieden:
 
-1. **Modell, Datei, Erzeugen, Up und Down, Vergleich, Fingerabdruck** wie oben. Der Konsument aus #76 schreibt dann
-   `type: enum` mit `values_constraint`, und seine Constraint-Namen bleiben stabil, ohne SQL-Text im Schema.
-2. **C nicht jetzt.** Es ändert das Ergebnis für jeden PostgreSQL-Anwender, um ein Problem zu lösen, das mit A für
-   den Fall mit Namen bereits entfällt. Der unbenannte Fall bleibt in Datei gegen Datei blockiert, mit einer
-   Diagnose, die den Ausweg nennt: `values_constraint` setzen oder gegen die Datenbank migrieren.
+1. **Feldname:** `values_constraint`, parallel zu `unique_constraint`.
+2. **MySQL:** eine Warnung (`W165`), kein Fehler. Der Name hat dort kein Gegenstück, das Schema soll auf allen
+   Dialekten laufen. MySQL erzeugt weiter das native `ENUM`.
+3. **Abweichender Name ist eine Änderung:** Setzt die Soll-Seite einen Namen und die Ist-Seite führt den CHECK unter
+   einem anderen, plant `schema migrate` `DROP` und `ADD` (Abbau und Aufbau, wie bei `unique`). Ohne gesetzten Namen
+   zählt der Name weiter nicht.
+4. **Eine neue Validierung:** `values_constraint` an einer Spalte ohne Inline-Enum (anderer Typ, `ref_type`, leerer
+   Name) ist `E126`.
 
-Gegen A spricht der Aufwand: neues YAML-Feld und `schema.json`, vier Renderer (Erzeugen, Up, Down), Vergleich,
-Fingerabdruck, Tests je Dialekt (live für PostgreSQL), Dokumentation. Er ist gemessen an den vier Defekten, die der
-rohe CHECK bisher erzeugt hat, vertretbar. Wenn das Gewicht nicht stimmt, ist **B** die ehrliche Alternative:
-dann sagt das Handbuch, wofür der rohe CHECK da ist, und nimmt dem Konsumenten die Erwartung, dass `enum` dasselbe
-kann.
+**Abweichungen vom Entwurf, mit Grund:**
 
-## Offene Fragen für die Entscheidung
+- **Platzierung am Typ, nicht an der Spalte.** Das Feld steht in `NeutralType.Enum` (`valuesConstraintName`). Der
+  Typ **ist** bei einer Inline-Enum der Träger des Wertevorrats; der CHECK, der ihn durchsetzt, gehört dazu. In der
+  Datei bleibt die Schreibweise dieselbe (`values_constraint` neben `type: enum`). Der Vorteil: Eine Änderung des
+  Namens läuft über die vorhandene Typänderung (`AlterColumnType`), die jeder Dialekt für den Wertevorrat schon
+  rendert, und braucht keine neue Diff-Dimension und keine neue Operation. Eine Spalten-Eigenschaft hätte beides
+  gebraucht.
+- **Kein Fingerabdruck, kein `v26`.** Der Fingerabdruck ist eine Funktion **eines** Schemas. Die gelesene
+  Datenbankseite trägt den Namen, den der Server vergeben hat (`<tabelle>_<spalte>_check`), die Soll-Seite den
+  gewählten. Stünde der Name im Hash, unterschieden sich beide nach jedem `--execute`, und die Nachprüfung meldete
+  dauerhaft Drift. Der Name wird deshalb im **Vergleich** entschieden (siehe 3), nicht im Hash. Bestehende Artefakte
+  bleiben gültig.
 
-1. **A, B oder C?** (Empfehlung: A, C später.)
-2. **Feldname:** `values_constraint` (Empfehlung; parallel zu `unique_constraint`) oder `check_name`.
-3. **MySQL:** Warnung oder Fehler, wenn das Feld gesetzt ist? Empfehlung: Warnung. Der Name hat dort kein Gegenstück,
-   das Schema soll trotzdem auf allen Dialekten laufen.
-4. **Namensänderung als Änderung:** Soll ein gesetzter Name, der von dem in der Datenbank abweicht, `DROP`/`ADD`
-   planen (Empfehlung), oder bleibt der Name für den Vergleich ohne Wirkung (wie heute bei unbenannten CHECKs)?
+**C bleibt eine getrennte, spätere Entscheidung.** Es ändert das DDL jedes PostgreSQL-Schemas mit Inline-Enum, um ein
+Problem zu lösen, das mit A für den Fall mit Namen entfällt. Der unbenannte Fall bleibt Datei gegen Datei blockiert
+(`POSTGRES_ENUM_CHECK_NAME_UNKNOWN`); die Diagnose nennt `values_constraint` als Ausweg.
 
-## Konsequenzen, falls A angenommen wird
+## Konsequenzen
 
-- `schema-fingerprint-v26`; Plan- und Rücknahme-Artefakte früherer Versionen sind neu zu erzeugen (wie bei v25).
-- `values_constraint` an einer Spalte ohne Inline-Enum (anderer Typ, `ref_type`) ist ein Validierungsfehler.
+- Der Konsument aus #76 schreibt `type: enum` mit `values_constraint`, und seine Constraint-Namen bleiben stabil,
+  ohne SQL-Text im Schema.
+- Für eine **benannte** Inline-Enum entfallen `POSTGRES_ENUM_CHECK_NAME_UNKNOWN` (Up, #81) und
+  `POSTGRES_ENUM_CHECK_ROLLBACK_NAME_UNKNOWN` (Down, #61): Der Name steht in der Datei, nichts wird geraten. Das gilt
+  auch Datei gegen Datei.
+- Der Reverse bleibt unverändert und liefert eine Textspalte mit benanntem CHECK. Der Reader kann nicht wissen, dass
+  der Autor eine Aufzählung meinte; die Faltung beim Vergleich (ADR 0055, 0067, 0068) bleibt.
 - ADR 0055 und ADR 0067 bleiben gültig; der Name ist eine weitere Dimension neben dem Wertevorrat und ändert die
   Gleichsetzung der Formen nicht.
