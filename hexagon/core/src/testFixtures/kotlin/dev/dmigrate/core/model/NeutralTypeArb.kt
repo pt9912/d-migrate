@@ -45,7 +45,8 @@ fun Arb.Companion.neutralType(): Arb<NeutralType> {
         // die Abnahme dafür — daher hier KEINE YAML-sichere Einschränkung.
         Arb.list(Arb.string(1..8), 1..4).orNull(),
         Arb.string(1..12).orNull(),
-    ) { values, refType -> NeutralType.Enum(values = values, refType = refType) }
+        Arb.string(1..12).orNull(),
+    ) { values, refType, name -> NeutralType.Enum(values = values, refType = refType, valuesConstraintName = name) }
     val array: Arb<NeutralType> =
         Arb.of("text", "integer", "boolean", "uuid", "custom").map { NeutralType.Array(elementType = it) }
     val geometry: Arb<NeutralType> =

@@ -225,6 +225,16 @@
           "type": "string",
           "description": "Nur bei type: enum — Verweis auf custom_types"
         },
+        "values_constraint": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Nur bei type: enum mit values — Name des CHECK, der den Wertevorrat durchsetzt (PostgreSQL, SQLite, SQL Server, Oracle). Ohne Angabe benennt der Dialekt ihn selbst. MySQL rendert ein natives ENUM ohne CHECK und ignoriert den Namen mit W165."
+        },
+        "unique_constraint": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name des UNIQUE-Constraints einer Spalte mit unique: true, wo die Quelle ihn fuehrt. Schreibt schema reverse; ohne ihn benennt der Dialekt den Constraint selbst."
+        },
         "element_type": {
           "type": "string",
           "description": "Nur bei type: array (Pflicht)"

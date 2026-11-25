@@ -1,5 +1,16 @@
 version: "1.1.0"
 entries:
+  # E126 — `values_constraint` gilt nur einer Inline-Enum mit Werten (ADR 0069): an einem `ref_type`, ohne Werte
+  # oder mit leerem Namen gibt es keinen CHECK, den der Name benennen koennte.
+  - code: E126
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/SchemaValidatorTest.kt"
+    evidence_paths:
+      - source: "hexagon/core/src/main/kotlin/dev/dmigrate/core/validation/SchemaColumnValidationRules.kt"
+        path_type: production
+
   # Uebernommen aus error-code-ledger-0.9.7.yaml: die Datei einer aelteren Version
   # wird nicht mehr veraendert (spec/ledger.md, Dateikonvention).
   - code: E125

@@ -20,7 +20,22 @@ sealed class NeutralType {
     data object Email : NeutralType() {
         const val MAX_LENGTH = 254
     }
-    data class Enum(val values: List<String>? = null, val refType: String? = null) : NeutralType()
+    /**
+     * Eine Aufzaehlung: entweder inline ([values]) oder als benannter Typ ([refType]).
+     *
+     * [valuesConstraintName] ist bei einer **Inline**-Enum der Name des CHECKs, der den Wertevorrat durchsetzt
+     * (`values_constraint` in der Datei, ADR 0069). `null`: der Dialekt benennt ihn selbst (PostgreSQL: der Server,
+     * die anderen: `ck_<tabelle>_<spalte>`). Er steht am Typ und nicht an der Spalte, weil der Typ bei einer
+     * Inline-Enum der Traeger des Wertevorrats ist und eine Aenderung des Namens so ueber die vorhandene
+     * Typaenderung laeuft. MySQL kennt den CHECK nicht (natives `ENUM`) und ignoriert den Namen mit einer Warnung.
+     * Der Fingerabdruck sieht den Namen nicht: er ist eine Funktion eines Schemas, und die gelesene Datenbankseite
+     * traegt den vom Server vergebenen Namen.
+     */
+    data class Enum(
+        val values: List<String>? = null,
+        val refType: String? = null,
+        val valuesConstraintName: String? = null,
+    ) : NeutralType()
     data class Array(val elementType: String) : NeutralType()
     data class Geometry(
         val geometryType: GeometryType = GeometryType.GEOMETRY,

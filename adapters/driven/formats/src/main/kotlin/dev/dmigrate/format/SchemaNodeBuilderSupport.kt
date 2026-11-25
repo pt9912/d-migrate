@@ -73,6 +73,7 @@ private fun buildEnumType(node: ObjectNode, type: NeutralType.Enum) {
         val valuesNode = node.putArray("values")
         type.values!!.forEach { valuesNode.add(it) }
     }
+    type.valuesConstraintName?.let { node.put("values_constraint", it) }
 }
 
 private fun buildGeometryType(node: ObjectNode, type: NeutralType.Geometry) {

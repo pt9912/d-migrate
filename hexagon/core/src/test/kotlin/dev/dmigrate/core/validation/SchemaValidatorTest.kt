@@ -230,6 +230,39 @@ class SchemaValidatorTest : FunSpec({
         result.errors.any { it.code == "E013" } shouldBe true
     }
 
+    // ADR 0069: der Name des Wertevorrat-CHECKs gilt nur einer Inline-Enum mit Werten und einem nichtleeren Namen.
+    for ((label, type) in listOf(
+        "ein ref_type" to NeutralType.Enum(refType = "status", valuesConstraintName = "ck_status"),
+        "ein leerer Name" to NeutralType.Enum(values = listOf("a"), valuesConstraintName = " "),
+        "keine Werte" to NeutralType.Enum(values = emptyList(), valuesConstraintName = "ck_status"),
+    )) {
+        test("E126: values_constraint an einer Enum mit $label") {
+            val s = schema(
+                customTypes = mapOf("status" to CustomTypeDefinition(kind = CustomTypeKind.ENUM, values = listOf("a"))),
+                tables = mapOf(
+                    "items" to table(
+                        columns = mapOf("id" to col(NeutralType.Identifier(true)), "status" to col(type)),
+                        primaryKey = listOf("id"),
+                    ),
+                ),
+            )
+            validator.validate(s).errors.any { it.code == "E126" } shouldBe true
+        }
+    }
+
+    test("E126 entfaellt bei einer Inline-Enum mit Werten und Namen") {
+        val s = schema(tables = mapOf(
+            "items" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "status" to col(NeutralType.Enum(values = listOf("a", "b"), valuesConstraintName = "ck_status")),
+                ),
+                primaryKey = listOf("id"),
+            ),
+        ))
+        validator.validate(s).errors.none { it.code == "E126" } shouldBe true
+    }
+
     test("E014: char length not positive") {
         val s = schema(tables = mapOf(
             "items" to table(

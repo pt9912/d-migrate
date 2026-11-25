@@ -28,20 +28,7 @@ internal object SchemaColumnValidationRules {
         errors: MutableList<ValidationError>,
     ) {
         when (val type = column.type) {
-            is NeutralType.Enum -> {
-                val hasValues = !type.values.isNullOrEmpty()
-                val hasRefType = !type.refType.isNullOrBlank()
-                if (!hasValues && !hasRefType) {
-                    errors += ValidationError("E006", "Enum values must not be empty", path)
-                }
-                if (hasValues && hasRefType) {
-                    errors += ValidationError(
-                        "E013",
-                        "Enum: exactly one of ref_type or values required",
-                        path,
-                    )
-                }
-            }
+            is NeutralType.Enum -> validateEnumType(path, type, errors)
             is NeutralType.Decimal -> {
                 if (type.precision <= 0 || type.scale < 0) {
                     errors += ValidationError(
@@ -89,6 +76,28 @@ internal object SchemaColumnValidationRules {
         }
     }
 
+
+    private fun validateEnumType(path: String, type: NeutralType.Enum, errors: MutableList<ValidationError>) {
+        val hasValues = !type.values.isNullOrEmpty()
+        val hasRefType = !type.refType.isNullOrBlank()
+        if (!hasValues && !hasRefType) {
+            errors += ValidationError("E006", "Enum values must not be empty", path)
+        }
+        if (hasValues && hasRefType) {
+            errors += ValidationError("E013", "Enum: exactly one of ref_type or values required", path)
+        }
+        // ADR 0069: der Name gilt dem CHECK einer Inline-Enum. Ein `ref_type` hat keinen (PostgreSQL und MySQL
+        // fuehren einen eigenen Typ, SQLite nennt den CHECK nach der Konvention), und ein leerer Name waere kein Name.
+        val name = type.valuesConstraintName ?: return
+        val inline = hasValues && !hasRefType
+        if (name.isBlank() || !inline) {
+            errors += ValidationError(
+                "E126",
+                "values_constraint needs an inline enum (values, no ref_type) and a non-blank name",
+                path,
+            )
+        }
+    }
     private fun validateForeignKeyTableExists(
         path: String,
         column: ColumnDefinition,

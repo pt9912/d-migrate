@@ -64,6 +64,7 @@ private fun parseNeutralType(node: JsonNode): NeutralType {
         "enum" -> NeutralType.Enum(
             values = node["values"]?.toStringList(),
             refType = node.optionalText("ref_type"),
+            valuesConstraintName = node.optionalText("values_constraint"),
         )
         "array" -> NeutralType.Array(
             elementType = node.requiredText("element_type")

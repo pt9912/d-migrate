@@ -90,6 +90,7 @@ columns:
     auto_increment: true       # nur bei identifier
     values: [a, b, c]          # nur bei enum (inline)
     ref_type: order_status     # nur bei enum (Verweis auf custom_types)
+    values_constraint: ck_state  # nur bei enum mit values: Name des CHECK, der den Wertevorrat durchsetzt
     element_type: text         # nur bei array (Pflicht)
 
     # Generation (optional): woher der Wert kommt, wenn nicht durch Schreiben

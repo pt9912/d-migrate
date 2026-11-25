@@ -38,7 +38,8 @@
         "latitude": { "type": "float", "float_precision": "double" },
         "created_at": { "type": "datetime", "timezone": true, "default": "current_timestamp" },
         "status": { "type": "enum", "ref_type": "order_status", "default": "pending" },
-        "priority": { "type": "enum", "values": ["low", "high"] },
+        "priority": { "type": "enum", "values": ["low", "high"], "values_constraint": "ck_orders_priority" },
+        "reference_code": { "type": "text", "max_length": 20, "unique": true, "unique_constraint": "uq_orders_reference_code" },
         "tags": { "type": "array", "element_type": "text" },
         "location": { "type": "geometry", "geometry_type": "point", "srid": 4326 },
         "search": { "type": "fulltext" }
