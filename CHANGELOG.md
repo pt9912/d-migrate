@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-11-25
+
 ### Added
 
 - **`values_constraint`: der Name des CHECKs einer Inline-Enum (ADR 0069).** `state: { type: enum, values: [ACTIVE,

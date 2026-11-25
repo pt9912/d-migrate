@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.13.0**
-(stable, [released 2026-11-24](https://github.com/pt9912/d-migrate/releases/tag/v1.13.0)).
+d-migrate is a working production tool at version **1.14.0**
+(stable, [released 2026-11-25](https://github.com/pt9912/d-migrate/releases/tag/v1.14.0)).
 
 The current capabilities:
 
@@ -161,8 +161,19 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.13.0** (2026-11-24) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **`schema compare` and
+- **Current stable** · **1.14.0** (2026-11-25) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **An inline enum can name its
+  value `CHECK`: `values_constraint` (ADR 0069).** `state: { type: enum, values:
+  [ACTIVE, DISABLED], values_constraint: ck_state }` replaces the raw `CHECK … IN
+  (…)` that consumers wrote to get a fixed name. PostgreSQL, SQLite, SQL Server and
+  Oracle create the `CHECK` under that name; MySQL renders a native `ENUM` and
+  reports `W165`. A changed list or name drops the old `CHECK` under its name and
+  adds the new one, and for a named enum this works file against file too (Issue
+  #81). Also: Oracle and SQL Server drop the old value `CHECK` under the name the
+  side really carries, `spec/schema.json` knows `unique_constraint`, the release
+  preflight now starts the ZIP against all five dialects, and **the fat JAR is no
+  longer shipped** (it worked for PostgreSQL only; use the ZIP or TAR).
+  1.13.0 (2026-11-24) — **`schema compare` and
   `schema migrate` agree on value-list `CHECK`s.** A `CHECK` that lists the same
   values in another notation (`IN`, PostgreSQL's `= ANY (ARRAY[…])`, also with
   `::text[]` at a `varchar` column, SQL Server's `OR` chain) is no longer a change
