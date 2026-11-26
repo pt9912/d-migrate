@@ -3,7 +3,7 @@ description: >
   Richtet buildx ein und haelt den Layer der `deps`-Stage (`gradle resolveAllDependencies`) im
   Actions-Cache, damit nicht jeder Lauf alle Abhaengigkeiten neu von Maven Central laedt (HTTP 429).
   Setzt `DOCKER_BUILD_FLAGS` fuer die folgenden `make`-Schritte. Gecacht wird nur die `deps`-Stage:
-  `compile`, `build` und alle Testlaeufe werden nie aus einem Cache bedient.
+  `compile`, `build` und alle Testlaeufe werden nie aus einem Cache bedient. Geschrieben wird der Cache nur auf `main`.
 
 runs:
   using: composite
@@ -13,7 +13,7 @@ runs:
 
     - name: Restore deps layer cache
       id: cache
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ runner.temp }}/deps-cache
         # Der Schluessel deckt genau die Eingaben der `deps`-Stage ab (FROM-Zeile, Build-Dateien).
@@ -32,6 +32,15 @@ runs:
         rm -rf "${CACHE_DIR}"
         mv "${CACHE_DIR}-new" "${CACHE_DIR}"
         du -sm "${CACHE_DIR}" | awk '{print "deps-Cache: " $1 " MiB"}'
+
+    - name: Save deps layer cache (nur auf main)
+      # Pull Requests lesen den Cache der Standardverzweigung, schreiben aber keinen eigenen: Jeder PR-Lauf
+      # sonst einen 930-MiB-Eintrag unter seinem Ref (zwei Dependabot-PRs verdoppelten den Cache am 2026-11-26).
+      if: steps.cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/deps-cache
+        key: ${{ steps.cache.outputs.cache-primary-key }}
 
     - name: Use the cache for all builds of this job
       shell: bash

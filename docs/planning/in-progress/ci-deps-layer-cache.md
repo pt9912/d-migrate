@@ -29,7 +29,10 @@ Der Export läuft mit `--target deps`, der Cache kennt die späteren Stages nich
 - **Schlüssel** (`hashFiles`): `Dockerfile`, `settings.gradle.kts`, `build.gradle.kts`, `gradle.properties`,
   `**/build.gradle.kts`. Er entscheidet nur, ob ein Ordner geladen wird; ob ein Layer trifft, prüft BuildKit selbst.
   Bei geänderten Build-Dateien gibt es einen Fehltreffer, nie einen veralteten Treffer.
-- **Schreiben** nur bei Fehltreffer (`actions/cache` speichert den Ordner nur, wenn der Schlüssel neu ist).
+- **Schreiben** nur bei Fehltreffer **und nur auf `main`** (`actions/cache/restore` und `/save` getrennt). Der erste
+  Versuch mit `actions/cache` schrieb auch aus Pull Requests: Zwei Dependabot-PRs (#82, #83), die der Push selbst
+  auslöste, legten je einen eigenen 933-MiB-Eintrag unter ihrem Ref an; der Cache des Repositories sprang an einem
+  Tag von 2,6 auf 5,4 GiB. Pull Requests lesen jetzt den Cache der Standardverzweigung und schreiben keinen.
 - **Ort**: Composite-Action `.github/actions/docker-deps-cache`; sie setzt `DOCKER_BUILD_FLAGS`
   (`--load --cache-from type=local,src=…`), das das `Makefile` an jeden `docker build` des Haupt-Dockerfiles hängt.
   Lokal bleibt die Variable leer, dort ändert sich nichts. `--load` gehört dazu, weil ein buildx-Builder das Image sonst
