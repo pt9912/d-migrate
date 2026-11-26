@@ -1,6 +1,7 @@
 # CI: Layer-Cache für die `deps`-Stage (Maven Central antwortet mit 429)
 
-- **Status**: In Arbeit (2026-11-26). Umgesetzt und lokal belegt; offen ist der Nachweis in der CI (siehe DoD).
+- **Status**: In Arbeit (2026-11-26). In der CI in drei der vier Workflows belegt; offen ist der Integrationslauf nach
+  seiner Korrektur (siehe DoD).
 - **Ziel**: Ein Push lädt die Abhängigkeiten nicht fünfmal neu von Maven Central. Ein `429 Too Many Requests` beim Bau
   der `deps`-Stage färbt einen Lauf nicht mehr rot, der nichts mit dem Code zu tun hat.
 - **Herkunft**: Compare-Matrix #79 auf dem Release-Commit von 1.14.0 (Maven-429 bei `kotlin-gradle-plugins-bom`); gleiche
@@ -55,14 +56,25 @@ Last an anderer Stelle); `actions/cache` auf `~/.gradle` (kommt nicht in den Doc
 | frischer Builder, `make docker-test MODULES=":hexagon:core" DOCKER_BUILD_FLAGS="--builder … --load --cache-from type=local,src=…"` | Lauf grün (3 min 9 s). Die 48 Layer der Stage `deps` kommen aus dem Cache, **0 Zeilen „Resolving …"** (kein Zugriff auf Maven Central). `compile` (`gradle classes`) und `build` (`:hexagon:core:test`, Task `:hexagon:core:test` ausgeführt) laufen vollständig. |
 | `docker build --builder … --load --iidfile … --target deps` | Exit 0, die ID aus der Datei startet ein Image mit gefülltem `modules-2` (die Make-Ziele `release-assets`/`docker-smoke` stützen sich darauf) |
 
+## CI-Messung (Push `a7e085f17`)
+
+- Alle vier Workflows melden „Cache restored".
+- Build & Test (Job `build`), Per-Module Coverage und Compare-Matrix: keine Zeile `Resolving :`. In `make ci-build` laufen
+  die Testaufgaben (kein `UP-TO-DATE`, kein `FROM-CACHE`; `SKIPPED` sind nur die Module hinter `-PintegrationTests`).
+- Integration Tests: **Cache geladen, aber nicht benutzt** (1332 Zeilen `Resolving :`).
+  `scripts/test-integration-docker.sh` rief `docker build` ohne `DOCKER_BUILD_FLAGS` auf; das Skript reicht sie jetzt
+  durch (mit einem `docker`-Stub belegt).
+- Actions-Cache: 6,3 GiB von 10 GiB, davon vier `docker-deps`-Einträge mit zusammen 3,7 GiB (zwei auf `main`, zwei
+  aus den Dependabot-PRs vor der Korrektur; die verfallen nach sieben Tagen ohne Zugriff).
+
 ## Akzeptanz (DoD)
 
 * **Lokal belegt** (siehe Tabelle): Cache-Treffer ohne Download; Compile und Tests laufen auch mit Cache; `--load` plus
   `--iidfile` funktioniert.
-* **In der CI belegt** (offen, erst nach dem Push messbar): Auf dem ersten Push mit geänderten Build-Dateien läuft der
+* **In der CI belegt** (offen nur noch für Integration Tests): Auf dem ersten Push mit geänderten Build-Dateien läuft der
   Schritt „Warm deps layer" und speichert den Cache; auf dem **nächsten** Push derselben Dateien zeigen alle vier
   Workflows „Cache restored" und überspringen den Schritt; im Log von `make ci-build` steht kein `Resolving :`.
-* **Tests laufen weiter**: In `make ci-build` auf dem Cache-Treffer stehen die Testaufgaben im Log (kein `UP-TO-DATE` für
+* **Tests laufen weiter** (erfüllt, siehe Messung): In `make ci-build` auf dem Cache-Treffer stehen die Testaufgaben im Log (kein `UP-TO-DATE` für
   `test`), `koverVerify` läuft, der Lauf ist nicht schneller, weil er etwas ausgelassen hätte.
 * **Cache-Größe gemessen**: Der Ordner liegt bei 936 MiB je Schlüssel. Nach einigen Pushes prüfen, dass die Gesamtgröße
   (`gh api repos/pt9912/d-migrate/actions/cache/usage`) deutlich unter 10 GiB bleibt; sonst Schlüssel oder Umfang kürzen.

@@ -1,6 +1,7 @@
 # Natives Image: MCP-E2E-Matrizen als Gate, `connections/list` und `server.state` (Issue #84)
 
-- **Status**: In Arbeit (2026-11-26). Fix und Gate geschrieben; **am Native-Binary noch nicht belegt** (siehe DoD).
+- **Status**: In Arbeit (2026-11-26). Fix und Gate **am Native-Binary belegt** (CI-Runde 3); offen ist die
+  Entscheidung zum Logging unerwarteter Fehler (siehe DoD).
 - **Ziel**: Das ausgelieferte native Binary besteht dieselben MCP-E2E-Läufe wie das JVM-Image, und zwar bevor es
   angehängt wird.
 - **Herkunft**: Eigner-Frage, ob die E2E-Matrix je mit dem nativen Image lief (nein: CI und lokale Läufe nahmen das
@@ -49,13 +50,32 @@ Gegenprobe: Das `server.state`-Skript besteht gegen das JVM-Image `1.14.0` volls
 - Erster Versuch zuvor rot ohne Code-Ursache: `apt-get` bekam für `libtiff6` einen 404 vom Ubuntu-Archiv (Index vor
   der Datei). Die Matrix-Schritte liefen trotz fehlendem Image weiter; sie hängen jetzt am erfolgreichen Image-Bau.
 
+## CI-Runde 2 (Dispatch auf `fc35e7afe`)
+
+- Scope-Matrix, Roundtrip und Compare-Matrix bestanden; `server.state` scheiterte früher: `schema_reverse_start`
+  antwortete mit `INTERNAL_AGENT_ERROR`.
+- Ursache (Binary des Laufs lokal verpackt, derselbe Ablauf mit dem Tracing-Agenten auf der JVM): `kotlin-reflect`
+  fehlten die `kotlin/*.kotlin_builtins`, Service-Dateien und Domänentypen aus den Signaturen der Wire-Companions.
+- Behoben durch die unveränderte Agent-Ausgabe in `META-INF/native-image/dev.dmigrate/server-state/`. Ein Make-Ziel
+  zum Neuerzeugen gibt es nicht; das Verfahren steht im README unter `cli-manual/`.
+- Die Ausnahme selbst war nativ nicht sichtbar: Logback wird beim Bau initialisiert, DEBUG lässt sich im Binary nicht
+  einschalten.
+
+## CI-Runde 3 (Dispatch auf `a7e085f17`)
+
+- `mcp-e2e-native` grün in allen vier Schritten; Build & Test, Integration Tests, Per-Module Coverage, Scope-Matrix und
+  Compare-Matrix auf demselben Commit grün.
+- Reproduktionsablauf aus Issue #84 mit dem Binary dieses Laufs (lokal verpackt mit
+  `make native-runtime-from-binary`), `1.14.0` (JVM) als Schreiber: Start gegen die leere State-DB, Listen und
+  `schema_reverse_start` auf der migrierten DB, danach Lesen der vom JVM-Server angelegten Datensätze — alle Aufrufe
+  `ok`.
+
 ## Akzeptanz (DoD)
 
-* **Offen**: `native-image.yml` per Dispatch grün, darin alle vier Schritte von `mcp-e2e-native`. Erst das belegt, dass
-  die Registrierungen und die Flyway-Ressourcen im Binary wirken; es kann weitere Lücken zeigen.
-* **Offen**: Das Reproduktionsskript aus Issue #84 gilt als erfüllt, wenn der `server.state`-Schritt grün ist; das
-  Lesen von Datensätzen, die ein JVM-Server angelegt hat, deckt das Skript nicht ab (es schreibt und liest mit
-  demselben Image).
+* **Erfüllt** (Runde 3): `native-image.yml` per Dispatch grün, darin alle vier Schritte von `mcp-e2e-native`.
+* **Erfüllt** (Runde 3): Der Reproduktionsablauf aus Issue #84 läuft durch, einschließlich der vom JVM-Server
+  angelegten Datensätze. Dieser letzte Teil ist von Hand belegt; `smoke-server-state.sh` schreibt und liest mit
+  demselben Image.
 * **Offen**: Die `INTERNAL_AGENT_ERROR`-Antworten der Store-Tools erscheinen in keinem Serverlog (Nebenbefund aus
   Issue #84). Das betrifft auch die JVM und ist hier nicht behoben.
 
