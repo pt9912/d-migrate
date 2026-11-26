@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **MCP: Der Handshake meldet die Produktversion statt `0.0.0`.** `d-migrate mcp serve` (stdio und HTTP) antwortete auf
+  `initialize` mit `serverInfo.version` `0.0.0`, weil der Aufrufer keine Version übergab und der Bootstrap auf einen festen
+  Default fiel. Der Default ist jetzt die Produktversion (dieselbe wie `d-migrate --version`). Clients, die die
+  Serverversion anzeigen oder prüfen, sehen den echten Stand.
+
+### Changed
+
+- **CI: Layer-Cache für die `deps`-Stage.** Die Docker-Bauten in `build`, `integration`, `coverage-modules` und der
+  Compare-Matrix laden die Abhängigkeiten nicht mehr bei jedem Lauf neu von Maven Central (HTTP 429); die Stage
+  versucht den Download zudem dreimal. Compile und Tests laufen weiter immer.
+
 ## [1.14.0] - 2026-11-25
 
 ### Added

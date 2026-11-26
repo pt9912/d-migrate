@@ -1,5 +1,6 @@
 package dev.dmigrate.mcp.server
 
+import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.mcp.auth.FileStdioTokenStore
 import dev.dmigrate.mcp.prompts.PromptRegistry
 import dev.dmigrate.mcp.auth.StdioPrincipalResolution
@@ -100,7 +101,7 @@ object McpServerBootstrap {
      */
     fun startHttp(
         config: McpServerConfig,
-        serverVersion: String = "0.0.0",
+        serverVersion: String = VersionInfo.PRODUCT_VERSION,
         runtimeWiring: McpRuntimeWiring? = null,
         components: McpRuntimeRegistries.McpServiceComponents =
             McpRuntimeRegistries.defaultComponents(runtimeWiring, config.scopeMapping),
@@ -187,7 +188,7 @@ object McpServerBootstrap {
         config: McpServerConfig,
         input: InputStream = System.`in`,
         output: OutputStream = System.out,
-        serverVersion: String = "0.0.0",
+        serverVersion: String = VersionInfo.PRODUCT_VERSION,
         tokenStoreOverride: StdioTokenStore? = null,
         tokenSupplier: () -> String? = { System.getenv(STDIO_TOKEN_ENV) },
         runtimeWiring: McpRuntimeWiring? = null,

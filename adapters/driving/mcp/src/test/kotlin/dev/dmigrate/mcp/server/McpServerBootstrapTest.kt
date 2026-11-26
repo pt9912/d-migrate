@@ -1,5 +1,6 @@
 package dev.dmigrate.mcp.server
 
+import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.mcp.auth.StdioPrincipalResolution
 import dev.dmigrate.mcp.auth.StdioTokenFingerprint
 import dev.dmigrate.mcp.prompts.DefaultPromptRegistry
@@ -13,11 +14,17 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.inspectors.forAtLeastOne
 import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.net.Socket
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.time.Instant
 
 class McpServerBootstrapTest : FunSpec({
@@ -185,6 +192,57 @@ class McpServerBootstrapTest : FunSpec({
         try {
             handleRpc(outcome.handle).awaitTermination()
             output.toString(Charsets.UTF_8) shouldContain "\"prompts\":{\"listChanged\":false}"
+        } finally {
+            outcome.handle.close()
+        }
+    }
+
+    // Der Handshake meldete `0.0.0`, weil `McpServeRunner` keine `serverVersion` uebergibt und der Bootstrap auf einen
+    // festen Default fiel. Der Default ist jetzt die Produktversion; beide Transporte pruefen es einzeln.
+    val initializeFrame = """
+        {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"${dev.dmigrate.mcp.protocol.McpProtocol.MCP_PROTOCOL_VERSION}","clientInfo":{"name":"t","version":"1"},"capabilities":{}}}
+    """.trimIndent()
+
+    val serverName = dev.dmigrate.mcp.protocol.McpProtocol.SERVER_NAME
+    val expectedServerInfo = "\"serverInfo\":{\"name\":\"$serverName\",\"version\":\"${VersionInfo.PRODUCT_VERSION}\"}"
+
+    test("die Produktversion ist gesetzt (sonst prueft der Handshake-Test nichts)") {
+        VersionInfo.PRODUCT_VERSION shouldNotBe "unknown"
+        VersionInfo.PRODUCT_VERSION shouldNotBe "0.0.0"
+    }
+
+    test("startStdio ohne serverVersion meldet im Handshake die Produktversion, nicht 0.0.0") {
+        val output = ByteArrayOutputStream()
+        val outcome = McpServerBootstrap.startStdio(
+            McpServerConfig(authMode = AuthMode.DISABLED),
+            input = ByteArrayInputStream((initializeFrame + "\n").toByteArray(Charsets.UTF_8)),
+            output = output,
+        )
+        outcome.shouldBeInstanceOf<McpStartOutcome.Started>()
+        try {
+            handleRpc(outcome.handle).awaitTermination()
+            val reply = output.toString(Charsets.UTF_8)
+            reply shouldContain expectedServerInfo
+            reply shouldNotContain "\"version\":\"0.0.0\""
+        } finally {
+            outcome.handle.close()
+        }
+    }
+
+    test("startHttp ohne serverVersion meldet im Handshake die Produktversion, nicht 0.0.0") {
+        val outcome = McpServerBootstrap.startHttp(McpServerConfig(authMode = AuthMode.DISABLED))
+        outcome.shouldBeInstanceOf<McpStartOutcome.Started>()
+        try {
+            val request = HttpRequest.newBuilder(URI("http://127.0.0.1:${outcome.handle.boundPort}/mcp"))
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json, text/event-stream")
+                .POST(HttpRequest.BodyPublishers.ofString(initializeFrame))
+                .build()
+            val reply = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString())
+
+            reply.statusCode() shouldBe 200
+            reply.body() shouldContain expectedServerInfo
+            reply.body() shouldNotContain "\"version\":\"0.0.0\""
         } finally {
             outcome.handle.close()
         }
