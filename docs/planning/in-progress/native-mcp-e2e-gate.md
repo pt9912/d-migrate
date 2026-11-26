@@ -37,6 +37,18 @@ Gegenprobe: Das `server.state`-Skript besteht gegen das JVM-Image `1.14.0` volls
 - Wächter-Test: ohne die neuen Einträge scheitern beide Prüfungen.
 - Integrationstests der Persistenz gegen PostgreSQL grün; liefert der Provider keine Migration, scheitern sie.
 
+## CI-Runde 1 (Dispatch auf `d9552e396`, 2026-11-26)
+
+- Auf dem Binary bestanden: Scope-Matrix (`connections/list` behoben), Roundtrip, Compare-Matrix und bei `server.state`
+  Migration, Listen und das Anlegen des Jobs.
+- Gescheitert: Nach dem Neustart antwortet `job_list` mit `INTERNAL_AGENT_ERROR`. Jackson liest über die Wire-Klassen
+  hinaus deren Feldtypen (`ManagedJob`, `JobError`, `ManagedArtifact` …); 13 Typen waren nicht registriert. Der
+  Wächter-Test folgt jetzt den Feldtypen und nannte genau diese 13.
+- Schema- und Artefakt-Datensätze hatte das Skript nicht gelesen (Neustart vor Job-Ende). Es wartet jetzt auf
+  `SUCCEEDED` und verlangt in allen drei Listen mindestens einen Eintrag, vor und nach dem Neustart.
+- Erster Versuch zuvor rot ohne Code-Ursache: `apt-get` bekam für `libtiff6` einen 404 vom Ubuntu-Archiv (Index vor
+  der Datei). Die Matrix-Schritte liefen trotz fehlendem Image weiter; sie hängen jetzt am erfolgreichen Image-Bau.
+
 ## Akzeptanz (DoD)
 
 * **Offen**: `native-image.yml` per Dispatch grün, darin alle vier Schritte von `mcp-e2e-native`. Erst das belegt, dass
