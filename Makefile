@@ -9,6 +9,11 @@ SHELL := bash
 
 DOCKER ?= docker
 
+# Zusaetzliche Flags fuer jeden `docker build` des Haupt-Dockerfiles. Lokal leer. Die CI setzt sie in
+# `.github/actions/docker-deps-cache` (buildx mit Layer-Cache fuer die `deps`-Stage); `--load`
+# gehoert dazu, weil ein buildx-Builder das Image sonst nicht in den Daemon legt.
+DOCKER_BUILD_FLAGS ?=
+
 # Die Gradle-Version hat genau eine Quelle: das `FROM` der `deps`-Stage im
 # Dockerfile (dort begruendet). Einen Wrapper gibt es nicht; gebaut wird im
 # Container. Die Nebendateien (docker/native-image.Dockerfile) bekommen das
@@ -164,7 +169,7 @@ run:
 	$(DOCKER) run --rm -v "$(CURDIR):/work" $(IMAGE):$(IMAGE_TAG) $(ARGS)
 
 docker-coverage-modules-html:
-	$(DOCKER) build --target docker-coverage-modules-html \
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target docker-coverage-modules-html \
 	  $(if $(strip $(COVERAGE_MODULES_HTML_TASKS)),--build-arg COVERAGE_MODULES_HTML_TASKS="$(COVERAGE_MODULES_HTML_TASKS)",) \
 	  -t $(DOCKER_COVERAGE_MODULES_HTML_IMAGE) .
 	$(DOCKER) run --rm $(DOCKER_COVERAGE_MODULES_HTML_IMAGE) | tar xf -
@@ -238,7 +243,7 @@ parquet-sweep:
 ci: ci-build docs-check
 
 ci-build:
-	$(DOCKER) build --target build \
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target build \
 	  --build-arg GRADLE_TASKS="$(strip $(CI_BUILD_TASKS))" \
 	  -t $(IMAGE):ci-build .
 
@@ -256,14 +261,14 @@ RELEASE_ASSETS_DIR = adapters/driving/cli/build/release
 # dem falschen Stand. Der Tag wird weiterhin gesetzt. Ein Fehlschlag von `docker run` oder `tar` bricht ab (pipefail steht in `.SHELLFLAGS`).
 release-assets:
 	@iid="$$(mktemp)"; trap 'rm -f "$$iid"' EXIT; \
-	$(DOCKER) build --target release-assets \
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target release-assets \
 	  $(if $(strip $(RELEASE_VERSION)),--build-arg RELEASE_VERSION="$(RELEASE_VERSION)",) \
 	  --iidfile "$$iid" -t $(RELEASE_ASSETS_IMAGE) . || exit 1; \
 	rm -rf "$(RELEASE_ASSETS_DIR)"; \
 	$(DOCKER) run --rm "$$(cat "$$iid")" | tar xf -
 
 docker-resolve-deps:
-	$(DOCKER) build --target deps -t $(IMAGE):deps .
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target deps -t $(IMAGE):deps .
 
 # Baut das zu PUBLIZIERENDE JVM-Image aus der `runtime`-Stage — derselbe Weg, den das
 # native Image ueber docker/native-image.Dockerfile schon geht. Bis 1.0.0-RC2 kam das
@@ -281,7 +286,7 @@ docker-resolve-deps:
 # gemessenen >90 %. Eine Pruefung, die nichts Neues prueft und dabei den
 # Veroeffentlichungs-Job rot faerbt, gehoert hier nicht hin.
 docker-oci-build:
-	$(DOCKER) build --target runtime \
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target runtime \
 	  --build-arg GRADLE_TASKS="assemble $(CLI_PROJECT):installDist" \
 	  -t $(DOCKER_OCI_IMAGE) .
 
@@ -292,7 +297,7 @@ docker-oci-build:
 # Abgesichert ist das anderswo: `build.yml` faehrt `make ci-build` auf
 # denselben Commits, und `docker-gates` prueft Coverage ueber die eigene
 # Stage `coverage-verify`.
-DOCKER_RUNTIME_BUILD = $(DOCKER) build --target runtime \
+DOCKER_RUNTIME_BUILD = $(DOCKER) build $(DOCKER_BUILD_FLAGS) --target runtime \
 	  --build-arg GRADLE_TASKS="assemble $(CLI_PROJECT):installDist"
 
 docker-build:
@@ -303,25 +308,25 @@ docker-build:
 #   make docker-check MODULES=":adapters:driving:mcp"
 #   make docker-check MODULES=":hexagon:ports-common :adapters:driving:mcp"
 docker-check:
-	$(DOCKER) build --target build \
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target build \
 	  --build-arg GRADLE_TASKS="$(strip $(docker_check_tasks))" \
 	  -t $(DOCKER_TAG) .
 
 # Targeted module test inside the Dockerfile `build` stage. Same semantics as
 # docker-check but runs only the test task (no detekt / kover gates).
 docker-test:
-	$(DOCKER) build --target build \
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target build \
 	  --build-arg GRADLE_TASKS="$(strip $(docker_test_tasks))" \
 	  -t $(DOCKER_TAG) .
 
 docker-detekt: solid-suppression-gate
-	$(DOCKER) build --target detekt -t $(IMAGE):detekt .
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target detekt -t $(IMAGE):detekt .
 
 docker-coverage:
-	$(DOCKER) build --target coverage -t $(IMAGE):coverage .
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target coverage -t $(IMAGE):coverage .
 
 docker-coverage-gate:
-	@if ! $(DOCKER) build --target coverage-verify -t $(IMAGE):coverage-verify .; then \
+	@if ! $(DOCKER) build $(DOCKER_BUILD_FLAGS) --target coverage-verify -t $(IMAGE):coverage-verify .; then \
 		echo ""; \
 		echo "=== docker-coverage-gate FAILED — building reports for diagnosis ==="; \
 		$(MAKE) docker-coverage; \
@@ -337,7 +342,7 @@ docker-coverage-gate:
 	fi
 
 docker-coverage-json:
-	$(DOCKER) build --target coverage-json -t $(IMAGE):coverage-json .
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target coverage-json -t $(IMAGE):coverage-json .
 
 # Per-module Kover reports — module-isolated view to surface modules whose
 # main code is covered only by cross-module tests. Aggregate verification
@@ -355,13 +360,13 @@ COVERAGE_MODULES_THRESHOLD ?= 90
 COVERAGE_MODULES_TOP ?= 10
 
 docker-coverage-modules:
-	@$(DOCKER) build --target coverage-modules \
+	@$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target coverage-modules \
 	  $(if $(strip $(COVERAGE_MODULES_TASKS)),--build-arg COVERAGE_MODULES_TASKS="$(COVERAGE_MODULES_TASKS)",) \
 	  -t $(IMAGE):coverage-modules .
 	@echo "Module reports are available inside $(IMAGE):coverage-modules at /reports"
 
 docker-coverage-modules-summary:
-	@$(DOCKER) build --target coverage-modules-summary \
+	@$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target coverage-modules-summary \
 	  $(if $(strip $(COVERAGE_MODULES_TASKS)),--build-arg COVERAGE_MODULES_TASKS="$(COVERAGE_MODULES_TASKS)",) \
 	  -t $(IMAGE):coverage-modules-summary .
 	@$(DOCKER) run --rm $(IMAGE):coverage-modules-summary \
@@ -382,7 +387,7 @@ docker-coverage-modules-summary:
 # Not part of `make ci` / `make gates` — runs nightly or on demand,
 # per quality-coverage-expansion-plan §5.1.
 docker-perf:
-	$(DOCKER) build --target build \
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target build \
 	  --build-arg GRADLE_TASKS="-Dkotest.tags=perf $(PERF_GATE_ARG) $(strip $(docker_perf_tasks))" \
 	  -t $(IMAGE):perf .
 
@@ -391,7 +396,7 @@ docker-perf:
 # with UPDATE_GOLDEN=true), then streams the tarball of refreshed
 # `src/test/resources/golden/**` files into the source tree.
 golden-update:
-	$(DOCKER) build --target golden-update -t $(IMAGE):golden-update .
+	$(DOCKER) build $(DOCKER_BUILD_FLAGS) --target golden-update -t $(IMAGE):golden-update .
 	$(DOCKER) run --rm $(IMAGE):golden-update | tar xf -
 
 # Das Image wird ueber seine ID gestartet, nicht ueber den Tag: zwei Worktrees, die gleichzeitig bauen, ueberschrieben sonst

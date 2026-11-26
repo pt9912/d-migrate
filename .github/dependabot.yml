@@ -57,7 +57,10 @@ updates:
   # GitHub Actions. Third-party actions run with repository credentials,
   # so their updates are security-relevant.
   - package-ecosystem: github-actions
-    directory: /
+    # `/` liest nur `.github/workflows/`; die Composite-Action traegt eigene `uses:`-Pins.
+    directories:
+      - /
+      - /.github/actions/docker-deps-cache
     schedule:
       interval: weekly
       day: monday

@@ -45,6 +45,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Docker deps cache
+        # Layer-Cache nur fuer `deps` (Maven-Central-Downloads); Tests und Compile laufen immer.
+        uses: ./.github/actions/docker-deps-cache
+
       - name: Build, test, run detekt and verify coverage
         # --no-build-cache: kover-Verify konsumiert die `.exec`-Daten
         # aus dem konkreten Test-Lauf. Deshalb bleibt der CI-Build in der

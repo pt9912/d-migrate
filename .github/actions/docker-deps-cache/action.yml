@@ -1,0 +1,40 @@
+name: Docker deps cache
+description: >
+  Richtet buildx ein und haelt den Layer der `deps`-Stage (`gradle resolveAllDependencies`) im
+  Actions-Cache, damit nicht jeder Lauf alle Abhaengigkeiten neu von Maven Central laedt (HTTP 429).
+  Setzt `DOCKER_BUILD_FLAGS` fuer die folgenden `make`-Schritte. Gecacht wird nur die `deps`-Stage:
+  `compile`, `build` und alle Testlaeufe werden nie aus einem Cache bedient.
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+    - name: Restore deps layer cache
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/deps-cache
+        # Der Schluessel deckt genau die Eingaben der `deps`-Stage ab (FROM-Zeile, Build-Dateien).
+        # Er entscheidet nur, ob ein Cache geladen wird; ob ein Layer trifft, prueft BuildKit selbst.
+        key: docker-deps-${{ hashFiles('Dockerfile', 'settings.gradle.kts', 'build.gradle.kts', 'gradle.properties', '**/build.gradle.kts') }}
+
+    - name: Warm deps layer (cache miss)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        CACHE_DIR: ${{ runner.temp }}/deps-cache
+      run: |
+        set -euo pipefail
+        docker buildx build --target deps \
+          --cache-to "type=local,dest=${CACHE_DIR}-new,mode=max" .
+        rm -rf "${CACHE_DIR}"
+        mv "${CACHE_DIR}-new" "${CACHE_DIR}"
+        du -sm "${CACHE_DIR}" | awk '{print "deps-Cache: " $1 " MiB"}'
+
+    - name: Use the cache for all builds of this job
+      shell: bash
+      env:
+        CACHE_DIR: ${{ runner.temp }}/deps-cache
+      run: echo "DOCKER_BUILD_FLAGS=--load --cache-from type=local,src=${CACHE_DIR}" >> "${GITHUB_ENV}"

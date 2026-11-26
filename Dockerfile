@@ -114,7 +114,14 @@ COPY --chown=gradle:gradle test/cross-dialect-matrix/build.gradle.kts test/cross
 COPY --chown=gradle:gradle test/integration-concurrency/build.gradle.kts test/integration-concurrency/build.gradle.kts
 COPY --chown=gradle:gradle test/perf-large-schema/build.gradle.kts test/perf-large-schema/build.gradle.kts
 
-RUN gradle --no-daemon resolveAllDependencies
+# Drei Versuche mit Wartezeit: Maven Central antwortet GitHub-Runnern gelegentlich mit 429, und der
+# Cache dieser Stage (`.github/actions/docker-deps-cache`) greift erst nach dem ersten erfolgreichen Lauf.
+RUN for attempt in 1 2 3; do \
+      gradle --no-daemon resolveAllDependencies && exit 0; \
+      echo "resolveAllDependencies: Versuch ${attempt} gescheitert" >&2; \
+      sleep $((attempt * 30)); \
+    done; \
+    exit 1
 
 # ---- Stage: compile-only (production classes only, no tests) ---------------
 # Fast feedback for compilation checks during development.

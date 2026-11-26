@@ -21,6 +21,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Docker deps cache
+        # Layer-Cache nur fuer `deps` (Maven-Central-Downloads); Tests und Compile laufen immer.
+        uses: ./.github/actions/docker-deps-cache
+
       - name: Print per-module coverage summary
         # Apples-to-apples mit `make docker-coverage-modules` lokal — gleicher
         # Dockerfile-Stage `coverage-modules`, gleicher kover-report-to-json.jq
