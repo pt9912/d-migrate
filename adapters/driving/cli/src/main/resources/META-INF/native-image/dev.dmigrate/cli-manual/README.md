@@ -89,7 +89,12 @@ Kotlin-Modul).
 …ConnectionsListParams“; mit `server.state` antworten die Store-Tools mit `INTERNAL_AGENT_ERROR` (Issue #84).
 Die Wirkung der Eintraege zeigt erst ein Native-Bau: der Job `mcp-e2e-native` in `native-image.yml`.
 
-Eine neue Protokoll- oder Wire-Klasse ohne Eintrag faellt in `NativeReflectionRegistrationTest` auf.
+Dazu jeder Typ, den Jackson aus einer Wire-Klasse liest (`ManagedJob`, `JobError`, `ManagedArtifact`, Enums …):
+**Belegt** im ersten CI-Lauf von `mcp-e2e-native`, `job_list` scheiterte nach einem Neustart mit
+`INTERNAL_AGENT_ERROR`, solange nur die Wire-Klassen registriert waren.
+
+Eine neue Protokoll- oder Wire-Klasse, auch ein neuer Feldtyp, ohne Eintrag faellt in
+`NativeReflectionRegistrationTest` auf.
 
 ## `resource-config.json` — `db/migration/`
 

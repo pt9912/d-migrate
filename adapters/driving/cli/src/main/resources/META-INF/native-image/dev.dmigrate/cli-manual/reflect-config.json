@@ -968,5 +968,122 @@
     "allDeclaredFields": true,
     "queryAllDeclaredMethods": true,
     "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.approval.ApprovalCorrelationKind",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.artifact.ArtifactKind",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.artifact.ArtifactUploadMetadata",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.artifact.ManagedArtifact",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.job.JobCancelRequest",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.job.JobError",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.job.JobProgress",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.job.JobStatus",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.job.JobVisibility",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.job.ManagedJob",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.resource.ResourceKind",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.core.resource.ResourceKind$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.ports.quota.QuotaDimension",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
   }
 ]

@@ -10,8 +10,8 @@
 # Ablauf (ein Image, wie es MCP_E2E_DMIGRATE_IMAGE nennt):
 #   1. leere State-DB: der Server startet, Flyway hat die Tabellen angelegt (nicht nur die History-Tabelle)
 #   2. die drei Listen (schema_list, job_list, artifact_list) antworten ohne Fehler
-#   3. schema_reverse_start legt einen Job an; seine Zeile steht in der State-DB
-#   4. Neustart gegen dieselbe, nun gefuellte State-DB: die Listen lesen die Datensaetze, job_list nennt den Job
+#   3. schema_reverse_start legt einen Job an; er endet mit SUCCEEDED, Job, Schema und Artefakt stehen in den Listen
+#   4. Neustart gegen dieselbe, nun gefuellte State-DB: die Listen lesen die Datensaetze und nennen sie
 #
 # Aufruf: scripts/smoke-server-state.sh
 # Voraussetzung am Host: docker, curl, jq und das Image (`make docker-build IMAGE_TAG=dev` oder ein natives).
@@ -121,6 +121,22 @@ check_lists() {
     done
 }
 
+# Die drei Listen nennen nach einem abgeschlossenen Reverse je mindestens einen Datensatz. Leere Listen waeren
+# auch ohne Lesen gruen: erst ein Eintrag zwingt den Server, ihn aus der State-DB zu deserialisieren.
+check_records() {
+    local phase="$1" pair tool_name key count
+    for pair in job_list:jobs schema_list:schemas artifact_list:artifacts; do
+        tool_name="${pair%%:*}"
+        key="${pair##*:}"
+        count="$(tool "$tool_name" '{}' | jq -r --arg k "$key" '.result.content[0].text | fromjson? | (.[$k] // []) | length' 2> /dev/null)"
+        if [ "${count:-0}" -ge 1 ]; then
+            log "  $tool_name nennt $count Eintrag/Eintraege"
+        else
+            note_failure "$phase: $tool_name nennt keinen gespeicherten Eintrag"
+        fi
+    done
+}
+
 log "Image $IMAGE, PostgreSQL $PG_IMAGE"
 docker rm -f "$MCP_NAME" "$PG_NAME" > /dev/null 2>&1
 docker run -d --name "$PG_NAME" -e POSTGRES_USER=smoke -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=state \
@@ -148,15 +164,20 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
     log "== 2. die Listen antworten ohne Fehler"
     check_lists "2"
 
-    log "== 3. schema_reverse_start legt einen Job an"
+    log "== 3. schema_reverse_start legt einen Job an, der Datensaetze schreibt"
     if code="$(tool_ok schema_reverse_start '{"connectionId":"dmigrate://tenants/default/connections/src","idempotencyKey":"state-smoke-1"}')"; then
-        jobs=0
-        for _ in $(seq 30); do
-            jobs="$(psql_ 'select count(*) from dmigrate_state.jobs' 2> /dev/null || echo 0)"
-            [ "${jobs:-0}" -ge 1 ] && break
+        status=""
+        for _ in $(seq 60); do
+            status="$(psql_ 'select status from dmigrate_state.jobs limit 1' 2> /dev/null)"
+            case "${status^^}" in SUCCEEDED|FAILED|CANCELLED) break ;; esac
             sleep 1
         done
-        if [ "${jobs:-0}" -ge 1 ]; then log "  Job-Zeile in der State-DB ($jobs)"; else note_failure "3: keine Job-Zeile in dmigrate_state.jobs"; fi
+        if [ "${status^^}" = SUCCEEDED ]; then
+            log "  Job in der State-DB: $status"
+            check_records "3"
+        else
+            note_failure "3: der Job endet nicht mit SUCCEEDED (Status: ${status:-keine Zeile})"
+        fi
     else
         note_failure "3: schema_reverse_start -> $code"
     fi
@@ -164,8 +185,7 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
     log "== 4. Neustart gegen die gefuellte State-DB: die Listen lesen die Datensaetze"
     if serve; then
         check_lists "4"
-        listed="$(tool job_list '{}' | jq -r '.result.content[0].text | fromjson? | (.jobs // []) | length' 2> /dev/null)"
-        if [ "${listed:-0}" -ge 1 ]; then log "  job_list nennt $listed Job(s)"; else note_failure "4: job_list nennt den gespeicherten Job nicht"; fi
+        check_records "4"
     else
         note_failure "4: der Server startet nicht gegen die gefuellte State-DB"
         docker logs "$MCP_NAME" 2>&1 | tail -15 | sed 's/^/    | /'

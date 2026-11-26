@@ -3,7 +3,12 @@ package dev.dmigrate.cli
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldNotBeEmpty
+import io.kotest.matchers.shouldBe
 import java.io.File
+import java.lang.reflect.Modifier
+import java.lang.reflect.ParameterizedType
+import java.lang.reflect.Type
+import java.lang.reflect.WildcardType
 import java.net.JarURLConnection
 import java.net.URL
 
@@ -54,7 +59,46 @@ class NativeReflectionRegistrationTest : FunSpec({
     test("jede Wire-Klasse der Server-State-Persistenz samt Companion steht in der Native-Konfiguration") {
         missing("dev.dmigrate.server.persistence.jdbc", ::isWire).shouldBeEmpty()
     }
+
+    // Jackson liest ueber die Wire-Klasse hinaus jeden Typ ihrer Felder (`ManagedJob`, `JobError`, …). Nur die
+    // Wire-Klassen zu registrieren genuegt nicht: `job_list` scheiterte nativ erst beim Lesen eines gespeicherten
+    // Jobs (`INTERNAL_AGENT_ERROR`).
+    test("jeder Typ, den Jackson aus einer Wire-Klasse liest, steht in der Native-Konfiguration") {
+        val wires = classesIn("dev.dmigrate.server.persistence.jdbc").filter { it.simpleName.endsWith("Wire") }
+
+        reachableFrom(wires)
+            .flatMap { type ->
+                listOf(type.name) + type.declaredClasses.filter { it.simpleName == "Companion" }.map { it.name }
+            }
+            .filterNot { it in registered }
+            .sorted()
+            .joinToString("\n") shouldBe ""
+    }
 })
+
+/** [roots] und alle `dev.dmigrate`-Typen ihrer Instanzfelder, auch in Generics, rekursiv. */
+private fun reachableFrom(roots: List<Class<*>>): Set<Class<*>> {
+    val seen = linkedSetOf<Class<*>>()
+    val queue = ArrayDeque(roots)
+    while (queue.isNotEmpty()) {
+        val type = queue.removeFirst()
+        if (!seen.add(type)) continue
+        type.declaredFields
+            .filterNot { Modifier.isStatic(it.modifiers) || it.isSynthetic }
+            .flatMap { ownTypes(it.genericType) }
+            .forEach(queue::add)
+    }
+    return seen
+}
+
+private fun ownTypes(type: Type): List<Class<*>> =
+    when (type) {
+        is Class<*> -> listOf(if (type.isArray) type.componentType else type)
+            .filter { it.name.startsWith("dev.dmigrate.") }
+        is ParameterizedType -> (listOf(type.rawType) + type.actualTypeArguments).flatMap(::ownTypes)
+        is WildcardType -> type.upperBounds.flatMap(::ownTypes)
+        else -> emptyList()
+    }
 
 /** Alle Klassen unter [packageName], auch aus Unterpaketen, aus Verzeichnis oder Jar des Classpath. */
 private fun classesIn(packageName: String): List<Class<*>> {
