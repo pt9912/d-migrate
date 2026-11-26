@@ -14,8 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Default fiel. Der Default ist jetzt die Produktversion (dieselbe wie `d-migrate --version`). Clients, die die
   Serverversion anzeigen oder prüfen, sehen den echten Stand.
 
+- **Natives Image: `connections/list` antwortet.** Die DTOs `ConnectionsListParams`, `ConnectionsListResult` und
+  `ConnectionListEntry` fehlten in der Native-Registrierung; das Binary antwortete mit „Unable to create instance of
+  class …ConnectionsListParams". Ein Test prüft jetzt für jede Datenklasse des MCP-Protokolls, dass sie registriert ist.
+- **Natives Image: `mcp serve` mit `server.state` (JDBC) läuft (Issue #84).** Flyway fand `db/migration` im
+  Native-Image nicht (`unsupported protocol: resource`) und legte nur die History-Tabelle an; die Persistenz-DTOs
+  (Jackson mit Kotlin-Modul) waren nicht registriert, die Store-Tools antworteten mit `INTERNAL_AGENT_ERROR`. Die
+  Migrationen kommen jetzt aus einem beim Bau erzeugten Index (`db/migration/migrations.index`) statt aus dem
+  Classpath-Scan, auf der JVM wie nativ; die Wire-Klassen sind registriert.
+
 ### Changed
 
+- **CI: Das native Binary besteht die MCP-E2E-Matrizen, bevor es ausgeliefert wird.** `native-image.yml` fährt gegen das
+  `linux-x64`-Binary die Scope-Matrix, den Roundtrip, die Compare-Matrix und `server.state` mit PostgreSQL
+  (`make mcp-e2e-server-state`); `attach-release` und das native Image hängen daran.
 - **CI: Layer-Cache für die `deps`-Stage.** Die Docker-Bauten in `build`, `integration`, `coverage-modules` und der
   Compare-Matrix laden die Abhängigkeiten nicht mehr bei jedem Lauf neu von Maven Central (HTTP 429); die Stage
   versucht den Download zudem dreimal. Compile und Tests laufen weiter immer.
