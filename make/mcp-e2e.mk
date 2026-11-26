@@ -9,7 +9,7 @@
 # docs/planning/next/mcp-real-e2e-scope-matrix.md (Teil B). Voraussetzung:
 # einmaliger `make docker-build IMAGE_TAG=dev`.
 
-.PHONY: mcp-e2e-up mcp-e2e-down mcp-e2e-purge mcp-e2e-smoke mcp-e2e-roundtrip mcp-e2e-roundtrip-oracle mcp-e2e-compare-matrix mcp-e2e-compare-matrix-oracle
+.PHONY: mcp-e2e-up mcp-e2e-down mcp-e2e-purge mcp-e2e-smoke mcp-e2e-roundtrip mcp-e2e-roundtrip-oracle mcp-e2e-compare-matrix mcp-e2e-compare-matrix-oracle mcp-e2e-server-state
 
 MCP_E2E_COMPOSE := docker compose -f examples/mcp-e2e/docker-compose.yml
 
@@ -50,3 +50,9 @@ mcp-e2e-compare-matrix:
 # Dasselbe mit Oracle als fuenftem Dialekt (Kaltstart 2-3 Minuten zusaetzlich).
 mcp-e2e-compare-matrix-oracle:
 	MCP_E2E_WITH_ORACLE=1 ./examples/mcp-e2e/scripts/smoke-compare-matrix.sh $(MCP_E2E_MATRIX_ARGS)
+
+# `mcp serve` mit `server.state` (JDBC) gegen ein echtes PostgreSQL: Flyway-Migration, Store-Tools und Neustart
+# (Issue #84). Faehrt ohne den compose-Stack und belegt die Host-Ports 5499 und 8797. Gegen das native Image:
+#   make mcp-e2e-server-state MCP_E2E_DMIGRATE_IMAGE=ghcr.io/pt9912/d-migrate:<version>-native
+mcp-e2e-server-state:
+	./examples/mcp-e2e/scripts/smoke-server-state.sh

@@ -318,8 +318,80 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  attach-release:
+  # E2E gegen das NATIVE Binary (Issue #84 und der `connections/list`-Befund): Die JVM-Matrizen in
+  # mcp-e2e-compare-matrix.yml sagen nichts ueber das Binary, das ausgeliefert wird. GraalVM schliesst
+  # reflektive Zugriffe (Gson-/Jackson-DTOs, Flyway-Scan) aus, die nicht registriert sind; ein Exit-Code-
+  # Test sieht das nicht, `--version` und `schema validate` auch nicht. Gefahren wird das linux-x64-Binary
+  # dieses Laufs, verpackt in das Native-Runtime-Image (Entrypoint = Binary), ohne zweiten Compile.
+  #
+  # Jede Matrix ein eigener Schritt mit `!cancelled()`: ein rotes Ergebnis verdeckt die anderen nicht.
+  # attach-release und damit das native Image haengen an diesem Job; ein Binary, das E2E nicht besteht,
+  # wird nicht ausgeliefert.
+  mcp-e2e-native:
     needs: build-native
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # Beide Harness-Skripte und die Compose-Datei lesen diese Variable.
+      MCP_E2E_DMIGRATE_IMAGE: d-migrate:native-e2e
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the linux-x64 native binary
+        # Fehlt das Artefakt (Linux-Leg rot), scheitert der Job hier: ohne Binary gibt es nichts zu pruefen.
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: d-migrate-native-linux-x64
+          path: dist
+
+      - name: Build the native runtime image from the binary
+        run: |
+          set -euo pipefail
+          BIN="$(ls dist/d-migrate-*-linux-x64 | grep -v '\.sha256$' | head -1)"
+          test -n "${BIN}"
+          chmod +x "${BIN}"
+          make native-runtime-from-binary NATIVE_BINARY="${BIN}" NATIVE_RUNTIME_TAG="${MCP_E2E_DMIGRATE_IMAGE}"
+          docker run --rm "${MCP_E2E_DMIGRATE_IMAGE}" --version
+
+      - name: Verify docker compose, jq and sqlite3 available
+        run: |
+          docker compose version
+          jq --version
+          sqlite3 --version
+
+      - name: MCP scope matrix (native)
+        run: make mcp-e2e-smoke
+
+      - name: MCP cross-dialect roundtrip (native)
+        if: ${{ !cancelled() }}
+        run: make mcp-e2e-roundtrip
+
+      - name: MCP compare matrix (native)
+        if: ${{ !cancelled() }}
+        run: make mcp-e2e-compare-matrix
+
+      - name: MCP server.state with PostgreSQL (native)
+        if: ${{ !cancelled() }}
+        run: make mcp-e2e-server-state
+
+      - name: Upload E2E artefacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mcp-e2e-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: examples/mcp-e2e/out
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Tear down the stack
+        if: ${{ always() }}
+        run: make mcp-e2e-purge || true
+
+  attach-release:
+    needs: [build-native, mcp-e2e-native]
     # `!cancelled()` statt des impliziten `success()`: auch laufen, wenn ein OS-Leg rot ist — sonst
     # verhinderte ein macOS/Windows-Flake das Anhaengen der ERFOLGREICHEN Legs mit (das waere kein
     # "best-effort"). Frage 6 = HYBRID: macOS/Windows sind best-effort, aber das Linux-Leg ist ein
@@ -330,7 +402,9 @@ jobs:
     # `pattern`/`merge-multiple` sowie die Gate-Logik ausschliesslich am Tag zu erleben —
     # also nur dann, wenn sie zaehlen. Kein eigener Input noetig; die Kosten sind
     # vernachlaessigbar, anders als beim Probelauf in build.yml.
-    if: ${{ !cancelled() && (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
+    # Nur nach bestandenem E2E gegen das Binary (mcp-e2e-native): ein Binary, das E2E nicht besteht, wird weder
+    # angehaengt noch als Image verpackt.
+    if: ${{ !cancelled() && needs.mcp-e2e-native.result == 'success' && (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     # Einzelner Uploader statt Upload aus jedem Matrix-Leg: haelt die Schreibrechte auf einen Job
     # begrenzt und vermeidet drei gleichzeitige Uploads auf dasselbe Release.

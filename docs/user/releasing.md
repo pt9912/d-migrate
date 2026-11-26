@@ -657,6 +657,13 @@ Zur Einordnung:
   das andere nicht ab, sein fehlendes Asset ist zulässig und der Release selbst bleibt gültig.
   Für macOS gibt es kein Native-Leg mehr ([ADR 0044](../adr/0044-kein-macos-native-binary.md)). Deshalb steht die Asset-Liste in der Verifikation
   ([4.6](#46-verifikation-des-releases)).
+- **Das Linux-Binary besteht die MCP-E2E-Matrizen, bevor es angehängt wird.** Der Job `mcp-e2e-native` verpackt das
+  `linux-x64`-Binary dieses Laufs in das Native-Runtime-Image (ohne zweiten Compile) und fährt dagegen die
+  Scope-Matrix, den Dialekt-Roundtrip, die Compare-Matrix und `server.state` mit PostgreSQL
+  (`make mcp-e2e-smoke`, `-roundtrip`, `-compare-matrix`, `-server-state`). Warum: Ein natives Binary scheitert an
+  reflektiven Zugriffen (Gson-/Jackson-DTOs, Flyway-Scan) erst am Aufrufort; `--version` und `schema validate`
+  sehen das nicht. Ist der Job rot, hängt `attach-release` nichts an und das native Image entsteht nicht. Der
+  Dispatch-Lauf vor dem Tag zeigt es also schon vor dem Release.
 
 Der Workflow lässt sich auch ohne Tag starten (`workflow_dispatch`), etwa um
 das Rezept gegen `main` zu prüfen. Solche Läufe hängen nichts an ein
