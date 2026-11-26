@@ -8,6 +8,18 @@ unter `META-INF/native-image/` zusammen, die Trennung kostet also nichts.
 Alle Eintraege hier sind **empirisch belegt**: ohne sie scheitert ein konkreter, reproduzierbarer
 Aufruf, mit ihnen laeuft er. Keiner steht auf Verdacht.
 
+## Nachbarverzeichnis `dev.dmigrate/server-state/`
+
+Ausgabe des Tracing-Agenten fuer `mcp serve` mit `server.state` (Issue #84), unveraendert uebernommen. `make
+native-agent` faehrt keinen Server mit JDBC-Zustand und sieht diesen Pfad nicht: `kotlin-reflect` braucht die
+`kotlin/*.kotlin_builtins`, Service-Dateien und die Domaenentypen aus den Signaturen der Wire-Companions
+(`JobRecord`, `ArtifactRecord` …).
+
+Erhoben am 2026-11-26 an der Distribution 1.14.0 auf `ghcr.io/graalvm/native-image-community:25`: der Ablauf aus
+`examples/mcp-e2e/scripts/smoke-server-state.sh` (leere State-DB, Reverse-Job, Neustart, Listen), der Server als
+`java -agentlib:native-image-agent=config-merge-dir=<aus> -cp '<lib>/*' dev.dmigrate.cli.MainKt mcp serve …`,
+nach jeder Sitzung mit `docker stop` beendet, damit der Agent schreibt. Ein Make-Ziel dafuer gibt es noch nicht.
+
 ## `com.zaxxer.hikari.HikariConfig`
 
 `HikariConfig.logConfiguration()` ruft ueber `PropertyElf.getProperty` reflektiv alle Getter auf,

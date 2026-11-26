@@ -61,8 +61,36 @@ server:
       auto: true
 YAML
 printf 'rules:\n  - tenantId: default\n    toolName: schema_reverse_start\n    effect: allow\n' > "$WORK/policy.yaml"
+# Der Server loggt die Ursache eines INTERNAL_AGENT_ERROR nur auf DEBUG. Ohne diese Datei bliebe ein Befund
+# dieses Skripts auf der JVM ohne jede Spur (Nebenbefund aus Issue #84). Im Native-Image wirkt sie NICHT:
+# Logback wird dort beim Bau initialisiert (`--initialize-at-build-time`), ein Befund bleibt nativ ohne Ursache.
+cat > "$WORK/logback.xml" << 'XML'
+<configuration>
+  <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.err</target>
+    <encoder><pattern>%-5level %logger{36} - %msg%n%ex{full}</pattern></encoder>
+  </appender>
+  <logger name="dev.dmigrate.mcp.protocol.McpServiceImpl" level="DEBUG"/>
+  <root level="WARN"><appender-ref ref="STDERR"/></root>
+</configuration>
+XML
 # Das Image laeuft als uid 10001 und muss die Dateien lesen koennen.
-chmod 755 "$WORK"; chmod 644 "$WORK/config.yaml" "$WORK/policy.yaml"
+chmod 755 "$WORK"; chmod 644 "$WORK/config.yaml" "$WORK/policy.yaml" "$WORK/logback.xml"
+
+# System-Properties erreichen das JVM-Startskript ueber JAVA_OPTS, das native Binary nur als Argument.
+LOGBACK_PROP="-Dlogback.configurationFile=/work/logback.xml"
+LOG_ENV=()
+LOG_ARGS=()
+if docker run --rm --entrypoint sh "$IMAGE" -c 'test -d /opt/d-migrate/lib' > /dev/null 2>&1; then
+    LOG_ENV=(-e "JAVA_OPTS=$LOGBACK_PROP")
+else
+    LOG_ARGS=("$LOGBACK_PROP")
+fi
+
+# Die Ursachen aus dem Serverlog, je Befund einmal vor dem naechsten Neustart.
+server_log() {
+    docker logs "$MCP_NAME" 2>&1 | grep -E -A30 'failed before the trust boundary|^Exception|ERROR|Unable to' | head -60 | sed 's/^/    | /'
+}
 
 psql_() { docker exec "$PG_NAME" psql -U smoke -d state -qtAc "$1"; }
 
@@ -74,8 +102,10 @@ serve() {
     docker rm -f "$MCP_NAME" > /dev/null 2>&1
     docker run -d --name "$MCP_NAME" --network host \
         -e "STATE_SMOKE_SRC_URL=postgresql://smoke:smoke@127.0.0.1:${PG_PORT}/state" \
+        "${LOG_ENV[@]}" \
         -v "$WORK/config.yaml:/work/config.yaml:ro" -v "$WORK/policy.yaml:/work/policy.yaml:ro" \
-        "$IMAGE" mcp serve --transport=http --bind=127.0.0.1 --port="$HTTP_PORT" \
+        -v "$WORK/logback.xml:/work/logback.xml:ro" \
+        "$IMAGE" "${LOG_ARGS[@]}" mcp serve --transport=http --bind=127.0.0.1 --port="$HTTP_PORT" \
         --auth-mode=disabled --connection-config=/work/config.yaml --policy-file=/work/policy.yaml > /dev/null
     local up=false
     for _ in $(seq 40); do
@@ -182,6 +212,7 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
         note_failure "3: schema_reverse_start -> $code"
     fi
 
+    [ ${#FAILURES[@]} -eq 0 ] || server_log
     log "== 4. Neustart gegen die gefuellte State-DB: die Listen lesen die Datensaetze"
     if serve; then
         check_lists "4"
@@ -193,6 +224,7 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
 fi
 
 if [ ${#FAILURES[@]} -gt 0 ]; then
+    server_log
     printf '\nFAIL: %d Befund(e)\n' "${#FAILURES[@]}" >&2
     printf '  - %s\n' "${FAILURES[@]}" >&2
     exit 1
