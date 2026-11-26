@@ -459,6 +459,86 @@ class McpServeRunnerTest : FunSpec({
         }
     }
 
+    context("server.state verlangt einen persistenten Byte-Store") {
+        val stateYaml = "server:\n  state:\n    jdbcUrl: jdbc:postgresql://localhost/dmigrate\n"
+
+        fun run(yaml: String, stateDir: Path?): Triple<Int, List<String>, Boolean> {
+            val config = Files.createTempFile("dmigrate-runner-state-", ".yaml")
+            Files.writeString(config, yaml)
+            val (lines, sink) = stderrCapture()
+            var launched = false
+            val launcher = object : McpServeLauncher {
+                override fun launch(
+                    transport: String,
+                    config: McpServerConfig,
+                    owner: StateDirOwner,
+                    lock: McpStateDirLock,
+                    cursorKeyring: CursorKeyring?,
+                    artifacts: ArtifactStorageConfig,
+                ) {
+                    launched = true
+                }
+            }
+            try {
+                val exit = McpServeRunner(
+                    options = McpServeOptions(transport = "stdio", mcpStateDir = stateDir),
+                    stderr = sink,
+                    effectiveConnectionConfigPath = config,
+                    cliVersionProvider = { "test" },
+                    launcher = launcher,
+                ).execute()
+                return Triple(exit, lines, launched)
+            } finally {
+                Files.deleteIfExists(config)
+            }
+        }
+
+        test("ohne --mcp-state-dir bricht der Start ab und nennt beide Wege") {
+            val (exit, lines, launched) = run(stateYaml, stateDir = null)
+
+            exit shouldBe 2
+            launched shouldBe false
+            val joined = lines.joinToString("\n")
+            joined shouldContain "no state dir is configured"
+            joined shouldContain "--mcp-state-dir"
+            joined shouldContain "artifacts.store: s3"
+        }
+
+        test("ein Verzeichnis, das nicht besteht, wird abgelehnt und nicht angelegt") {
+            val missing = Files.createTempDirectory("dmigrate-runner-parent-").resolve("bytes")
+
+            val (exit, lines, launched) = run(stateYaml, stateDir = missing)
+
+            exit shouldBe 2
+            launched shouldBe false
+            lines.joinToString("\n") shouldContain "state dir $missing does not exist"
+            Files.exists(missing) shouldBe false
+        }
+
+        test("ein bestehendes Verzeichnis startet den Server") {
+            val (exit, _, launched) = run(stateYaml, stateDir = Files.createTempDirectory("dmigrate-runner-bytes-"))
+
+            exit shouldBe 0
+            launched shouldBe true
+        }
+
+        test("artifacts.store=s3 braucht kein Verzeichnis") {
+            val yaml = stateYaml + "artifacts:\n  store: s3\n  s3:\n    bucket: mcp-artifacts\n"
+
+            val (exit, _, launched) = run(yaml, stateDir = null)
+
+            exit shouldBe 0
+            launched shouldBe true
+        }
+
+        test("ohne server.state bleibt der temporaere Default erlaubt") {
+            val (exit, _, launched) = run("{}\n", stateDir = null)
+
+            exit shouldBe 0
+            launched shouldBe true
+        }
+    }
+
     context("execute (happy path delegates to the launcher seam)") {
         // Deterministic coverage of doExecute's success orchestration
         // (resolve state dir -> lock -> startup sweep -> start-state line ->

@@ -2015,7 +2015,9 @@ d-migrate mcp serve --transport http --bind 0.0.0.0 --port 8080 \
 - **Zustand und Dateien:** `--mcp-state-dir` bestimmt, wo hochgeladene Inhalte
   und Artefakte abgelegt werden; ohne Angabe ein temporäres, beim Stoppen
   gelöschtes Verzeichnis. `--mcp-state-orphan-retention` steuert das Aufräumen
-  verwaister Dateien beim Start (Standard 24h).
+  verwaister Dateien beim Start (Standard 24h). Mit `server.state` müssen Sie ein
+  bestehendes Verzeichnis angeben oder S3 nutzen, sonst startet der Server nicht
+  ([Administrationshandbuch §6.3](administrationshandbuch.md#63-konfigurations-flags-referenz)).
 - **Sicherheit:** `--auth-mode disabled` nur lokal; im Netzbetrieb JWT + HTTPS.
   Verbindungen secret-frei über `--connection-config` referenzieren.
 - Alle Server-/Admin-Optionen: [Anhang A.13–A.16](#a13-mcp-serve). MCP-Protokoll,
@@ -3952,7 +3954,7 @@ Fortschritt/Warnungen nach stderr.
 | `--audience` | erwarteter `aud`-Claim / Resource Indicator (für `jwt-*` erforderlich) |
 | `--stdio-token-file` | Token-Registry (JSON/YAML) für den stdio-Transport |
 | `--allow-origin` | Origin-Allowlist-Eintrag (wiederholbar) |
-| `--mcp-state-dir` | Verzeichnis für dateibasierte Uploads/Artefakte (Vorrang vor `$DMIGRATE_MCP_STATE_DIR`; sonst temporär) |
+| `--mcp-state-dir` | Verzeichnis für dateibasierte Uploads/Artefakte (Vorrang vor `$DMIGRATE_MCP_STATE_DIR`; sonst temporär). Mit `server.state` muss es bestehen, sofern nicht S3 genutzt wird |
 | `--mcp-state-orphan-retention` | Aufbewahrung verwaister Dateien beim Start (`never`, `0`, `<n><ms\|s\|m\|h\|d>` oder ISO-8601; Standard 24h) |
 | `--connection-config` | Server-YAML für secret-freie Verbindungsreferenzen (Standard: Root-`--config`) |
 | `--cursor-keyring-file` | YAML-Keyring für HMAC-versiegelte Cursor (Mehrinstanz-Betrieb) |

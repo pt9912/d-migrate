@@ -2418,19 +2418,26 @@ d-migrate mcp serve [--transport stdio|http] [--bind <addr>] [--port <n>] \
 | `--stdio-token-file` | Nein | Pfad | JSON/YAML-Token-Registry für Stdio (siehe `mcp-server.md` §12.10) |
 | `--introspection-client-id` / `--introspection-client-secret` | Modusabhängig | String | OAuth-Client-Zugangsdaten, mit denen sich der Server am RFC-7662-Introspection-Endpunkt anmeldet. Nur zusammen sinnvoll — eines ohne das andere ist ein Usage-Fehler. |
 | `--allow-origin` | Nein | String, mehrfach | Origin-Allowlist; Loopback-Defaults aktiv bei Loopback-Bind |
-| `--mcp-state-dir` | Nein | Pfad | State-Verzeichnis für file-backed Bytes. Gewinnt gegen `$DMIGRATE_MCP_STATE_DIR`; Default ist ein CLI-eigener Tempdir, der beim Stop gelöscht wird. Operator-bereitgestellte Verzeichnisse sind single-writer (advisory `.lock`) und überleben den Prozess |
+| `--mcp-state-dir` | Nein | Pfad | State-Verzeichnis für file-backed Bytes. Gewinnt gegen `$DMIGRATE_MCP_STATE_DIR`; Default ist ein CLI-eigener Tempdir, der beim Stop gelöscht wird. Operator-bereitgestellte Verzeichnisse sind single-writer (advisory `.lock`) und überleben den Prozess. Mit `server.state` Pflicht, siehe unten |
 | `--mcp-state-orphan-retention` | Nein | Dauer | Retention für verwaiste Byte-Files beim Startup-Sweep. Werte: `never` (Forensik-Modus, kein Sweep), `0`/`0s` (alles löschen), `<n><ms\|s\|m\|h\|d>`, ISO-8601 `PT…`. Default 24h. Upload-Segmente ohne überlebende Session-Metadaten werden unter jeder nicht-`never`-Policy entfernt |
 | `--connection-config` | Nein | Pfad | Server-/Project-YAML für Phase-D Connection-Refs ohne Secrets. Default ist der `--config`-Pfad |
 | `--cursor-keyring-file` | Nein | Pfad | YAML-Keyring für HMAC-versiegelte MCP-Cursor. Pflicht für deterministische Multi-Instanz-Deployments — der DEV-Default ist HTTP-Production gesperrt |
 | `--approval-grants-file` | Nein | Pfad | JSON/YAML-Store für `ApprovalGrant`-Einträge. Wird zusammen mit `mcp approval-grant issue` benutzt |
 | `--operation-timeout-seconds` | Nein | Long | Timeout (Sekunden) für Upload-Finalisierungs-Leases und den Stale-Finalisation-Sweeper |
 
+**Persistenter Byte-Store mit `server.state`**: `server.state` hält Job-, Schema- und
+Artefakt-Datensätze über Neustarts hinweg; die Bytes dahinter müssen es auch tun. Der Server
+startet deshalb nur, wenn `artifacts.store: s3` gesetzt ist oder `--mcp-state-dir` bzw.
+`$DMIGRATE_MCP_STATE_DIR` ein Verzeichnis nennt, das beim Start schon besteht. Sonst endet er
+mit Exit 2, ohne das Verzeichnis anzulegen; die Meldung nennt beide Wege. Ob das Verzeichnis
+selbst dauerhaft ist (Volume), verantwortet der Betreiber.
+
 **Exit-Codes**:
 
 | Code | Trigger |
 |---|---|
 | `0` | Server beendet sich regulär |
-| `2` | Ungültige Konfiguration (z.B. fehlende Auth-Pflichtfelder, ungültige Retention, DEV-Cursor-Keyring im HTTP-Production-Pfad), Sweep-Fehler |
+| `2` | Ungültige Konfiguration (z.B. fehlende Auth-Pflichtfelder, ungültige Retention, DEV-Cursor-Keyring im HTTP-Production-Pfad, `server.state` ohne persistenten Byte-Store), Sweep-Fehler |
 | Sonstige | Werden vom Server-Lifecycle gemappt (siehe `spec/mcp-server.md`) |
 
 #### `mcp approval-grant issue`

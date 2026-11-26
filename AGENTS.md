@@ -15,7 +15,7 @@ oder **den Code dieses Repos selbst ändert**.
 | ----- | -------- |
 | Wie installiere/starte ich d-migrate, wie sieht ein erster Workflow aus? | [`docs/user/guide.md`](docs/user/guide.md) |
 | Wie löse ich eine konkrete Aufgabe (Schema anlegen, vergleichen, migrieren, Daten transferieren, Testdaten erzeugen, MCP-Tools aufrufen)? | [`docs/user/anwenderhandbuch.md`](docs/user/anwenderhandbuch.md) — aufgabenorientiert, ~3000 Zeilen; nutze das Inhaltsverzeichnis am Anfang, nicht linear lesen |
-| Wie betreibe/deploye ich d-migrate (Docker, Distributionswege, `--server-state`, Credential-Provider)? | [`docs/user/administrationshandbuch.md`](docs/user/administrationshandbuch.md) |
+| Wie betreibe/deploye ich d-migrate (Docker, Distributionswege, `server.state`, Credential-Provider)? | [`docs/user/administrationshandbuch.md`](docs/user/administrationshandbuch.md) |
 | Was ist der exakte CLI-Vertrag (Flags, Exit-Codes, Optionen je Kommando)? | [`spec/cli-spec.md`](spec/cli-spec.md) |
 | Was ist der exakte MCP-Tool-/JSON-RPC-Vertrag (Schemas, Scopes, Fehlercodes)? | [`spec/mcp-server.md`](spec/mcp-server.md) |
 | Wie sieht das neutrale Schema-YAML-Format aus (Felder, Typen)? | [`spec/schema-reference.md`](spec/schema-reference.md) + [`spec/schema.json`](spec/schema.json) (JSON-Schema für Editor-/Tooling-Validierung) |

@@ -11,8 +11,10 @@
 #   1. leere State-DB: der Server startet, Flyway hat die Tabellen angelegt (nicht nur die History-Tabelle)
 #   2. die drei Listen (schema_list, job_list, artifact_list) antworten ohne Fehler
 #   3. schema_reverse_start legt einen Job an; er endet mit SUCCEEDED, Job, Schema und Artefakt stehen in den Listen
-#   4. Neustart gegen dieselbe, nun gefuellte State-DB: die Listen lesen die Datensaetze und nennen sie
+#   4. Neustart gegen dieselbe, nun gefuellte State-DB: die Listen lesen die Datensaetze und nennen sie, und die Bytes
+#      eines Artefakts sind noch lesbar (neuer Container, gleiches Volume als --mcp-state-dir)
 #   5. ein erzwungener Serverfehler antwortet mit INTERNAL_AGENT_ERROR, und das Serverlog nennt Tool und Ursache
+#   6. ohne --mcp-state-dir startet der Server nicht: server.state verlangt einen persistenten Byte-Store
 #
 # Aufruf: scripts/smoke-server-state.sh
 # Voraussetzung am Host: docker, curl, jq und das Image (`make docker-build IMAGE_TAG=dev` oder ein natives).
@@ -28,6 +30,7 @@ HTTP_PORT="${MCP_E2E_STATE_HTTP_PORT:-8797}"
 PG_IMAGE="$(awk '/image: postgis\/postgis/ {print $2; exit}' "$EXAMPLES_DIR/docker-compose.yml")"
 PG_NAME="mcp-e2e-state-pg"
 MCP_NAME="mcp-e2e-state-mcp"
+BYTES_VOLUME="mcp-e2e-state-bytes"
 URL="http://127.0.0.1:${HTTP_PORT}/mcp"
 
 log()  { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
@@ -41,6 +44,7 @@ for tool in docker curl jq; do command -v "$tool" > /dev/null || fail "$tool feh
 WORK="$(mktemp -d)"
 cleanup() {
     docker rm -f "$MCP_NAME" "$PG_NAME" > /dev/null 2>&1
+    docker volume rm "$BYTES_VOLUME" > /dev/null 2>&1
     rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -81,8 +85,9 @@ serve() {
     docker run -d --name "$MCP_NAME" --network host \
         -e "STATE_SMOKE_SRC_URL=postgresql://smoke:smoke@127.0.0.1:${PG_PORT}/state" \
         -v "$WORK/config.yaml:/work/config.yaml:ro" -v "$WORK/policy.yaml:/work/policy.yaml:ro" \
+        -v "$BYTES_VOLUME:/state" \
         "$IMAGE" mcp serve --transport=http --bind=127.0.0.1 --port="$HTTP_PORT" \
-        --auth-mode=disabled --connection-config=/work/config.yaml --policy-file=/work/policy.yaml > /dev/null
+        --auth-mode=disabled --connection-config=/work/config.yaml --policy-file=/work/policy.yaml --mcp-state-dir=/state > /dev/null
     local up=false
     for _ in $(seq 40); do
         if curl -s -o /dev/null "$URL"; then up=true; break; fi
@@ -165,6 +170,37 @@ check_error_log() {
     fi
 }
 
+# Die Bytes eines gespeicherten Artefakts muessen nach dem Neustart noch da sein, sonst zeigt der Datensatz ins Leere.
+check_bytes() {
+    local phase="$1" id code
+    id="$(tool artifact_list '{}' | jq -r '.result.content[0].text | fromjson? | .artifacts[0].artifactId // empty' 2> /dev/null)"
+    [ -n "$id" ] || { note_failure "$phase: artifact_list nennt keine artifactId"; return; }
+    if code="$(tool_ok artifact_chunk_get "{\"artifactId\":\"$id\"}")"; then
+        log "  artifact_chunk_get liest die Bytes von $id"
+    else
+        note_failure "$phase: artifact_chunk_get -> $code"
+    fi
+}
+
+# Ohne --mcp-state-dir laegen die Bytes in einem temporaeren Verzeichnis: der Server verweigert den Start.
+check_refusal() {
+    local phase="$1" out rc
+    log "== 6. ohne --mcp-state-dir startet der Server nicht"
+    docker rm -f "$MCP_NAME" > /dev/null 2>&1
+    out="$(timeout 60 docker run --name "$MCP_NAME" --network host \
+        -e "STATE_SMOKE_SRC_URL=postgresql://smoke:smoke@127.0.0.1:${PG_PORT}/state" \
+        -v "$WORK/config.yaml:/work/config.yaml:ro" \
+        "$IMAGE" mcp serve --transport=http --bind=127.0.0.1 --port="$HTTP_PORT" \
+        --auth-mode=disabled --connection-config=/work/config.yaml 2>&1)"
+    rc=$?
+    if [ "$rc" = 2 ] && grep -q 'the artifact bytes would not survive' <<< "$out"; then
+        log "  Start abgelehnt (Exit 2)"
+    else
+        note_failure "$phase: Start ohne --mcp-state-dir nicht abgelehnt (Exit $rc)"
+        tail -5 <<< "$out" | sed 's/^/    | /'
+    fi
+}
+
 log "Image $IMAGE, PostgreSQL $PG_IMAGE"
 docker rm -f "$MCP_NAME" "$PG_NAME" > /dev/null 2>&1
 docker run -d --name "$PG_NAME" -e POSTGRES_USER=smoke -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=state \
@@ -174,6 +210,9 @@ for _ in $(seq 60); do
     sleep 2
 done
 psql_ 'create table public.t(id serial primary key, v text)' > /dev/null || fail "Quelltabelle nicht anlegbar"
+# Das Volume fuer --mcp-state-dir gehoert dem Image-Benutzer (uid 10001), sonst kann der Server nicht schreiben.
+docker run --rm --user 0 -v "$BYTES_VOLUME:/state" --entrypoint chown "$PG_IMAGE" 10001:10001 /state > /dev/null \
+    || fail "Volume fuer den Byte-Store nicht anlegbar"
 
 log "== 1. leere State-DB: der Server startet und Flyway legt das Schema an"
 if serve; then
@@ -215,6 +254,7 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
     if serve; then
         check_lists "4"
         check_records "4"
+        check_bytes "4"
         check_error_log "5"
     else
         note_failure "4: der Server startet nicht gegen die gefuellte State-DB"
@@ -222,10 +262,13 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
     fi
 fi
 
+# Vor Schritt 6: er ersetzt den Container, dessen Log die Ursachen traegt.
+[ ${#FAILURES[@]} -eq 0 ] || server_log
+check_refusal "6"
+
 if [ ${#FAILURES[@]} -gt 0 ]; then
-    server_log
     printf '\nFAIL: %d Befund(e)\n' "${#FAILURES[@]}" >&2
     printf '  - %s\n' "${FAILURES[@]}" >&2
     exit 1
 fi
-log "OK — server.state unter $IMAGE: Migration, Listen, Job anlegen, Neustart, Fehlerprotokoll"
+log "OK — server.state unter $IMAGE: Migration, Listen, Job anlegen, Neustart, Bytes, Fehlerprotokoll, Startpruefung"

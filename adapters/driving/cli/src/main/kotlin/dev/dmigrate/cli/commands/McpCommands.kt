@@ -138,7 +138,8 @@ class McpServeCommand : CliktCommand(name = "serve") {
         help = "State dir for file-backed upload segments and artefact content. " +
             "Wins over \$DMIGRATE_MCP_STATE_DIR. Falls back to a CLI-owned tempdir " +
             "(deleted on stop). Operator-supplied dirs are single-writer (advisory " +
-            ".lock) and survive the process; metadata stays in-process either way.",
+            ".lock) and survive the process. With server.state, an existing dir (or " +
+            "artifacts.store: s3) is required.",
     ).path()
 
     private val mcpStateOrphanRetention by option(

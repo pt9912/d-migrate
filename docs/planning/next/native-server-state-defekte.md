@@ -20,9 +20,11 @@ zu kennen, und dabei zwei seiner Vorgaben anders gelöst:
 **Noch offen aus diesem Plan:**
 
 - P1/P2: kein Make-Ziel erhebt die Server-State-Metadaten.
-- P4, dritter Punkt: Der entschiedene Startabbruch bei `server.state` mit flüchtigem Byte-Store ist nicht gebaut.
 - `--verbose` verspricht DEBUG und setzt keine Logstufe.
-- Administrationshandbuch: `flyway_phase_e_history` und `--server-state` stimmen nicht.
+
+P4, dritter Punkt (Startabbruch bei `server.state` mit flüchtigem Byte-Store) ist seit 2026-11-26 gebaut
+(`McpDurableByteStore`, [CLI-Spezifikation](../../../spec/cli-spec.md), Schritt 6 in `smoke-server-state.sh`), mit den
+zwei Handbuchkorrekturen. Akzeptanzkriterium 5 ist damit erfüllt.
 
 ## Befund (gemessen 2026-09-16, gegen das ausgelieferte 1.7.1-native)
 

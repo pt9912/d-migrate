@@ -410,7 +410,7 @@ bleiben secret-frei (`connectionId` + `sensitivity`, keine URLs/Secrets).
 | `--cursor-keyring-file` | HMAC-Cursor-Keyring (Multi-Instanz) |
 | `--approval-grants-file` | Freigabe-Store |
 | `--policy-file` | Allow/Challenge/Deny-Regeln pro Tool/Tenant/Aufrufer (einmal beim Start geladen) |
-| `--mcp-state-dir` / `--mcp-state-orphan-retention` | dateibasierter Zustand + Aufräum-Retention |
+| `--mcp-state-dir` / `--mcp-state-orphan-retention` | dateibasierter Zustand + Aufräum-Retention; mit `server.state` ist ein bestehendes Verzeichnis (oder `artifacts.store: s3`) Pflicht |
 | `--operation-timeout-seconds` | Upload-Finalisierung/Sweeper-Timeout |
 
 Server-State und Job-Executor sind zusätzlich über die `D_MIGRATE_SERVER_*`-

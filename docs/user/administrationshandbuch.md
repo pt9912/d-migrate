@@ -361,6 +361,28 @@ vollständige Tabelle: [API-Referenz §4.12](api-referenz.md#412-server-konfigur
 Server-State und Job-Executor zusätzlich über `D_MIGRATE_SERVER_*` (siehe
 [§3.3](#3-konfiguration), [§7](#7-asynchrone-jobs-und-job-executor)).
 
+**Persistenter Zustand braucht persistente Bytes.** Mit `server.state` liegen
+Job-, Schema- und Artefakt-Datensätze dauerhaft in der Datenbank. Der Server
+startet dann nur, wenn auch die Inhalte erhalten bleiben:
+
+- `--mcp-state-dir` (oder `DMIGRATE_MCP_STATE_DIR`) nennt ein Verzeichnis, das
+  **beim Start schon besteht**, oder
+- `artifacts.store: s3` ist gesetzt ([§5](#5-object-storage--artifactstore-s3)).
+
+Sonst endet `mcp serve` mit Exit 2 (`… the artifact bytes would not survive …`).
+Bis Version 1.14.0 startete er trotzdem und verlor die Inhalte beim Stoppen;
+**prüfen Sie das vor einem Update.** Im Container muss das Verzeichnis auf einem
+Volume liegen und für den Benutzer des Images (uid 10001) beschreibbar sein:
+
+```bash
+mkdir -p ./mcp-state && sudo chown 10001:10001 ./mcp-state
+docker run … -v "$PWD/mcp-state:/state" ghcr.io/pt9912/d-migrate:latest \
+    mcp serve … --mcp-state-dir /state
+```
+
+Ob das Verzeichnis wirklich auf einem Volume liegt, kann der Server nicht
+prüfen.
+
 **Reverse-Präferenzen des Servers.** Den Block `reverse:` (etwa
 `reverse.mysql.autoincrement_syntax: identity`) liest `mcp serve` aus der
 Datei von `--connection-config` **einmal beim Start**. Er gilt für jeden
@@ -390,10 +412,10 @@ Verlangt die Policy eine Freigabe, antwortet ein `*_start`-Tool mit
 CLI-seitig stellt `mcp approval-grant issue` Grants in den
 `--approval-grants-file`-Store aus.
 
-**Achtung bei `--approval-grants-file` ohne `--server-state`:** der Store
+**Achtung bei `--approval-grants-file` ohne `server.state`:** der Store
 macht nur den *Grant* durabel — die wartende Approval-Challenge, gegen
 die ein Grant validiert wird, lebt im `IdempotencyStore` und bleibt ohne
-`--server-state` In-Memory. Ein Server-Neustart lässt dann jeden
+`server.state` In-Memory. Ein Server-Neustart lässt dann jeden
 ausstehenden `POLICY_REQUIRED`-Vorgang verwaisen, selbst wenn der später
 ausgestellte Grant selbst den Neustart überlebt hätte. `mcp serve` gibt
 in diesem Fall beim Start eine Warnzeile auf stderr aus.
@@ -622,7 +644,7 @@ Flyway-Workflow:
   fehl (`validate()` beim Start — kein stilles Auto-Migrate in Production).
 - **Dev/Test:** opt-in über `server.state.migrations.auto = true`; der Bootstrap ruft
   `migrate()` dann selbst.
-- Die Schema-History liegt in der dedizierten Tabelle `flyway_phase_e_history`, sodass
+- Die Schema-History liegt in der dedizierten Tabelle `flyway_server_state_history`, sodass
   das Server-State-Schema von etwaigen Co-Mietern derselben DB getrennt bleibt.
 
 Beim Versionswechsel die [Änderungshistorie](../../CHANGELOG.md) auf Vertrags-/
@@ -646,7 +668,7 @@ Migrationen erzeugen optional ein Rollback-Artefakt (`--generate-rollback`).
   Idempotency-COMMITTED-Einträge dienen als Wire-Replay-Cache — ein Restore muss die
   Retention-Spalte einbeziehen.
 - **Schema-/Artefakt-Katalog** (`schema_index_entries`/`artifact_records`, seit
-  `V2__schema_artifact_stores.sql`): mit `--server-state` durabel im selben
+  `V2__schema_artifact_stores.sql`): mit `server.state` durabel im selben
   Server-State-Backup enthalten. Die Katalog-Metadaten (JSONB) und die
   eigentlichen Bytes (Datei-Store oder S3, s. o.) müssen **konsistent
   zueinander** gesichert/wiederhergestellt werden — ein Restore der einen

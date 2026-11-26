@@ -616,7 +616,7 @@ der Server-Konfiguration ([Dialekt-Praeferenzen](dialect-preference-mechanism.md
 Schluessel in der [Konfigurations-Spezifikation](connection-config-spec.md)):
 die SQLite-Breite und `serial`/`identity` fuer MySQL und SQLite. Der Server
 liest den Block **einmal beim Start**, fuer den In-Memory-Betrieb wie fuer
-`--server-state`; eine Aenderung wirkt erst nach einem Neustart. Ohne den
+`server.state`; eine Aenderung wirkt erst nach einem Neustart. Ohne den
 Block liest er mit den Defaults; ein nicht erkannter Wert ist ein
 Konfigurationsfehler, und der Server startet nicht (Exit 2, wie die uebrigen
 Konfigurationsfehler oben). Ein Tool-Argument, das die Praeferenz pro Aufruf

@@ -107,6 +107,8 @@ internal class McpServeRunner(
         rejectDevKeyringInProductionOrExit(cursorKeyring)
         val owner = resolveStateDirOrExit()
         try {
+            // Vor dem Validator: der legt ein fehlendes Verzeichnis an.
+            requireDurableByteStoreOrExit(artifacts, owner)
             try {
                 StateDirValidator.validate(owner.resolved.path)
             } catch (failure: StateDirConfigError) {
@@ -218,6 +220,21 @@ internal class McpServeRunner(
             throw McpServeExit(2)
         }
         return StateDirOwner.of(resolved)
+    }
+
+    private fun requireDurableByteStoreOrExit(artifacts: ArtifactStorageConfig, owner: StateDirOwner) {
+        val stateConfig = try {
+            McpServerStateConfigResolver(effectiveConnectionConfigPath).resolve()
+        } catch (failure: McpServerStateConfigError) {
+            stderr("MCP server configuration is invalid:")
+            stderr("  - ${failure.message}")
+            throw McpServeExit(2)
+        }
+        if (stateConfig == null) return
+        val violation = McpDurableByteStore.violation(artifacts, owner.resolved) ?: return
+        stderr("MCP server configuration is invalid:")
+        stderr("  - $violation")
+        throw McpServeExit(2)
     }
 
     private fun reportStateDirFailure(failure: StateDirConfigError): Nothing {

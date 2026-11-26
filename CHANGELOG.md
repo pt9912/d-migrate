@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **MCP: `mcp serve` mit `server.state` verlangt einen persistenten Byte-Store. Vor dem Update prüfen.** Datensätze
+  lagen dauerhaft in der Datenbank, die Inhalte ohne `--mcp-state-dir` in einem temporären Verzeichnis, das beim
+  Stoppen gelöscht wird; nach einem Neustart zeigten Jobs, Schemas und Artefakte ins Leere. Der Server endet jetzt mit
+  Exit 2, wenn weder `artifacts.store: s3` gesetzt ist noch `--mcp-state-dir` bzw. `DMIGRATE_MCP_STATE_DIR` ein
+  bestehendes Verzeichnis nennt. **Abhilfe:** ein persistentes Verzeichnis anlegen (im Container: Volume, beschreibbar
+  für uid 10001) und angeben, oder S3 nutzen.
+
 ## [1.14.1] - 2026-11-27
 
 ### Fixed
