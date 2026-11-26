@@ -53,13 +53,21 @@ class JdbcMigrationRunner(
         configure().validate()
     }
 
-    private fun configure(): Flyway =
-        Flyway.configure()
+    private fun configure(): Flyway {
+        val configuration = Flyway.configure()
             .dataSource(dataSource)
             .locations(*migrationLocations)
             .table(schemaHistoryTable)
             .baselineOnMigrate(false)
-            .load()
+        // Der Standardort kommt aus einem Index statt aus dem Classpath-Scan (Issue #84: der Scanner
+        // findet im Native-Image nichts). Andere Orte, etwa in Tests, bleiben beim Flyway-Scanner.
+        if (migrationLocations.singleOrNull() == DEFAULT_LOCATION) {
+            configuration
+                .resourceProvider(IndexedMigrationResources(DEFAULT_LOCATION.removePrefix("classpath:"), javaClass.classLoader))
+                .javaMigrationClassProvider(NoJavaMigrations)
+        }
+        return configuration.load()
+    }
 
     companion object {
         const val DEFAULT_HISTORY_TABLE: String = "flyway_server_state_history"

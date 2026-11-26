@@ -78,3 +78,21 @@ Das beantwortet in Sekunden, was sonst als Handsuche im Repository-Index endet �
 Eintrag ein: unvermeidbare Eigenarbeit (Bibliothek nicht unterstuetzt) oder Symptom einer
 Fehlkonfiguration (unterstuetzt, greift aber nicht). Beide Faelle gibt es hier bereits, und sie
 verlangen unterschiedliche Folgearbeit.
+
+## `connections/list`-DTOs und die Wire-Klassen der Server-State-Persistenz
+
+`dev.dmigrate.mcp.protocol.ConnectionsList*` / `ConnectionListEntry` (Gson) und die `*Wire`-Klassen unter
+`dev.dmigrate.server.persistence.jdbc.*` samt Companion und umschliessendem `*Json`-Objekt (Jackson mit
+Kotlin-Modul).
+
+**Belegt am veroeffentlichten `1.14.0-native`:** `connections/list` antwortet mit „Unable to create instance of class
+…ConnectionsListParams“; mit `server.state` antworten die Store-Tools mit `INTERNAL_AGENT_ERROR` (Issue #84).
+Die Wirkung der Eintraege zeigt erst ein Native-Bau: der Job `mcp-e2e-native` in `native-image.yml`.
+
+Eine neue Protokoll- oder Wire-Klasse ohne Eintrag faellt in `NativeReflectionRegistrationTest` auf.
+
+## `resource-config.json` — `db/migration/`
+
+Die Flyway-Migrationen und ihr Index `migrations.index`. Flyways Classpath-Scan kennt das Protokoll `resource:`
+nicht; `IndexedMigrationResources` (persistence-jdbc) liest die Namen aus dem Index. Ohne die Ressourcen im Image
+startet der Server nicht gegen eine leere State-DB (Issue #84).

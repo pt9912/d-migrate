@@ -46,6 +46,29 @@ dependencies {
     testImplementation("org.xerial:sqlite-jdbc:${rootProject.properties["sqliteJdbcVersion"]}")
 }
 
+// Index der Flyway-Migrationen (Issue #84): Flyways Classpath-Scanner findet im GraalVM-Native-Image
+// keine Ressourcen, `IndexedMigrationResources` liest die Namen deshalb aus dieser Liste. Sie entsteht aus den
+// `.sql`-Dateien, nicht von Hand: eine neue Migration landet damit von selbst im Index.
+val migrationDir = layout.projectDirectory.dir("src/main/resources/db/migration")
+val migrationIndexOut = layout.buildDirectory.dir("generated/migration-index")
+
+val generateMigrationIndex by tasks.registering {
+    inputs.dir(migrationDir)
+    outputs.dir(migrationIndexOut)
+    doLast {
+        val names = migrationDir.asFile.listFiles { file -> file.extension == "sql" }!!
+            .map { it.name }
+            .sorted()
+        check(names.isNotEmpty()) { "keine Migration unter $migrationDir" }
+        val target = migrationIndexOut.get().asFile.resolve("db/migration/migrations.index")
+        target.parentFile.mkdirs()
+        target.writeText(names.joinToString("\n", postfix = "\n"))
+    }
+}
+
+sourceSets.main { resources.srcDir(migrationIndexOut) }
+tasks.named("processResources") { dependsOn(generateMigrationIndex) }
+
 kover {
     reports {
         filters {

@@ -734,5 +734,239 @@
     "allDeclaredFields": true,
     "queryAllDeclaredMethods": true,
     "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ConnectionsListParams",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ConnectionsListResult",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ConnectionListEntry",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.SchemaIndexEntryJson",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.SchemaIndexEntryJson$SchemaIndexEntryWire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.SchemaIndexEntryJson$SchemaIndexEntryWire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.SchemaIndexEntryJson$ServerResourceUriWire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.SchemaIndexEntryJson$ServerResourceUriWire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.job.JobRecordJson",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.job.JobRecordJson$JobRecordWire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.job.JobRecordJson$JobRecordWire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.job.JobRecordJson$ServerResourceUriWire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.job.JobRecordJson$ServerResourceUriWire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.quota.QuotaJson",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.quota.QuotaJson$QuotaKeyWire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.quota.QuotaJson$QuotaKeyWire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.quota.QuotaJson$QuotaReservationWire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.quota.QuotaJson$QuotaReservationWire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.artifact.ArtifactRecordJson",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.artifact.ArtifactRecordJson$ArtifactRecordWire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.artifact.ArtifactRecordJson$ArtifactRecordWire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.artifact.ArtifactRecordJson$ServerResourceUriWire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.artifact.ArtifactRecordJson$ServerResourceUriWire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.idempotency.ApprovalChallengeJson",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.idempotency.ApprovalChallengeJson$Wire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.idempotency.ApprovalChallengeJson$Wire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
   }
 ]
