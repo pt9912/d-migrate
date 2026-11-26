@@ -348,6 +348,7 @@ jobs:
           path: dist
 
       - name: Build the native runtime image from the binary
+        id: image
         run: |
           set -euo pipefail
           BIN="$(ls dist/d-migrate-*-linux-x64 | grep -v '\.sha256$' | head -1)"
@@ -366,15 +367,18 @@ jobs:
         run: make mcp-e2e-smoke
 
       - name: MCP cross-dialect roundtrip (native)
-        if: ${{ !cancelled() }}
+        # Ohne Image keine Folgefehler: die Matrizen laufen nur, wenn es gebaut wurde.
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
         run: make mcp-e2e-roundtrip
 
       - name: MCP compare matrix (native)
-        if: ${{ !cancelled() }}
+        # Ohne Image keine Folgefehler: die Matrizen laufen nur, wenn es gebaut wurde.
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
         run: make mcp-e2e-compare-matrix
 
       - name: MCP server.state with PostgreSQL (native)
-        if: ${{ !cancelled() }}
+        # Ohne Image keine Folgefehler: die Matrizen laufen nur, wenn es gebaut wurde.
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
         run: make mcp-e2e-server-state
 
       - name: Upload E2E artefacts
