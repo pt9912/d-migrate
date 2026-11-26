@@ -74,7 +74,10 @@ if [[ "${DMIGRATE_NATIVE_E2E:-0}" == "1" ]]; then
 fi
 
 echo "Building integration test image from Dockerfile (stage: ${BUILD_TARGET})..."
-docker build --target "${BUILD_TARGET}" -t "${IMAGE_TAG}" "${REPO_ROOT}"
+# DOCKER_BUILD_FLAGS wie im Makefile: die CI haengt darueber den Layer-Cache der `deps`-Stage an
+# (.github/actions/docker-deps-cache). Absichtlich ungequotet, die Variable traegt mehrere Argumente.
+# shellcheck disable=SC2086
+docker build --target "${BUILD_TARGET}" -t "${IMAGE_TAG}" ${DOCKER_BUILD_FLAGS:-} "${REPO_ROOT}"
 
 LOG_FILE="${DMIGRATE_TEST_LOG:-/tmp/d-migrate-integration-$(date +%Y%m%d-%H%M%S).log}"
 
