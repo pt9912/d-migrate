@@ -7,6 +7,23 @@
 > (`DMIGRATE_CLI_BIN`) ist gebaut und bewiesen, offen ist dort die CI-Verdrahtung.
 > **Aktivierung:** Move nach `../in-progress/` beim ersten Implementierungs-Commit.
 
+## Stand 2026-11-26: großteils anderswo erledigt
+
+[`native-mcp-e2e-gate.md`](../in-progress/native-mcp-e2e-gate.md) hat den Defekt (Issue #84) behoben, ohne diesen Plan
+zu kennen, und dabei zwei seiner Vorgaben anders gelöst:
+
+- **Metadaten:** Die Wire-Klassen stehen von Hand in `cli-manual/reflect-config.json` (gegen die Abgrenzung unten; ein
+  Test hält die Liste vollständig), dazu eine einmalige Agent-Aufzeichnung unter `dev.dmigrate/server-state/`.
+- **Gate:** Statt der Subprozess-Suite fährt `native-image.yml` das Skript `smoke-server-state.sh` gegen das Binary.
+- **Flyway** (P4, erster Punkt) und **Ursache im Log** (P4, zweiter Punkt; `ERROR` statt `--verbose`) sind umgesetzt.
+
+**Noch offen aus diesem Plan:**
+
+- P1/P2: kein Make-Ziel erhebt die Server-State-Metadaten.
+- P4, dritter Punkt: Der entschiedene Startabbruch bei `server.state` mit flüchtigem Byte-Store ist nicht gebaut.
+- `--verbose` verspricht DEBUG und setzt keine Logstufe.
+- Administrationshandbuch: `flyway_phase_e_history` und `--server-state` stimmen nicht.
+
 ## Befund (gemessen 2026-09-16, gegen das ausgelieferte 1.7.1-native)
 
 Ein Konsumentenprojekt meldet: jeder MCP-Tool-Call, der Job-/Schema-/Artefakt-Records

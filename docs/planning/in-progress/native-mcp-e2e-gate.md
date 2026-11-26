@@ -1,12 +1,14 @@
 # Natives Image: MCP-E2E-Matrizen als Gate, `connections/list` und `server.state` (Issue #84)
 
-- **Status**: In Arbeit (2026-11-26). Fix und Gate **am Native-Binary belegt** (CI-Runde 3); offen ist die
-  Entscheidung zum Logging unerwarteter Fehler (siehe DoD).
+- **Status**: In Arbeit (2026-11-26). Fix und Gate **am Native-Binary belegt** (CI-Runde 3); offen ist der Beleg des
+  Fehlerprotokolls am Native-Binary (siehe DoD).
 - **Ziel**: Das ausgelieferte native Binary besteht dieselben MCP-E2E-Läufe wie das JVM-Image, und zwar bevor es
   angehängt wird.
 - **Herkunft**: Eigner-Frage, ob die E2E-Matrix je mit dem nativen Image lief (nein: CI und lokale Läufe nahmen das
   JVM-Image), und Issue #84.
 - **Vorbedingungen**: keine. Kein ADR: Es ändert Bau und Prüfung, keinen Vertrag.
+- **Vorläufer**: [`native-server-state-defekte.md`](../next/native-server-state-defekte.md) beschrieb denselben Defekt
+  schon am 2026-09-16 (an `1.7.1-native`); er wurde beim Anlegen dieses Plans übersehen.
 - **Verhältnis**: [`native-e2e-regression-gate.md`](../next/native-e2e-regression-gate.md) verdrahtet die
   Subprozess-E2Es (`make native-e2e`); dieser Plan verdrahtet die Harness-Matrizen und ersetzt jenen nicht.
 
@@ -76,8 +78,10 @@ Gegenprobe: Das `server.state`-Skript besteht gegen das JVM-Image `1.14.0` volls
 * **Erfüllt** (Runde 3): Der Reproduktionsablauf aus Issue #84 läuft durch, einschließlich der vom JVM-Server
   angelegten Datensätze. Dieser letzte Teil ist von Hand belegt; `smoke-server-state.sh` schreibt und liest mit
   demselben Image.
-* **Offen**: Die `INTERNAL_AGENT_ERROR`-Antworten der Store-Tools erscheinen in keinem Serverlog (Nebenbefund aus
-  Issue #84). Das betrifft auch die JVM und ist hier nicht behoben.
+* **Offen** (auf der JVM belegt): Die Ursache eines `INTERNAL_AGENT_ERROR` steht auf ERROR im Serverlog
+  (Eigner-Entscheidung 2026-11-26, Nebenbefund aus Issue #84; `ToolFailureLog`, Zugangsdaten maskiert).
+  `smoke-server-state.sh` erzwingt dafür in Phase 5 einen Serverfehler: grün mit dem neuen JVM-Image, rot mit `1.14.0`.
+  Am Native-Binary steht der Beleg mit dem nächsten Lauf von `native-image.yml` aus.
 
 ## Nicht im Umfang
 

@@ -504,6 +504,13 @@ Dispatcher-Events (`job.dispatch.scheduled|started|finished`) erlauben
 Queue-Latenz-Korrelation
 ([`operations/job-executor.md`](../operations/job-executor.md) §4.4).
 
+**Interne Fehler des MCP-Servers:** Antwortet ein Tool mit
+`INTERNAL_AGENT_ERROR`, weil im Server eine Ausnahme auftrat, steht diese mit
+Stufe ERROR auf stderr (`tool '<name>' (req <requestId>) failed with
+INTERNAL_AGENT_ERROR`, darunter der Stacktrace). Die `requestId` ist dieselbe wie
+in der Antwort. Zugangsdaten in Verbindungs-URLs sind maskiert; Meldungen der
+Datenbank können Objektnamen und Werte enthalten.
+
 **Audit-Log der DB-Operationen** (`logging.audit`, [`LN-027`](../../spec/lastenheft-d-migrate.md#ln-027), opt-in): mit
 `logging.audit.enabled: true` schreibt die CLI für jede DB-berührende Operation
 (`schema reverse`/`migrate`/`compare` mit DB-Operand/`rollback --execute`, `data

@@ -12,6 +12,7 @@
 #   2. die drei Listen (schema_list, job_list, artifact_list) antworten ohne Fehler
 #   3. schema_reverse_start legt einen Job an; er endet mit SUCCEEDED, Job, Schema und Artefakt stehen in den Listen
 #   4. Neustart gegen dieselbe, nun gefuellte State-DB: die Listen lesen die Datensaetze und nennen sie
+#   5. ein erzwungener Serverfehler antwortet mit INTERNAL_AGENT_ERROR, und das Serverlog nennt Tool und Ursache
 #
 # Aufruf: scripts/smoke-server-state.sh
 # Voraussetzung am Host: docker, curl, jq und das Image (`make docker-build IMAGE_TAG=dev` oder ein natives).
@@ -61,35 +62,12 @@ server:
       auto: true
 YAML
 printf 'rules:\n  - tenantId: default\n    toolName: schema_reverse_start\n    effect: allow\n' > "$WORK/policy.yaml"
-# Der Server loggt die Ursache eines INTERNAL_AGENT_ERROR nur auf DEBUG. Ohne diese Datei bliebe ein Befund
-# dieses Skripts auf der JVM ohne jede Spur (Nebenbefund aus Issue #84). Im Native-Image wirkt sie NICHT:
-# Logback wird dort beim Bau initialisiert (`--initialize-at-build-time`), ein Befund bleibt nativ ohne Ursache.
-cat > "$WORK/logback.xml" << 'XML'
-<configuration>
-  <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
-    <target>System.err</target>
-    <encoder><pattern>%-5level %logger{36} - %msg%n%ex{full}</pattern></encoder>
-  </appender>
-  <logger name="dev.dmigrate.mcp.protocol.McpServiceImpl" level="DEBUG"/>
-  <root level="WARN"><appender-ref ref="STDERR"/></root>
-</configuration>
-XML
 # Das Image laeuft als uid 10001 und muss die Dateien lesen koennen.
-chmod 755 "$WORK"; chmod 644 "$WORK/config.yaml" "$WORK/policy.yaml" "$WORK/logback.xml"
-
-# System-Properties erreichen das JVM-Startskript ueber JAVA_OPTS, das native Binary nur als Argument.
-LOGBACK_PROP="-Dlogback.configurationFile=/work/logback.xml"
-LOG_ENV=()
-LOG_ARGS=()
-if docker run --rm --entrypoint sh "$IMAGE" -c 'test -d /opt/d-migrate/lib' > /dev/null 2>&1; then
-    LOG_ENV=(-e "JAVA_OPTS=$LOGBACK_PROP")
-else
-    LOG_ARGS=("$LOGBACK_PROP")
-fi
+chmod 755 "$WORK"; chmod 644 "$WORK/config.yaml" "$WORK/policy.yaml"
 
 # Die Ursachen aus dem Serverlog, je Befund einmal vor dem naechsten Neustart.
 server_log() {
-    docker logs "$MCP_NAME" 2>&1 | grep -E -A30 'failed before the trust boundary|^Exception|ERROR|Unable to' | head -60 | sed 's/^/    | /'
+    docker logs "$MCP_NAME" 2>&1 | grep -E -A30 'failed with INTERNAL_AGENT_ERROR|^Exception|ERROR|Unable to' | head -60 | sed 's/^/    | /'
 }
 
 psql_() { docker exec "$PG_NAME" psql -U smoke -d state -qtAc "$1"; }
@@ -102,10 +80,8 @@ serve() {
     docker rm -f "$MCP_NAME" > /dev/null 2>&1
     docker run -d --name "$MCP_NAME" --network host \
         -e "STATE_SMOKE_SRC_URL=postgresql://smoke:smoke@127.0.0.1:${PG_PORT}/state" \
-        "${LOG_ENV[@]}" \
         -v "$WORK/config.yaml:/work/config.yaml:ro" -v "$WORK/policy.yaml:/work/policy.yaml:ro" \
-        -v "$WORK/logback.xml:/work/logback.xml:ro" \
-        "$IMAGE" "${LOG_ARGS[@]}" mcp serve --transport=http --bind=127.0.0.1 --port="$HTTP_PORT" \
+        "$IMAGE" mcp serve --transport=http --bind=127.0.0.1 --port="$HTTP_PORT" \
         --auth-mode=disabled --connection-config=/work/config.yaml --policy-file=/work/policy.yaml > /dev/null
     local up=false
     for _ in $(seq 40); do
@@ -167,6 +143,28 @@ check_records() {
     done
 }
 
+# Ein Serverfehler, den es sonst nicht gibt: Die Tabelle hinter artifact_list wird umbenannt. Der Client sieht nur
+# INTERNAL_AGENT_ERROR; die Ursache muss im Serverlog stehen, auch im Native-Image (dort ist die Logstufe fest).
+check_error_log() {
+    local phase="$1" code logs
+    log "== 5. ein Serverfehler steht mit seiner Ursache im Serverlog"
+    psql_ 'alter table dmigrate_state.artifact_records rename to artifact_records_off' > /dev/null \
+        || { note_failure "$phase: Tabelle nicht umbenennbar"; return; }
+    if code="$(tool_ok artifact_list '{}')"; then
+        note_failure "$phase: artifact_list antwortet trotz fehlender Tabelle ohne Fehler"
+        return
+    fi
+    [ "$code" = INTERNAL_AGENT_ERROR ] || { note_failure "$phase: artifact_list -> $code statt INTERNAL_AGENT_ERROR"; return; }
+    # Erst einsammeln, dann suchen: `docker logs | grep -q` scheitert unter pipefail, sobald grep frueh endet.
+    logs="$(docker logs "$MCP_NAME" 2>&1)"
+    if grep -q "tool 'artifact_list' .*failed with INTERNAL_AGENT_ERROR" <<< "$logs" \
+        && grep -q 'relation .*artifact_records.* does not exist' <<< "$logs"; then
+        log "  Serverlog nennt Tool und Ursache"
+    else
+        note_failure "$phase: das Serverlog nennt die Ursache des INTERNAL_AGENT_ERROR nicht"
+    fi
+}
+
 log "Image $IMAGE, PostgreSQL $PG_IMAGE"
 docker rm -f "$MCP_NAME" "$PG_NAME" > /dev/null 2>&1
 docker run -d --name "$PG_NAME" -e POSTGRES_USER=smoke -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=state \
@@ -217,6 +215,7 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
     if serve; then
         check_lists "4"
         check_records "4"
+        check_error_log "5"
     else
         note_failure "4: der Server startet nicht gegen die gefuellte State-DB"
         docker logs "$MCP_NAME" 2>&1 | tail -15 | sed 's/^/    | /'
@@ -229,4 +228,4 @@ if [ ${#FAILURES[@]} -gt 0 ]; then
     printf '  - %s\n' "${FAILURES[@]}" >&2
     exit 1
 fi
-log "OK — server.state unter $IMAGE: Migration, Listen, Job anlegen, Neustart"
+log "OK — server.state unter $IMAGE: Migration, Listen, Job anlegen, Neustart, Fehlerprotokoll"

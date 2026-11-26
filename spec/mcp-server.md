@@ -787,6 +787,15 @@ Outcomes bekommen damit automatisch Audit-Coverage. Reasons (z.B. im
 Cancel-Pfad) werden über `SecretScrubber` gescrubbed bevor sie in
 `cancelRequestedReason` oder Audit-Felder wandern.
 
+### Server-Log
+
+Eine Ausnahme in `tools/call`, die als `INTERNAL_AGENT_ERROR`
+beantwortet wird, schreibt der Server mit Stufe ERROR in sein Log:
+Tool-Name, `requestId` der Antwort, Ausnahmetypen, Meldungen und
+Stacktrace samt Ursachenkette. Der Text läuft vorher durch den
+`SecretScrubber`. Erwartete Fehler (Validierung, Scopes, Policy …)
+erscheinen nur auf DEBUG. Die Antwort an den Client bleibt unverändert.
+
 ---
 
 ## Policy-gesteuerte Datenoperationen

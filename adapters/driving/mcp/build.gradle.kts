@@ -53,6 +53,8 @@ dependencies {
 
     testImplementation(testFixtures(project(":hexagon:ports-common")))
     testImplementation(project(":adapters:driven:persistence-memory"))
+    // ILoggingEvent/ListAppender fuer die Pruefung des Serverlogs (ToolFailureLog).
+    testImplementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
 }
 
 kover {

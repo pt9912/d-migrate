@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Jackson mit Kotlin-Modul) waren nicht registriert, die Store-Tools antworteten mit `INTERNAL_AGENT_ERROR`. Die
   Migrationen kommen jetzt aus einem beim Bau erzeugten Index (`db/migration/migrations.index`) statt aus dem
   Classpath-Scan, auf der JVM wie nativ; die Wire-Klassen sind registriert.
+- **MCP: Die Ursache eines `INTERNAL_AGENT_ERROR` steht im Serverlog.** Eine unerwartete Ausnahme in `tools/call` wurde
+  nur auf DEBUG protokolliert, und im Native-Image lässt sich diese Stufe nicht einschalten. Sie steht jetzt mit Stufe
+  ERROR auf stderr, mit Tool-Name, `requestId` und Stacktrace; Zugangsdaten werden maskiert. Die Antwort an den Client
+  ist unverändert.
 
 ### Changed
 

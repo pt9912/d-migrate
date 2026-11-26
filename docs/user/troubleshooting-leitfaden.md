@@ -63,6 +63,10 @@ Bevor Sie raten, machen Sie das Problem sichtbar:
   Exit 1 listet die konkreten Unterschiede. **`data profile`** stellt Kennzahlen je
   Quelle/Ziel gegenüber.
 
+- **MCP: `INTERNAL_AGENT_ERROR`:** Die Antwort nennt keine Ursache. Suchen Sie im
+  stderr des Servers (bei Docker: `docker logs`) nach der `requestId` aus der
+  Antwort ([Administrationshandbuch §8.1](administrationshandbuch.md#81-logging-konfiguration-und--level)).
+
 ---
 
 ## 4. Verbindung und Zugangsdaten

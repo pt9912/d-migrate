@@ -17,12 +17,16 @@ import dev.dmigrate.server.core.principal.TenantId
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldNotContain
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.util.concurrent.ExecutionException
 
@@ -122,6 +126,40 @@ class McpServiceImplToolsTest : FunSpec({
             obj.get("key").asString to obj.get("value").asString
         }
         pairs shouldBe listOf("policyName" to "test-policy", "reason" to "test-reason")
+    }
+
+    test("tools/call: unerwartete Ausnahme antwortet redigiert und steht mit derselben Request-ID im Log") {
+        val descriptor = ToolDescriptor(
+            name = "crashing_test_tool",
+            title = "Crash",
+            description = "fixture",
+            requiredScopes = setOf("dmigrate:read"),
+            inputSchema = mapOf("type" to "object"),
+            outputSchema = mapOf("type" to "object"),
+        )
+        val handler = ToolHandler { error("relation artifact_records does not exist") }
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            toolRegistry = ToolRegistry.builder().register(descriptor, handler).build(),
+            initialPrincipal = PRINCIPAL,
+            scopeMapping = mapOf("crashing_test_tool" to setOf("dmigrate:read")),
+            requestIdProvider = { "req-fixed" },
+        )
+        val logger = LoggerFactory.getLogger(ToolFailureLog::class.java) as Logger
+        val appender = ListAppender<ILoggingEvent>().apply { start() }
+        logger.addAppender(appender)
+        val result = try {
+            sut.toolsCall(ToolsCallParams(name = "crashing_test_tool")).get()
+        } finally {
+            logger.detachAppender(appender)
+        }
+
+        val text = result.content.single().text!!
+        text shouldNotContain "artifact_records"
+        JsonParser.parseString(text).asJsonObject.get("requestId").asString shouldBe "req-fixed"
+        val line = appender.list.single().formattedMessage
+        line shouldContain "tool 'crashing_test_tool' (req req-fixed)"
+        line shouldContain "relation artifact_records does not exist"
     }
 
     test("missing principal -> AUTH_REQUIRED envelope on tools/call") {
