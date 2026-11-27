@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.14.0** (stabil, [veröffentlicht 2026-11-25](https://github.com/pt9912/d-migrate/releases/tag/v1.14.0)).
+**1.14.1** (stabil, [veröffentlicht 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.14.1)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,15 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.14.0** (2026-11-25) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Eine Inline-Enum kann ihren
+- **Aktuelles Stable** · **1.14.1** (2026-11-27) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Das native Image fährt
+  `mcp serve` mit `server.state` (Issue #84):** Die mitgelieferten Migrationen
+  werden gefunden und die Datensatzklassen sind registriert; auch
+  `connections/list` antwortet nativ. Außerdem meldet der MCP-Handshake die
+  Produktversion statt `0.0.0`, die Ursache eines `INTERNAL_AGENT_ERROR` steht mit
+  maskierten Zugangsdaten auf ERROR im Serverlog, und das native Binary muss die
+  MCP-End-to-End-Matrizen bestehen, bevor es ausgeliefert wird.
+  1.14.0 (2026-11-25) — **Eine Inline-Enum kann ihren
   Wertevorrat-`CHECK` benennen: `values_constraint` (ADR 0069).** `state: { type:
   enum, values: [ACTIVE, DISABLED], values_constraint: ck_state }` ersetzt den
   rohen `CHECK … IN (…)`, den Konsumenten für einen festen Namen schrieben.

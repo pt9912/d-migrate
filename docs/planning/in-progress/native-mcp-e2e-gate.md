@@ -12,7 +12,7 @@
 - **Verhältnis**: [`native-e2e-regression-gate.md`](../next/native-e2e-regression-gate.md) verdrahtet die
   Subprozess-E2Es (`make native-e2e`); dieser Plan verdrahtet die Harness-Matrizen und ersetzt jenen nicht.
 
-## Befund (gemessen 2026-11-26 an `ghcr.io/pt9912/d-migrate:1.14.0-native`)
+## Befund (gemessen 2026-11-26 am veröffentlichten nativen Image `1.14.0-native`)
 
 | Lauf | Ergebnis |
 | ---- | -------- |

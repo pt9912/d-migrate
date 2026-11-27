@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.14.0**
-(stable, [released 2026-11-25](https://github.com/pt9912/d-migrate/releases/tag/v1.14.0)).
+d-migrate is a working production tool at version **1.14.1**
+(stable, [released 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.14.1)).
 
 The current capabilities:
 
@@ -161,8 +161,15 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.14.0** (2026-11-25) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **An inline enum can name its
+- **Current stable** · **1.14.1** (2026-11-27) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **The native image runs
+  `mcp serve` with `server.state` (Issue #84):** the bundled migrations are found
+  and the store records are registered; `connections/list` answers natively too.
+  Also: the MCP handshake reports the product version instead of `0.0.0`, the
+  cause of an `INTERNAL_AGENT_ERROR` is logged at ERROR with credentials masked,
+  and the native binary now has to pass the MCP end-to-end matrices before it is
+  released.
+  1.14.0 (2026-11-25) — **An inline enum can name its
   value `CHECK`: `values_constraint` (ADR 0069).** `state: { type: enum, values:
   [ACTIVE, DISABLED], values_constraint: ck_state }` replaces the raw `CHECK … IN
   (…)` that consumers wrote to get a fixed name. PostgreSQL, SQLite, SQL Server and
