@@ -14,7 +14,9 @@ import dev.dmigrate.server.adapter.storage.s3.S3ByteStores
 import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import dev.dmigrate.server.ports.memory.InMemoryDiffStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStore
+import dev.dmigrate.server.ports.memory.InMemoryProfileStore
 import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
 import dev.dmigrate.server.ports.memory.InMemorySchemaStore
 import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
@@ -108,6 +110,8 @@ object McpCliRuntimeWiring {
             artifactContentStore = s3ByteStores?.artifactContentStore ?: FileBackedArtifactContentStore(stateDir),
             schemaStore = InMemorySchemaStore(),
             jobStore = InMemoryJobStore(),
+            diffStore = InMemoryDiffStore(),
+            profileStore = InMemoryProfileStore(),
             quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
             limits = limits,
             clock = clock,

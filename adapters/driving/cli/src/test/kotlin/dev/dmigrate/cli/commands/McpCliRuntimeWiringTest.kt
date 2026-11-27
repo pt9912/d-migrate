@@ -11,11 +11,16 @@ import dev.dmigrate.server.adapter.storage.s3.S3ByteStores
 import dev.dmigrate.server.adapter.storage.s3.S3StorageConfig
 import dev.dmigrate.server.adapter.storage.s3.S3UploadSegmentStore
 import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.ports.DiffIndexEntry
+import dev.dmigrate.server.ports.ProfileIndexEntry
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.net.URI
 import java.nio.file.Files
+import java.time.Instant
 import kotlin.io.path.deleteRecursively
 
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
@@ -70,6 +75,47 @@ class McpCliRuntimeWiringTest : FunSpec({
             // The bundle owning the shared S3 client is exposed for the
             // server lifecycle to close on shutdown (S3.4b-R1).
             wiring.ownedResources.single().shouldBeInstanceOf<S3ByteStores>()
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    // Mit den Empty-Defaults gingen die Eintraege der Jobs verloren, diff_list und profile_list blieben leer
+    // (Issue #87).
+    test("runtimeWiring behaelt die Eintraege der Indizes diffs und profiles") {
+        val dir = Files.createTempDirectory("dmigrate-mcp-wiring-index-")
+        try {
+            val wiring = McpCliRuntimeWiring.runtimeWiring(stateDir = dir)
+            val tenant = TenantId("default")
+            val now = Instant.parse("2026-11-27T10:00:00Z")
+
+            wiring.diffStore.save(
+                DiffIndexEntry(
+                    diffId = "diff-1",
+                    tenantId = tenant,
+                    resourceUri = ServerResourceUri(tenant, ResourceKind.DIFFS, "diff-1"),
+                    artifactRef = "art-1",
+                    sourceRef = "a",
+                    targetRef = "b",
+                    displayName = "d",
+                    createdAt = now,
+                    expiresAt = now.plusSeconds(60),
+                ),
+            )
+            wiring.profileStore.save(
+                ProfileIndexEntry(
+                    profileId = "prof-1",
+                    tenantId = tenant,
+                    resourceUri = ServerResourceUri(tenant, ResourceKind.PROFILES, "prof-1"),
+                    artifactRef = "art-2",
+                    displayName = "p",
+                    createdAt = now,
+                    expiresAt = now.plusSeconds(60),
+                ),
+            )
+
+            wiring.diffStore.findById(tenant, "diff-1")?.artifactRef shouldBe "art-1"
+            wiring.profileStore.findById(tenant, "prof-1")?.artifactRef shouldBe "art-2"
         } finally {
             dir.deleteRecursively()
         }
