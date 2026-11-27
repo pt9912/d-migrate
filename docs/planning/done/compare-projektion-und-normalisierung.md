@@ -113,7 +113,7 @@ der Graduation stehen.
 | Unbenannte Indizes werden über das rohe Prädikat zugeordnet (P5, Grenze) | [`../open/compare-unbenannte-indizes-kanonische-zuordnung.md`](../open/compare-unbenannte-indizes-kanonische-zuordnung.md) |
 | Partitionierungs-Änderung ohne MCP-Fund (gepinnt in `ObjectDiffFieldsCompletenessTest`) | [`../open/compare-different-ohne-sichtbaren-fund.md`](../open/compare-different-ohne-sichtbaren-fund.md), Punkt 1 |
 | „0 change(s)" bei `DIFFERENT` (nur Name/Version, zwei handgeschriebene Schemata) | ebenda, Punkt 2 |
-| Index `diffs` (und `profiles`) in `mcp serve` leer | [`../in-progress/mcp-verdrahtungsluecken.md`](../in-progress/mcp-verdrahtungsluecken.md), Punkt 1 |
+| Index `diffs` (und `profiles`) in `mcp serve` leer | [`mcp-verdrahtungsluecken.md`](mcp-verdrahtungsluecken.md), Punkt 1 |
 | `job_input`-Upload über das Tool-Schema nicht erreichbar | ebenda, Punkt 2 |
 | `artifact_upload_init` nimmt mehr Arten an, als die Spec nennt | [`../open/mcp-server-spec-hygiene-residuals.md`](../open/mcp-server-spec-hygiene-residuals.md), Befund 3 |
 | `schema_list` filtert `jobId` gegen die Job-URI | ebenda, Befund 4 |

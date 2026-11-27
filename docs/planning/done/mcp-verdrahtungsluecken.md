@@ -1,7 +1,6 @@
 # MCP-Verdrahtungslücken: Indizes `diffs`/`profiles`, `job_input`-Upload (Issue #87)
 
-- **Status**: In Arbeit (2026-11-27). P1 bis P5 gebaut und belegt, auch am Native-Binary; offen ist die Abnahme.
-  Mit 1.16.0 ausgeliefert.
+- **Status**: Abgeschlossen (2026-11-27, vom Eigner abgenommen). Ausgeliefert mit 1.16.0, siehe „Closure".
 - **Ziel**: `diff_list` und `profile_list` nennen die Ergebnisse der Jobs, mit `server.state` auch nach einem Neustart.
   Ein Client, der sich an das Tool-Schema hält, kann Eingabedaten per `job_input` hochladen und mit
   `data_import_start` importieren.
@@ -70,3 +69,12 @@
 - **Nicht gebaut:** `clientRequestId` am Init, den die Spec nennt und der Handler nicht liest.
 - **Native belegt:** Der Dispatch-Lauf von `native-image.yml` auf `905dbb4fc` besteht `smoke-server-state.sh` mit
   allen neuen Prüfungen.
+
+## Closure (2026-11-27)
+
+- **Geliefert:** P1 bis P5 mit 1.16.0. `smoke-server-state.sh` läuft gegen die veröffentlichten Images `1.16.0` und
+  `1.16.0-native` durch; Issue #87 ist geschlossen. Abnahme durch den Eigner am 2026-11-27.
+- **Schwächer belegt als die DoD verlangt:** Ohne `server.state` deckt die Listen nur ein Unit-Test der Verdrahtung,
+  kein Lauf über die Leitung. Bundle-Uploads (`tables`/`bundleFormat`) liefen nicht über die Leitung.
+- **Offen, geführt in** [`mcp-server-spec-hygiene-residuals.md`](../open/mcp-server-spec-hygiene-residuals.md)
+  (Befund 5 und 6): `clientRequestId` am Upload-Init und der Ablauf der Index-Einträge.

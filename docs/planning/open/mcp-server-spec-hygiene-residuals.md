@@ -81,6 +81,22 @@ Anwenderhandbuch-Beispiel ist auf den Ist-Zustand korrigiert.
 **Arbeit:** Vertragsfrage — nimmt der Filter die Kennung, die URI oder beides?
 Danach Spec, Tool-Schema-Beschreibung und ggf. Handler angleichen.
 
+## Befund 5 — `clientRequestId` am `artifact_upload_init` (Nachtrag 2026-11-27)
+
+Aus [`mcp-verdrahtungsluecken.md`](../done/mcp-verdrahtungsluecken.md). `spec/mcp-server.md` nennt das Feld für
+`schema_staging_readonly` (wiederaufnehmbarer Upload); der Handler liest es nicht, und das Tool-Schema führt es
+nicht, sodass der Server es abweist (`additionalProperties=false`).
+
+**Arbeit:** entscheiden, ob es gebaut wird oder aus der Spec fällt.
+
+## Befund 6 — Index-Einträge laufen nicht ab (Nachtrag 2026-11-27)
+
+Aus demselben Slice, am Code gelesen. `schema_index_entries`, `diff_index_entries` und `profile_index_entries` tragen
+`expires_at`, aber nichts ruft `deleteExpired` dieser Stores auf; abgeräumt werden nur Artefakte. Ein Eintrag kann
+damit auf ein gelöschtes Artefakt zeigen, und die Tabellen wachsen. Nicht gemessen.
+
+**Arbeit:** messen, dann entscheiden, ob der Retention-Lauf die Indizes mitnimmt.
+
 ## Referenzen
 
 - [`../../../spec/mcp-server.md`](../../../spec/mcp-server.md) — betroffenes Zielbild
