@@ -1,7 +1,7 @@
 # MCP-Verdrahtungslücken: Indizes `diffs`/`profiles`, `job_input`-Upload (Issue #87)
 
-- **Status**: In Arbeit (2026-11-27). P1 bis P5 gebaut und lokal belegt; offen sind der Native-Lauf und die Abnahme.
-  Geplant für 1.16.0.
+- **Status**: In Arbeit (2026-11-27). P1 bis P5 gebaut und belegt, auch am Native-Binary; offen ist die Abnahme.
+  Mit 1.16.0 ausgeliefert.
 - **Ziel**: `diff_list` und `profile_list` nennen die Ergebnisse der Jobs, mit `server.state` auch nach einem Neustart.
   Ein Client, der sich an das Tool-Schema hält, kann Eingabedaten per `job_input` hochladen und mit
   `data_import_start` importieren.
@@ -68,3 +68,5 @@
 - **Beim Bauen entschieden:** `artifact_upload` nennt die Artefakt-URI eines `job_input`-Uploads weiterhin im Feld
   `schemaRef` (bestehendes Verhalten); Tool-Schema, Spec und Handbuch beschreiben es.
 - **Nicht gebaut:** `clientRequestId` am Init, den die Spec nennt und der Handler nicht liest.
+- **Native belegt:** Der Dispatch-Lauf von `native-image.yml` auf `905dbb4fc` besteht `smoke-server-state.sh` mit
+  allen neuen Prüfungen.
