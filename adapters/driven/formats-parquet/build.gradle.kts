@@ -74,6 +74,11 @@ dependencies {
         // Alt-Kompatibilitaet und traegt zwei CVEs (CVE-2020-8908,
         // CVE-2023-2976, beide `Files.createTempDir()`).
         exclude(group = "com.google.guava")
+
+        // Kerberos-Bibliotheken raus (CVE-2026-57914, kerby-asn1). Sie dienen
+        // dem Kerberos-Pfad, den es hier nicht gibt (siehe oben): gelesen wird
+        // ueber ein `InputFile`, Hadoops Anmeldelogik wird nie betreten.
+        exclude(group = "org.apache.kerby")
     }
     // AP3-Befund (5ca1497f, in parquet-libraries.md §8 nachgezogen):
     // parquet-hadoop ParquetReader.builder triggert das
@@ -119,6 +124,9 @@ dependencies {
         // der zweite Pfad, ueber den Guava hereinkam.
         exclude(group = "com.google.inject")
         exclude(group = "com.google.inject.extensions")
+
+        // Zweiter Pfad, siehe hadoop-common-Block.
+        exclude(group = "org.apache.kerby")
     }
 }
 

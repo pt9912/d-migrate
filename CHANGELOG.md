@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Apache Kerby ist nicht mehr Teil der Distribution** (CVE-2026-57914, `kerby-asn1`). Die sieben Jars kamen über
+  Hadoop herein, das der Parquet-Adapter braucht; Kerberos nutzt d-migrate nicht.
+- **Gradle 8.14.7 für alle Bauwege** (CVE-2026-22816, CVE-2026-22865). Die CI baute die nativen Binaries mit exakt
+  8.14.0, weil sie aus dem Docker-Tag nur die Versionszahl übernimmt. Betrifft den Bau, nicht das Verhalten.
+
 ## [1.16.1] - 2026-11-27
 
 ### Fixed

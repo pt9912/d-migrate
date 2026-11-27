@@ -58,7 +58,11 @@
 # dieser Zeile. Form und Stage-Name deshalb nicht aendern, ohne die Leser
 # mitzuziehen (`GRADLE_IMAGE` in `Makefile`, Schritt „Gradle-Version" in beiden
 # Workflows).
-FROM gradle:8.14-jdk21 AS deps
+#
+# Die Version steht bis zur Patch-Stelle: die Workflows reichen nur die Zahl an
+# `setup-gradle` weiter, und `8.14` heisst dort exakt 8.14.0, nicht der neueste
+# Patch-Stand wie beim Docker-Tag.
+FROM gradle:8.14.7-jdk21 AS deps
 
 WORKDIR /src
 
