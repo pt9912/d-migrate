@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.15.0**
-(stable, [released 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.15.0)).
+d-migrate is a working production tool at version **1.15.1**
+(stable, [released 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.15.1)).
 
 The current capabilities:
 
@@ -161,8 +161,13 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.15.0** (2026-11-27) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **`mcp serve` with
+- **Current stable** · **1.15.1** (2026-11-27) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **MCP with `server.state`: an
+  uploaded schema can be found again (Issue #85).** Upload finalisation kept writing
+  to the in-memory stores that `server.state` replaces, so the returned `schemaRef`
+  led nowhere (since 1.2.0; upload such schemas again). `job_list` no longer puts
+  the artifact prefix twice into `artifactUris` (Issue #86).
+  1.15.0 (2026-11-27) — **`mcp serve` with
   `server.state` requires a persistent byte store — check before upgrading.**
   Records survived restarts in the database, but without `--mcp-state-dir` the
   artifact bytes sat in a temporary directory that is deleted on stop. The server

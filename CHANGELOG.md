@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-11-27
+
 ### Fixed
 
 - **MCP mit `server.state`: Ein hochgeladenes Schema ist wieder auffindbar (Issue #85).** Die Upload-Finalisierung

@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.15.0** (stabil, [veröffentlicht 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.15.0)).
+**1.15.1** (stabil, [veröffentlicht 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.15.1)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,14 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.15.0** (2026-11-27) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **`mcp serve` mit
+- **Aktuelles Stable** · **1.15.1** (2026-11-27) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **MCP mit `server.state`: Ein
+  hochgeladenes Schema ist wieder auffindbar (Issue #85).** Die
+  Upload-Finalisierung schrieb weiter in die In-Memory-Stores, die `server.state`
+  ersetzt; der gelieferte `schemaRef` führte ins Leere (seit 1.2.0; solche Schemas
+  neu hochladen). `job_list` setzt das Artefakt-Präfix nicht mehr doppelt in
+  `artifactUris` (Issue #86).
+  1.15.0 (2026-11-27) — **`mcp serve` mit
   `server.state` verlangt einen persistenten Byte-Store – vor dem Update prüfen.**
   Die Datensätze überlebten Neustarts in der Datenbank, die Artefakt-Bytes lagen
   ohne `--mcp-state-dir` aber in einem temporären Verzeichnis, das beim Stoppen
