@@ -107,6 +107,13 @@ kover {
                     // NICHT exkludiert -- eigene modul-lokale Unit-Tests.
                     "dev.dmigrate.server.persistence.jdbc.schema.JdbcSchemaStore*",
                     "dev.dmigrate.server.persistence.jdbc.artifact.JdbcArtifactStore*",
+                    // Issue #87: Ausfuehrung gegen Postgres, gedeckt durch
+                    // JdbcDiffStoreContractTest/JdbcProfileStoreContractTest unter
+                    // -PintegrationTests. SQL-Aufbau (IndexSelect) und Codecs
+                    // bleiben NICHT exkludiert.
+                    "dev.dmigrate.server.persistence.jdbc.schema.JdbcDiffStore*",
+                    "dev.dmigrate.server.persistence.jdbc.schema.JdbcProfileStore*",
+                    "dev.dmigrate.server.persistence.jdbc.schema.JdbcIndexTable*",
                 )
                 // LF-012 / LN-011 / LN-017 / LN-027: Quota-Stack (JdbcQuotaStore +
                 // JdbcQuotaReservationOwnerStore + JdbcOwnerAwareQuotaService

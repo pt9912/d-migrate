@@ -7,7 +7,7 @@
 # Anwendungs-/Tracking-Mechanismus; diese Datei ist nur die SQL-Quelle.
 schema_format: "1.0"
 name: "d-migrate Server-State"
-version: "2.0.0"
+version: "3.0.0"
 
 tables:
   idempotency_reservations:
@@ -122,4 +122,36 @@ tables:
         name: artifact_records_kind
       - columns: [tenant_id, job_ref]
         name: artifact_records_job_ref
+        where: "job_ref IS NOT NULL"
+
+  diff_index_entries:
+    columns:
+      tenant_id: { type: text, required: true }
+      diff_id: { type: text, required: true }
+      entry: { type: json, required: true }
+      job_ref: { type: text }
+      created_at: { type: datetime, timezone: true, required: true }
+      expires_at: { type: datetime, timezone: true, required: true }
+    primary_key: [tenant_id, diff_id]
+    indices:
+      - columns: [expires_at]
+        name: diff_index_expiry
+      - columns: [tenant_id, job_ref]
+        name: diff_index_job_ref
+        where: "job_ref IS NOT NULL"
+
+  profile_index_entries:
+    columns:
+      tenant_id: { type: text, required: true }
+      profile_id: { type: text, required: true }
+      entry: { type: json, required: true }
+      job_ref: { type: text }
+      created_at: { type: datetime, timezone: true, required: true }
+      expires_at: { type: datetime, timezone: true, required: true }
+    primary_key: [tenant_id, profile_id]
+    indices:
+      - columns: [expires_at]
+        name: profile_index_expiry
+      - columns: [tenant_id, job_ref]
+        name: profile_index_job_ref
         where: "job_ref IS NOT NULL"

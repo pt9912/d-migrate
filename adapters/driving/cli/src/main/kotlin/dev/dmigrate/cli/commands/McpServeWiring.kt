@@ -31,6 +31,8 @@ import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
+import dev.dmigrate.server.persistence.jdbc.schema.JdbcDiffStore
+import dev.dmigrate.server.persistence.jdbc.schema.JdbcProfileStore
 import dev.dmigrate.server.persistence.jdbc.schema.JdbcSchemaStore
 import dev.dmigrate.server.ports.IdempotencyStore
 import dev.dmigrate.server.ports.JobStartTransaction
@@ -101,6 +103,8 @@ internal class DefaultServerStateFactory(
                 // auch mit --server-state gesetzt (verifizierter Bugreport-Befund).
                 schemaStore = JdbcSchemaStore(runner),
                 artifactStore = JdbcArtifactStore(runner),
+                diffStore = JdbcDiffStore(runner),
+                profileStore = JdbcProfileStore(runner),
             )
             return ServerStateBundle(
                 phaseCWithPersistence = phaseCWithJdbc,

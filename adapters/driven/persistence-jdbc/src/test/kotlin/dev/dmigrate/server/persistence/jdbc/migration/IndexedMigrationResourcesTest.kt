@@ -22,6 +22,7 @@ class IndexedMigrationResourcesTest : FunSpec({
         provider.getResources("V", arrayOf(".sql")).map { it.filename }.shouldContainExactly(
             "V1__server_state_initial.sql",
             "V2__schema_artifact_stores.sql",
+            "V3__diff_profile_indexes.sql",
         )
     }
 

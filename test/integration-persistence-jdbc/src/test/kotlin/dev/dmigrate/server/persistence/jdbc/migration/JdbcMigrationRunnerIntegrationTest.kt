@@ -14,12 +14,11 @@ import javax.sql.DataSource
  * Integration test for the Flyway server-state migrations.
  *
  * Verifies:
- * - V1__server_state_initial.sql and
- *   V2__schema_artifact_stores.sql (ImpPlan-1.2.0-mcp-server-state-schema-artifact-persistence.md
- *   AP1) apply cleanly, in order, against a fresh PostgreSQL 16 container
- * - All 7 tables (idempotency_reservations, init_resume_reservations,
+ * - V1__server_state_initial.sql, V2__schema_artifact_stores.sql and
+ *   V3__diff_profile_indexes.sql apply cleanly, in order, against a fresh PostgreSQL container
+ * - All 9 tables (idempotency_reservations, init_resume_reservations,
  *   jobs, quota_reservation_owners, quota_counters, schema_index_entries,
- *   artifact_records) exist with the expected primary-key columns and
+ *   artifact_records, diff_index_entries, profile_index_entries) exist with the expected primary-key columns and
  *   supporting indexes
  * - The migration is idempotent: re-running migrate() against an
  *   already-migrated DB is a no-op (Plan LF-012 / LN-011 / LN-017 / LN-027 Akzeptanz)
@@ -55,18 +54,18 @@ class JdbcMigrationRunnerIntegrationTest : FunSpec({
         container.stop()
     }
 
-    test("first migrate() applies V1+V2 and reports success=true with 2 migrations") {
+    test("first migrate() applies V1 to V3 and reports success=true with 3 migrations") {
         val ds = dataSource!!
         val runner = JdbcMigrationRunner(ds)
 
         val result = runner.migrate()
 
         result.success shouldBe true
-        result.migrationsExecuted shouldBe 2
-        result.appliedVersions shouldBe listOf("1", "2")
+        result.migrationsExecuted shouldBe 3
+        result.appliedVersions shouldBe listOf("1", "2", "3")
     }
 
-    test("all 7 server-state tables exist after V1+V2") {
+    test("all 9 server-state tables exist after V1 to V3") {
         val ds = dataSource!!
         val tables = listTables(ds, schema = "public")
         tables shouldContainAll listOf(
@@ -77,6 +76,8 @@ class JdbcMigrationRunnerIntegrationTest : FunSpec({
             "quota_counters",
             "schema_index_entries",
             "artifact_records",
+            "diff_index_entries",
+            "profile_index_entries",
         )
     }
 
@@ -133,6 +134,22 @@ class JdbcMigrationRunnerIntegrationTest : FunSpec({
         for (indexName in listOf("schema_index_job_ref", "artifact_records_job_ref")) {
             val partial = readPartialIndexPredicate(ds, indexName)
             (partial?.contains("job_ref") ?: false) shouldBe true
+        }
+    }
+
+    test("V3: primary keys and indexes are wired for the diff and profile indexes") {
+        val ds = dataSource!!
+
+        primaryKeyColumns(ds, "diff_index_entries") shouldBe listOf("tenant_id", "diff_id")
+        primaryKeyColumns(ds, "profile_index_entries") shouldBe listOf("tenant_id", "profile_id")
+        listIndexes(ds, schema = "public") shouldContainAll listOf(
+            "diff_index_expiry",
+            "diff_index_job_ref",
+            "profile_index_expiry",
+            "profile_index_job_ref",
+        )
+        for (indexName in listOf("diff_index_job_ref", "profile_index_job_ref")) {
+            (readPartialIndexPredicate(ds, indexName)?.contains("job_ref") ?: false) shouldBe true
         }
     }
 

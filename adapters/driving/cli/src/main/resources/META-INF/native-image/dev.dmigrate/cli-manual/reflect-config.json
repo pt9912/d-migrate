@@ -763,6 +763,78 @@
     "unsafeAllocated": true
   },
   {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.DiffIndexEntryJson",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.DiffIndexEntryJson$DiffIndexEntryWire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.DiffIndexEntryJson$DiffIndexEntryWire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.ProfileIndexEntryJson",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.ProfileIndexEntryJson$ProfileIndexEntryWire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.ProfileIndexEntryJson$ProfileIndexEntryWire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.ResourceUriWire",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.server.persistence.jdbc.schema.ResourceUriWire$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
     "name": "dev.dmigrate.server.persistence.jdbc.schema.SchemaIndexEntryJson",
     "allDeclaredConstructors": true,
     "allPublicConstructors": true,
