@@ -34,7 +34,7 @@ Lücken.
    untrusted → privilegiert (mit den bestätigten Befundklassen), Krypto-/Auth-Orte,
    Build-/Reproduktions-Anleitung, Gate-Tabelle.
 2. ✅ **SBOM/Dependency-Inventar** → [`docs/security/dependency-inventory.md`](../../security/dependency-inventory.md):
-   239 aufgelöste Runtime-Artefakte des CLI-Shadow-Jars (via `docker build … cli:dependencies`),
+   die aufgelösten Runtime-Artefakte des CLI-Artefakts (via `docker build … cli:dependencies`),
    Regenerier-Anleitung, Kern-Dep-Schnellzugriff. Schließt die „~6-Pakete"-Lücke des
    Dependency-Graphen (`dependency-submission.yml` liefert es zusätzlich ab main-Push).
 3. ✅ **Readiness-Index** — als §9 + Querverweise in `audit-scope.md` realisiert (Bericht,
