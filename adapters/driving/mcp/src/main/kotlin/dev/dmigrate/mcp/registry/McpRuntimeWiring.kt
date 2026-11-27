@@ -56,8 +56,8 @@ import java.util.UUID
  * file-backed `ArtifactContentStore` for the in-memory default
  * without rebuilding every handler.
  *
- * `finalizer` defaults to [DefaultSchemaStagingFinalizer] but tests
- * can inject a stub to short-circuit the parse/validate path.
+ * `finalizer` is a [DefaultSchemaStagingFinalizer] over the current stores; tests
+ * can inject a stub via `finalizerOverride` to short-circuit the parse/validate path.
  *
  * Note: `SchemaGenerateHandler` looks up `DdlGenerator` instances
  * via the static `DatabaseDriverRegistry` (the same lookup the CLI
@@ -77,26 +77,17 @@ data class McpRuntimeWiring(
     val limits: McpLimitsConfig,
     val clock: Clock,
     val operationTimeout: Duration = Duration.ofMinutes(5),
-    val finalizer: SchemaStagingFinalizer = DefaultSchemaStagingFinalizer(
-        artifactStore = artifactStore,
-        artifactContentStore = artifactContentStore,
-        schemaStore = schemaStore,
-        validator = SchemaValidator(),
-        clock = clock,
-    ),
+    val finalizerOverride: SchemaStagingFinalizer? = null,
     /**
      * LF-010 / LF-013 / LN-009 / LN-011: Finaliser fuer policy-pflichtige
      * `uploadIntent=job_input`-Sessions. Materialisiert die
      * Bytes via [artifactContentStore] und registriert den
      * [ArtifactRecord] (kind=session.artifactKind,
-     * contentType=session.mimeType). Default = [DefaultJobInputFinalizer]
-     * mit den Bestands-Stores; Tests duerfen einen Stub injizieren.
+     * contentType=session.mimeType). Ersetzt den
+     * [DefaultJobInputFinalizer] ([jobInputFinalizer]); Tests duerfen
+     * einen Stub injizieren.
      */
-    val jobInputFinalizer: JobInputFinalizer = DefaultJobInputFinalizer(
-        artifactStore = artifactStore,
-        artifactContentStore = artifactContentStore,
-        clock = clock,
-    ),
+    val jobInputFinalizerOverride: JobInputFinalizer? = null,
     /**
      * LF-012 / LN-027 / LN-028 / LN-038: optional audit sink. When supplied, every `tools/call`
      * dispatched through `McpServiceImpl` records a single
@@ -188,6 +179,27 @@ data class McpRuntimeWiring(
         UploadInitApprovalFingerprint(payloadFingerprintService),
     val abortApprovalFingerprint: AbortApprovalFingerprint =
         AbortApprovalFingerprint(payloadFingerprintService),
+) {
+
+    // Aus Stores gebaute Dienste stehen im Rumpf, nicht in Konstruktor-Defaults: `copy` wertet einen Default
+    // nicht neu aus, der Dienst hielte dann die Stores von vor dem Tausch (`server.state`).
+
+    /** Finaliser der `schema_staging_readonly`-Uploads; [finalizerOverride] ersetzt ihn. */
+    val finalizer: SchemaStagingFinalizer = finalizerOverride ?: DefaultSchemaStagingFinalizer(
+        artifactStore = artifactStore,
+        artifactContentStore = artifactContentStore,
+        schemaStore = schemaStore,
+        validator = SchemaValidator(),
+        clock = clock,
+    )
+
+    /** Finaliser der `job_input`-Uploads; [jobInputFinalizerOverride] ersetzt ihn. */
+    val jobInputFinalizer: JobInputFinalizer = jobInputFinalizerOverride ?: DefaultJobInputFinalizer(
+        artifactStore = artifactStore,
+        artifactContentStore = artifactContentStore,
+        clock = clock,
+    )
+
     val uploadInitOrchestrator: UploadInitOrchestrator = UploadInitOrchestrator(
         syncEffectStore = syncEffectStore,
         claimStore = uploadInitClaimStore,
@@ -195,8 +207,8 @@ data class McpRuntimeWiring(
         policyService = policyService,
         approvalFingerprintService = uploadInitApprovalFingerprint,
         quotaService = quotaService,
-    ),
-) {
+    )
+
     companion object {
 
         /**

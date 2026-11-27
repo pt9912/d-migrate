@@ -10,9 +10,12 @@
 # Ablauf (ein Image, wie es MCP_E2E_DMIGRATE_IMAGE nennt):
 #   1. leere State-DB: der Server startet, Flyway hat die Tabellen angelegt (nicht nur die History-Tabelle)
 #   2. die drei Listen (schema_list, job_list, artifact_list) antworten ohne Fehler
-#   3. schema_reverse_start legt einen Job an; er endet mit SUCCEEDED, Job, Schema und Artefakt stehen in den Listen
+#   3. schema_reverse_start legt einen Job an; er endet mit SUCCEEDED, Job, Schema und Artefakt stehen in den Listen,
+#      und job_list nennt jedes Artefakt als eine URI (Issue #86). Ein hochgeladenes Schema ist ueber seinen
+#      schemaRef erreichbar (Issue #85)
 #   4. Neustart gegen dieselbe, nun gefuellte State-DB: die Listen lesen die Datensaetze und nennen sie, und die Bytes
-#      eines Artefakts sind noch lesbar (neuer Container, gleiches Volume als --mcp-state-dir)
+#      eines Artefakts sind noch lesbar (neuer Container, gleiches Volume als --mcp-state-dir), ebenso das
+#      hochgeladene Schema
 #   5. ein erzwungener Serverfehler antwortet mit INTERNAL_AGENT_ERROR, und das Serverlog nennt Tool und Ursache
 #   6. ohne --mcp-state-dir startet der Server nicht: server.state verlangt einen persistenten Byte-Store
 #
@@ -29,6 +32,7 @@ HTTP_PORT="${MCP_E2E_STATE_HTTP_PORT:-8797}"
 # Dasselbe PostgreSQL wie der Rest des Harness (docker-compose.yml), damit es nur eine Pin-Stelle gibt.
 PG_IMAGE="$(awk '/image: postgis\/postgis/ {print $2; exit}' "$EXAMPLES_DIR/docker-compose.yml")"
 PG_NAME="mcp-e2e-state-pg"
+UPLOADED_REF=""
 MCP_NAME="mcp-e2e-state-mcp"
 BYTES_VOLUME="mcp-e2e-state-bytes"
 URL="http://127.0.0.1:${HTTP_PORT}/mcp"
@@ -148,6 +152,57 @@ check_records() {
     done
 }
 
+# job_list nennt jedes Artefakt als eine Artefakt-URI, nicht mit doppeltem Praefix.
+check_job_uris() {
+    local phase="$1" uris
+    uris="$(tool job_list '{}' | jq -r '.result.content[0].text | fromjson? | .jobs[]?.artifactUris[]?' 2> /dev/null)"
+    if [ -n "$uris" ] && ! grep -qvE '^dmigrate://tenants/default/artifacts/[^/]+$' <<< "$uris"; then
+        log "  job_list nennt einfache Artefakt-URIs"
+    else
+        note_failure "$phase: job_list.artifactUris ist leer oder keine einfache URI: $(head -1 <<< "$uris")"
+    fi
+}
+
+# Laedt ein Schema hoch; setzt UPLOADED_REF auf den schemaRef aus der Antwort.
+upload_schema() {
+    local phase="$1" file="$WORK/upload.json" size sha session reply
+    UPLOADED_REF=""
+    # Schema-Uploads liest der Server als JSON.
+    jq -cn '{schema_format: "1.0", name: "uploaded", version: "1.0.0",
+        tables: {u: {columns: {id: {type: "identifier"}}, primary_key: ["id"]}}}' > "$file"
+    size="$(wc -c < "$file")"
+    sha="$(sha256sum "$file" | cut -d' ' -f1)"
+    session="$(tool artifact_upload_init \
+        "{\"uploadIntent\":\"schema_staging_readonly\",\"expectedSizeBytes\":$size,\"checksumSha256\":\"$sha\"}" \
+        | jq -r '.result.content[0].text | fromjson? | .uploadSessionId // empty' 2> /dev/null)"
+    [ -n "$session" ] || { note_failure "$phase: artifact_upload_init liefert keine uploadSessionId"; return; }
+    reply="$(tool artifact_upload "{\"uploadSessionId\":\"$session\",\"segmentIndex\":1,\"segmentOffset\":0,\
+\"segmentTotal\":1,\"isFinalSegment\":true,\"segmentSha256\":\"$sha\",\"contentBase64\":\"$(base64 -w0 "$file")\"}")"
+    UPLOADED_REF="$(jq -r '.result.content[0].text | fromjson? | .schemaRef // empty' <<< "$reply" 2> /dev/null)"
+    if [ -n "$UPLOADED_REF" ]; then
+        log "  Upload liefert $UPLOADED_REF"
+    else
+        note_failure "$phase: artifact_upload liefert keinen schemaRef: $(head -c 300 <<< "$reply")"
+    fi
+}
+
+# Der schemaRef aus dem Upload muss bei den Tools ankommen, die ihn lesen.
+check_upload() {
+    local phase="$1" code listed
+    [ -n "$UPLOADED_REF" ] || return
+    if code="$(tool_ok schema_validate "{\"schemaRef\":\"$UPLOADED_REF\"}")"; then
+        log "  schema_validate liest das hochgeladene Schema"
+    else
+        note_failure "$phase: schema_validate auf das hochgeladene Schema -> $code"
+    fi
+    listed="$(tool schema_list '{}' | jq -r '.result.content[0].text // empty' 2> /dev/null)"
+    if grep -qF "$UPLOADED_REF" <<< "$listed"; then
+        log "  schema_list fuehrt das hochgeladene Schema"
+    else
+        note_failure "$phase: schema_list fuehrt das hochgeladene Schema nicht"
+    fi
+}
+
 # Ein Serverfehler, den es sonst nicht gibt: Die Tabelle hinter artifact_list wird umbenannt. Der Client sieht nur
 # INTERNAL_AGENT_ERROR; die Ursache muss im Serverlog stehen, auch im Native-Image (dort ist die Logstufe fest).
 check_error_log() {
@@ -242,6 +297,9 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
         if [ "${status^^}" = SUCCEEDED ]; then
             log "  Job in der State-DB: $status"
             check_records "3"
+            check_job_uris "3"
+            upload_schema "3"
+            check_upload "3"
         else
             note_failure "3: der Job endet nicht mit SUCCEEDED (Status: ${status:-keine Zeile})"
         fi
@@ -255,6 +313,7 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
         check_lists "4"
         check_records "4"
         check_bytes "4"
+        check_upload "4"
         check_error_log "5"
     else
         note_failure "4: der Server startet nicht gegen die gefuellte State-DB"
@@ -271,4 +330,4 @@ if [ ${#FAILURES[@]} -gt 0 ]; then
     printf '  - %s\n' "${FAILURES[@]}" >&2
     exit 1
 fi
-log "OK — server.state unter $IMAGE: Migration, Listen, Job anlegen, Neustart, Bytes, Fehlerprotokoll, Startpruefung"
+log "OK — server.state unter $IMAGE: Migration, Listen, Job anlegen, Upload, Neustart, Bytes, Fehlerprotokoll, Startpruefung"

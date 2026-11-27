@@ -167,7 +167,7 @@ internal class JobStatusGetHandler(
             put("updatedAt", managed.updatedAt.toString())
             put("expiresAt", managed.expiresAt.toString())
             put("resourceUri", record.resourceUri.render())
-            put("artifacts", projectArtifacts(record.tenantId, managed.artifacts))
+            put("artifacts", managed.artifacts.map { jobArtifactUri(record.tenantId, it) })
             // Optional fields: emit only when set so the wire matches
             // the JSON-Schema `"type": "object"` declaration (a null
             // value would fail strict 2020-12 validation). Same
@@ -177,23 +177,6 @@ internal class JobStatusGetHandler(
             put("executionMeta", mapOf("requestId" to requestId))
         }
     }
-
-    /**
-     * LF-012 / LN-027 / LN-028 / LN-038: project `managed.artifacts` onto the canonical
-     * `dmigrate://tenants/{tenantId}/artifacts/{artifactId}` URI form
-     * before serialisation. Naked artefact ids accumulated by older
-     * job pipelines are backfilled (single-write happens upstream;
-     * this tool is read-only). Already-URI values are validated and
-     * passed through verbatim — no double-rewrite.
-     */
-    private fun projectArtifacts(tenantId: TenantId, artifacts: List<String>): List<String> =
-        artifacts.map { entry ->
-            if (entry.startsWith("dmigrate://")) {
-                entry
-            } else {
-                ServerResourceUri(tenantId, ResourceKind.ARTIFACTS, entry).render()
-            }
-        }
 
     // LF-012 / LN-027 / LN-028 / LN-038: progress.phase and error.message/code can carry job-
     // runtime strings that originated from user-provided schemas or

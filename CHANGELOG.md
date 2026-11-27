@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **MCP mit `server.state`: Ein hochgeladenes Schema ist wieder auffindbar (Issue #85).** Die Upload-Finalisierung
+  schrieb weiter in die In-Memory-Stores, die `server.state` beim Start ersetzt. Der Upload meldete `COMPLETED` und
+  einen `schemaRef`, den kein Tool fand (`RESOURCE_NOT_FOUND`, `schema_list` ohne Eintrag). Betroffen seit 1.2.0.
+  Schemas, die so hochgeladen wurden, sind verloren und müssen neu hochgeladen werden.
+- **MCP: `job_list` nennt in `artifactUris` einfache URIs (Issue #86).** Vor jede gespeicherte URI wurde das
+  Artefakt-Präfix ein zweites Mal gesetzt.
+
 ## [1.15.0] - 2026-11-27
 
 ### Changed

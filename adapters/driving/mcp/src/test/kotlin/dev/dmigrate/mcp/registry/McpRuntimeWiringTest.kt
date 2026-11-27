@@ -52,7 +52,7 @@ private fun inMemoryWiring(
         quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
         limits = McpLimitsConfig(),
         clock = FIXED_CLOCK,
-        finalizer = finalizer ?: McpRuntimeWiring(
+        finalizerOverride = finalizer ?: McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = artifactStore,

@@ -38,9 +38,7 @@ internal object ListItemProjector {
         // artifactUris uses the existing artefact resource-URI shape
         // — naked ids would not match the schema's pattern. Empty
         // list is allowed (job with no artefacts is legal).
-        "artifactUris" to record.managedJob.artifacts.map {
-            "dmigrate://tenants/${record.tenantId.value}/artifacts/$it"
-        },
+        "artifactUris" to record.managedJob.artifacts.map { jobArtifactUri(record.tenantId, it) },
     )
 
     fun projectArtifactListItem(record: ArtifactRecord): Map<String, Any?> {
