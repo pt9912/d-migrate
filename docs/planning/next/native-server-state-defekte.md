@@ -9,7 +9,7 @@
 
 ## Stand 2026-11-26: großteils anderswo erledigt
 
-[`native-mcp-e2e-gate.md`](../in-progress/native-mcp-e2e-gate.md) hat den Defekt (Issue #84) behoben, ohne diesen Plan
+[`native-mcp-e2e-gate.md`](../done/native-mcp-e2e-gate.md) hat den Defekt (Issue #84) behoben, ohne diesen Plan
 zu kennen, und dabei zwei seiner Vorgaben anders gelöst:
 
 - **Metadaten:** Die Wire-Klassen stehen von Hand in `cli-manual/reflect-config.json` (gegen die Abgrenzung unten; ein
@@ -21,6 +21,8 @@ zu kennen, und dabei zwei seiner Vorgaben anders gelöst:
 
 - P1/P2: kein Make-Ziel erhebt die Server-State-Metadaten.
 - `--verbose` verspricht DEBUG und setzt keine Logstufe.
+- `artifact_chunk_get` antwortet bei vorhandenem Datensatz und fehlenden Bytes mit `INTERNAL_AGENT_ERROR` statt mit
+  einem Nicht-gefunden-Fehler (gemessen 2026-11-26 mit flüchtigem Byte-Store).
 
 P4, dritter Punkt (Startabbruch bei `server.state` mit flüchtigem Byte-Store) ist seit 2026-11-26 gebaut
 (`McpDurableByteStore`, [CLI-Spezifikation](../../../spec/cli-spec.md), Schritt 6 in `smoke-server-state.sh`), mit den

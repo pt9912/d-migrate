@@ -1,7 +1,6 @@
 # Inline-Enum: Name für den Wertevorrat-CHECK (`values_constraint`)
 
-- **Status**: In Arbeit (2026-11-25). [ADR 0069](../../adr/0069-name-des-wertevorrat-checks-einer-inline-enum.md) ist
-  `accepted` (Option A, Eigner). P0–P5 umgesetzt, siehe „Stand" am Ende; offen ist die Abnahme gegen die DoD.
+- **Status**: Abgeschlossen (2026-11-27, vom Eigner abgenommen). Ausgeliefert mit 1.14.0, siehe „Closure".
 - **Ziel**: Wer den Namen des CHECKs braucht, der den Wertevorrat einer Spalte durchsetzt, schreibt
   `type: enum, values: [...], values_constraint: <name>` statt eines rohen `CHECK … IN (…)`. Der Name bleibt auf
   PostgreSQL, SQLite, SQL Server und Oracle stabil. Datei gegen Datei kennt der Up den Namen des alten CHECKs.
@@ -126,3 +125,13 @@ an der Ausgabe prüfen.
   den Namen im Up 2 PostgreSQL-Specs, ohne die Felder in `schema.json` der Vertragstest.
 - **Offen:** Integrationsläufe der vier anderen Dialekte, Gesamtlauf, CI.
 
+## Closure (2026-11-27)
+
+- **Geliefert:** `values_constraint` nach [ADR 0069](../../adr/0069-name-des-wertevorrat-checks-einer-inline-enum.md),
+  P0–P5, mit 1.14.0. Abnahme durch den Eigner am 2026-11-27.
+- **Zum letzten „Offen" im Stand:** Auf dem Tag `v1.14.0` liefen „Integration Tests" (alle Integrationsmodule), „Build &
+  Test", Per-Module Coverage und Native Image grün.
+- **Nicht festgehalten:** ein Rot-Beleg je Dialekt. Notiert ist er für die Vergleichsregel, PostgreSQL und
+  `spec/schema.json`, nicht für SQLite, SQL Server, Oracle und MySQL.
+- **Folgearbeit:** keine aus diesem Plan. Die unter „Nicht im Umfang" genannten Punkte sind entschieden oder bewusst
+  nicht vorgesehen.

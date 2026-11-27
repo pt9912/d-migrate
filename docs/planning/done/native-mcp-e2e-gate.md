@@ -1,7 +1,6 @@
 # Natives Image: MCP-E2E-Matrizen als Gate, `connections/list` und `server.state` (Issue #84)
 
-- **Status**: In Arbeit (2026-11-27). Fix, Gate und Fehlerprotokoll **am Native-Binary belegt**, ausgeliefert mit
-  1.14.1; offen ist die Abnahme durch den Eigner.
+- **Status**: Abgeschlossen (2026-11-27, vom Eigner abgenommen). Ausgeliefert mit 1.14.1, siehe „Closure".
 - **Ziel**: Das ausgelieferte native Binary besteht dieselben MCP-E2E-Läufe wie das JVM-Image, und zwar bevor es
   angehängt wird.
 - **Herkunft**: Eigner-Frage, ob die E2E-Matrix je mit dem nativen Image lief (nein: CI und lokale Läufe nahmen das
@@ -89,3 +88,11 @@ Gegenprobe: Das `server.state`-Skript besteht gegen das JVM-Image `1.14.0` volls
 - Windows-Binary: die Matrizen brauchen Linux-Container.
 - Oracle in den Matrizen (Kaltstart, wie im bestehenden JVM-Workflow).
 - Ein lokaler Native-Bau als Pflicht: Er braucht rund 15 GiB und hat am 2026-11-26 die Maschine in den OOM gebracht.
+
+## Closure (2026-11-27)
+
+- **Geliefert:** das Gate `mcp-e2e-native` vor dem Anhängen, `connections/list` und `server.state` im nativen Image,
+  die Ursache eines `INTERNAL_AGENT_ERROR` im Serverlog; alles mit 1.14.1. Issue #84 ist damit beantwortet. Abnahme
+  durch den Eigner am 2026-11-27.
+- **Offen, geführt in** [`native-server-state-defekte.md`](../next/native-server-state-defekte.md): ein Make-Ziel für
+  die Agent-Metadaten, `--verbose` ohne Wirkung auf die Logstufe, und `artifact_chunk_get` bei fehlenden Bytes.
