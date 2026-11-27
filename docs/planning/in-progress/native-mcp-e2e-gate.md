@@ -1,7 +1,7 @@
 # Natives Image: MCP-E2E-Matrizen als Gate, `connections/list` und `server.state` (Issue #84)
 
-- **Status**: In Arbeit (2026-11-26). Fix und Gate **am Native-Binary belegt** (CI-Runde 3); offen ist der Beleg des
-  Fehlerprotokolls am Native-Binary (siehe DoD).
+- **Status**: In Arbeit (2026-11-27). Fix, Gate und Fehlerprotokoll **am Native-Binary belegt**, ausgeliefert mit
+  1.14.1; offen ist die Abnahme durch den Eigner.
 - **Ziel**: Das ausgelieferte native Binary besteht dieselben MCP-E2E-Läufe wie das JVM-Image, und zwar bevor es
   angehängt wird.
 - **Herkunft**: Eigner-Frage, ob die E2E-Matrix je mit dem nativen Image lief (nein: CI und lokale Läufe nahmen das
@@ -78,10 +78,11 @@ Gegenprobe: Das `server.state`-Skript besteht gegen das JVM-Image `1.14.0` volls
 * **Erfüllt** (Runde 3): Der Reproduktionsablauf aus Issue #84 läuft durch, einschließlich der vom JVM-Server
   angelegten Datensätze. Dieser letzte Teil ist von Hand belegt; `smoke-server-state.sh` schreibt und liest mit
   demselben Image.
-* **Offen** (auf der JVM belegt): Die Ursache eines `INTERNAL_AGENT_ERROR` steht auf ERROR im Serverlog
+* **Erfüllt**: Die Ursache eines `INTERNAL_AGENT_ERROR` steht auf ERROR im Serverlog
   (Eigner-Entscheidung 2026-11-26, Nebenbefund aus Issue #84; `ToolFailureLog`, Zugangsdaten maskiert).
   `smoke-server-state.sh` erzwingt dafür in Phase 5 einen Serverfehler: grün mit dem neuen JVM-Image, rot mit `1.14.0`.
-  Am Native-Binary steht der Beleg mit dem nächsten Lauf von `native-image.yml` aus.
+  Nativ belegt durch den Dispatch-Lauf von `native-image.yml` auf dem Release-Commit von 1.14.1 und von Hand am
+  veröffentlichten Image `1.14.1-native`.
 
 ## Nicht im Umfang
 
