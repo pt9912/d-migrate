@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-11-27
+
 ### Changed
 
 - **MCP: `mcp serve` mit `server.state` verlangt einen persistenten Byte-Store. Vor dem Update prüfen.** Datensätze

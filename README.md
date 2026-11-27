@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.14.1**
-(stable, [released 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.14.1)).
+d-migrate is a working production tool at version **1.15.0**
+(stable, [released 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.15.0)).
 
 The current capabilities:
 
@@ -161,8 +161,15 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.14.1** (2026-11-27) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **The native image runs
+- **Current stable** · **1.15.0** (2026-11-27) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **`mcp serve` with
+  `server.state` requires a persistent byte store — check before upgrading.**
+  Records survived restarts in the database, but without `--mcp-state-dir` the
+  artifact bytes sat in a temporary directory that is deleted on stop. The server
+  now exits with code 2 unless `artifacts.store: s3` is set or `--mcp-state-dir`
+  (or `DMIGRATE_MCP_STATE_DIR`) names an existing directory; in a container, mount
+  a volume writable for uid 10001.
+  1.14.1 (2026-11-27) — **The native image runs
   `mcp serve` with `server.state` (Issue #84):** the bundled migrations are found
   and the store records are registered; `connections/list` answers natively too.
   Also: the MCP handshake reports the product version instead of `0.0.0`, the

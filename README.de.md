@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.14.1** (stabil, [veröffentlicht 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.14.1)).
+**1.15.0** (stabil, [veröffentlicht 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.15.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,16 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.14.1** (2026-11-27) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **Das native Image fährt
+- **Aktuelles Stable** · **1.15.0** (2026-11-27) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **`mcp serve` mit
+  `server.state` verlangt einen persistenten Byte-Store – vor dem Update prüfen.**
+  Die Datensätze überlebten Neustarts in der Datenbank, die Artefakt-Bytes lagen
+  ohne `--mcp-state-dir` aber in einem temporären Verzeichnis, das beim Stoppen
+  gelöscht wird. Der Server endet jetzt mit Exit 2, wenn weder `artifacts.store:
+  s3` gesetzt ist noch `--mcp-state-dir` (oder `DMIGRATE_MCP_STATE_DIR`) ein
+  bestehendes Verzeichnis nennt; im Container ein Volume einhängen, beschreibbar
+  für uid 10001.
+  1.14.1 (2026-11-27) — **Das native Image fährt
   `mcp serve` mit `server.state` (Issue #84):** Die mitgelieferten Migrationen
   werden gefunden und die Datensatzklassen sind registriert; auch
   `connections/list` antwortet nativ. Außerdem meldet der MCP-Handshake die
