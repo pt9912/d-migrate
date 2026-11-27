@@ -1,7 +1,7 @@
 # CI: Layer-Cache für die `deps`-Stage (Maven Central antwortet mit 429)
 
-- **Status**: In Arbeit (2026-11-26). In der CI in drei der vier Workflows belegt; offen ist der Integrationslauf nach
-  seiner Korrektur (siehe DoD).
+- **Status**: In Arbeit (2026-11-27). In der CI in allen vier Workflows belegt; offen ist die Entscheidung zum
+  Veröffentlichungs-Job (siehe DoD).
 - **Ziel**: Ein Push lädt die Abhängigkeiten nicht fünfmal neu von Maven Central. Ein `429 Too Many Requests` beim Bau
   der `deps`-Stage färbt einen Lauf nicht mehr rot, der nichts mit dem Code zu tun hat.
 - **Herkunft**: Compare-Matrix #79 auf dem Release-Commit von 1.14.0 (Maven-429 bei `kotlin-gradle-plugins-bom`); gleiche
@@ -66,12 +66,14 @@ Last an anderer Stelle); `actions/cache` auf `~/.gradle` (kommt nicht in den Doc
   durch (mit einem `docker`-Stub belegt).
 - Actions-Cache: 6,3 GiB von 10 GiB, davon vier `docker-deps`-Einträge mit zusammen 3,7 GiB (zwei auf `main`, zwei
   aus den Dependabot-PRs vor der Korrektur; die verfallen nach sieben Tagen ohne Zugriff).
+- Integration Tests nach der Korrektur (Push `4f4fb433b`): „Cache restored", die `deps`-Layer `CACHED`, keine Zeile
+  `Resolving :`, `BUILD SUCCESSFUL` nach 38 min.
 
 ## Akzeptanz (DoD)
 
 * **Lokal belegt** (siehe Tabelle): Cache-Treffer ohne Download; Compile und Tests laufen auch mit Cache; `--load` plus
   `--iidfile` funktioniert.
-* **In der CI belegt** (offen nur noch für Integration Tests): Auf dem ersten Push mit geänderten Build-Dateien läuft der
+* **In der CI belegt** (alle vier Workflows): Auf dem ersten Push mit geänderten Build-Dateien läuft der
   Schritt „Warm deps layer" und speichert den Cache; auf dem **nächsten** Push derselben Dateien zeigen alle vier
   Workflows „Cache restored" und überspringen den Schritt; im Log von `make ci-build` steht kein `Resolving :`.
 * **Tests laufen weiter** (erfüllt, siehe Messung): In `make ci-build` auf dem Cache-Treffer stehen die Testaufgaben im Log (kein `UP-TO-DATE` für
