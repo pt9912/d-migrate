@@ -12,10 +12,12 @@
 #   2. die drei Listen (schema_list, job_list, artifact_list) antworten ohne Fehler
 #   3. schema_reverse_start legt einen Job an; er endet mit SUCCEEDED, Job, Schema und Artefakt stehen in den Listen,
 #      und job_list nennt jedes Artefakt als eine URI (Issue #86). Ein hochgeladenes Schema ist ueber seinen
-#      schemaRef erreichbar (Issue #85)
+#      schemaRef erreichbar (Issue #85). schema_compare_start und data_profile_start stehen danach in diff_list und
+#      profile_list, und eine per job_input hochgeladene CSV-Datei laesst sich mit data_import_start importieren
+#      (Issue #87)
 #   4. Neustart gegen dieselbe, nun gefuellte State-DB: die Listen lesen die Datensaetze und nennen sie, und die Bytes
 #      eines Artefakts sind noch lesbar (neuer Container, gleiches Volume als --mcp-state-dir), ebenso das
-#      hochgeladene Schema
+#      hochgeladene Schema und die Eintraege in diff_list und profile_list
 #   5. ein erzwungener Serverfehler antwortet mit INTERNAL_AGENT_ERROR, und das Serverlog nennt Tool und Ursache
 #   6. ohne --mcp-state-dir startet der Server nicht: server.state verlangt einen persistenten Byte-Store
 #
@@ -69,7 +71,12 @@ server:
     migrations:
       auto: true
 YAML
-printf 'rules:\n  - tenantId: default\n    toolName: schema_reverse_start\n    effect: allow\n' > "$WORK/policy.yaml"
+{
+    echo 'rules:'
+    for allowed in schema_reverse_start schema_compare_start data_profile_start artifact_upload_init data_import_start; do
+        printf '  - tenantId: default\n    toolName: %s\n    effect: allow\n' "$allowed"
+    done
+} > "$WORK/policy.yaml"
 # Das Image laeuft als uid 10001 und muss die Dateien lesen koennen.
 chmod 755 "$WORK"; chmod 644 "$WORK/config.yaml" "$WORK/policy.yaml"
 
@@ -203,6 +210,63 @@ check_upload() {
     fi
 }
 
+# Startet ein Job-Tool und wartet auf sein Ende; 0 nur bei SUCCEEDED.
+run_job() {
+    local phase="$1" name="$2" args="$3" reply job status=""
+    reply="$(tool "$name" "$args")"
+    job="$(jq -r '.result.content[0].text | fromjson? | .jobId // empty' <<< "$reply" 2> /dev/null)"
+    [ -n "$job" ] || { note_failure "$phase: $name liefert keinen Job: $(head -c 400 <<< "$reply")"; return 1; }
+    for _ in $(seq 60); do
+        status="$(tool job_status_get "{\"jobId\":\"$job\"}" \
+            | jq -r '.result.content[0].text | fromjson? | .status // empty' 2> /dev/null)"
+        case "$status" in SUCCEEDED) log "  $name: SUCCEEDED"; return 0 ;; FAILED|CANCELLED) break ;; esac
+        sleep 1
+    done
+    note_failure "$phase: $name endet nicht mit SUCCEEDED: $(tool job_status_get "{\"jobId\":\"$job\"}" | head -c 400)"
+    return 1
+}
+
+# Die Ergebnisse der beiden Jobs stehen in ihren Indizes.
+check_indices() {
+    local phase="$1" pair tool_name key count
+    for pair in diff_list:diffs profile_list:profiles; do
+        tool_name="${pair%%:*}"
+        key="${pair##*:}"
+        count="$(tool "$tool_name" '{}' | jq -r --arg k "$key" '.result.content[0].text | fromjson? | (.[$k] // []) | length' 2> /dev/null)"
+        if [ "${count:-0}" -ge 1 ]; then
+            log "  $tool_name nennt $count Eintrag/Eintraege"
+        else
+            note_failure "$phase: $tool_name ist leer"
+        fi
+    done
+}
+
+# CSV per job_input hochladen und importieren; die Zeilen muessen in der Zieltabelle stehen.
+check_import() {
+    local phase="$1" file="$WORK/rows.csv" size sha reply session ref rows
+    printf 'id,v\n1,a\n2,b\n' > "$file"
+    size="$(wc -c < "$file")"
+    sha="$(sha256sum "$file" | cut -d' ' -f1)"
+    reply="$(tool artifact_upload_init "{\"uploadIntent\":\"job_input\",\"approvalKey\":\"state-smoke-up\",\
+\"sizeBytes\":$size,\"checksumSha256\":\"$sha\",\"mimeType\":\"text/csv\",\"artifactKind\":\"seed-data\",\"targetTable\":\"imp\"}")"
+    session="$(jq -r '.result.content[0].text | fromjson? | .uploadSessionId // empty' <<< "$reply" 2> /dev/null)"
+    [ -n "$session" ] || { note_failure "$phase: job_input-Init scheitert: $(head -c 400 <<< "$reply")"; return; }
+    reply="$(tool artifact_upload "{\"uploadSessionId\":\"$session\",\"segmentIndex\":1,\"segmentOffset\":0,\
+\"segmentTotal\":1,\"isFinalSegment\":true,\"segmentSha256\":\"$sha\",\"contentBase64\":\"$(base64 -w0 "$file")\"}")"
+    ref="$(jq -r '.result.content[0].text | fromjson? | .schemaRef // empty' <<< "$reply" 2> /dev/null)"
+    [ -n "$ref" ] || { note_failure "$phase: job_input-Upload liefert keine Referenz: $(head -c 400 <<< "$reply")"; return; }
+    log "  job_input-Upload liefert $ref"
+    run_job "$phase" data_import_start "{\"idempotencyKey\":\"state-smoke-imp\",\
+\"targetConnectionRef\":\"dmigrate://tenants/default/connections/src\",\"sourceArtifactRef\":\"$ref\",\
+\"table\":\"imp\",\"format\":\"csv\"}" || return
+    rows="$(psql_ "select string_agg(id || ':' || v, ',' order by id) from public.imp")"
+    if [ "$rows" = "1:a,2:b" ]; then
+        log "  die importierten Zeilen stehen in public.imp"
+    else
+        note_failure "$phase: public.imp enthaelt '$rows' statt '1:a,2:b'"
+    fi
+}
+
 # Ein Serverfehler, den es sonst nicht gibt: Die Tabelle hinter artifact_list wird umbenannt. Der Client sieht nur
 # INTERNAL_AGENT_ERROR; die Ursache muss im Serverlog stehen, auch im Native-Image (dort ist die Logstufe fest).
 check_error_log() {
@@ -265,6 +329,7 @@ for _ in $(seq 60); do
     sleep 2
 done
 psql_ 'create table public.t(id serial primary key, v text)' > /dev/null || fail "Quelltabelle nicht anlegbar"
+psql_ 'create table public.imp(id integer primary key, v text)' > /dev/null || fail "Zieltabelle nicht anlegbar"
 # Das Volume fuer --mcp-state-dir gehoert dem Image-Benutzer (uid 10001), sonst kann der Server nicht schreiben.
 docker run --rm --user 0 -v "$BYTES_VOLUME:/state" --entrypoint chown "$PG_IMAGE" 10001:10001 /state > /dev/null \
     || fail "Volume fuer den Byte-Store nicht anlegbar"
@@ -300,6 +365,12 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
             check_job_uris "3"
             upload_schema "3"
             check_upload "3"
+            run_job "3" schema_compare_start "{\"idempotencyKey\":\"state-smoke-cmp\",\
+\"sourceUri\":\"dmigrate://tenants/default/connections/src\",\"targetUri\":\"$UPLOADED_REF\"}"
+            run_job "3" data_profile_start \
+                '{"idempotencyKey":"state-smoke-prof","connectionId":"dmigrate://tenants/default/connections/src"}'
+            check_indices "3"
+            check_import "3"
         else
             note_failure "3: der Job endet nicht mit SUCCEEDED (Status: ${status:-keine Zeile})"
         fi
@@ -314,6 +385,7 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
         check_records "4"
         check_bytes "4"
         check_upload "4"
+        check_indices "4"
         check_error_log "5"
     else
         note_failure "4: der Server startet nicht gegen die gefuellte State-DB"
@@ -330,4 +402,4 @@ if [ ${#FAILURES[@]} -gt 0 ]; then
     printf '  - %s\n' "${FAILURES[@]}" >&2
     exit 1
 fi
-log "OK — server.state unter $IMAGE: Migration, Listen, Job anlegen, Upload, Neustart, Bytes, Fehlerprotokoll, Startpruefung"
+log "OK — server.state unter $IMAGE: Migration, Listen, Jobs, Upload, Indizes, Import, Neustart, Bytes, Fehlerprotokoll, Startpruefung"

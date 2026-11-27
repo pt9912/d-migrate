@@ -362,7 +362,8 @@ Server-State und Job-Executor zusätzlich über `D_MIGRATE_SERVER_*` (siehe
 [§3.3](#3-konfiguration), [§7](#7-asynchrone-jobs-und-job-executor)).
 
 **Persistenter Zustand braucht persistente Bytes.** Mit `server.state` liegen
-Job-, Schema- und Artefakt-Datensätze dauerhaft in der Datenbank. Der Server
+Job-, Schema- und Artefakt-Datensätze sowie die Verzeichnisse hinter `diff_list`
+und `profile_list` dauerhaft in der Datenbank. Der Server
 startet dann nur, wenn auch die Inhalte erhalten bleiben:
 
 - `--mcp-state-dir` (oder `DMIGRATE_MCP_STATE_DIR`) nennt ein Verzeichnis, das
@@ -675,6 +676,12 @@ Migrationen erzeugen optional ein Rollback-Artefakt (`--generate-rollback`).
   Seite ohne die andere lässt entweder Metadaten ohne Bytes (nicht
   auflösbar) oder Bytes ohne Metadaten (nur diagnostisch über die
   Orphan-Sweep-Logik erreichbar) zurück.
+- **Vergleichs- und Profil-Verzeichnis** (`diff_index_entries`/`profile_index_entries`,
+  seit `V3__diff_profile_indexes.sql`): ebenfalls Teil des Server-State-Backups.
+  Eine ältere State-DB bekommt die Tabellen beim Start, wenn
+  `server.state.migrations.auto` gesetzt ist, sonst mit dem Migrationsschritt oben;
+  ohne ihn beendet sich der Server mit Exit 2. Vorhandene Datensätze bleiben
+  unverändert.
 
 ---
 

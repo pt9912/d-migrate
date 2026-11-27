@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **MCP: `diff_list` und `profile_list` nennen die Ergebnisse der Jobs (Issue #87).** Der Server verwarf die Einträge
+  von `schema_compare_start` und `data_profile_start`, beide Listen blieben leer. Mit `server.state` liegen die
+  Einträge in der State-DB und überstehen einen Neustart.
+- **MCP: Der `job_input`-Upload ist erreichbar (Issue #87).** Das Eingabeschema von `artifact_upload_init` ließ nur
+  `schema_staging_readonly` zu und wies `approvalKey`, `sizeBytes`, `mimeType` und die übrigen Felder ab; ein Import
+  über hochgeladene Daten ging so nicht. Die Artefakt-URI steht nach dem Upload im Feld `schemaRef` der Antwort.
+
+### Changed
+
+- **MCP mit `server.state`: neue Migration `V3__diff_profile_indexes.sql`. Vor dem Update prüfen.** Zwei Tabellen
+  (`diff_index_entries`, `profile_index_entries`) kommen hinzu. Mit `server.state.migrations.auto: true` legt der
+  Start sie an; ohne muss der Migrationsschritt vor dem Start laufen, sonst endet der Server mit Exit 2.
+
 ## [1.15.1] - 2026-11-27
 
 ### Fixed

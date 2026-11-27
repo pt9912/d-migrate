@@ -2426,7 +2426,7 @@ d-migrate mcp serve [--transport stdio|http] [--bind <addr>] [--port <n>] \
 | `--operation-timeout-seconds` | Nein | Long | Timeout (Sekunden) für Upload-Finalisierungs-Leases und den Stale-Finalisation-Sweeper |
 
 **Persistenter Byte-Store mit `server.state`**: `server.state` hält Job-, Schema- und
-Artefakt-Datensätze über Neustarts hinweg; die Bytes dahinter müssen es auch tun. Der Server
+Artefakt-Datensätze samt den Indizes `diffs` und `profiles` über Neustarts hinweg; die Bytes dahinter müssen es auch tun. Der Server
 startet deshalb nur, wenn `artifacts.store: s3` gesetzt ist oder `--mcp-state-dir` bzw.
 `$DMIGRATE_MCP_STATE_DIR` ein Verzeichnis nennt, das beim Start schon besteht. Sonst endet er
 mit Exit 2, ohne das Verzeichnis anzulegen; die Meldung nennt beide Wege. Ob das Verzeichnis

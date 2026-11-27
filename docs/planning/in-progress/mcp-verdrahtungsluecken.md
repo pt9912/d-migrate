@@ -1,6 +1,7 @@
 # MCP-Verdrahtungslücken: Indizes `diffs`/`profiles`, `job_input`-Upload (Issue #87)
 
-- **Status**: In Arbeit (2026-11-27). Geplant für 1.16.0.
+- **Status**: In Arbeit (2026-11-27). P1 bis P5 gebaut und lokal belegt; offen sind der Native-Lauf und die Abnahme.
+  Geplant für 1.16.0.
 - **Ziel**: `diff_list` und `profile_list` nennen die Ergebnisse der Jobs, mit `server.state` auch nach einem Neustart.
   Ein Client, der sich an das Tool-Schema hält, kann Eingabedaten per `job_input` hochladen und mit
   `data_import_start` importieren.
@@ -55,3 +56,15 @@
   abgeräumt). Die neuen Indizes verhalten sich wie `schemas`.
 - Die Nachsicht von `artifact_upload_init` bei den Arten und der Filter von `schema_list`
   ([`mcp-server-spec-hygiene-residuals.md`](../open/mcp-server-spec-hygiene-residuals.md)).
+
+## Stand (2026-11-27)
+
+- **Rot am Stand 1.15.1:** Das erweiterte `smoke-server-state.sh` findet `diff_list` und `profile_list` leer (vor und
+  nach dem Neustart) und den `job_input`-Init abgewiesen. Mit dem neuen Stand läuft es durch, einschließlich der
+  importierten Zeilen.
+- **Upgrade belegt:** State-DB von 1.15.1 geschrieben, mit dem neuen Stand gestartet: Migrationen `1,2` werden zu
+  `1,2,3`; Jobs, Schema und Artefakt-Bytes bleiben lesbar. Mit `migrations.auto: false` endet der neue Server mit
+  Exit 2 und nennt die fehlende Migration 3. Beides einmalig von Hand, nicht Teil des Skripts.
+- **Beim Bauen entschieden:** `artifact_upload` nennt die Artefakt-URI eines `job_input`-Uploads weiterhin im Feld
+  `schemaRef` (bestehendes Verhalten); Tool-Schema, Spec und Handbuch beschreiben es.
+- **Nicht gebaut:** `clientRequestId` am Init, den die Spec nennt und der Handler nicht liest.

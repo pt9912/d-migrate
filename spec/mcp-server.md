@@ -368,6 +368,10 @@ adressierend, muss in `allowedTenantIds` liegen), `pageSize`
 `createdAt DESC, id ASC`. Antwort-Form: typisiertes Collection-Feld
 plus `nextCursor` (`null` bei letzter Seite).
 
+Die fuenf Sammlungen gehoeren zum Serverzustand: Mit `server.state` liegen
+sie in der State-DB und ueberstehen einen Neustart, ohne ihn nur im
+Arbeitsspeicher.
+
 ### `resources/read` produktiv
 
 `resources/read` akzeptiert nur `uri` als Eingabe — `cursor`,
@@ -856,6 +860,12 @@ nimmt der Init-Pfad entgegen:
 `sizeBytes=0` ist nur für nicht-Schema-`job_input` als Single-
 Empty-Segment erlaubt; `artifactKind=schema` mit `sizeBytes=0`
 liefert `VALIDATION_ERROR`.
+
+Schliesst das letzte Segment die Session ab (`uploadSessionState:
+COMPLETED`), nennt die Antwort von `artifact_upload` die fertige Referenz
+im Feld `schemaRef`: bei `schema_staging_readonly` die Schema-URI, bei
+`job_input` die Artefakt-URI, die als `sourceArtifactRef` an
+`data_import_start` geht.
 
 `uploadSessionTtlSeconds` startet bei 900s mit absoluter Hard-
 Cap 3600s ab Session-Erzeugung; jede erfolgreiche Segmentannahme

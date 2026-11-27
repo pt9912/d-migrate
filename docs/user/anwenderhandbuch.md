@@ -1788,6 +1788,12 @@ die CLI an — als MCP-Tool (`tools/call`) oder als eigene Protokoll-Methode:
   vorab bereitstellen (statt es inline zu übergeben): `artifact_upload_init`
   mit `uploadIntent: schema_staging_readonly`, dann `artifact_upload`
   (Abbruch über `artifact_upload_abort`)
+- **Eine Datei hochladen und importieren:** `artifact_upload_init` mit
+  `uploadIntent: job_input`, `approvalKey`, `sizeBytes`, `checksumSha256`,
+  `mimeType` (etwa `text/csv`) und `targetTable`, dann `artifact_upload`. Die
+  Antwort auf das letzte Segment nennt im Feld `schemaRef` die Artefakt-URI;
+  übergeben Sie sie als `sourceArtifactRef` an `data_import_start`. Upload und
+  Import brauchen schreibende Scopes und eine Policy-Freigabe.
 - **Auflisten:** `capabilities_list`, `schema_list`, `profile_list`,
   `diff_list` sowie `resources/list` und `resources/read`
 - **Verbindungen** (Scope `dmigrate:admin`): `connections/list` — die
