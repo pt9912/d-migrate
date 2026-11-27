@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.15.1** (stabil, [veröffentlicht 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.15.1)).
+**1.16.0** (stabil, [veröffentlicht 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.16.0)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,16 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.15.1** (2026-11-27) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **MCP mit `server.state`: Ein
+- **Aktuelles Stable** · **1.16.0** (2026-11-27) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **MCP: `diff_list` und
+  `profile_list` nennen die Job-Ergebnisse, und `job_input`-Uploads lassen sich
+  importieren (Issue #87).** Beide Listen blieben leer, und das Eingabeschema von
+  `artifact_upload_init` wies die Felder eines Daten-Uploads ab. **Mit
+  `server.state` vor dem Update prüfen:** Die Migration
+  `V3__diff_profile_indexes.sql` legt zwei Tabellen an; ohne
+  `server.state.migrations.auto` muss sie vorher laufen, sonst endet der Server
+  mit Exit 2.
+  1.15.1 (2026-11-27) — **MCP mit `server.state`: Ein
   hochgeladenes Schema ist wieder auffindbar (Issue #85).** Die
   Upload-Finalisierung schrieb weiter in die In-Memory-Stores, die `server.state`
   ersetzt; der gelieferte `schemaRef` führte ins Leere (seit 1.2.0; solche Schemas

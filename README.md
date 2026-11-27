@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.15.1**
-(stable, [released 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.15.1)).
+d-migrate is a working production tool at version **1.16.0**
+(stable, [released 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.16.0)).
 
 The current capabilities:
 
@@ -161,8 +161,15 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.15.1** (2026-11-27) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **MCP with `server.state`: an
+- **Current stable** · **1.16.0** (2026-11-27) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **MCP: `diff_list` and
+  `profile_list` list the job results, and `job_input` uploads can be imported
+  (Issue #87).** Both lists stayed empty, and the input schema of
+  `artifact_upload_init` rejected the fields a data upload needs. **Check before
+  upgrading with `server.state`:** migration `V3__diff_profile_indexes.sql` adds
+  two tables; without `server.state.migrations.auto` run it first, or the server
+  exits with code 2.
+  1.15.1 (2026-11-27) — **MCP with `server.state`: an
   uploaded schema can be found again (Issue #85).** Upload finalisation kept writing
   to the in-memory stores that `server.state` replaces, so the returned `schemaRef`
   led nowhere (since 1.2.0; upload such schemas again). `job_list` no longer puts
