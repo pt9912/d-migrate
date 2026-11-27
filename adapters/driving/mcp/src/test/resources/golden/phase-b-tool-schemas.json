@@ -299,7 +299,8 @@
           ]
         },
         "schemaRef": {
-          "type": "string"
+          "type": "string",
+          "description": "Reference to the finished upload: the schema URI for schema_staging_readonly, the artifact URI (usable as sourceArtifactRef of data_import_start) for job_input."
         },
         "executionMeta": {
           "type": "object",
@@ -369,23 +370,71 @@
         "uploadIntent": {
           "type": "string",
           "enum": [
-            "schema_staging_readonly"
+            "schema_staging_readonly",
+            "job_input"
           ]
         },
         "expectedSizeBytes": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 0,
+          "description": "Payload size. Required for schema_staging_readonly (at least 1); job_input also accepts sizeBytes."
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "job_input only. 0 is allowed for artifacts other than schema."
         },
         "checksumSha256": {
           "type": "string"
         },
         "filename": {
           "type": "string"
+        },
+        "approvalKey": {
+          "type": "string",
+          "description": "Required for job_input: idempotency and approval key."
+        },
+        "approvalToken": {
+          "type": "string",
+          "description": "job_input only: token of a granted approval."
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "job_input only. Default application/octet-stream; CSV: text/csv."
+        },
+        "artifactKind": {
+          "type": "string",
+          "enum": [
+            "schema",
+            "ddl",
+            "transform-script",
+            "seed-data",
+            "rules",
+            "generic"
+          ],
+          "description": "job_input only. Default seed-data."
+        },
+        "targetTable": {
+          "type": "string",
+          "description": "job_input only: single-file import into this table."
+        },
+        "bundleFormat": {
+          "type": "string",
+          "enum": [
+            "seed-bundle.v1.zip"
+          ],
+          "description": "job_input only: required together with tables."
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "job_input only: tables of a bundle upload."
         }
       },
       "required": [
         "uploadIntent",
-        "expectedSizeBytes",
         "checksumSha256"
       ]
     },

@@ -266,12 +266,7 @@ internal object McpToolSchemas {
 
         // Upload-session tools
         put("artifact_upload_init", schemaPair(
-            input = obj(
-                "uploadIntent" to enumField("schema_staging_readonly"),
-                "expectedSizeBytes" to integerField(minimum = 1),
-                "checksumSha256" to stringField(),
-                "filename" to stringField(),
-            ).required("uploadIntent", "expectedSizeBytes", "checksumSha256"),
+            input = artifactUploadInitInput(),
             output = obj(
                 "uploadSessionId" to stringField(),
                 "uploadSessionTtlSeconds" to integerField(),
@@ -311,7 +306,7 @@ internal object McpToolSchemas {
                 "bytesReceived" to integerField(),
                 "uploadSessionTtlSeconds" to integerField(),
                 "uploadSessionState" to enumField("ACTIVE", "COMPLETED"),
-                "schemaRef" to stringField(),
+                "schemaRef" to described(stringField(), FINAL_REF_DESCRIPTION),
                 "executionMeta" to objectField(),
             ).required(
                 "uploadSessionId",
