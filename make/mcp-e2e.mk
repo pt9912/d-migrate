@@ -9,7 +9,7 @@
 # docs/planning/next/mcp-real-e2e-scope-matrix.md (Teil B). Voraussetzung:
 # einmaliger `make docker-build IMAGE_TAG=dev`.
 
-.PHONY: mcp-e2e-up mcp-e2e-down mcp-e2e-purge mcp-e2e-smoke mcp-e2e-roundtrip mcp-e2e-roundtrip-oracle mcp-e2e-compare-matrix mcp-e2e-compare-matrix-oracle mcp-e2e-server-state
+.PHONY: mcp-e2e-up mcp-e2e-down mcp-e2e-purge mcp-e2e-smoke mcp-e2e-roundtrip mcp-e2e-roundtrip-oracle mcp-e2e-compare-matrix mcp-e2e-compare-matrix-oracle mcp-e2e-server-state mcp-e2e-pagination
 
 MCP_E2E_COMPOSE := docker compose -f examples/mcp-e2e/docker-compose.yml
 
@@ -56,3 +56,7 @@ mcp-e2e-compare-matrix-oracle:
 #   make mcp-e2e-server-state MCP_E2E_DMIGRATE_IMAGE=ghcr.io/pt9912/d-migrate:<version>-native
 mcp-e2e-server-state:
 	./examples/mcp-e2e/scripts/smoke-server-state.sh
+
+# Jeder versiegelte Cursor fuehrt zur naechsten Seite (Issue #88). Ohne Datenbank, belegt den Host-Port 8796.
+mcp-e2e-pagination:
+	./examples/mcp-e2e/scripts/smoke-pagination.sh

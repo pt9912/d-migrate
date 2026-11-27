@@ -1,6 +1,8 @@
 package dev.dmigrate.mcp.resources
 
 import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.google.gson.JsonSyntaxException
 import dev.dmigrate.server.core.resource.ResourceKind
 import java.util.Base64
@@ -25,11 +27,13 @@ internal data class ResourcesListCursor(
     val innerToken: String?,
 ) {
     fun encode(): String {
-        val json = GSON.toJson(WireForm(kind = kind.name, innerToken = innerToken))
+        // Feld fuer Feld statt ueber Reflexion (Issue #88, siehe McpCursorPayloadJson).
+        val body = JsonObject()
+        body.addProperty("kind", kind.name)
+        innerToken?.let { body.addProperty("innerToken", it) }
+        val json = GSON.toJson(body)
         return ENCODER.encodeToString(json.toByteArray(Charsets.UTF_8))
     }
-
-    private data class WireForm(val kind: String, val innerToken: String?)
 
     companion object {
 
@@ -69,18 +73,30 @@ internal data class ResourcesListCursor(
             } catch (e: IllegalArgumentException) {
                 throw IllegalArgumentException("invalid cursor encoding: ${e.message}", e)
             }
-            val wire = try {
-                GSON.fromJson(String(bytes, Charsets.UTF_8), WireForm::class.java)
-            } catch (e: JsonSyntaxException) {
-                throw IllegalArgumentException("invalid cursor body: ${e.message}", e)
-            }
-            val kindName = wire?.kind ?: throw IllegalArgumentException("cursor missing 'kind'")
+            val body = parseBody(String(bytes, Charsets.UTF_8))
+            val kindName = body.text("kind") ?: throw IllegalArgumentException("cursor missing 'kind'")
             val kind = runCatching { ResourceKind.valueOf(kindName) }
                 .getOrElse { throw IllegalArgumentException("cursor 'kind=$kindName' is not a known ResourceKind") }
             require(kind in LISTABLE_KIND_SET) {
                 "cursor 'kind=$kindName' is not listable via resources/list"
             }
-            return ResourcesListCursor(kind = kind, innerToken = wire.innerToken)
+            return ResourcesListCursor(kind = kind, innerToken = body.text("innerToken"))
+        }
+
+        private fun parseBody(json: String): JsonObject {
+            val element = try {
+                JsonParser.parseString(json)
+            } catch (e: JsonSyntaxException) {
+                throw IllegalArgumentException("invalid cursor body: ${e.message}", e)
+            }
+            require(element.isJsonObject) { "invalid cursor body: not an object" }
+            return element.asJsonObject
+        }
+
+        private fun JsonObject.text(name: String): String? {
+            val value = get(name)?.takeUnless { it.isJsonNull } ?: return null
+            require(value.isJsonPrimitive) { "invalid cursor body: '$name' is not a string" }
+            return value.asString
         }
     }
 }

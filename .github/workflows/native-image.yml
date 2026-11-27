@@ -381,6 +381,10 @@ jobs:
         if: ${{ !cancelled() && steps.image.outcome == 'success' }}
         run: make mcp-e2e-server-state
 
+      - name: Pagination (versiegelte Cursor, Issue #88)
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
+        run: make mcp-e2e-pagination
+
       - name: Upload E2E artefacts
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

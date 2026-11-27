@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Natives Image: MCP-Pagination funktioniert (Issue #88).** Gson schrieb die beiden Cursor-Klassen im nativen Image
+  als `{}`, ohne Fehler, und der Server lehnte seine eigenen Cursor ab: Listen-Werkzeuge endeten nach der ersten Seite
+  (`unknown cursor version 0`), `resources/list` fiel bei mehr als 50 Ressourcen ganz aus, und `artifact_chunk_get`
+  kam nicht über den ersten Chunk hinaus. Die Cursor werden jetzt ohne Reflexion geschrieben und gelesen; ihr Format
+  ist unverändert. Das JVM-Image war nicht betroffen. `native-image.yml` holt jetzt mit `make mcp-e2e-pagination` je
+  eine zweite Seite.
+
 ## [1.16.0] - 2026-11-27
 
 ### Fixed

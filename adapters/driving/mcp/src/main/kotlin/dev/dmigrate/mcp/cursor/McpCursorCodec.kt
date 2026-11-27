@@ -1,8 +1,5 @@
 package dev.dmigrate.mcp.cursor
 
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
-import com.google.gson.JsonSyntaxException
 import dev.dmigrate.server.core.principal.TenantId
 import java.security.MessageDigest
 import java.time.Clock
@@ -34,11 +31,6 @@ class McpCursorCodec(
     private val clockSkew: Duration = DEFAULT_CLOCK_SKEW,
 ) {
 
-    private val gson: Gson = GsonBuilder()
-        .disableHtmlEscaping()
-        .serializeNulls()
-        .create()
-
     /**
      * Builds a sealed cursor for [payload]. Signs with the
      * keyring's active key; the resulting cursor carries that
@@ -58,7 +50,7 @@ class McpCursorCodec(
             "cursor TTL exceeds maxTtl=$maxTtl"
         }
         val stamped = payload.copy(kid = keyring.signing.kid)
-        val json = gson.toJson(stamped)
+        val json = McpCursorPayloadJson.write(stamped)
         val payloadB64 = URL_ENCODER.encodeToString(json.toByteArray(Charsets.UTF_8))
         val sigB64 = sign(keyring.signing, payloadB64)
         return "$payloadB64.$sigB64"
@@ -81,14 +73,8 @@ class McpCursorCodec(
         }.getOrElse {
             return McpCursorDecodeResult.Invalid("payload base64 decode failed")
         }
-        val payload = runCatching { gson.fromJson(json, McpCursorPayload::class.java) }
-            .getOrElse {
-                if (it is JsonSyntaxException) {
-                    return McpCursorDecodeResult.Invalid("payload json malformed")
-                }
-                throw it
-            }
-            ?: return McpCursorDecodeResult.Invalid("payload was null")
+        val payload = McpCursorPayloadJson.read(json)
+            ?: return McpCursorDecodeResult.Invalid("payload json malformed")
 
         // 2. Schema version.
         if (payload.version != SUPPORTED_VERSION) {

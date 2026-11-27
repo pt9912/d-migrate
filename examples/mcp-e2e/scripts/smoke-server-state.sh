@@ -210,6 +210,18 @@ check_upload() {
     fi
 }
 
+# job_list liest die zweite Seite ueber den versiegelten Cursor (Issue #88).
+check_job_page() {
+    local phase="$1" cursor code
+    cursor="$(tool job_list '{"pageSize":1}' | jq -r '.result.content[0].text | fromjson? | .nextCursor // empty' 2> /dev/null)"
+    [ -n "$cursor" ] || { note_failure "$phase: job_list nennt keinen nextCursor"; return; }
+    if code="$(tool_ok job_list "{\"pageSize\":1,\"cursor\":\"$cursor\"}")"; then
+        log "  job_list liest Seite 2"
+    else
+        note_failure "$phase: job_list Seite 2 -> $code"
+    fi
+}
+
 # Startet ein Job-Tool und wartet auf sein Ende; 0 nur bei SUCCEEDED.
 run_job() {
     local phase="$1" name="$2" args="$3" reply job status=""
@@ -386,6 +398,7 @@ if [ ${#FAILURES[@]} -eq 0 ]; then
         check_bytes "4"
         check_upload "4"
         check_indices "4"
+        check_job_page "4"
         check_error_log "5"
     else
         note_failure "4: der Server startet nicht gegen die gefuellte State-DB"
