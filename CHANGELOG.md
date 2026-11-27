@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.1] - 2026-11-27
+
 ### Fixed
 
 - **Natives Image: MCP-Pagination funktioniert (Issue #88).** Gson schrieb die beiden Cursor-Klassen im nativen Image

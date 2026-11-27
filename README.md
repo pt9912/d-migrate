@@ -48,8 +48,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.16.0**
-(stable, [released 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.16.0)).
+d-migrate is a working production tool at version **1.16.1**
+(stable, [released 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.16.1)).
 
 The current capabilities:
 
@@ -161,8 +161,13 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.16.0** (2026-11-27) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. **MCP: `diff_list` and
+- **Current stable** · **1.16.1** (2026-11-27) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. **Native image: MCP
+  pagination works (Issue #88).** The server rejected the cursors it had issued,
+  so lists ended after the first page, `resources/list` failed with more than 50
+  resources and large artifacts could not be read past the first chunk. The JVM
+  image was not affected.
+  1.16.0 (2026-11-27) — **MCP: `diff_list` and
   `profile_list` list the job results, and `job_input` uploads can be imported
   (Issue #87).** Both lists stayed empty, and the input schema of
   `artifact_upload_init` rejected the fields a data upload needs. **Check before

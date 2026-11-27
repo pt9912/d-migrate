@@ -54,7 +54,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.16.0** (stabil, [veröffentlicht 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.16.0)).
+**1.16.1** (stabil, [veröffentlicht 2026-11-27](https://github.com/pt9912/d-migrate/releases/tag/v1.16.1)).
 
 Die aktuellen Fähigkeiten:
 
@@ -175,8 +175,13 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.16.0** (2026-11-27) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. **MCP: `diff_list` und
+- **Aktuelles Stable** · **1.16.1** (2026-11-27) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. **Natives Image: Die
+  MCP-Pagination funktioniert (Issue #88).** Der Server lehnte die Cursor ab, die
+  er selbst ausgegeben hatte: Listen endeten nach der ersten Seite,
+  `resources/list` fiel bei mehr als 50 Ressourcen aus, und große Artefakte waren
+  nach dem ersten Chunk nicht weiter lesbar. Das JVM-Image war nicht betroffen.
+  1.16.0 (2026-11-27) — **MCP: `diff_list` und
   `profile_list` nennen die Job-Ergebnisse, und `job_input`-Uploads lassen sich
   importieren (Issue #87).** Beide Listen blieben leer, und das Eingabeschema von
   `artifact_upload_init` wies die Felder eines Daten-Uploads ab. **Mit
